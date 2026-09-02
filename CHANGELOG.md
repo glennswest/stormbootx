@@ -3,6 +3,12 @@
 ## [Unreleased]
 
 ### 2026-09-02
+- **fix:** the NVMe transfer size is derived from the path MTU rather than a
+  hand-edited constant (#6). `EFI_TCP4.GetModeData` reports the link MTU; a
+  jumbo path gets a command sized to one frame (8 KiB at MTU 9000) and every
+  other path gets 64 KiB, which is faster where nothing aligns to a frame
+  anyway because this client has no read pipelining. The chosen size and the
+  MTU it came from are printed on the console.
 - **docs:** project `CLAUDE.md` (build, module map, load-bearing facts, work plan)
   and this changelog.
 

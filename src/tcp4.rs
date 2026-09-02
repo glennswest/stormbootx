@@ -23,6 +23,7 @@ use core::ptr;
 
 use uefi::boot::{self, SearchType};
 use uefi::{Guid, Status, guid};
+use uefi_raw::protocol::network::snp::NetworkMode;
 use uefi_raw::protocol::network::tcp4::{
     Tcp4AccessPoint, Tcp4CompletionToken, Tcp4ConfigData, Tcp4ConnectionToken, Tcp4FragmentData,
     Tcp4IoToken, Tcp4Option, Tcp4Packet, Tcp4Protocol, Tcp4ReceiveData, Tcp4TransmitData,
@@ -222,6 +223,46 @@ impl Tcp4Socket {
         let r = self.pump(&token.completion_token, "connect");
         close_event(event);
         r
+    }
+
+    /// The MTU of the interface this connection is running over, in bytes.
+    ///
+    /// This is the number the NVMe layer needs in order to stop guessing: the
+    /// size of one command is the size of the C2HData PDU that comes back, and
+    /// whether that fits a frame is the whole question. `CHUNK` was a constant
+    /// that had to be hand-edited every time the portal moved between a 1500
+    /// and a 9000 network, which is a bug waiting for someone to forget.
+    ///
+    /// Read out of `SnpModeData` rather than `Ip4ModeData`, for two reasons:
+    /// SNP's `max_packet_size` is the link MTU excluding the media header,
+    /// which is exactly the budget the frame arithmetic wants, and asking for
+    /// `Ip4ModeData` makes the IP4 driver allocate a route table, a group
+    /// table and an ICMP type list from the boot-services pool that the caller
+    /// then owns. There is nothing in them we need.
+    ///
+    /// `None` means the stack would not say, and the caller should assume
+    /// nothing — not that the path is small.
+    pub fn link_mtu(&self) -> Option<u32> {
+        // Zeroed rather than uninitialised: firmware that ignores the argument
+        // must leave us reading zero, which the plausibility check rejects,
+        // rather than reading a stack MTU that was never written.
+        let mut snp: NetworkMode = unsafe { core::mem::zeroed() };
+        let st = unsafe {
+            ((*self.tcp).get_mode_data)(
+                self.tcp,
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                &mut snp,
+            )
+        };
+        if st != Status::SUCCESS {
+            return None;
+        }
+        // Ethernet is 1500 and jumbo is 9000; anything outside this range is a
+        // field that was not filled in, not a network.
+        (576..=65_535).contains(&snp.max_packet_size).then_some(snp.max_packet_size)
     }
 
     /// Drive the stack until a token retires.

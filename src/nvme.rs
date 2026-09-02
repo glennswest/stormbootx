@@ -62,22 +62,53 @@ const SGL_IN_CAPSULE: u8 = 0x01;
 /// FLAGS byte with PSDT = 01b — SGLs, the only choice over a fabric.
 const FLAGS_SGL: u8 = 0x40;
 
-/// Bytes moved per NVMe command, and so the size of the C2HData PDUs the
-/// controller sends back.
+/// Bytes moved per NVMe command, derived from the MTU of the path rather than
+/// hand-edited to match it.
 ///
-/// **8 KiB: the portal is now on a jumbo network.** forge.g16.lo answers on
-/// eth1 at MTU 9000, so one read command is exactly one frame — 8192 of
-/// payload plus a 24-byte PDU header, 20 TCP, 20 IP and 14 Ethernet is 8270,
-/// inside 9000 with room for options. No fragmentation, no reassembly.
+/// The size of a command is the size of the C2HData PDU that comes back, so
+/// the only question that matters is whether one read fits one frame. There
+/// are two regimes and the answer differs in each:
 ///
-/// Set it back to `64 * 1024` if the portal ever returns to a 1500-byte path:
-/// this client has no read pipelining, so where nothing aligns to a frame
-/// anyway, fewer larger commands beat more smaller ones.
+///   * **Jumbo.** Size the command so a reply is exactly one frame: the MTU
+///     less the IP, TCP and PDU headers, rounded down to whole 4 KiB pages. On
+///     a 9000 path that is 8 KiB. No fragmentation, no reassembly.
+///   * **Anything else.** 64 KiB. This client has no read pipelining — one
+///     command outstanding at a time, each costing a full round trip — so
+///     where nothing aligns to a frame anyway, fewer large commands beat more
+///     small ones. On a 1500 path 8 KiB is *worse* than 64 KiB for exactly
+///     that reason.
 ///
-/// Note that jumbo also needs the firmware to agree: EFI_TCP4's MTU comes
-/// from the platform's IP4 configuration for that NIC, and `Tcp4Option`
-/// carries `enable_path_mtu_discovery`, which this client does not set today.
-const CHUNK: usize = 8192;
+/// This was a constant, and it had already been hand-edited twice in one
+/// afternoon as the portal moved between `dev.g8.lo` (1500) and
+/// `forge.g16.lo` (9000). A constant that must match a network the binary
+/// cannot see is a bug waiting for someone to forget.
+///
+/// `None` — the stack would not report an MTU — takes the 64 KiB branch,
+/// because the safe assumption about an unknown path is that it is ordinary,
+/// not that it is jumbo.
+fn chunk_for_mtu(mtu: Option<u32>) -> usize {
+    // IP (20, no options) + TCP (60, the largest legal header) + the NVMe/TCP
+    // common header and PSH (24). Budgeting the maximum TCP header rather than
+    // the usual 20 costs nothing at 4 KiB granularity, and means a stack that
+    // negotiates timestamps or SACK does not quietly start fragmenting.
+    const OVERHEAD: u32 = 20 + 60 + 24;
+    const PAGE: u32 = 4096;
+    const BIG: usize = 64 * 1024;
+
+    let Some(mtu) = mtu else {
+        return BIG;
+    };
+    // Whole pages only: the transfer has to stay a multiple of the LBA size,
+    // and 4 KiB is a multiple of every block size a namespace reports.
+    let fits = (mtu.saturating_sub(OVERHEAD) / PAGE * PAGE) as usize;
+    if fits >= 8192 {
+        // Capped: without Identify Controller there is no MDTS to consult, and
+        // 64 KiB is a transfer every controller accepts.
+        fits.min(BIG)
+    } else {
+        BIG
+    }
+}
 
 fn le16(b: &[u8], at: usize) -> u16 {
     u16::from_le_bytes([b[at], b[at + 1]])
@@ -195,6 +226,11 @@ impl Queue {
             self.maxh2cdata = maxh2cdata;
         }
         Ok(())
+    }
+
+    /// The MTU of the path this queue runs over, if the stack will say.
+    fn link_mtu(&self) -> Option<u32> {
+        self.sock.link_mtu()
     }
 
     fn next_cid(&mut self) -> u16 {
@@ -446,8 +482,12 @@ pub struct Namespace {
     io: Queue,
     pub nsid: u32,
     pub geometry: Geometry,
-    /// Largest transfer the controller accepts, in bytes.
+    /// Largest transfer this client will issue, in bytes. Derived from `mtu`;
+    /// see `chunk_for_mtu`.
     pub max_transfer: usize,
+    /// The MTU the firmware reported for the path, for the console line.
+    /// `None` means the stack would not say.
+    pub mtu: Option<u32>,
 }
 
 impl Namespace {
@@ -495,12 +535,17 @@ impl Namespace {
         let sqsize = mqes.min(128);
         io.fabrics_connect(1, sqsize, cntlid, subnqn, hostnqn, &hostid)?;
 
+        // Ask the queue that will carry the reads, not the admin one: they are
+        // separate connections and on a multi-homed portal the firmware could
+        // route them over different interfaces.
+        let mtu = io.link_mtu();
+
         Ok(Namespace {
             io,
             nsid,
             geometry: Geometry { blocks, block_size },
-            // See CHUNK: 64 KiB on a 1500 path, 8 KiB once it is jumbo.
-            max_transfer: CHUNK,
+            max_transfer: chunk_for_mtu(mtu),
+            mtu,
         })
     }
 
