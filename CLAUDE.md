@@ -21,6 +21,18 @@ There is no `cargo test`: this is a `no_std` UEFI binary with no host target, so
 the compile *is* the check. A macOS build is not possible at all here — the
 target is `x86_64-unknown-uefi` and the code is entirely firmware-facing.
 
+`src/sha256.rs` is the one exception, and it is worth keeping. It touches only
+`core` and names no `crate::` item, so it compiles standalone as its own crate
+and the FIPS vectors can actually be run:
+
+```bash
+rustc --test src/sha256.rs -o $CARGO_TARGET_DIR/sha256-test && \
+  $CARGO_TARGET_DIR/sha256-test
+```
+
+Anything that gives that module a dependency on the rest of the crate takes
+those vectors out of reach. Don't.
+
 `./scripts/build-boot-agent.sh` writes the GPT/ESP image to `/build/images`.
 
 ## Version locations
@@ -41,6 +53,7 @@ target is `x86_64-unknown-uefi` and the code is entirely firmware-facing.
 | `src/nvme.rs` | the NVMe/TCP initiator |
 | `src/blockio.rs` | publish the namespace as a block device, then `ConnectController` |
 | `src/registry.rs` | claim an image from sbregistry, keyed on the service tag |
+| `src/sha256.rs` | the digest, because `EFI_HASH2` is optional |
 | `src/config.rs` | the target, read from the media rather than compiled in |
 | `src/tcp4probe.rs` | second binary: does this machine's firmware carry TCP4? |
 

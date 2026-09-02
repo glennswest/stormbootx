@@ -3,6 +3,18 @@
 ## [Unreleased]
 
 ### 2026-09-02
+- **feat:** SHA-256 in-tree (`src/sha256.rs`), the half of #2 that waits on
+  nothing. `EFI_HASH2` is an optional driver stack, the same trap `EFI_HTTP`
+  already set here — code written against a protocol firmware is allowed to
+  omit works on the desk and fails on the one server model that matters, at
+  the point in the boot with nothing to read the failure from. Streaming, so
+  the update path can hash a file as it reads it rather than holding a whole
+  payload in pool. `Digest::matches_hex` is tolerant of a `sha256:` prefix,
+  either case and surrounding whitespace, and of nothing else: a short, long
+  or non-hex stamp is not a match, and #2 reads "not a match" as "do not
+  swap". The module names no `crate::` item and touches only `core`, so
+  `rustc --test src/sha256.rs` runs the FIPS vectors against it despite the
+  crate having no host target — see the note in the module header.
 - **fix:** `config::write_file` claimed to truncate and did not. `FileMode::
   CreateReadWrite` opens an existing file without truncating and seeking to the
   new end does not shorten it, so a shrinking rewrite left the tail of the

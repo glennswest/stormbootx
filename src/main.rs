@@ -37,6 +37,7 @@ mod config;
 mod dns;
 mod nvme;
 mod registry;
+mod sha256;
 mod smbios;
 mod tcp4;
 
