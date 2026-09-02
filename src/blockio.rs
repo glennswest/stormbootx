@@ -139,7 +139,9 @@ pub fn publish(ns: Namespace) -> Result<uefi_raw::Handle, String> {
 
     let proto = Box::leak(Box::new(BlockIoProtocol {
         revision: 0x0001_0000,
-        media: unsafe { ptr::addr_of!(MEDIA) as *const BlockIoMedia },
+        // Taking the address of a `static mut` needs no `unsafe`; only
+        // dereferencing it does, and that happens under the accessors above.
+        media: ptr::addr_of!(MEDIA) as *const BlockIoMedia,
         reset,
         read_blocks,
         write_blocks,
@@ -167,7 +169,8 @@ pub fn publish(ns: Namespace) -> Result<uefi_raw::Handle, String> {
     unsafe {
         if let Some(st_ptr) = uefi::table::system_table_raw() {
             if let Some(bs) = st_ptr.as_ref().boot_services.as_ref() {
-                (bs.connect_controller)(handle, ptr::null_mut(), ptr::null(), Boolean::TRUE);
+                let _ =
+                    (bs.connect_controller)(handle, ptr::null_mut(), ptr::null(), Boolean::TRUE);
             }
         }
     }

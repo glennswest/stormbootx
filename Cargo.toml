@@ -9,6 +9,14 @@ license = "MIT"
 name = "stormbootx"
 path = "src/main.rs"
 
+# The diagnostic that answers "will stormbootx run on this server model?"
+# before anyone writes a stick. Shares tcp4.rs by path rather than through a
+# library crate: a UEFI binary is `no_main`/`no_std` and there is exactly one
+# module to share.
+[[bin]]
+name = "tcp4probe"
+path = "src/tcp4probe.rs"
+
 [dependencies]
 uefi = { version = "0.39", features = ["alloc", "global_allocator", "panic_handler", "logger"] }
 uefi-raw = "0.15"

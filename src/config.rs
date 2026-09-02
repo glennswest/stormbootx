@@ -170,6 +170,10 @@ pub fn resolve(
 
 /// Render a config file, preserving the attach settings and recording a new
 /// stamp. Used by the self-update path after it replaces `BOOTX64.EFI`.
+// Unused until #2 lands. Kept rather than deleted because the write-back half
+// of the config file is the part that has to be right first time: a stick that
+// half-writes its own config is a machine that does not POST into anything.
+#[allow(dead_code)]
 pub fn render(cfg: &Config, stamp: &str) -> String {
     let [a, b, c, d] = cfg.portal;
     format!(
@@ -186,6 +190,8 @@ pub fn render(cfg: &Config, stamp: &str) -> String {
 }
 
 /// Write a file to the boot volume, replacing what is there.
+// Also #2. See `render`.
+#[allow(dead_code)]
 pub fn write_file(path: &str, body: &[u8]) -> Result<(), String> {
     let handle = boot_volume().ok_or("no boot volume (LoadedImage has no device)")?;
     let mut fs = open_fs(handle).ok_or("boot volume has no SimpleFileSystem")?;

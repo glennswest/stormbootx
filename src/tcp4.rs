@@ -103,7 +103,7 @@ fn close_event(event: uefi_raw::Event) {
     unsafe {
         if let Some(st) = uefi::table::system_table_raw() {
             if let Some(bs) = st.as_ref().boot_services.as_ref() {
-                (bs.close_event)(event);
+                let _ = (bs.close_event)(event);
             }
         }
     }
@@ -121,12 +121,102 @@ fn signalled(event: uefi_raw::Event) -> bool {
     }
 }
 
-/// Is a usable TCP4 stack present at all?
+/// EFI_SIMPLE_NETWORK_PROTOCOL — the bottom of the stack, and the handle the
+/// upper layers bind onto.
+pub const SNP: Guid = guid!("a19832b9-ac25-11d3-9a2d-0090273fc14d");
+
+/// Is a TCP4 service binding present right now?
 pub fn available() -> bool {
     boot::locate_handle_buffer(SearchType::ByProtocol(&TCP4_SERVICE_BINDING))
         .map(|h| !h.is_empty())
         .unwrap_or(false)
 }
+
+/// How TCP4 turned out to be reachable, for the console line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Presence {
+    /// The firmware had already bound its network stack.
+    Present,
+    /// It had not, and a `ConnectController` pass over the SNP handles made it
+    /// appear. This is the case worth naming: the drivers were in the image
+    /// all along and nothing had asked for them.
+    BoundOnDemand,
+    /// A pass over every handle in the system made it appear. Rarer, and
+    /// usually means the layered drivers hang off something that is not the
+    /// NIC handle.
+    BoundAfterFullPass,
+    /// The firmware does not carry an upper network stack.
+    Absent,
+}
+
+/// Bind whatever layered network drivers the firmware has, then look again.
+///
+/// A machine can carry the IP4/TCP4 DXE drivers and still show no TCP4 service
+/// binding, because nothing has connected them to the NIC handle yet — UEFI
+/// binds drivers on demand, and an application that only ever calls
+/// `LocateHandleBuffer` never creates that demand. `ConnectController` is what
+/// creates it.
+///
+/// Worth knowing before assuming this is the fix: it is **not** enough on
+/// Fedora's OVMF, which ships no upper network stack at all. SNP appears,
+/// MNP/IP4/TCP4 do not, and a pass over every handle changes nothing. The
+/// hypothesis this tests is present-but-unbound on real firmware, which is a
+/// different failure and much the more likely one on an enterprise server.
+///
+/// Cheap to attempt and only attempted when the alternative is refusing to
+/// boot, so it runs before the error path rather than instead of it.
+pub fn ensure_available() -> Presence {
+    if available() {
+        return Presence::Present;
+    }
+
+    // The NIC handles first. This is the targeted version of the hypothesis
+    // and it avoids binding every unrelated driver in the system to every
+    // unrelated handle just to find a network stack.
+    if let Ok(handles) = boot::locate_handle_buffer(SearchType::ByProtocol(&SNP)) {
+        for h in handles.iter() {
+            connect(h.as_ptr());
+        }
+        if available() {
+            return Presence::BoundOnDemand;
+        }
+    }
+
+    // Then everything. On firmware whose layered drivers hang off a parent
+    // that is not the SNP handle this is what finds them; on firmware that has
+    // none it is wasted work on a path that was going to fail anyway.
+    if let Ok(handles) = boot::locate_handle_buffer(SearchType::AllHandles) {
+        for h in handles.iter() {
+            connect(h.as_ptr());
+        }
+        if available() {
+            return Presence::BoundAfterFullPass;
+        }
+    }
+
+    Presence::Absent
+}
+
+/// `ConnectController(handle, NULL, NULL, TRUE)` — bind every driver that will
+/// bind, recursively. Failures are the normal case (most handles are not
+/// controllers) and are not worth reporting.
+fn connect(handle: uefi_raw::Handle) {
+    unsafe {
+        if let Some(st) = uefi::table::system_table_raw() {
+            if let Some(bs) = st.as_ref().boot_services.as_ref() {
+                let _ = (bs.connect_controller)(
+                    handle,
+                    ptr::null_mut(),
+                    ptr::null(),
+                    Boolean::TRUE,
+                );
+            }
+        }
+    }
+}
+
+/// What to tell an operator when there is no TCP4 stack to be had.
+pub const NO_TCP4_ADVICE: &str = "EFI_TCP4 is not present, and binding the firmware's own drivers did      not produce it. Enable network boot / the NIC's UEFI PXE stack in setup so      the platform loads its TCP/IP drivers, then run tcp4probe on this model to      confirm. Note that Fedora's OVMF ships no upper network stack at all, so      this is expected under that emulator.";
 
 pub struct Tcp4Socket {
     sb: *mut ServiceBinding,
@@ -155,7 +245,7 @@ impl Tcp4Socket {
         let tcp = match handle_protocol(child, &TCP4) {
             Some(p) => p as *mut Tcp4Protocol,
             None => {
-                unsafe { ((*sb).destroy_child)(sb, child) };
+                unsafe { let _ = ((*sb).destroy_child)(sb, child); };
                 return Err("EFI_TCP4 missing on the new child".to_string());
             }
         };
@@ -272,7 +362,7 @@ impl Tcp4Socket {
     fn pump(&self, token: &Tcp4CompletionToken, what: &str) -> Result<(), String> {
         // ~30s at 500us per turn, matching the host client's I/O timeout.
         for _ in 0..60_000 {
-            unsafe { ((*self.tcp).poll)(self.tcp) };
+            unsafe { let _ = ((*self.tcp).poll)(self.tcp); };
             if signalled(token.event) {
                 return if token.status == Status::SUCCESS {
                     Ok(())
@@ -403,8 +493,8 @@ impl Tcp4Socket {
 impl Drop for Tcp4Socket {
     fn drop(&mut self) {
         unsafe {
-            ((*self.tcp).configure)(self.tcp, ptr::null_mut());
-            ((*self.sb).destroy_child)(self.sb, self.child);
+            let _ = ((*self.tcp).configure)(self.tcp, ptr::null_mut());
+            let _ = ((*self.sb).destroy_child)(self.sb, self.child);
         }
     }
 }

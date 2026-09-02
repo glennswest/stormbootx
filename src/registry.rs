@@ -153,6 +153,8 @@ fn attach_from(body: &str) -> Result<Attach, String> {
 }
 
 /// Everything after the last `/`, for logging a digest without the noise.
+// Unused until there are digests to log — see #2 and #4.
+#[allow(dead_code)]
 pub fn short(s: &str) -> &str {
     s.rsplit(['/', ':']).next().unwrap_or(s)
 }

@@ -72,15 +72,18 @@ fn run() -> Result<(), String> {
     uefi::println!("service tag : {tag}");
 
     // 2. Is there a usable TCP stack? Presence of SNP is not enough — the
-    //    layered IP4/TCP4 drivers are a separate build option in firmware.
-    if !tcp4::available() {
-        return Err(
-            "EFI_TCP4 is not present. Enable network boot / the NIC's UEFI PXE stack \
-             in setup so the firmware loads its TCP/IP drivers."
-                .into(),
-        );
+    //    layered IP4/TCP4 drivers are a separate build option in firmware, and
+    //    even when they are built in nothing may have bound them yet.
+    match tcp4::ensure_available() {
+        tcp4::Presence::Present => uefi::println!("tcp4        : available"),
+        tcp4::Presence::BoundOnDemand => {
+            uefi::println!("tcp4        : available (bound on demand from the NIC handle)")
+        }
+        tcp4::Presence::BoundAfterFullPass => {
+            uefi::println!("tcp4        : available (bound after a full ConnectController pass)")
+        }
+        tcp4::Presence::Absent => return Err(tcp4::NO_TCP4_ADVICE.into()),
     }
-    uefi::println!("tcp4        : available");
 
     // 3. What should I boot?
     let attach = if USE_REGISTRY {

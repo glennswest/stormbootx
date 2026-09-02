@@ -3,6 +3,16 @@
 ## [Unreleased]
 
 ### 2026-09-02
+- **feat:** `tcp4probe`, a second UEFI binary (24 KB) that answers "will
+  stormbootx run on this server model?" before anyone writes a stick (#5). It
+  surveys the nine protocols of the network stack layer by layer, runs a
+  `ConnectController` pass if TCP4 is missing, surveys again, then creates and
+  configures a TCP4 child — because presence is necessary and not sufficient.
+- **feat:** `stormbootx` binds the firmware's own layered network drivers before
+  declaring `EFI_TCP4` absent (#5). Drivers that are built in but unbound are
+  the likeliest cause on enterprise firmware and the fix for them is free; the
+  console says which of the three ways TCP4 turned out to be reachable.
+- **chore:** build is warning-free, so a new warning is visible as one.
 - **fix:** the NVMe transfer size is derived from the path MTU rather than a
   hand-edited constant (#6). `EFI_TCP4.GetModeData` reports the link MTU; a
   jumbo path gets a command sized to one frame (8 KiB at MTU 9000) and every
