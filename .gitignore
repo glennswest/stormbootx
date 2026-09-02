@@ -1,0 +1,4 @@
+target/
+*.img
+*.efi
+.DS_Store
