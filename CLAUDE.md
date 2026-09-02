@@ -26,9 +26,12 @@ target is `x86_64-unknown-uefi` and the code is entirely firmware-facing.
 and the FIPS vectors can actually be run:
 
 ```bash
-rustc --test src/sha256.rs -o $CARGO_TARGET_DIR/sha256-test && \
+rustc --edition 2021 --test src/sha256.rs -o $CARGO_TARGET_DIR/sha256-test && \
   $CARGO_TARGET_DIR/sha256-test
 ```
+
+`--edition 2021` is not optional: bare `rustc` defaults to edition 2015, where
+`core` is not in scope and the file will not compile even though it is correct.
 
 Anything that gives that module a dependency on the rest of the crate takes
 those vectors out of reach. Don't.

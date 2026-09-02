@@ -24,7 +24,7 @@
 //! compiles standalone as its own crate. On dev:
 //!
 //! ```text
-//! rustc --test src/sha256.rs -o /build/cargo/stormbootx/sha256-test && \
+//! rustc --edition 2021 --test src/sha256.rs -o /build/cargo/stormbootx/sha256-test && \
 //!   /build/cargo/stormbootx/sha256-test
 //! ```
 //!
