@@ -3,6 +3,12 @@
 ## [Unreleased]
 
 ### 2026-09-02
+- **chore:** `Cargo.lock` is tracked, for both this crate and the `dns-wire`
+  test helper. It was neither committed nor ignored, so every build resolved
+  fresh — and the whole dependency surface here is two crates that move: a
+  build today offered `uefi` 0.40 against the 0.39 the code was written for. A
+  firmware binary should not change because a dependency did while nobody was
+  looking. The pin now moves deliberately, in its own commit.
 - **feat:** SHA-256 in-tree (`src/sha256.rs`), the half of #2 that waits on
   nothing. `EFI_HASH2` is an optional driver stack, the same trap `EFI_HTTP`
   already set here — code written against a protocol firmware is allowed to

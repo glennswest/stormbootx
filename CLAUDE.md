@@ -36,6 +36,13 @@ rustc --edition 2021 --test src/sha256.rs -o $CARGO_TARGET_DIR/sha256-test && \
 Anything that gives that module a dependency on the rest of the crate takes
 those vectors out of reach. Don't.
 
+`Cargo.lock` is tracked, as it should be for anything that produces a binary.
+Without it every build resolved fresh, and this is a firmware binary whose
+whole dependency surface is two crates that move: a `cargo build` on 2026-09-02
+offered `uefi` 0.40 against the 0.39 the code was written for. Nothing here
+should change under a build nobody asked to change it. Bump the pin
+deliberately, in its own commit, and rebuild.
+
 `./scripts/build-boot-agent.sh` writes the GPT/ESP image to `/build/images`.
 
 ## Version locations
