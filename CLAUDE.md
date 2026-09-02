@@ -2,7 +2,7 @@
 
 A UEFI application that attaches a remote image over NVMe/TCP and publishes it
 as `EFI_BLOCK_IO_PROTOCOL`, so the firmware's own partition, FAT and boot
-manager machinery boots a disk that is not in the chassis. 45 KB, `no_std`, one
+manager machinery boots a disk that is not in the chassis. 57 KB, `no_std`, one
 firmware protocol dependency (`EFI_TCP4`).
 
 Read the cross-project rules in `../CLAUDE.md` first — in particular **build on
@@ -90,13 +90,10 @@ These have each cost a debugging session. Do not "simplify" them away.
 - [x] #1 — discover the portal over DNS SRV/TXT (`_nvme-disc._tcp.<domain>`)
 - [x] #3 (the load-bearing half) — every failure path falls through to the
       local disk instead of stopping
-
-### In progress
-
-- [ ] SHA-256 in-tree — the one part of #2 that is not blocked on anything.
-      `EFI_HASH2` is an optional driver stack this cannot assume, the same trap
-      as `EFI_HTTP`, so the digest is computed here. Lands as a self-contained
-      `src/sha256.rs` ahead of its consumer.
+- [x] SHA-256 in-tree (`src/sha256.rs`) — the part of #2 that waited on
+      nothing. Verified on dev: 7 tests over the FIPS vectors, the padding
+      boundary and every streaming split. Unreferenced until #2 wires it up,
+      and LTO drops it, so it costs the image 0 bytes today.
 
 ### Blocked on other repos
 
@@ -107,11 +104,12 @@ These have each cost a debugging session. Do not "simplify" them away.
 - [ ] #4 — registration by service tag against a `BootHost` object. The client
       half is small; the server half (a registration endpoint, a service-tag
       key, a `bootAgent` field) is filed as **stormnetboot#8**.
-- [ ] #2 — self-update of the boot media. Deliberately gated on #4: updating to
-      "whatever was on the last image attached" is exactly the uncontrolled
-      update this must not become. Needs SHA-256 in-tree first — `EFI_HASH2` is
-      another optional driver stack this cannot assume, the same trap as
-      `EFI_HTTP`.
+- [ ] #2 — self-update of the boot media. SHA-256 is done; what is left is
+      gated on #4, because updating to "whatever was on the last image
+      attached" is exactly the uncontrolled update this must not become. The
+      next piece that needs no one else is hashing a file through
+      `EFI_FILE_PROTOCOL` a buffer at a time — the streaming API is already
+      shaped for it.
 
 ## Status
 

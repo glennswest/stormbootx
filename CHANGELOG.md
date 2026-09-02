@@ -13,8 +13,11 @@
   either case and surrounding whitespace, and of nothing else: a short, long
   or non-hex stamp is not a match, and #2 reads "not a match" as "do not
   swap". The module names no `crate::` item and touches only `core`, so
-  `rustc --test src/sha256.rs` runs the FIPS vectors against it despite the
-  crate having no host target — see the note in the module header.
+  `rustc --edition 2021 --test src/sha256.rs` runs the FIPS vectors against it
+  despite the crate having no host target — see the note in the module header.
+  Verified on dev: 7 tests over the FIPS vectors, the 55/56/64-byte padding
+  boundary and every streaming split, 0 failed. Nothing references it yet, so
+  LTO drops it and the image is the same size it was.
 - **fix:** `config::write_file` claimed to truncate and did not. `FileMode::
   CreateReadWrite` opens an existing file without truncating and seeking to the
   new end does not shorten it, so a shrinking rewrite left the tail of the
