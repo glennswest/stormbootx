@@ -243,10 +243,9 @@ impl fmt::Debug for Digest {
 mod tests {
     use super::*;
 
-    extern crate alloc;
-    use alloc::format;
-    use alloc::string::String;
-    use alloc::vec;
+    // These only ever build under `rustc --test`, which is a std build — the
+    // crate itself compiles this module out entirely. So the std prelude is
+    // available here and `extern crate alloc` is not needed.
 
     fn hex(data: &[u8]) -> String {
         format!("{}", digest(data))
@@ -312,7 +311,7 @@ ijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu";
     /// partial block, spilling across a boundary, and the remainder tail.
     #[test]
     fn streaming_matches_one_shot() {
-        let data: vec::Vec<u8> = (0..1000u32).map(|i| (i % 251) as u8).collect();
+        let data: Vec<u8> = (0..1000u32).map(|i| (i % 251) as u8).collect();
         let want = digest(&data);
 
         for chunk in [1usize, 3, 7, 31, 63, 64, 65, 127, 128, 999, 1000] {
