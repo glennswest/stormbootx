@@ -32,7 +32,9 @@ use alloc::vec::Vec;
 use uefi::boot::{self, ScopedProtocol};
 use uefi::proto::device_path::DevicePath;
 use uefi::proto::loaded_image::LoadedImage;
-use uefi::proto::media::file::{File, FileAttribute, FileMode, FileType, RegularFile};
+use uefi::proto::media::file::{
+    File, FileAttribute, FileInfo, FileMode, FileType, RegularFile,
+};
 use uefi::proto::media::fs::SimpleFileSystem;
 use uefi::{CStr16, Handle};
 
@@ -274,14 +276,59 @@ pub fn write_file(path: &str, body: &[u8]) -> Result<(), String> {
         FileType::Dir(_) => return Err("path is a directory".into()),
     };
 
-    // Truncate: an update that shrinks the file must not leave the tail of the
-    // previous one behind, which would still parse and could still be valid.
     file.set_position(0).ok();
     file.write(body).map_err(|e| format!("write: {e:?}"))?;
-    let end = body.len() as u64;
-    let _ = file.set_position(end);
+    truncate(&mut file, body.len() as u64)?;
     file.flush().map_err(|e| format!("flush: {e:?}"))?;
     Ok(())
+}
+
+/// Shorten a file to `len`.
+///
+/// An update that shrinks a file must not leave the tail of the previous one
+/// behind: the leftover still parses, and a stale `stamp` or `portal` line
+/// surviving past the value that replaced it is a machine that attaches
+/// somewhere nobody chose.
+///
+/// `FileMode::CREATE_READ_WRITE` on a file that already exists opens it — it
+/// does not truncate — and seeking to the new end does not shorten it either.
+/// The only thing that does is `SetInfo` with a smaller `FileSize`, and since
+/// `FileInfo` has no setters that means rebuilding it around the existing
+/// times, attribute and **name**: a `SetInfo` whose `FileName` differs is a
+/// rename, so the name has to be carried across unchanged.
+fn truncate(file: &mut RegularFile, len: u64) -> Result<(), String> {
+    let info = file
+        .get_boxed_info::<FileInfo>()
+        .map_err(|e| format!("get file info: {e:?}"))?;
+    if info.file_size() <= len {
+        return Ok(());
+    }
+
+    // `FileInfo` requires 8-byte alignment and `new` writes into borrowed
+    // storage; an array of u64 is aligned by its type, where a Vec<u8> would
+    // not be. 384 bytes is the fixed header plus room for any name that fits
+    // on this ESP.
+    let mut storage = [0u64; 48];
+    let bytes = unsafe {
+        core::slice::from_raw_parts_mut(
+            storage.as_mut_ptr().cast::<u8>(),
+            core::mem::size_of_val(&storage),
+        )
+    };
+    let shorter = FileInfo::new(
+        bytes,
+        len,
+        0, // physical size is derived from file_size and cannot be set
+        *info.create_time(),
+        *info.last_access_time(),
+        *info.modification_time(),
+        info.attribute(),
+        info.file_name(),
+    )
+    .map_err(|e| format!("build file info: {e:?}"))?;
+
+    file.set_info(shorter)
+        .map_err(|e| format!("truncate to {len}: {e:?}"))
 }
 
 /// Unused today; kept because the update path needs a device path to name the

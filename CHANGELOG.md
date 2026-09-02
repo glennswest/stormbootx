@@ -2,7 +2,14 @@
 
 ## [Unreleased]
 
-<!-- New unreleased changes go here -->
+### 2026-09-02
+- **fix:** `config::write_file` claimed to truncate and did not. `FileMode::
+  CreateReadWrite` opens an existing file without truncating and seeking to the
+  new end does not shorten it, so a shrinking rewrite left the tail of the
+  previous file behind — where a stale `stamp` or `portal` line surviving past
+  the value that replaced it is a machine attaching somewhere nobody chose. It
+  now does the `SetInfo` with a smaller `FileSize` that actually shortens a
+  file. Latent (nothing calls it until #2), found while writing up #2.
 
 ## [v0.2.0] — 2026-09-02
 
