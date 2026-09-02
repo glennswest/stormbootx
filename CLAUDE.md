@@ -78,16 +78,20 @@ These have each cost a debugging session. Do not "simplify" them away.
 ### Blocked on other repos
 
 - [ ] #3 (the rest) — the version compare needs `stormblock-pallet-format`
-      (stormblock) linked in, and a marker that a booted stormcos node writes
-      where firmware can read it before any OS runs. Neither exists yet.
+      (stormblock) linked in for the intended version, and a marker that a
+      booted stormcos node writes where firmware can read it before any OS
+      runs. The marker is filed as **stormcos#30** with a proposed shape.
 - [ ] #4 — registration by service tag against a `BootHost` object. The client
       half is small; the server half (a registration endpoint, a service-tag
-      key, a `bootAgent` field) is stormnetboot work.
+      key, a `bootAgent` field) is filed as **stormnetboot#8**.
 - [ ] #2 — self-update of the boot media. Deliberately gated on #4: updating to
       "whatever was on the last image attached" is exactly the uncontrolled
-      update this must not become.
+      update this must not become. Needs SHA-256 in-tree first — `EFI_HASH2` is
+      another optional driver stack this cannot assume, the same trap as
+      `EFI_HTTP`.
 
 ## Status
 
-Built and verified as an artifact; **not yet run on hardware**. The first line
-to watch on a real machine is `tcp4 : available`.
+v0.2.0. Built and verified as an artifact; **not yet run on hardware**. The
+first line to watch on a real machine is `tcp4 : available` — and on a model
+nobody has tried, run `tcp4probe` before writing an agent stick at all.
