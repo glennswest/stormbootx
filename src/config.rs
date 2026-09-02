@@ -16,10 +16,14 @@
 //! Resolution order, first hit wins:
 //!
 //!   1. `\stormboot\stormboot.conf` on the volume we booted from
-//!   2. compiled-in defaults
+//!   2. DNS — `_nvme-disc._tcp.<zone>`, see `dns.rs`
+//!   3. compiled-in defaults
 //!
-//! DNS-based discovery belongs above (2) and is not here yet; see the module
-//! note in `main.rs`.
+//! A `portal` line in the file **pins** the machine: it is the override for a
+//! box that must attach somewhere specific, and it disables discovery outright
+//! rather than merely outranking it. A stick with no `portal` line discovers,
+//! which is the case that makes a machine survive being moved to another
+//! network with nothing edited.
 
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -45,8 +49,24 @@ pub struct Config {
     /// Digest of the `BOOTX64.EFI` currently on this media, if it has been
     /// stamped. Absent on a stick written by `dd` and never updated.
     pub stamp: Option<String>,
-    /// Where the config came from, for the console line.
-    pub source: &'static str,
+    /// Where the target came from, for the console line. Worth spelling out:
+    /// "the file said so" and "a resolver said so" are different failures when
+    /// a machine attaches somewhere unexpected.
+    pub source: String,
+}
+
+/// What the binary falls back to when nothing else answers.
+///
+/// A floor, not a configuration. Every field here is something that has
+/// already changed under this project once.
+pub struct Defaults {
+    pub portal: [u8; 4],
+    pub port: u16,
+    pub nqn: &'static str,
+    pub nsid: u32,
+    /// The DNS zone holding the `_nvme-disc._tcp` record. Deliberately not a
+    /// per-network domain — see the note in `dns.rs`.
+    pub zone: &'static str,
 }
 
 pub fn parse_ipv4(s: &str) -> Option<[u8; 4]> {
@@ -124,47 +144,87 @@ fn field(text: &str, key: &str) -> Option<String> {
     None
 }
 
-/// Resolve where to attach.
+/// Resolve where to attach: file, then DNS, then the compiled floor.
 ///
-/// Never fails: a stick with no config still boots against the compiled
-/// defaults, which is what makes a blank `dd`-written stick useful before
-/// anyone has edited anything onto it.
-pub fn resolve(
-    default_portal: [u8; 4],
-    default_port: u16,
-    default_nqn: &str,
-    default_nsid: u32,
-) -> Config {
+/// Never fails. A stick with no config, no resolver and no records still boots
+/// against the compiled defaults, which is what makes a blank `dd`-written
+/// stick useful before anyone has edited anything onto it — and, more
+/// importantly, what keeps a DNS outage from being a boot outage.
+///
+/// `note` takes the running commentary, so discovery is visible on the console
+/// without any of it being fatal.
+pub fn resolve(d: &Defaults, note: &mut dyn FnMut(&str)) -> Config {
     let mut cfg = Config {
-        portal: default_portal,
-        port: default_port,
-        nqn: default_nqn.to_string(),
-        nsid: default_nsid,
+        portal: d.portal,
+        port: d.port,
+        nqn: d.nqn.to_string(),
+        nsid: d.nsid,
         stamp: None,
-        source: "compiled defaults",
+        source: "compiled defaults".to_string(),
     };
 
-    let Some(text) = read_file(CONF_PATH) else {
-        return cfg;
-    };
+    let text = read_file(CONF_PATH);
+    let file = text.as_deref();
 
     // A config that exists but is unreadable in part should still contribute
     // what it does carry: a typo in `nsid` must not silently move the portal
-    // back to a compiled value the operator thought they had replaced.
-    if let Some(p) = field(&text, "portal").and_then(|s| parse_ipv4(&s)) {
+    // back to a value the operator thought they had replaced.
+    let pinned = file.and_then(|t| field(t, "portal")).and_then(|s| parse_ipv4(&s));
+    let file_port = file.and_then(|t| field(t, "port")).and_then(|s| s.parse().ok());
+    let file_nqn = file.and_then(|t| field(t, "nqn"));
+    let file_nsid = file.and_then(|t| field(t, "nsid")).and_then(|s| s.parse().ok());
+    let zone = file
+        .and_then(|t| field(t, "zone"))
+        .unwrap_or_else(|| d.zone.to_string());
+    // `discover = no` pins a machine to the compiled defaults without having to
+    // name a portal that would then also need maintaining.
+    let discover_off = file
+        .and_then(|t| field(t, "discover"))
+        .is_some_and(|v| matches!(v.as_str(), "no" | "false" | "0" | "off"));
+
+    cfg.stamp = file.and_then(|t| field(t, "stamp"));
+
+    if let Some(p) = pinned {
+        // Pinned. Nothing is asked and nothing can move this machine.
         cfg.portal = p;
+        cfg.source = format!("{CONF_PATH} (pinned)");
+    } else if discover_off {
+        note("discovery   : disabled by the config file");
+    } else {
+        note(&format!("discovery   : {}.{zone}", crate::dns::SERVICE));
+        match crate::dns::discover(&zone, note) {
+            Some(found) => {
+                let [a, b, c, dd] = found.resolver;
+                cfg.portal = found.portal;
+                cfg.port = found.port;
+                if let Some(n) = found.nqn {
+                    cfg.nqn = n;
+                }
+                if let Some(n) = found.nsid {
+                    cfg.nsid = n;
+                }
+                cfg.source = format!("DNS via {a}.{b}.{c}.{dd}");
+            }
+            None => note("  no answer; falling back"),
+        }
     }
-    if let Some(p) = field(&text, "port").and_then(|s| s.parse().ok()) {
+
+    // The file outranks discovery field by field, so a zone that publishes a
+    // portal can still have its NQN or namespace overridden on one stick
+    // without pinning that stick's address as well.
+    let overridden = file_port.is_some() || file_nqn.is_some() || file_nsid.is_some();
+    if let Some(p) = file_port {
         cfg.port = p;
     }
-    if let Some(n) = field(&text, "nqn") {
+    if let Some(n) = file_nqn {
         cfg.nqn = n;
     }
-    if let Some(n) = field(&text, "nsid").and_then(|s| s.parse().ok()) {
+    if let Some(n) = file_nsid {
         cfg.nsid = n;
     }
-    cfg.stamp = field(&text, "stamp");
-    cfg.source = CONF_PATH;
+    if overridden && pinned.is_none() {
+        cfg.source = format!("{} + {CONF_PATH}", cfg.source);
+    }
     cfg
 }
 

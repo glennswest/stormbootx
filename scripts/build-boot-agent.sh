@@ -9,11 +9,12 @@
 #
 #   dd if=<output> of=/dev/sdX bs=4M conv=fsync
 #
-# The target lives in \stormboot\stormboot.conf on the media, not in the
-# binary. That is deliberate: over one afternoon the portal moved host and then
-# changed NQN, and each compiled-in value meant a machine that could not boot
-# until someone rebuilt and rewrote a stick. Editing four lines on the ESP is
-# the fix now.
+# By default the stick names no target at all: it discovers the portal from the
+# network's own resolver (SRV/TXT _nvme-disc._tcp), so one image works on every
+# network and a portal that moves is a zone edit rather than a visit to every
+# machine. --pin writes the portal into \stormboot\stormboot.conf for a box
+# that must attach somewhere specific; --probe builds a diagnostic stick that
+# boots tcp4probe instead of the agent.
 #
 # Runs ON the build box (dev.g8.lo). Output goes to /build/images — never
 # /tmp, which on dev is a tmpfs sized at half of RAM.
@@ -26,29 +27,38 @@ PORTAL="192.168.31.202"                     # forge.g16.lo, eth1 (MTU 9000)
 PORT="4420"
 NQN="nqn.2026-09.lo.g16:stormcos"
 NSID="2"
+ZONE="storm.lo"
 ESP_MIB="4"
 OUTDIR="/build/images"
 OUTPUT=""
 BIN=""
+PIN="no"
+PROBE="no"
 
 usage() {
-    sed -n '2,17p' "$0" | sed 's/^# \?//'
+    sed -n '2,20p' "$0" | sed 's/^# \?//'
     cat <<'USAGE'
 
 Options:
-  --portal ADDR    NVMe/TCP portal (default 192.168.31.202, forge.g16.lo)
+  --pin            write the portal into the config, disabling discovery
+  --probe          boot tcp4probe instead of the agent (a diagnostic stick)
+  --zone NAME      DNS zone holding _nvme-disc._tcp (default storm.lo)
+  --portal ADDR    NVMe/TCP portal, with --pin (default 192.168.31.202)
   --port N         portal port (default 4420)
   --nqn NQN        subsystem NQN (default nqn.2026-09.lo.g16:stormcos)
   --nsid N         namespace (default 2)
   --size MIB       ESP size (default 4; FAT16 needs >=4085 clusters)
-  --binary PATH    prebuilt stormbootx.efi (default: build it)
+  --binary PATH    prebuilt .efi (default: build it)
   --output PATH    image path (default /build/images/stormbootx.img)
 USAGE
 }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --portal) PORTAL="$2"; shift 2 ;;
+        --pin)    PIN="yes"; shift ;;
+        --probe)  PROBE="yes"; shift ;;
+        --zone)   ZONE="$2"; shift 2 ;;
+        --portal) PORTAL="$2"; PIN="yes"; shift 2 ;;
         --port)   PORT="$2"; shift 2 ;;
         --nqn)    NQN="$2"; shift 2 ;;
         --nsid)   NSID="$2"; shift 2 ;;
@@ -71,21 +81,27 @@ done
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
+WANT="stormbootx"
+[[ "$PROBE" == "yes" ]] && WANT="tcp4probe"
+
 if [[ -z "$BIN" ]]; then
-    say "building stormbootx for x86_64-unknown-uefi"
-    # Excluded from the workspace: a bare `cargo build` would try to build a
-    # no_std UEFI binary for the host and fail unhelpfully.
-    ( cd "$ROOT" && cargo build --release --target x86_64-unknown-uefi \
-        --manifest-path crates/stormbootx/Cargo.toml )
-    BIN="${CARGO_TARGET_DIR:-$ROOT/target}/x86_64-unknown-uefi/release/stormbootx.efi"
+    say "building $WANT for x86_64-unknown-uefi"
+    ( cd "$ROOT" && cargo build --release --target x86_64-unknown-uefi --bin "$WANT" )
+    BIN="${CARGO_TARGET_DIR:-$ROOT/target}/x86_64-unknown-uefi/release/$WANT.efi"
 fi
-[[ -f "$BIN" ]] || die "no stormbootx.efi at $BIN"
+[[ -f "$BIN" ]] || die "no $WANT.efi at $BIN"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-cat > "$WORK/stormboot.conf" <<CONF
-# stormbootx — edit this instead of rebuilding the binary.
+if [[ "$PIN" == "yes" ]]; then
+    cat > "$WORK/stormboot.conf" <<CONF
+# stormbootx — this stick is PINNED.
+#
+# A portal line disables discovery outright: this machine attaches here and
+# nowhere else, wherever it is plugged in. Delete the portal line to put it
+# back on DNS discovery.
+#
 # Read from \stormboot\stormboot.conf on the media this booted from, found via
 # EFI_LOADED_IMAGE_PROTOCOL, so it is exactly the volume that was booted and
 # never a guess at which ESP is ours.
@@ -94,6 +110,24 @@ port   = $PORT
 nqn    = $NQN
 nsid   = $NSID
 CONF
+else
+    cat > "$WORK/stormboot.conf" <<CONF
+# stormbootx — this stick names no target and discovers one.
+#
+# It asks whichever resolver DHCP hands it for the SRV and TXT records at
+# _nvme-disc._tcp.$ZONE, so the same image boots on every network and a portal
+# that moves is a zone edit rather than a visit to every machine. Publish the
+# records with scripts/publish-portal-dns.sh.
+#
+# To pin this machine instead, add a portal line — that turns discovery off:
+#   portal = $PORTAL
+#
+# port, nqn and nsid may be set here on their own: they override discovery
+# field by field without pinning the address.
+zone     = $ZONE
+discover = yes
+CONF
+fi
 
 # FAT16 with 512-byte clusters: FAT32 needs ~33 MB of filesystem before it has
 # enough clusters to be legal, which is eight times the whole image. FAT16 at
@@ -114,14 +148,20 @@ start=2048, size=$(( ESP_MIB * 2048 )), type=C12A7328-F81F-11D2-BA4B-00A0C93EC93
 EOF
 dd if="$ESP" of="$OUTPUT" bs=1M seek=1 conv=notrunc status=none
 
-say "agent   $(du -h "$BIN" | cut -f1)  $BIN"
+say "binary  $(du -h "$BIN" | cut -f1)  $BIN"
 say "image   $(du -h "$OUTPUT" | cut -f1)  $OUTPUT"
-say "target  nvme-tcp://$PORTAL:$PORT/$NQN?nsid=$NSID"
+if [[ "$PROBE" == "yes" ]]; then
+    say "boots   tcp4probe — reports whether this firmware carries a TCP/IP stack"
+elif [[ "$PIN" == "yes" ]]; then
+    say "target  nvme-tcp://$PORTAL:$PORT/$NQN?nsid=$NSID  (pinned)"
+else
+    say "target  discovered from _nvme-disc._tcp.$ZONE"
+fi
 cat <<EOF
 
   Write it:
     dd if=$OUTPUT of=/dev/sdX bs=4M conv=fsync
 
   Retarget it without rebuilding — mount the ESP and edit
-  \stormboot\stormboot.conf.
+  \stormboot\stormboot.conf, or move the DNS record.
 EOF

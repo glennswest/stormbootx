@@ -26,6 +26,7 @@ extern crate alloc;
 
 mod blockio;
 mod config;
+mod dns;
 mod nvme;
 mod registry;
 mod smbios;
@@ -53,10 +54,21 @@ const GOLDEN: &str = "stormcos-edge";
 /// *this* binary rather than in a claim that returned the wrong thing. Set
 /// `USE_REGISTRY` once the volume being served is a per-machine clone.
 const USE_REGISTRY: bool = false;
-const DIRECT_PORTAL: [u8; 4] = [192, 168, 31, 202]; // forge.g16.lo, eth1 (MTU 9000)
-const DIRECT_PORT: u16 = 4420;
-const DIRECT_NQN: &str = "nqn.2026-09.lo.g16:stormcos";
-const DIRECT_NSID: u32 = 2; // drives[1] = stormcos-sno-10.21.img
+
+/// The floor under discovery: what to attach when no resolver and no config
+/// file says otherwise.
+///
+/// `zone` is the one field here that is not expected to move. Every network's
+/// microdns answers `_nvme-disc._tcp.storm.lo` with its own portal, so the
+/// name stays the same as a machine moves and only the answer changes — see
+/// the note in `dns.rs` for why that beats asking DHCP for a domain.
+const DEFAULTS: config::Defaults = config::Defaults {
+    portal: [192, 168, 31, 202], // forge.g16.lo, eth1 (MTU 9000)
+    port: 4420,
+    nqn: "nqn.2026-09.lo.g16:stormcos",
+    nsid: 2, // drives[1] = stormcos-sno-10.21.img
+    zone: "storm.lo",
+};
 
 fn banner(line: &str) {
     uefi::println!("{line}");
@@ -101,11 +113,12 @@ fn run() -> Result<(), String> {
             }
         }
     } else {
-        // Compiled values are only the floor. \stormboot\stormboot.conf on the
-        // media overrides them, so a portal that moves is a text edit rather
-        // than a rebuild — which it has been twice already.
-        let cfg = config::resolve(DIRECT_PORTAL, DIRECT_PORT, DIRECT_NQN, DIRECT_NSID);
-        uefi::println!("config      : {}", cfg.source);
+        // Compiled values are only the floor. A `portal` line in
+        // \stormboot\stormboot.conf pins the machine; otherwise DNS is asked,
+        // so a portal that moves is a zone edit rather than a visit to every
+        // stick — which it has been twice already.
+        let cfg = config::resolve(&DEFAULTS, &mut |line| uefi::println!("{line}"));
+        uefi::println!("target      : {}", cfg.source);
         registry::Attach {
             address: cfg.portal,
             port: cfg.port,

@@ -3,6 +3,24 @@
 ## [Unreleased]
 
 ### 2026-09-02
+- **feat:** the portal is discovered over DNS (#1). `_nvme-disc._tcp.<zone>`
+  SRV and TXT, resolved over DNS/TCP (RFC 7766) through the existing `tcp4.rs`,
+  against the resolvers `EFI_IP4_CONFIG2` holds from DHCP. Resolution order is
+  now config file, then DNS, then the compiled floor; a `portal` line in the
+  file pins a machine and turns discovery off.
+- **feat:** `scripts/publish-portal-dns.sh` publishes the A/SRV/TXT records to a
+  network's microdns, and `tests/dns-wire/` exercises the wire parser — the one
+  part of this that can be tested without a machine to boot — against a real
+  resolver and against compression pointers, pointer loops, priority/weight
+  selection and every truncation of a valid answer.
+- **feat:** `Tcp4Socket::connect_within` bounds a connect, so a resolver that is
+  not there costs five seconds rather than thirty. The attach keeps the long
+  budget: by then there is nothing to fall through to.
+- **fix:** `scripts/build-boot-agent.sh` pointed `cargo build` at
+  `crates/stormbootx/Cargo.toml`, which does not exist in this repo — the script
+  could not have built anything. It now takes `--pin` (write a portal and
+  disable discovery) and `--probe` (a stick that boots `tcp4probe`), and
+  defaults to a stick that names no target at all.
 - **feat:** `tcp4probe`, a second UEFI binary (24 KB) that answers "will
   stormbootx run on this server model?" before anyone writes a stick (#5). It
   surveys the nine protocols of the network stack layer by layer, runs a

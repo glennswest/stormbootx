@@ -224,10 +224,28 @@ pub struct Tcp4Socket {
     tcp: *mut Tcp4Protocol,
     /// Left over from a receive that returned more than the caller wanted.
     pending: Vec<u8>,
+    /// How long `pump` waits for one operation, in `POLL_INTERVAL` turns.
+    turns: u32,
 }
 
+/// How long each `Poll` turn stalls. 500us matches the host client.
+const POLL_INTERVAL_US: u64 = 500;
+
 impl Tcp4Socket {
+    /// Connect, waiting up to 30s on each operation — the NVMe path's budget.
     pub fn connect(remote: [u8; 4], port: u16) -> Result<Self, String> {
+        Self::connect_within(remote, port, 30)
+    }
+
+    /// Connect with a per-operation timeout of `secs`.
+    ///
+    /// Anything on the *discovery* path wants a short one. A DNS server that is
+    /// not there must cost a few seconds and then fall through, not thirty:
+    /// discovery is an optimisation over the compiled defaults, and a boot path
+    /// that spends half a minute proving the network is absent has already
+    /// failed at its job. The attach itself keeps the long budget, because by
+    /// then there is nothing to fall through to.
+    pub fn connect_within(remote: [u8; 4], port: u16, secs: u32) -> Result<Self, String> {
         let handles = boot::locate_handle_buffer(SearchType::ByProtocol(&TCP4_SERVICE_BINDING))
             .map_err(|e| format!("no EFI_TCP4 service binding: {e:?}"))?;
         let sb_handle = *handles.first().ok_or("no TCP4 service binding handles")?;
@@ -255,6 +273,7 @@ impl Tcp4Socket {
             child,
             tcp,
             pending: Vec::new(),
+            turns: (secs as u64 * 1_000_000 / POLL_INTERVAL_US) as u32,
         };
         sock.configure(remote, port)?;
         sock.do_connect()?;
@@ -360,8 +379,7 @@ impl Tcp4Socket {
     /// `Poll` is what gives the TCP driver cycles; without it nothing ever
     /// completes and this waits forever.
     fn pump(&self, token: &Tcp4CompletionToken, what: &str) -> Result<(), String> {
-        // ~30s at 500us per turn, matching the host client's I/O timeout.
-        for _ in 0..60_000 {
+        for _ in 0..self.turns {
             unsafe { let _ = ((*self.tcp).poll)(self.tcp); };
             if signalled(token.event) {
                 return if token.status == Status::SUCCESS {
@@ -370,7 +388,7 @@ impl Tcp4Socket {
                     Err(format!("{what} failed: {:?}", token.status))
                 };
             }
-            boot::stall(core::time::Duration::from_micros(500));
+            boot::stall(core::time::Duration::from_micros(POLL_INTERVAL_US));
         }
         Err(format!("{what} timed out"))
     }
