@@ -18,6 +18,14 @@
 //! Deliberately not used: EFI_HTTP (a driver stack firmware may not carry, when
 //! one HTTP request over the TCP4 we already need is a hundred lines), and PXE
 //! or TFTP anywhere at all.
+//!
+//! **Nothing in here is fatal.** Every failure — no service tag, no TCP stack,
+//! no resolver, no portal, a target that refuses the connection — ends in the
+//! same place: the firmware moves on to the local disk and the machine boots
+//! what it already has. A boot path that needs the network in order to boot
+//! *without* the network turns one provisioning outage into a fleet outage,
+//! because every machine that reboots for any reason during it stays down. See
+//! `fall_through`.
 
 #![no_main]
 #![no_std]
@@ -191,14 +199,45 @@ fn main() -> Status {
             uefi::boot::stall(core::time::Duration::from_secs(5));
             Status::SUCCESS
         }
-        Err(err) => {
-            uefi::println!("");
-            uefi::println!("RESULT: FAILED — {err}");
-            uefi::println!("============================================================");
-            // Long enough to read over a serial console before the firmware
-            // moves on to the next boot option.
-            uefi::boot::stall(core::time::Duration::from_secs(30));
-            Status::ABORTED
-        }
+        Err(err) => fall_through(&err),
     }
+}
+
+/// Nothing here is fatal. Give up on the network and let the machine boot
+/// itself.
+///
+/// This is the policy, not an error handler: **a boot path must never need the
+/// network in order to boot without it.** An agent that stops when the portal
+/// is unreachable turns one provisioning outage into a fleet outage — every
+/// machine that reboots for any reason during it stays down, and the blast
+/// radius of a maintenance window on one server becomes the whole estate.
+/// Falling through costs a machine one stale boot; stopping costs the fleet.
+///
+/// `ABORTED` rather than `SUCCESS` because it is the conventional signal to
+/// the boot manager that this option did not boot anything and the next one
+/// should be tried. It is the fall-through, not a complaint.
+fn fall_through(err: &str) -> Status {
+    let disks = blockio::local_disks();
+
+    uefi::println!("");
+    uefi::println!("no network boot: {err}");
+    if disks > 0 {
+        // Short. This runs on every reboot while a portal is down, and a boot
+        // path that adds half a minute to each of them is its own outage.
+        uefi::println!(
+            "RESULT: falling through to the local disk ({disks} found). \
+             The machine boots what it already has."
+        );
+        uefi::boot::stall(core::time::Duration::from_secs(5));
+    } else {
+        // Nothing to fall through to, so there is time to read this and it is
+        // the one case where a human is definitely needed.
+        uefi::println!(
+            "RESULT: nothing to fall through to — this machine has no local disk \
+             and could not reach a portal."
+        );
+        uefi::boot::stall(core::time::Duration::from_secs(30));
+    }
+    uefi::println!("============================================================");
+    Status::ABORTED
 }

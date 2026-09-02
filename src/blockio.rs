@@ -17,6 +17,7 @@ use alloc::format;
 use alloc::string::String;
 use core::ptr;
 
+use uefi::boot::{self, SearchType};
 use uefi::Status;
 use uefi_raw::protocol::block::{BlockIoMedia, BlockIoProtocol};
 use uefi_raw::Boolean;
@@ -123,6 +124,45 @@ unsafe extern "efiapi" fn flush_blocks(_this: *mut BlockIoProtocol) -> Status {
     // controller has completed the command, so there is nothing buffered here
     // to flush.
     Status::SUCCESS
+}
+
+/// How many disks this machine could boot on its own.
+///
+/// Counts non-removable, non-partition block devices — the whole-disk handles,
+/// not the GPT partitions the firmware's partition driver produces from them,
+/// and not the stick this is running off.
+///
+/// This exists so the fall-through message can be honest. "Falling through to
+/// the local disk" is advice, not an outcome; on a machine with nothing
+/// installed it is the wrong thing to print, and an operator reading a serial
+/// console needs to know which of the two situations they are in before they
+/// start looking at the network.
+pub fn local_disks() -> usize {
+    let Ok(handles) = boot::locate_handle_buffer(SearchType::ByProtocol(&BlockIoProtocol::GUID))
+    else {
+        return 0;
+    };
+    handles
+        .iter()
+        .filter(|h| {
+            let Some(p) = crate::tcp4::handle_protocol(h.as_ptr(), &BlockIoProtocol::GUID) else {
+                return false;
+            };
+            let proto = p as *const BlockIoProtocol;
+            unsafe {
+                let media = (*proto).media;
+                if media.is_null() {
+                    return false;
+                }
+                // A logical partition is a view of a disk already counted, and
+                // removable media is the stick this booted from (or an empty
+                // optical drive, which is worse than useless to fall back to).
+                bool::from((*media).media_present)
+                    && !bool::from((*media).logical_partition)
+                    && !bool::from((*media).removable_media)
+            }
+        })
+        .count()
 }
 
 /// Install BlockIO on a new handle backed by `ns`.

@@ -3,6 +3,14 @@
 ## [Unreleased]
 
 ### 2026-09-02
+- **BREAKING:** no failure stops the boot any more (#3). Every path — no service
+  tag, no TCP stack, no resolver, no portal, a target that refuses — falls
+  through to the local disk, because a boot path that needs the network in
+  order to boot *without* the network turns one provisioning outage into a
+  fleet outage. The console says which case it is, and `blockio::local_disks`
+  counts what there actually is to fall back to so the message is honest: five
+  seconds when a local disk exists, thirty when nothing does and a human is
+  genuinely needed.
 - **feat:** the portal is discovered over DNS (#1). `_nvme-disc._tcp.<zone>`
   SRV and TXT, resolved over DNS/TCP (RFC 7766) through the existing `tcp4.rs`,
   against the resolvers `EFI_IP4_CONFIG2` holds from DHCP. Resolution order is
