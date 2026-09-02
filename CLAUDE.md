@@ -75,6 +75,13 @@ These have each cost a debugging session. Do not "simplify" them away.
 - [x] #3 (the load-bearing half) — every failure path falls through to the
       local disk instead of stopping
 
+### In progress
+
+- [ ] SHA-256 in-tree — the one part of #2 that is not blocked on anything.
+      `EFI_HASH2` is an optional driver stack this cannot assume, the same trap
+      as `EFI_HTTP`, so the digest is computed here. Lands as a self-contained
+      `src/sha256.rs` ahead of its consumer.
+
 ### Blocked on other repos
 
 - [ ] #3 (the rest) — the version compare needs `stormblock-pallet-format`
