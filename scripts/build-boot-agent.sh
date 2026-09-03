@@ -181,9 +181,14 @@ say "image   $(du -h "$OUTPUT" | cut -f1)  $OUTPUT"
 if [[ "$PROBE" == "yes" ]]; then
     say "boots   tcp4probe — reports whether this firmware carries a TCP/IP stack"
 elif [[ "$PIN" == "yes" ]]; then
-    say "target  nvme-tcp://$PORTAL:$PORT/$NQN?nsid=$NSID  (pinned)"
+    say "target  nvme-tcp://$PORTAL:$PORT/$NQN?nsid=$NSID  (pinned, no claim knobs)"
+elif [[ "$DISCOVER" == "yes" ]]; then
+    say "portal  discovered from _nvme-disc._tcp.$ZONE"
+    say "image   claimed as boothost/<service tag> at the portal:$API_PORT"
 else
-    say "target  discovered from _nvme-disc._tcp.$ZONE"
+    say "portal  $PORTAL:$PORT  (named, no DNS)"
+    say "image   claimed as boothost/<service tag> at $PORTAL:$API_PORT"
+    say "        falling back to $NQN?nsid=$NSID if the claim cannot be reached"
 fi
 cat <<EOF
 
