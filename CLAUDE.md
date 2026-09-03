@@ -117,6 +117,14 @@ These have each cost a debugging session. Do not "simplify" them away.
       boundary and every streaming split. Unreferenced until #2 wires it up,
       and LTO drops it, so it costs the image 0 bytes today.
 
+### In progress
+
+- [ ] #4 — claim this machine's image by service tag. The server half landed in
+      stormblock v13.4.0: `POST /api/v1/synonyms/boothost/<tag>/claim` returns a
+      CoW clone *and* the tuple that reaches it (`attach.address/port/nqn/nsid`),
+      in one request, using the field names `attach_from` already reads. Spec is
+      stormcos `docs/BOOT.md` and the stormblock README.
+
 ### Blocked on other repos
 
 - [ ] #3 (the rest) — the version compare needs `stormblock-pallet-format`
