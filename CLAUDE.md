@@ -156,7 +156,7 @@ These have each cost a debugging session. Do not "simplify" them away.
 
 ## Status
 
-v0.2.0. Built and verified as an artifact. **First real execution: 2026-09-03**
+v0.3.0. Built and verified as an artifact. **First real execution: 2026-09-03**
 — `tcp4probe` ran under Proxmox OVMF on VM 2062 (`stormbootx-test.g8.lo`) and
 reported TCP4 available after a full `ConnectController` pass, then configured
 a TCP4 child and got as far as a connect timeout, which is the probe's own
