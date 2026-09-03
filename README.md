@@ -49,7 +49,7 @@ what is printed on the pull-out tab when someone has to find the box.
 | `tcp4.rs` | a blocking socket over the firmware's own TCP stack |
 | `nvme.rs` | the NVMe/TCP initiator |
 | `blockio.rs` | publish the namespace as a block device, then `ConnectController` |
-| `registry.rs` | claim an image from sbregistry, keyed on the service tag |
+| `registry.rs` | claim this machine's image, keyed on the service tag |
 | `dns.rs` | find the portal by asking, over DNS/TCP |
 | `config.rs` | the target: file, then DNS, then the compiled floor |
 | `tcp4probe.rs` | a second binary — will this firmware run the agent at all? |
@@ -68,9 +68,39 @@ are load-bearing:
   establishes a queue; Identify before `CC.EN` is answered with Command Sequence
   Error on a conforming target.
 
+## Which image, and where
+
+Two questions, answered in different places on purpose.
+
+**Which image** is a fleet decision — *this box runs 10.22* — so it lives next
+to the images, as a `boothost/<service tag>` synonym on the storage engine. At
+boot the agent claims it:
+
+```
+POST /api/v1/synonyms/boothost/C2NR0Q2/claim
+  -> a copy-on-write clone of the golden that machine is assigned, costing
+     nothing until it is written
+  -> and the address, NQN and NSID that reach it
+```
+
+One request, and the answer is bootable. Moving a machine to a new version is a
+`PUT` on its name — nothing on the media changes and nobody visits the machine.
+The engine's API is the same host as the portal (`api_port`, default 9090): one
+serves the bytes, the other says which bytes.
+
+It is keyed on the service tag rather than a MAC because that names the chassis
+and survives a network card being swapped. It is not in DHCP because a lease is
+not a source of truth, it does not survive a change of boot method, and one
+static string cannot answer the same name with different locations.
+
+**A claim that fails is not a failed boot.** No synonym for this machine, a 404,
+an engine that is down — the console says which and the boot continues on
+whatever resolution below produced. An image nobody has assigned beats no image.
+`claim = no` opts a stick out entirely.
+
 ## Finding the target
 
-Three sources, first hit wins.
+Where to attach. Three sources, first hit wins.
 
 ### 1. The media
 
@@ -90,6 +120,10 @@ nsid   = 2
 # with that:
 zone     = storm.lo   # where the _nvme-disc._tcp record lives
 discover = yes        # `no` pins to the compiled floor without naming an address
+
+# Claiming this machine's own image by service tag.
+api_port = 9090       # the engine API, on the same host as the portal
+claim    = yes        # `no` leaves the machine on the nqn/nsid resolved above
 ```
 
 `port`, `nqn` and `nsid` override discovery field by field, so one stick can

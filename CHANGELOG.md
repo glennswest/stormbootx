@@ -3,6 +3,25 @@
 ## [Unreleased]
 
 ### 2026-09-03
+- **feat: a machine claims its own image by service tag (#4).** Which image a
+  machine boots is a fleet decision, and it now lives next to the images as a
+  `boothost/<service tag>` synonym on the storage engine rather than on the
+  media or in DHCP. `POST /api/v1/synonyms/boothost/<tag>/claim` returns a
+  copy-on-write clone of the assigned golden *and* the address, NQN and NSID
+  reaching it, in one request — so moving a box to a new version is a `PUT` on
+  its name, with nothing on the stick to change and nobody visiting the machine.
+  Keyed on the service tag because that names the chassis and survives a NIC
+  being swapped. The engine API is the same host as the portal: `api_port`
+  (default 9090) says where, `claim = no` opts a stick out.
+
+  Verified against forge: `boothost/C2NR0Q2` → `stormcos-sno-10.22`, claim
+  answers 201 with `attach.address/port/nqn/nsid`, and that exact body parses
+  correctly — `"protocol"` is not mistaken for `"port"`, and the `?nsid=` inside
+  the returned URI is not reached before the real `nsid` key.
+
+  **A claim that fails is not a failed boot.** No synonym, a 404, an engine that
+  is down: the console says which and the boot continues on whatever resolution
+  produced, because a claim that fails must not be what keeps a fleet down.
 - **feat (registry): an attach is read in either spelling.** sbregistry answers
   `address`/`port`; stormblock answers `traddr`/`trsvcid` inside an `addresses`
   array. Both are now accepted rather than one being chosen, because the

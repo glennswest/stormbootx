@@ -62,7 +62,7 @@ deliberately, in its own commit, and rebuild.
 | `src/dns.rs` | SRV/TXT discovery of the portal over DNS/TCP |
 | `src/nvme.rs` | the NVMe/TCP initiator |
 | `src/blockio.rs` | publish the namespace as a block device, then `ConnectController` |
-| `src/registry.rs` | claim an image from sbregistry, keyed on the service tag |
+| `src/registry.rs` | claim this machine's image, keyed on the service tag |
 | `src/sha256.rs` | the digest, because `EFI_HASH2` is optional |
 | `src/config.rs` | the target, read from the media rather than compiled in |
 | `src/tcp4probe.rs` | second binary: does this machine's firmware carry TCP4? |
@@ -112,18 +112,15 @@ These have each cost a debugging session. Do not "simplify" them away.
 - [x] #1 — discover the portal over DNS SRV/TXT (`_nvme-disc._tcp.<domain>`)
 - [x] #3 (the load-bearing half) — every failure path falls through to the
       local disk instead of stopping
+- [x] #4 (the selection half) — a machine claims its own image with
+      `POST /api/v1/synonyms/boothost/<tag>/claim`. Verified against forge with
+      the real `boothost/C2NR0Q2` synonym. The *registration* half — reporting
+      memory, MACs, CPU, class, storage and storage controllers back — is still
+      open on #4, blocked on the payload the appliance accepts.
 - [x] SHA-256 in-tree (`src/sha256.rs`) — the part of #2 that waited on
       nothing. Verified on dev: 7 tests over the FIPS vectors, the padding
       boundary and every streaming split. Unreferenced until #2 wires it up,
       and LTO drops it, so it costs the image 0 bytes today.
-
-### In progress
-
-- [ ] #4 — claim this machine's image by service tag. The server half landed in
-      stormblock v13.4.0: `POST /api/v1/synonyms/boothost/<tag>/claim` returns a
-      CoW clone *and* the tuple that reaches it (`attach.address/port/nqn/nsid`),
-      in one request, using the field names `attach_from` already reads. Spec is
-      stormcos `docs/BOOT.md` and the stormblock README.
 
 ### Blocked on other repos
 
@@ -131,9 +128,14 @@ These have each cost a debugging session. Do not "simplify" them away.
       (stormblock) linked in for the intended version, and a marker that a
       booted stormcos node writes where firmware can read it before any OS
       runs. The marker is filed as **stormcos#30** with a proposed shape.
-- [ ] #4 — registration by service tag against a `BootHost` object. The client
-      half is small; the server half (a registration endpoint, a service-tag
-      key, a `bootAgent` field) is filed as **stormnetboot#8**.
+- [ ] #4 (the registration half) — reporting this machine's inventory back.
+      Everything wanted is reachable before any OS: MACs from
+      `EFI_SIMPLE_NETWORK`, memory/CPU/chassis from SMBIOS types 17/16/4/3,
+      storage from `EFI_BLOCK_IO`, controllers from `EFI_PCI_IO` class `0x01`.
+      Two constraints: collect it **before** `blockio::publish`, or the machine
+      reports the namespace it just attached as its own hardware; and `BLOCK_IO`
+      only shows what firmware bound a driver for, so the PCI scan is needed as
+      well as, not instead of. Blocked on the payload shape.
 - [ ] #2 — self-update of the boot media. SHA-256 is done; what is left is
       gated on #4, because updating to "whatever was on the last image
       attached" is exactly the uncontrolled update this must not become. The
