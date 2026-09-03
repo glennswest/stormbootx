@@ -1,9 +1,0 @@
-# Its own workspace root: the crate above is a no_std UEFI binary and must not
-# try to build this one, or itself for the host.
-[workspace]
-
-[package]
-name = "dns-wire"
-version = "0.0.0"
-edition = "2021"
-publish = false

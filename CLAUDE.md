@@ -59,7 +59,6 @@ deliberately, in its own commit, and rebuild.
 |---|---|
 | `src/smbios.rs` | the service tag, before any network exists |
 | `src/tcp4.rs` | a blocking socket over the firmware's own TCP stack |
-| `src/dns.rs` | SRV/TXT discovery of the portal over DNS/TCP |
 | `src/nvme.rs` | the NVMe/TCP initiator |
 | `src/blockio.rs` | publish the namespace as a block device, then `ConnectController` |
 | `src/registry.rs` | claim this machine's image, keyed on the service tag |
@@ -95,10 +94,13 @@ These have each cost a debugging session. Do not "simplify" them away.
   64 KiB. TCP segments to the MSS and never IP-fragments, so frames are not
   the constraint; round trips are, because `read` keeps one command
   outstanding.
-- **DNS discovery is opt-in, and the service tag is the selection path.** The
-  portal is a fixed appliance address; *which image* is a `boothost/<tag>`
-  synonym claimed from the engine. DNS in front of that is a second place for
-  the answer to live and a timeout on every boot in a zone nobody published.
+- **There is no DNS in this binary, and the service tag is the selection
+  path.** The portal is a fixed appliance address named on the media or
+  compiled in; *which image* is a `boothost/<tag>` synonym claimed from the
+  engine. Discovery was removed rather than switched off — it was a second
+  place for the answer to live and a timeout on every boot in a zone nobody
+  published. Don't reintroduce it without a network that needs one image
+  booting everywhere with no per-network config.
 - **A boot path must never need the network in order to boot without it.**
   Every failure in discovery or attach falls through to the local disk. One
   provisioning outage must not become a fleet outage.
@@ -113,11 +115,12 @@ These have each cost a debugging session. Do not "simplify" them away.
       128 KiB a command.
 - [x] #5 — bind layered network drivers before declaring TCP4 absent; land
       `tcp4probe` as a permanent per-server-model diagnostic
-- [x] #1 — discover the portal over DNS SRV/TXT (`_nvme-disc._tcp.<domain>`).
-      **Off by default since 2026-09-03**: the portal is a fixed appliance
-      address and the question worth answering is *which image*, which the
-      service tag answers. `discover = yes` opts a stick back in; the code
-      stays.
+- [x] #1 — discover the portal over DNS SRV/TXT. **Removed 2026-09-03**, code
+      and all (`src/dns.rs`, `scripts/publish-portal-dns.sh`,
+      `tests/dns-wire/`). It answered *where*, and where turned out to be a
+      fixed appliance address; *which image* is the question worth asking and
+      the service tag answers it. Recoverable from history if a network ever
+      needs one image booting everywhere with no per-network config.
 - [x] #3 (the load-bearing half) — every failure path falls through to the
       local disk instead of stopping
 - [x] #4 (the selection half) — a machine claims its own image with

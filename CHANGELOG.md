@@ -3,15 +3,20 @@
 ## [Unreleased]
 
 ### 2026-09-03
-- **BREAKING: DNS discovery is off unless a stick asks for it.** It was the
-  default while the portal was the thing a machine had to be told. The portal is
-  now a fixed appliance address and the question worth answering is *which
-  image*, which the service tag answers against that appliance — so DNS in front
-  of it is a second place for the answer to live, a resolver that has to be
-  right before a machine can boot, and a timeout on every boot in a zone nobody
-  published. `discover = yes` opts back in and the code is unchanged; the
-  default stick now names the portal and claims its image by tag.
-  `build-boot-agent.sh` gains `--discover` and `--api-port`.
+- **BREAKING: DNS discovery is gone — the code, not just the default.**
+  `src/dns.rs`, `scripts/publish-portal-dns.sh` and `tests/dns-wire/` are
+  removed, along with the `zone` and `discover` settings and the `zone` field of
+  `Defaults`; `config::resolve` no longer takes a `note` callback because
+  nothing in it talks to the network any more. Discovery was the default while
+  the portal was the thing a machine had to be told. The portal is now a fixed
+  appliance address and the question worth answering is *which image*, which the
+  service tag answers against that appliance — so DNS in front of it was a
+  second place for the answer to live, a resolver that had to be right before a
+  machine could boot, and a timeout on every boot in a zone nobody published
+  (`storm.lo` does not exist on the g8 resolver). This reverses #1; it is in
+  history if a network ever needs one image booting everywhere with no
+  per-network config. The stick now names its portal and claims its image by
+  tag, and `build-boot-agent.sh` gains `--api-port` and loses `--zone`.
 - **docs:** the README claimed stormblock exposes no discovery controller. It
   does — `DISCOVERY_NQN`, log page `0x70`, `CNTRLTYPE=2`. TXT carries the NQN
   because one answer in DNS beats a second Connect and a log-page walk, not

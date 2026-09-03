@@ -50,8 +50,7 @@ what is printed on the pull-out tab when someone has to find the box.
 | `nvme.rs` | the NVMe/TCP initiator |
 | `blockio.rs` | publish the namespace as a block device, then `ConnectController` |
 | `registry.rs` | claim this machine's image, keyed on the service tag |
-| `dns.rs` | find the portal by asking, over DNS/TCP |
-| `config.rs` | the target: file, then DNS, then the compiled floor |
+| `config.rs` | where to attach: the file, then the compiled floor |
 | `tcp4probe.rs` | a second binary — will this firmware run the agent at all? |
 
 ### The NVMe layer is ported, not rewritten
@@ -101,7 +100,14 @@ whatever resolution below produced. An image nobody has assigned beats no image.
 ## Finding the portal
 
 Where to attach — the appliance address, not the image. Two sources, first hit
-wins, plus an opt-in third.
+wins, and neither touches the network.
+
+There was a third: DNS SRV/TXT discovery of the portal. It is **gone**, not
+switched off. It made sense while the portal was the thing a machine had to be
+told; once the portal became a fixed appliance address and the service tag
+answered the interesting question, DNS was a second place for the answer to
+live, a resolver that had to be right before a machine could boot, and a
+timeout on every boot in a zone nobody published.
 
 ### 1. The media
 
@@ -121,62 +127,12 @@ nsid     = 2
 # Which image is this machine's own, claimed by service tag.
 api_port = 9090       # the engine API, on the same host as the portal
 claim    = yes        # `no` leaves the machine on the nqn/nsid above
-
-# DNS discovery is OFF unless a stick asks for it.
-discover = yes        # opt in
-zone     = storm.lo   # where the _nvme-disc._tcp record lives
 ```
 
 ### 2. Compiled values
 
 A floor, not a configuration — enough that a blank `dd`-written stick is useful
 before anyone has edited anything.
-
-### 3. DNS — opt-in, off by default
-
-```text
-SRV  _nvme-disc._tcp.storm.lo  ->  portal.storm.lo:4420
-TXT  _nvme-disc._tcp.storm.lo  ->  nqn=…  nsid=…
-A    portal.storm.lo           ->  192.168.31.202
-```
-
-`_nvme-disc._tcp` is NVMe-oF TP8009's DNS-SD service name. TXT carries the
-subsystem NQN directly rather than pointing at
-`nqn.2014-08.org.nvmexpress.discovery` — not because there is nothing there
-(stormblock does serve a discovery controller: `DISCOVERY_NQN`, log page
-`0x70`, `CNTRLTYPE=2`) but because one answer in DNS beats a second Connect and
-a log-page walk on a path this small.
-
-**The zone is fixed on purpose.** The obvious design asks DHCP for option 15 and
-queries `_nvme-disc._tcp.<that domain>`, which means reaching into `EFI_DHCP4`
-for the reply packet on a boot path that cannot be tested under OVMF. It is also
-unnecessary: the *resolver* already comes from DHCP and microdns already runs one
-per network, so one fixed name answered differently by each network gives exactly
-the property that was wanted. A machine on g16 asks g16's resolver and gets g16's
-portal; carry it to g8 and the same question gets the other answer, with nothing
-on the stick edited.
-
-Publish the records per network with:
-
-```bash
-./scripts/publish-portal-dns.sh --dns 192.168.8.252 --portal 192.168.8.150
-```
-
-DNS answers **where**, never **what version**. A version in DNS makes TTLs the
-rollout control and every bump a zone edit, with no object recording what was
-intended. That belongs in the BootHost object — see the issues.
-
-The transport is DNS over TCP (RFC 7766), which reuses `tcp4.rs` and adds no
-second EFI protocol dependency. A resolver that does not answer costs five
-seconds and then falls through.
-
-DNS was the default while the portal was the thing a machine had to be told.
-It is not any more: the portal is a fixed appliance address, and the question
-worth answering — *which image* — is the service tag against that appliance.
-Leaving DNS in front of that is a second place for the answer to live, a
-resolver that has to be right before a machine can boot, and a timeout on every
-boot in a zone nobody published. `discover = yes` brings it back for a network
-that wants one image booting everywhere with no per-network config.
 
 ## Will it run on this machine?
 
@@ -201,10 +157,10 @@ Builds on `dev.g8.lo`, never a workstation.
 export CARGO_TARGET_DIR=/build/cargo/stormbootx
 cargo build --release --target x86_64-unknown-uefi
 
-# A stick that discovers its portal — the normal case.
+# The normal stick: names the portal, claims its image by service tag.
 ./scripts/build-boot-agent.sh
 
-# A stick pinned to one target, for a machine that must not move.
+# A stick pinned to one namespace, for a machine that must not move.
 ./scripts/build-boot-agent.sh --pin --portal 192.168.31.202 \
     --nqn nqn.2026-09.lo.g16:stormcos --nsid 2
 
@@ -214,18 +170,14 @@ cargo build --release --target x86_64-unknown-uefi
 dd if=/build/images/stormbootx.img of=/dev/sdX bs=4M conv=fsync
 ```
 
-The DNS message parser is the one part of this that can be exercised without a
-machine to boot, and the wire format is the part most likely to be subtly
-wrong, so it has a harness:
+`src/sha256.rs` is the one part that can be exercised without a machine to
+boot — it touches only `core` and names no `crate::` item, so it compiles
+standalone:
 
 ```bash
-./tests/dns-wire/run.sh 192.168.8.252
+rustc --edition 2021 --test src/sha256.rs -o $CARGO_TARGET_DIR/sha256-test && \
+  $CARGO_TARGET_DIR/sha256-test
 ```
-
-It extracts the parsing half of `src/dns.rs` verbatim and runs it against both
-a real resolver and synthetic answers — compression pointers, pointer loops,
-priority/weight selection and every truncation of a valid message. A hang or a
-panic in there is a machine that does not boot, with no console.
 
 Output goes to `/build/images` — never `/tmp`, which on dev is a tmpfs sized at
 half of RAM.

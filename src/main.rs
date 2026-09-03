@@ -40,7 +40,6 @@ extern crate alloc;
 
 mod blockio;
 mod config;
-mod dns;
 mod nvme;
 mod registry;
 mod sha256;
@@ -70,20 +69,17 @@ const GOLDEN: &str = "stormcos-edge";
 /// `USE_REGISTRY` once the volume being served is a per-machine clone.
 const USE_REGISTRY: bool = false;
 
-/// The floor under discovery: what to attach when no resolver and no config
-/// file says otherwise.
+/// The floor: what to attach when the config file says nothing.
 ///
-/// `zone` is the one field here that is not expected to move. Every network's
-/// microdns answers `_nvme-disc._tcp.storm.lo` with its own portal, so the
-/// name stays the same as a machine moves and only the answer changes — see
-/// the note in `dns.rs` for why that beats asking DHCP for a domain.
+/// `nqn` and `nsid` are the fallback for a claim that cannot be reached, not
+/// the intended image — which image this machine boots is a `boothost/<service
+/// tag>` synonym on the engine, and nothing on the media names it.
 const DEFAULTS: config::Defaults = config::Defaults {
     portal: [192, 168, 31, 202], // forge.g16.lo, eth1 (MTU 9000)
     port: 4420,
     nqn: "nqn.2026-09.lo.g16:stormcos",
     nsid: 2, // drives[1] = stormcos-sno-10.21.img
     api_port: 9090, // the engine API on the same host as the portal
-    zone: "storm.lo",
 };
 
 fn banner(line: &str) {
@@ -129,11 +125,10 @@ fn run() -> Result<(), String> {
             }
         }
     } else {
-        // Compiled values are only the floor. A `portal` line in
-        // \stormboot\stormboot.conf pins the machine; otherwise DNS is asked,
-        // so a portal that moves is a zone edit rather than a visit to every
-        // stick — which it has been twice already.
-        let cfg = config::resolve(&DEFAULTS, &mut |line| uefi::println!("{line}"));
+        // Where to attach: the config file, else the compiled floor. Nothing
+        // on the network is asked for this — the portal is an appliance
+        // address, and the question worth asking is answered below.
+        let cfg = config::resolve(&DEFAULTS);
         uefi::println!("target      : {}", cfg.source);
 
         // Resolution says *where*; the claim says *which*. Which image this

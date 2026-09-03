@@ -14,9 +14,7 @@
 # boothost/<service tag> synonym the agent claims at boot. Moving a machine to
 # another version is a PUT on its name; the stick never changes.
 #
-# --discover asks DNS for the portal instead (opt-in, off by default: DNS is a
-# second place for the answer to live and a timeout on every boot in a zone
-# nobody published). --probe builds a diagnostic stick that boots tcp4probe.
+# --probe builds a diagnostic stick that boots tcp4probe instead of the agent.
 #
 # Runs ON the build box (dev.g8.lo). Output goes to /build/images — never
 # /tmp, which on dev is a tmpfs sized at half of RAM.
@@ -29,9 +27,7 @@ PORTAL="192.168.31.202"                     # forge.g16.lo, eth1 (MTU 9000)
 PORT="4420"
 NQN="nqn.2026-09.lo.g16:stormcos"
 NSID="2"
-ZONE="storm.lo"
 API_PORT="9090"                              # engine API on the portal host
-DISCOVER="no"                               # DNS discovery is opt-in now
 ESP_MIB="4"
 OUTDIR="/build/images"
 OUTPUT=""
@@ -45,10 +41,8 @@ usage() {
 
 Options:
   --pin            write only the portal, with no claim knobs
-  --discover       ask DNS for the portal (opt-in; off by default)
   --api-port N     engine API port on the portal host (default 9090)
   --probe          boot tcp4probe instead of the agent (a diagnostic stick)
-  --zone NAME      DNS zone holding _nvme-disc._tcp (default storm.lo)
   --portal ADDR    NVMe/TCP portal, with --pin (default 192.168.31.202)
   --port N         portal port (default 4420)
   --nqn NQN        subsystem NQN (default nqn.2026-09.lo.g16:stormcos)
@@ -63,8 +57,6 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --pin)    PIN="yes"; shift ;;
         --probe)  PROBE="yes"; shift ;;
-        --zone)   ZONE="$2"; shift 2 ;;
-        --discover) DISCOVER="yes"; shift ;;
         --api-port) API_PORT="$2"; shift 2 ;;
         --portal) PORTAL="$2"; PIN="yes"; shift 2 ;;
         --port)   PORT="$2"; shift 2 ;;
@@ -104,11 +96,11 @@ trap 'rm -rf "$WORK"' EXIT
 
 if [[ "$PIN" == "yes" ]]; then
     cat > "$WORK/stormboot.conf" <<CONF
-# stormbootx — this stick is PINNED.
+# stormbootx — this stick names its portal and nothing else.
 #
-# A portal line disables discovery outright: this machine attaches here and
-# nowhere else, wherever it is plugged in. Delete the portal line to put it
-# back on DNS discovery.
+# No claim knobs: this machine attaches exactly here, on exactly this
+# namespace, wherever it is plugged in. That is what --pin is for; the ordinary
+# stick claims its image by service tag instead.
 #
 # Read from \stormboot\stormboot.conf on the media this booted from, found via
 # EFI_LOADED_IMAGE_PROTOCOL, so it is exactly the volume that was booted and
@@ -117,19 +109,6 @@ portal = $PORTAL
 port   = $PORT
 nqn    = $NQN
 nsid   = $NSID
-CONF
-elif [[ "$DISCOVER" == "yes" ]]; then
-    cat > "$WORK/stormboot.conf" <<CONF
-# stormbootx — this stick discovers its portal over DNS.
-#
-# Opt-in: it asks whichever resolver DHCP hands it for the SRV and TXT records
-# at _nvme-disc._tcp.$ZONE. Publish them with scripts/publish-portal-dns.sh —
-# an unpublished zone costs a timeout on every boot before the floor is used.
-#
-# Which image this machine boots is still the service tag, not DNS. Discovery
-# only answers *where* the appliance is.
-zone     = $ZONE
-discover = yes
 CONF
 else
     cat > "$WORK/stormboot.conf" <<CONF
@@ -144,10 +123,6 @@ else
 # nqn and nsid below are only the fallback, for a claim that cannot be reached:
 # an image nobody assigned beats no image.
 #
-# DNS discovery is off. It was the default while the portal was the thing a
-# machine had to be told; the portal is now a fixed appliance address and the
-# interesting question is answered by the service tag. Add \`discover = yes\`
-# to bring it back.
 portal   = $PORTAL
 port     = $PORT
 nqn      = $NQN
@@ -182,9 +157,6 @@ if [[ "$PROBE" == "yes" ]]; then
     say "boots   tcp4probe — reports whether this firmware carries a TCP/IP stack"
 elif [[ "$PIN" == "yes" ]]; then
     say "target  nvme-tcp://$PORTAL:$PORT/$NQN?nsid=$NSID  (pinned, no claim knobs)"
-elif [[ "$DISCOVER" == "yes" ]]; then
-    say "portal  discovered from _nvme-disc._tcp.$ZONE"
-    say "image   claimed as boothost/<service tag> at the portal:$API_PORT"
 else
     say "portal  $PORTAL:$PORT  (named, no DNS)"
     say "image   claimed as boothost/<service tag> at $PORTAL:$API_PORT"

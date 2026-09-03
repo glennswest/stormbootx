@@ -16,14 +16,20 @@
 //! Resolution order, first hit wins:
 //!
 //!   1. `\stormboot\stormboot.conf` on the volume we booted from
-//!   2. DNS — `_nvme-disc._tcp.<zone>`, see `dns.rs`
-//!   3. compiled-in defaults
+//!   2. compiled-in defaults
 //!
-//! A `portal` line in the file **pins** the machine: it is the override for a
-//! box that must attach somewhere specific, and it disables discovery outright
-//! rather than merely outranking it. A stick with no `portal` line discovers,
-//! which is the case that makes a machine survive being moved to another
-//! network with nothing edited.
+//! This answers *where* only. **Which image** a machine boots is not here and
+//! is not on the media at all: it is a `boothost/<service tag>` synonym on the
+//! engine, claimed at boot — see `registry.rs`. `nqn` and `nsid` here are the
+//! fallback for a claim that cannot be reached.
+//!
+//! There was a third source — DNS SRV/TXT discovery of the portal. It was
+//! removed rather than left switched off. It made sense while the portal was
+//! the thing a machine had to be told; once the portal became a fixed
+//! appliance address and the service tag answered the interesting question, it
+//! was a second place for the answer to live, a resolver that had to be right
+//! before a machine could boot, and a timeout on every boot in a zone nobody
+//! published.
 
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -76,9 +82,6 @@ pub struct Defaults {
     pub nsid: u32,
     /// Engine management API port on the portal host.
     pub api_port: u16,
-    /// The DNS zone holding the `_nvme-disc._tcp` record. Deliberately not a
-    /// per-network domain — see the note in `dns.rs`.
-    pub zone: &'static str,
 }
 
 pub fn parse_ipv4(s: &str) -> Option<[u8; 4]> {
@@ -156,16 +159,12 @@ fn field(text: &str, key: &str) -> Option<String> {
     None
 }
 
-/// Resolve where to attach: file, then DNS, then the compiled floor.
+/// Resolve where to attach: the file, then the compiled floor.
 ///
-/// Never fails. A stick with no config, no resolver and no records still boots
-/// against the compiled defaults, which is what makes a blank `dd`-written
-/// stick useful before anyone has edited anything onto it — and, more
-/// importantly, what keeps a DNS outage from being a boot outage.
-///
-/// `note` takes the running commentary, so discovery is visible on the console
-/// without any of it being fatal.
-pub fn resolve(d: &Defaults, note: &mut dyn FnMut(&str)) -> Config {
+/// Never fails, and nothing here touches the network. A stick with no config
+/// at all still boots against the compiled defaults, which is what makes a
+/// blank `dd`-written stick useful before anyone has edited anything onto it.
+pub fn resolve(d: &Defaults) -> Config {
     let mut cfg = Config {
         portal: d.portal,
         port: d.port,
@@ -187,21 +186,6 @@ pub fn resolve(d: &Defaults, note: &mut dyn FnMut(&str)) -> Config {
     let file_port = file.and_then(|t| field(t, "port")).and_then(|s| s.parse().ok());
     let file_nqn = file.and_then(|t| field(t, "nqn"));
     let file_nsid = file.and_then(|t| field(t, "nsid")).and_then(|s| s.parse().ok());
-    let zone = file
-        .and_then(|t| field(t, "zone"))
-        .unwrap_or_else(|| d.zone.to_string());
-    // Discovery is **off unless a stick asks for it**. It was the default while
-    // the portal was the thing a machine had to be told; now the portal is a
-    // fixed appliance address and the interesting question — *which image* —
-    // is answered by the service tag against that appliance. DNS in front of
-    // that is a second place for the answer to live, a resolver that has to be
-    // right before a machine can boot, and a timeout on every boot in a zone
-    // nobody published. `discover = yes` brings it back for a network that
-    // wants it.
-    let discover_on = file
-        .and_then(|t| field(t, "discover"))
-        .is_some_and(|v| matches!(v.as_str(), "yes" | "true" | "1" | "on"));
-
     cfg.stamp = file.and_then(|t| field(t, "stamp"));
     if let Some(p) = file.and_then(|t| field(t, "api_port")).and_then(|s| s.parse().ok()) {
         cfg.api_port = p;
@@ -213,34 +197,14 @@ pub fn resolve(d: &Defaults, note: &mut dyn FnMut(&str)) -> Config {
     }
 
     if let Some(p) = pinned {
-        // Pinned. Nothing is asked and nothing can move this machine.
         cfg.portal = p;
-        cfg.source = format!("{CONF_PATH} (pinned)");
-    } else if !discover_on {
-        // The ordinary case now: no portal line, no DNS, the compiled floor.
-        // Silent on purpose — this is not a fallback any more, it is the path.
-    } else {
-        note(&format!("discovery   : {}.{zone}", crate::dns::SERVICE));
-        match crate::dns::discover(&zone, note) {
-            Some(found) => {
-                let [a, b, c, dd] = found.resolver;
-                cfg.portal = found.portal;
-                cfg.port = found.port;
-                if let Some(n) = found.nqn {
-                    cfg.nqn = n;
-                }
-                if let Some(n) = found.nsid {
-                    cfg.nsid = n;
-                }
-                cfg.source = format!("DNS via {a}.{b}.{c}.{dd}");
-            }
-            None => note("  no answer; falling back"),
-        }
+        cfg.source = format!("{CONF_PATH} (portal named)");
     }
 
-    // The file outranks discovery field by field, so a zone that publishes a
-    // portal can still have its NQN or namespace overridden on one stick
-    // without pinning that stick's address as well.
+    // Each field stands on its own, so a stick can take a different namespace
+    // without naming an address, or an address without naming a namespace. A
+    // typo in `nsid` must not silently move the portal back to a value the
+    // operator thought they had replaced.
     let overridden = file_port.is_some() || file_nqn.is_some() || file_nsid.is_some();
     if let Some(p) = file_port {
         cfg.port = p;
