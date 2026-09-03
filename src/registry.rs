@@ -91,6 +91,51 @@ fn split_response(response: &str) -> Result<(u16, &str), String> {
     Ok((status, body))
 }
 
+/// The namespace holding one synonym per machine, keyed on its service tag.
+///
+/// Not a per-network or per-cluster name: the service tag identifies the
+/// chassis, so `boothost/<tag>` means the same machine wherever it is plugged
+/// in. See `docs/BOOT.md` in stormcos.
+pub const BOOTHOST_NS: &str = "boothost";
+
+/// Claim this machine's image from the storage engine, keyed on its service tag.
+///
+/// `POST /api/v1/synonyms/boothost/<tag>/claim`. **One request, and the answer
+/// is bootable.** The reply carries a copy-on-write clone of whatever golden
+/// the fleet says this box runs *and* the tuple that reaches it — address,
+/// port, NQN and NSID. A claim that returned only a volume id would leave
+/// firmware knowing a volume exists and still having to ask where, which is a
+/// second round trip from a client whose whole state machine is "get an
+/// address, attach it, boot", and a window in which the claim is held and
+/// nothing is being served.
+///
+/// The body is `{}` rather than omitted: the endpoint takes options this client
+/// has no use for, and a POST with no body reads as a malformed request to more
+/// than one HTTP stack.
+///
+/// Which image that is stays a fleet decision made next to the images — moving
+/// this machine is a `PUT` on its synonym, not a visit to the machine.
+pub fn claim_boothost(
+    server: [u8; 4],
+    port: u16,
+    host: &str,
+    service_tag: &str,
+) -> Result<Attach, String> {
+    let path = format!("/api/v1/synonyms/{BOOTHOST_NS}/{service_tag}/claim");
+    let response = request(server, port, host, "POST", &path, Some("{}"))?;
+    let (status, body) = split_response(&response)?;
+    if status == 404 {
+        // Worth separating from every other failure: it is not a fault, it is
+        // this machine having no image assigned yet, and the console line that
+        // says so is the one that tells an operator what to do about it.
+        return Err(format!("no {BOOTHOST_NS}/{service_tag} synonym on this engine"));
+    }
+    if !(200..300).contains(&status) {
+        return Err(format!("claim returned HTTP {status}: {}", body.trim()));
+    }
+    attach_from(body)
+}
+
 /// Claim an image for this machine.
 ///
 /// The service tag is the `consumer`, which is exactly what that field is for

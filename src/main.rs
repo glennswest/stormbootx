@@ -3,8 +3,14 @@
 //! Boots a machine from an image that lives in sbregistry, with no kernel, no
 //! initramfs and no local media beyond the binary itself. The sequence is:
 //!
-//!   service tag (SMBIOS)  ->  claim from sbregistry  ->  attach nvme-tcp://
+//!   service tag (SMBIOS)  ->  claim boothost/<tag>  ->  attach nvme-tcp://
 //!     ->  publish EFI_BLOCK_IO_PROTOCOL  ->  firmware boots it
+//!
+//! *Which* image a machine boots is a fleet decision, and it lives next to the
+//! images rather than on the media or in DHCP: a `boothost/<service tag>`
+//! synonym on the storage engine. One request returns a copy-on-write clone of
+//! the golden that machine is assigned *and* the address, NQN and NSID that
+//! reach it. Moving a box to a new version is a PUT on its name.
 //!
 //! Once BlockIO is installed the firmware's own machinery does the rest: the
 //! partition driver reads the GPT, the FAT driver mounts the ESP, and the boot
@@ -76,6 +82,7 @@ const DEFAULTS: config::Defaults = config::Defaults {
     port: 4420,
     nqn: "nqn.2026-09.lo.g16:stormcos",
     nsid: 2, // drives[1] = stormcos-sno-10.21.img
+    api_port: 9090, // the engine API on the same host as the portal
     zone: "storm.lo",
 };
 
@@ -128,12 +135,43 @@ fn run() -> Result<(), String> {
         // stick — which it has been twice already.
         let cfg = config::resolve(&DEFAULTS, &mut |line| uefi::println!("{line}"));
         uefi::println!("target      : {}", cfg.source);
-        registry::Attach {
+
+        // Resolution says *where*; the claim says *which*. Which image this
+        // machine runs is a fleet decision that lives next to the images, as a
+        // `boothost/<service tag>` synonym — so moving this box to a new
+        // version is a PUT on its name rather than a visit to the machine, and
+        // nothing on the media has to change. The engine's API is the same host
+        // as the portal: one serves the bytes, the other says which bytes.
+        //
+        // Falling back rather than failing is the whole rule here. A machine
+        // with no synonym yet, or an engine that is down, still boots what
+        // resolution produced — an image nobody has assigned beats no image.
+        let claimed = if cfg.claim {
+            let [a, b, c, d] = cfg.portal;
+            let host = format!("{a}.{b}.{c}.{d}:{}", cfg.api_port);
+            uefi::println!("claim       : {}/{tag} at {host}", registry::BOOTHOST_NS);
+            match registry::claim_boothost(cfg.portal, cfg.api_port, &host, &tag) {
+                Ok(a) => {
+                    uefi::println!("  claimed a clone of this machine's image");
+                    Some(a)
+                }
+                Err(e) => {
+                    uefi::println!("  {e}");
+                    uefi::println!("  falling back to the resolved target");
+                    None
+                }
+            }
+        } else {
+            uefi::println!("claim       : disabled by the config file");
+            None
+        };
+
+        claimed.unwrap_or(registry::Attach {
             address: cfg.portal,
             port: cfg.port,
             nqn: cfg.nqn,
             nsid: cfg.nsid,
-        }
+        })
     };
 
     let [a, b, c, d] = attach.address;

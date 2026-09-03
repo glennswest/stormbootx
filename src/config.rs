@@ -48,6 +48,14 @@ pub struct Config {
     pub port: u16,
     pub nqn: String,
     pub nsid: u32,
+    /// Port of the engine's management API on the portal host, where a machine
+    /// claims its own image by service tag. The NVMe portal and the API are the
+    /// same host — one serves the bytes, the other says which bytes.
+    pub api_port: u16,
+    /// Whether to claim by service tag at all. `claim = no` leaves a machine on
+    /// whatever `nqn`/`nsid` resolution produced, which is what a stick pinned
+    /// to one namespace wants.
+    pub claim: bool,
     /// Digest of the `BOOTX64.EFI` currently on this media, if it has been
     /// stamped. Absent on a stick written by `dd` and never updated.
     pub stamp: Option<String>,
@@ -66,6 +74,8 @@ pub struct Defaults {
     pub port: u16,
     pub nqn: &'static str,
     pub nsid: u32,
+    /// Engine management API port on the portal host.
+    pub api_port: u16,
     /// The DNS zone holding the `_nvme-disc._tcp` record. Deliberately not a
     /// per-network domain — see the note in `dns.rs`.
     pub zone: &'static str,
@@ -161,6 +171,8 @@ pub fn resolve(d: &Defaults, note: &mut dyn FnMut(&str)) -> Config {
         port: d.port,
         nqn: d.nqn.to_string(),
         nsid: d.nsid,
+        api_port: d.api_port,
+        claim: true,
         stamp: None,
         source: "compiled defaults".to_string(),
     };
@@ -185,6 +197,14 @@ pub fn resolve(d: &Defaults, note: &mut dyn FnMut(&str)) -> Config {
         .is_some_and(|v| matches!(v.as_str(), "no" | "false" | "0" | "off"));
 
     cfg.stamp = file.and_then(|t| field(t, "stamp"));
+    if let Some(p) = file.and_then(|t| field(t, "api_port")).and_then(|s| s.parse().ok()) {
+        cfg.api_port = p;
+    }
+    // Off only when the file says so. The claim is how a machine is told which
+    // image it runs, so a stick that says nothing should still ask.
+    if let Some(v) = file.and_then(|t| field(t, "claim")) {
+        cfg.claim = !matches!(v.as_str(), "no" | "false" | "0" | "off");
+    }
 
     if let Some(p) = pinned {
         // Pinned. Nothing is asked and nothing can move this machine.
