@@ -7,6 +7,7 @@
 //! to, and then the machine is a different machine as far as the boot server is
 //! concerned. The service tag is the chassis.
 
+use alloc::format;
 use alloc::string::{String, ToString};
 use core::ptr;
 
@@ -19,6 +20,31 @@ const SMBIOS3_GUID: Guid = guid!("f2fd1544-9794-4a2c-992e-e5bbcf20e394");
 
 /// Read the system serial number (the service tag on Dell hardware).
 pub fn service_tag() -> Option<String> {
+    unsafe { find_type1_string(table()?, 0x07) }
+}
+
+/// Manufacturer and product name, for the console line.
+///
+/// Worth printing next to the tag because the one thing that varies between
+/// machines here is *the firmware*, not the code: whether a platform carries
+/// the TCP/IP driver stack at all is a per-model fact, and the console line
+/// naming the model is what makes "this one needs the network stack enabled in
+/// setup" a note someone can write down against a model rather than against a
+/// single machine.
+pub fn model() -> Option<String> {
+    let t = table()?;
+    let vendor = unsafe { find_type1_string(t, 0x04) };
+    let product = unsafe { find_type1_string(t, 0x05) };
+    match (vendor, product) {
+        (Some(v), Some(p)) => Some(format!("{v} {p}")),
+        (Some(v), None) => Some(v),
+        (None, Some(p)) => Some(p),
+        (None, None) => None,
+    }
+}
+
+/// The SMBIOS structure table, from the EFI configuration table.
+fn table() -> Option<*const u8> {
     let st = uefi::table::system_table_raw()?;
     let entries = unsafe {
         let st = st.as_ref();
@@ -42,10 +68,7 @@ pub fn service_tag() -> Option<String> {
             table = unsafe { smbios_table(e.vendor_table as *const u8) };
         }
     }
-    if table.is_null() {
-        return None;
-    }
-    unsafe { find_type1_serial(table) }
+    (!table.is_null()).then_some(table as *const u8)
 }
 
 /// `_SM3_` entry point: the structure table address is a 64-bit field at 0x10.
@@ -71,7 +94,13 @@ unsafe fn smbios_table(entry: *const u8) -> *const u8 {
 /// *field* inside the formatted section holds a **1-based index** into that
 /// table, not an offset — read it as an offset and you get the manufacturer,
 /// or nothing, depending on the machine.
-unsafe fn find_type1_serial(mut p: *const u8) -> Option<String> {
+/// One string out of the Type 1 (System Information) structure, by offset.
+///
+/// `offset` is bounds-checked against the structure's own length rather than
+/// assumed: a short Type 1 is legal — the fields were added over successive
+/// SMBIOS versions — and reading past `len` walks into the string table and
+/// returns whatever byte happens to sit there as a string index.
+unsafe fn find_type1_string(mut p: *const u8, offset: usize) -> Option<String> {
     // Bounded so a malformed table cannot spin forever in firmware.
     for _ in 0..2048 {
         let stype = *p;
@@ -85,8 +114,10 @@ unsafe fn find_type1_serial(mut p: *const u8) -> Option<String> {
 
         let strings = p.add(len);
         if stype == 1 {
-            // Type 1, offset 0x07: Serial Number.
-            return smbios_string(strings, *p.add(7));
+            if offset >= len {
+                return None;
+            }
+            return smbios_string(strings, *p.add(offset));
         }
 
         // Skip this structure's string table.

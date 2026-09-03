@@ -94,6 +94,12 @@ fn run() -> Result<(), String> {
     // 1. Who am I? No network, no configuration, no BMC.
     let tag = smbios::service_tag().ok_or("SMBIOS carries no system serial number")?;
     uefi::println!("service tag : {tag}");
+    if let Some(model) = smbios::model() {
+        // Printed because whether a platform carries the TCP/IP driver stack is
+        // a per-model fact, not a per-machine one. A console line naming the
+        // model is what makes that something to write down once.
+        uefi::println!("model       : {model}");
+    }
 
     // 2. Is there a usable TCP stack? Presence of SNP is not enough — the
     //    layered IP4/TCP4 drivers are a separate build option in firmware, and

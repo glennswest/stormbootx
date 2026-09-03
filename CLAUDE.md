@@ -82,6 +82,14 @@ These have each cost a debugging session. Do not "simplify" them away.
 - **Fedora's OVMF has no upper network stack.** SNP present, MNP/IP4/TCP4
   absent, and `ConnectController` over every handle does not change it. The
   obvious emulator cannot test the network path.
+- **A real server may not carry the stack either, and that is a setup switch.**
+  2026-09-03, first hardware run: a Dell (service tag C2NR0Q2) booted
+  stormbootx, read its own tag out of SMBIOS, and reported `EFI_TCP4 is not
+  present` — *after* the full `ConnectController` pass, so the drivers were not
+  in the loaded firmware at all rather than merely unbound. On Dell the switch
+  is the UEFI network stack: Integrated NIC set to **Enabled with PXE**, or
+  **UEFI Network Stack** under Network Settings. Enabling PXE is not because
+  anything wants PXE — it is what makes firmware load MNP/IP4/TCP4.
 - **Proxmox's OVMF does, and it is the emulator to use.** Verified 2026-09-03
   on pve.g8.lo (`pve-edk2-firmware`, Nov 2025) with `tcp4probe` on VM 2062:
   every protocol reads *absent* as found and all nine appear after a
@@ -156,7 +164,13 @@ These have each cost a debugging session. Do not "simplify" them away.
 
 ## Status
 
-v0.3.0. Built and verified as an artifact. **First real execution: 2026-09-03**
+v0.3.0. **Ran on real hardware 2026-09-03** — a Dell, service tag C2NR0Q2,
+booted the agent off a USB stick and read its own service tag out of SMBIOS
+with no network, no DHCP and no BMC. It stopped at `EFI_TCP4 is not present`,
+which is the firmware's UEFI network stack being disabled in setup, not a
+fault in the binary; nothing past `tcp4` has been exercised on metal yet.
+
+Earlier the same day, under Proxmox OVMF: **First real execution: 2026-09-03**
 — `tcp4probe` ran under Proxmox OVMF on VM 2062 (`stormbootx-test.g8.lo`) and
 reported TCP4 available after a full `ConnectController` pass, then configured
 a TCP4 child and got as far as a connect timeout, which is the probe's own

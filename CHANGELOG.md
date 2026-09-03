@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### 2026-09-03
+- **feat (smbios): print the model next to the service tag.** Whether a platform
+  carries the TCP/IP driver stack at all is a per-*model* fact — the first
+  hardware run stopped at `EFI_TCP4 is not present` — so the console now names
+  the machine it is running on, which makes that a note someone can write down
+  against a model rather than against one machine. Manufacturer and product come
+  from SMBIOS Type 1 offsets 0x04 and 0x05.
+- **fix (smbios): bounds-check the Type 1 field offset.** A short Type 1 is
+  legal, the fields having been added over successive SMBIOS versions, and
+  reading past the structure's own length walks into the string table and
+  returns whatever byte sits there as a string index.
+- **verified: the agent runs on real hardware.** A Dell (C2NR0Q2) booted it from
+  USB and read its own service tag out of SMBIOS with no network, no DHCP and no
+  BMC. It stopped at `EFI_TCP4 is not present`, after the full
+  `ConnectController` pass — the UEFI network stack disabled in firmware setup,
+  not a fault in the binary.
+
 ## [v0.3.0] — 2026-09-03
 
 The release that stops asking the network where to boot and starts asking the
