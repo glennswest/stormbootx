@@ -112,6 +112,9 @@ fn run() -> Result<(), String> {
         tcp4::Presence::BoundAfterFullPass => {
             uefi::println!("tcp4        : available (bound after a full ConnectController pass)")
         }
+        tcp4::Presence::BoundAfterWait(ms) => uefi::println!(
+            "tcp4        : available (appeared after {ms} ms — the platform was not ready)"
+        ),
         tcp4::Presence::Absent => return Err(tcp4::NO_TCP4_ADVICE.into()),
     }
 

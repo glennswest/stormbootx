@@ -145,6 +145,12 @@ pub enum Presence {
     /// usually means the layered drivers hang off something that is not the
     /// NIC handle.
     BoundAfterFullPass,
+    /// It appeared only after waiting and binding again, with the milliseconds
+    /// it took. Two things produce this and the number tells them apart: a NIC
+    /// driver the platform had not dispatched yet when this ran, and a stack
+    /// that binds asynchronously and had not finished. Either way the first
+    /// boot option in the order is the one that pays for it.
+    BoundAfterWait(u64),
     /// The firmware does not carry an upper network stack.
     Absent,
 }
@@ -185,16 +191,46 @@ pub fn ensure_available() -> Presence {
     // Then everything. On firmware whose layered drivers hang off a parent
     // that is not the SNP handle this is what finds them; on firmware that has
     // none it is wasted work on a path that was going to fail anyway.
-    if let Ok(handles) = boot::locate_handle_buffer(SearchType::AllHandles) {
-        for h in handles.iter() {
-            connect(h.as_ptr());
-        }
-        if available() {
-            return Presence::BoundAfterFullPass;
+    if connect_all() {
+        return Presence::BoundAfterFullPass;
+    }
+
+    // Then wait, and try again.
+    //
+    // One pass and an immediate answer assumes the platform was ready when we
+    // ran, and on a real machine it is not always: observed on a Dell where
+    // the *first* boot option reported no TCP4 and the *second*, seconds later
+    // in the same boot, found it — the NIC's driver had not been dispatched
+    // when the first one ran, so there was nothing for `ConnectController` to
+    // bind and no amount of passes would have helped. A stack that binds
+    // asynchronously produces the same symptom.
+    //
+    // Both are cured by waiting, so wait. `WINDOW` is spent only on a machine
+    // that is going to fail anyway, and against that: a boot that falls
+    // through to the local disk because the network was a moment late is a
+    // machine that does not get provisioned, and somebody walks to it.
+    const STEP_MS: u64 = 250;
+    const WINDOW_MS: u64 = 5_000;
+    let mut waited = 0;
+    while waited < WINDOW_MS {
+        boot::stall(core::time::Duration::from_millis(STEP_MS));
+        waited += STEP_MS;
+        if available() || connect_all() {
+            return Presence::BoundAfterWait(waited);
         }
     }
 
     Presence::Absent
+}
+
+/// `ConnectController` over every handle, then ask again.
+fn connect_all() -> bool {
+    if let Ok(handles) = boot::locate_handle_buffer(SearchType::AllHandles) {
+        for h in handles.iter() {
+            connect(h.as_ptr());
+        }
+    }
+    available()
 }
 
 /// `ConnectController(handle, NULL, NULL, TRUE)` — bind every driver that will
@@ -216,7 +252,7 @@ fn connect(handle: uefi_raw::Handle) {
 }
 
 /// What to tell an operator when there is no TCP4 stack to be had.
-pub const NO_TCP4_ADVICE: &str = "EFI_TCP4 is not present, and binding the firmware's own drivers did      not produce it. Enable network boot / the NIC's UEFI PXE stack in setup so      the platform loads its TCP/IP drivers, then run tcp4probe on this model to      confirm. Note that Fedora's OVMF ships no upper network stack at all, so      this is expected under that emulator.";
+pub const NO_TCP4_ADVICE: &str = "EFI_TCP4 is not present. Binding the firmware's own drivers did not      produce it, and neither did waiting five seconds and binding again. Enable network boot / the NIC's UEFI PXE stack in setup so      the platform loads its TCP/IP drivers, then run tcp4probe on this model to      confirm. Note that Fedora's OVMF ships no upper network stack at all, so      this is expected under that emulator.";
 
 pub struct Tcp4Socket {
     sb: *mut ServiceBinding,
