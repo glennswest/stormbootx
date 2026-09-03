@@ -133,12 +133,25 @@ pub fn existing(
     attach_from(body).map(Some)
 }
 
+/// Read an attach out of a response, in either spelling.
+///
+/// sbregistry answers `address`/`port`; stormblock answers `traddr`/`trsvcid`
+/// inside an `addresses` array (`mgmt/api/v1.rs`, `AttachInfo::NvmeTcp`). Both
+/// are accepted rather than one being chosen, because the alternative is a
+/// boot path that fails on a field name — and the two ends of this are moving
+/// independently right now.
+///
+/// The nesting costs nothing: `field` scans for `"key"` with its closing quote,
+/// so it reads `traddr` out of the array without a JSON parser, and `"address"`
+/// does not match inside `"addresses"`.
 fn attach_from(body: &str) -> Result<Attach, String> {
     let address = field(body, "address")
+        .or_else(|| field(body, "traddr"))
         .and_then(|a| parse_ipv4(&a))
-        .ok_or("no usable \"address\" in the response")?;
+        .ok_or("no usable \"address\" or \"traddr\" in the response")?;
     let nqn = field(body, "nqn").ok_or("no \"nqn\" in the response")?;
     let port = field(body, "port")
+        .or_else(|| field(body, "trsvcid"))
         .and_then(|p| p.parse::<u16>().ok())
         .unwrap_or(4420);
     let nsid = field(body, "nsid")

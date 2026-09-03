@@ -3,6 +3,13 @@
 ## [Unreleased]
 
 ### 2026-09-03
+- **feat (registry): an attach is read in either spelling.** sbregistry answers
+  `address`/`port`; stormblock answers `traddr`/`trsvcid` inside an `addresses`
+  array. Both are now accepted rather than one being chosen, because the
+  alternative is a boot path that fails on a field name while the two ends move
+  independently. The nesting costs nothing — `field` scans for a key with its
+  closing quote, so it reads `traddr` out of the array without a JSON parser,
+  and `"address"` does not false-match inside `"addresses"`.
 - **verified: the network path runs under Proxmox OVMF.** `tcp4probe` on VM
   2062 reports every network protocol absent as found and all nine present
   after a `ConnectController` pass, then configures a TCP4 child successfully.
