@@ -83,6 +83,11 @@ These have each cost a debugging session. Do not "simplify" them away.
 - **Fedora's OVMF has no upper network stack.** SNP present, MNP/IP4/TCP4
   absent, and `ConnectController` over every handle does not change it. The
   obvious emulator cannot test the network path.
+- **The transfer size comes from MDTS, never from the MTU.** Sizing a command
+  to fit one frame inverts: a 9000 path lands on 8 KiB and a 1500 path on
+  64 KiB. TCP segments to the MSS and never IP-fragments, so frames are not
+  the constraint; round trips are, because `read` keeps one command
+  outstanding.
 - **A boot path must never need the network in order to boot without it.**
   Every failure in discovery or attach falls through to the local disk. One
   provisioning outage must not become a fleet outage.
@@ -91,7 +96,10 @@ These have each cost a debugging session. Do not "simplify" them away.
 
 ### Done
 
-- [x] #6 — derive the NVMe transfer size from the path MTU (`GetModeData`)
+- [x] #6 — size the NVMe transfer from the controller's MDTS. Was derived
+      from the path MTU, which inverted: a 9000 path got 8 KiB and a 1500 path
+      64 KiB. Against the stormblock target (MDTS 5, MPSMIN 0) it is now
+      128 KiB a command.
 - [x] #5 — bind layered network drivers before declaring TCP4 absent; land
       `tcp4probe` as a permanent per-server-model diagnostic
 - [x] #1 — discover the portal over DNS SRV/TXT (`_nvme-disc._tcp.<domain>`)
@@ -101,16 +109,6 @@ These have each cost a debugging session. Do not "simplify" them away.
       nothing. Verified on dev: 7 tests over the FIPS vectors, the padding
       boundary and every streaming split. Unreferenced until #2 wires it up,
       and LTO drops it, so it costs the image 0 bytes today.
-
-### In progress
-
-- [ ] The transfer size inverts on jumbo. `chunk_for_mtu` sizes a command to
-      fit one frame, so a 9000 path gets 8 KiB and a 1500 path gets 64 KiB —
-      eight times *less* data per round trip on the faster network. The reads
-      are strictly serial (one command outstanding, `nvme.rs` `read`), so
-      throughput is transfer ÷ RTT and the frame argument buys nothing over
-      TCP, which segments to the MSS and never IP-fragments. Replace the guess
-      with the controller's own MDTS.
 
 ### Blocked on other repos
 

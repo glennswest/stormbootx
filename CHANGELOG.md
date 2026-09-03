@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### 2026-09-03
+- **fix (nvme): the transfer size inverted on a jumbo path.** `chunk_for_mtu`
+  sized a command so one reply landed in one frame, which meant a 9000 path
+  rounded down to **8 KiB** a command while a 1500 path took the 64 KiB
+  fallback — eight times less data per round trip on the faster network. The
+  frame argument does not survive contact with TCP: NVMe/TCP rides a byte
+  stream, the stack segments it to the MSS and IP never fragments it, so a
+  large PDU on a 9000 path is several segments, not a reassembly problem.
+  `read` issues one command at a time and waits for it, so throughput is
+  transfer ÷ RTT and bigger is strictly better up to what the controller
+  accepts. It now asks: Identify Controller (CNS 01h) after `CC.EN` gives
+  MDTS, counted in `CAP.MPSMIN` pages, capped at 512 KiB and floored at one
+  block; MDTS 0, or a controller that will not answer, keeps the 64 KiB every
+  controller accepts. Against the stormblock target (MDTS 5, MPSMIN 0) this is
+  **128 KiB per command instead of 8 KiB** — 16× the bytes per round trip.
+  The MTU is still read and still printed, and the console now says `jumbo`
+  when it sees one; it no longer sizes anything.
+- **fix (nvme): a transfer shorter than one block could wrap.** CDW12 carries
+  NLB as a 0-based count, so a limit below the block size computed
+  `blocks - 1` on zero. Reachable on a namespace reporting a block size above
+  the transfer limit, which the format permits up to 64 KiB.
+
 ### 2026-09-02
 - **chore:** `Cargo.lock` is tracked, for both this crate and the `dns-wire`
   test helper. It was neither committed nor ignored, so every build resolved
