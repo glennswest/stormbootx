@@ -62,52 +62,53 @@ const SGL_IN_CAPSULE: u8 = 0x01;
 /// FLAGS byte with PSDT = 01b — SGLs, the only choice over a fabric.
 const FLAGS_SGL: u8 = 0x40;
 
-/// Bytes moved per NVMe command, derived from the MTU of the path rather than
-/// hand-edited to match it.
+/// Bytes moved per NVMe command, taken from the controller's own limit.
 ///
-/// The size of a command is the size of the C2HData PDU that comes back, so
-/// the only question that matters is whether one read fits one frame. There
-/// are two regimes and the answer differs in each:
+/// This was derived from the path MTU, sized so one reply landed in one frame.
+/// That inverted on exactly the networks worth having: with the 104 bytes of
+/// IP, TCP and PDU header budgeted, a 9000 path rounded down to **8 KiB** a
+/// command while a 1500 path took the 64 KiB fallback — eight times less data
+/// per round trip on the faster network, which is the opposite of the point.
 ///
-///   * **Jumbo.** Size the command so a reply is exactly one frame: the MTU
-///     less the IP, TCP and PDU headers, rounded down to whole 4 KiB pages. On
-///     a 9000 path that is 8 KiB. No fragmentation, no reassembly.
-///   * **Anything else.** 64 KiB. This client has no read pipelining — one
-///     command outstanding at a time, each costing a full round trip — so
-///     where nothing aligns to a frame anyway, fewer large commands beat more
-///     small ones. On a 1500 path 8 KiB is *worse* than 64 KiB for exactly
-///     that reason.
+/// The frame argument does not survive contact with TCP. NVMe/TCP rides a byte
+/// stream: the stack segments it to the MSS and IP never fragments it, so a
+/// 64 KiB PDU on a 9000 path is eight segments, not a reassembly problem. What
+/// the size actually buys is round trips. `read` issues one command at a time
+/// and waits for it, so throughput is transfer ÷ RTT and nothing else — under
+/// that rule bigger is strictly better, up to what the controller will accept.
 ///
-/// This was a constant, and it had already been hand-edited twice in one
-/// afternoon as the portal moved between `dev.g8.lo` (1500) and
-/// `forge.g16.lo` (9000). A constant that must match a network the binary
-/// cannot see is a bug waiting for someone to forget.
+/// So ask the controller. **MDTS** is the maximum data transfer size, in units
+/// of the minimum page size the controller advertises in `CAP.MPSMIN`, and
+/// zero means it imposes no limit of its own. That is a property of the device
+/// on the other end rather than a number matched by hand to a network this
+/// binary cannot see — which was the whole complaint that retired the original
+/// constant.
 ///
-/// `None` — the stack would not report an MTU — takes the 64 KiB branch,
-/// because the safe assumption about an unknown path is that it is ordinary,
-/// not that it is jumbo.
-fn chunk_for_mtu(mtu: Option<u32>) -> usize {
-    // IP (20, no options) + TCP (60, the largest legal header) + the NVMe/TCP
-    // common header and PSH (24). Budgeting the maximum TCP header rather than
-    // the usual 20 costs nothing at 4 KiB granularity, and means a stack that
-    // negotiates timestamps or SACK does not quietly start fragmenting.
-    const OVERHEAD: u32 = 20 + 60 + 24;
-    const PAGE: u32 = 4096;
-    const BIG: usize = 64 * 1024;
+/// The MTU is still read, and still printed, because "the path is 9000" is
+/// worth knowing on a console when a boot is slow. It no longer decides
+/// anything.
+fn transfer_limit(mdts: u8, mpsmin: u32, block_size: u32) -> usize {
+    /// What to use when the controller declines to say. Every controller
+    /// accepts it, and it is what this client used before MDTS was read.
+    const UNSTATED: usize = 64 * 1024;
+    /// A ceiling of our own. One command is one stall with no other command
+    /// outstanding, and a target that advertises a very large MDTS is offering
+    /// more than a boot path has any use for.
+    const CEILING: usize = 512 * 1024;
 
-    let Some(mtu) = mtu else {
-        return BIG;
-    };
-    // Whole pages only: the transfer has to stay a multiple of the LBA size,
-    // and 4 KiB is a multiple of every block size a namespace reports.
-    let fits = (mtu.saturating_sub(OVERHEAD) / PAGE * PAGE) as usize;
-    if fits >= 8192 {
-        // Capped: without Identify Controller there is no MDTS to consult, and
-        // 64 KiB is a transfer every controller accepts.
-        fits.min(BIG)
+    let page = 1usize << (12 + mpsmin.min(12));
+    let limit = if mdts == 0 {
+        UNSTATED
     } else {
-        BIG
-    }
+        page.saturating_mul(1usize << mdts.min(20)).min(CEILING)
+    };
+
+    // Down to a whole number of blocks. CDW12 carries NLB as a 0-based count,
+    // so a transfer shorter than one block would compute `blocks - 1` on zero
+    // and wrap — reachable on a namespace reporting a block size larger than
+    // the limit, which the format permits up to 64 KiB.
+    let bs = block_size.max(1) as usize;
+    (limit / bs * bs).max(bs)
 }
 
 fn le16(b: &[u8], at: usize) -> u16 {
@@ -444,9 +445,14 @@ impl Queue {
     ///
     /// Connect only establishes a queue; a conforming target answers every
     /// admin command before this with Command Sequence Error.
-    fn enable_controller(&mut self) -> Result<u16, String> {
+    ///
+    /// Returns the queue depth the controller allows and `CAP.MPSMIN`, which
+    /// is the unit MDTS is counted in and so is needed to make sense of it.
+    fn enable_controller(&mut self) -> Result<(u16, u32), String> {
         let cap = self.property_get(REG_CAP, true)?;
         let mqes = ((cap & 0xFFFF) as u16).saturating_add(1);
+        // CAP.MPSMIN, bits 51:48: the minimum page size as 2^(12 + MPSMIN).
+        let mpsmin = ((cap >> 48) & 0xF) as u32;
         // CAP.TO is in 500ms units.
         let timeout_ms = ((cap >> 24) & 0xFF).max(1) * 500;
 
@@ -459,7 +465,7 @@ impl Queue {
                 return Err("controller reports fatal status (CSTS.CFS)".into());
             }
             if csts & 0x1 != 0 {
-                return Ok(mqes);
+                return Ok((mqes, mpsmin));
             }
             if waited > timeout_ms {
                 return Err(format!("controller not ready {timeout_ms}ms after CC.EN"));
@@ -482,10 +488,15 @@ pub struct Namespace {
     io: Queue,
     pub nsid: u32,
     pub geometry: Geometry,
-    /// Largest transfer this client will issue, in bytes. Derived from `mtu`;
-    /// see `chunk_for_mtu`.
+    /// Largest transfer this client will issue, in bytes. Derived from the
+    /// controller's MDTS; see `transfer_limit`.
     pub max_transfer: usize,
-    /// The MTU the firmware reported for the path, for the console line.
+    /// Raw MDTS as the controller reported it, for the console line. Zero
+    /// means it stated no limit, or would not answer Identify Controller.
+    pub mdts: u8,
+    /// The MTU the firmware reported for the path, for the console line. It no
+    /// longer sizes anything — see `transfer_limit` — but a slow boot on a
+    /// path that turned out to be 1500 is worth being able to see.
     /// `None` means the stack would not say.
     pub mtu: Option<u32>,
 }
@@ -509,7 +520,7 @@ impl Namespace {
 
         let mut admin = Queue::open(addr, port)?;
         let cntlid = admin.fabrics_connect(0, 32, 0xFFFF, subnqn, hostnqn, &hostid)?;
-        let mqes = admin.enable_controller()?;
+        let (mqes, mpsmin) = admin.enable_controller()?;
 
         // Identify the namespace: CNS 0x00, nsid in the command.
         let cid = admin.next_cid();
@@ -529,6 +540,23 @@ impl Namespace {
             return Err(format!("implausible block size {block_size} (LBADS {lbads})"));
         }
 
+        // Identify the controller: CNS 0x01, no namespace. MDTS is byte 77.
+        // Not fatal if it fails — a controller that will not describe itself
+        // still serves reads, and `transfer_limit` has an answer for silence.
+        let mdts = {
+            let cid = admin.next_cid();
+            let mut sqe = Sqe::new(OPC_IDENTIFY, cid, 0);
+            sqe.sgl(0, 4096, SGL_TRANSPORT).dw(10, 0x01);
+            let mut idctrl = vec![0u8; 4096];
+            match admin
+                .send_cmd(&sqe, None)
+                .and_then(|_| admin.complete(cid, None, Some(&mut idctrl)))
+            {
+                Ok(_) => idctrl[77],
+                Err(_) => 0,
+            }
+        };
+
         // A second connection for I/O, carrying the controller id the admin
         // Connect handed back.
         let mut io = Queue::open(addr, port)?;
@@ -544,7 +572,8 @@ impl Namespace {
             io,
             nsid,
             geometry: Geometry { blocks, block_size },
-            max_transfer: chunk_for_mtu(mtu),
+            max_transfer: transfer_limit(mdts, mpsmin, block_size),
+            mdts,
             mtu,
         })
     }

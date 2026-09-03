@@ -164,20 +164,24 @@ fn run() -> Result<(), String> {
         g.blocks,
         g.block_size
     );
-    // Say which transfer size was chosen and why it was chosen. This used to
-    // be a constant edited by hand to match the network, so the one thing a
-    // console line has to answer is whether the binary agrees with the path
-    // it is actually on.
-    match ns.mtu {
-        Some(mtu) => uefi::println!(
-            "  transfer  : {} KiB per command  (path MTU {mtu})",
-            ns.max_transfer / 1024
-        ),
-        None => uefi::println!(
-            "  transfer  : {} KiB per command  (the stack reported no MTU)",
-            ns.max_transfer / 1024
-        ),
-    }
+    // Say which transfer size was chosen and where the number came from. This
+    // used to be a constant edited by hand to match the network, and then a
+    // number derived from the MTU that got it backwards on a jumbo path, so
+    // the console has to show the input as well as the answer.
+    let source = if ns.mdts == 0 {
+        String::from("controller stated no MDTS")
+    } else {
+        format!("controller MDTS {}", ns.mdts)
+    };
+    let path = match ns.mtu {
+        Some(mtu) if mtu >= 9000 => format!("path MTU {mtu}, jumbo"),
+        Some(mtu) => format!("path MTU {mtu}"),
+        None => String::from("the stack reported no MTU"),
+    };
+    uefi::println!(
+        "  transfer  : {} KiB per command  ({source}; {path})",
+        ns.max_transfer / 1024
+    );
 
     // 5. Hand it to the firmware as an ordinary disk.
     let handle = blockio::publish(ns)?;
