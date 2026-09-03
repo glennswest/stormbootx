@@ -82,6 +82,14 @@ These have each cost a debugging session. Do not "simplify" them away.
 - **Fedora's OVMF has no upper network stack.** SNP present, MNP/IP4/TCP4
   absent, and `ConnectController` over every handle does not change it. The
   obvious emulator cannot test the network path.
+- **The first boot option may run before the network stack exists.** On the
+  Dell (C2NR0Q2), same firmware and same boot session: the *first* boot option
+  reported `EFI_TCP4 is not present` and the *second*, seconds later, found it
+  **already bound**. `ConnectController` cannot bind a driver the platform has
+  not dispatched, so more passes were never the answer — time was.
+  `ensure_available` now retries for up to 5 s and reports the delay. Do not
+  "optimise" that wait away: without it, whichever stick happens to be first in
+  the boot order is the one that silently decides the machine has no network.
 - **A real server may not carry the stack either, and that is a setup switch.**
   2026-09-03, first hardware run: a Dell (service tag C2NR0Q2) booted
   stormbootx, read its own tag out of SMBIOS, and reported `EFI_TCP4 is not
@@ -166,9 +174,10 @@ These have each cost a debugging session. Do not "simplify" them away.
 
 v0.3.0. **Ran on real hardware 2026-09-03** — a Dell, service tag C2NR0Q2,
 booted the agent off a USB stick and read its own service tag out of SMBIOS
-with no network, no DHCP and no BMC. It stopped at `EFI_TCP4 is not present`,
-which is the firmware's UEFI network stack being disabled in setup, not a
-fault in the binary; nothing past `tcp4` has been exercised on metal yet.
+with no network, no DHCP and no BMC. With the UEFI network stack
+enabled in setup it reports `tcp4 : available`, already bound. The next wall is
+DHCP: an older stick got as far as `no IP address after 20s (NO_MAPPING)`.
+Nothing past `tcp4` has been exercised on metal yet.
 
 Earlier the same day, under Proxmox OVMF: **First real execution: 2026-09-03**
 — `tcp4probe` ran under Proxmox OVMF on VM 2062 (`stormbootx-test.g8.lo`) and

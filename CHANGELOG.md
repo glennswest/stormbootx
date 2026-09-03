@@ -3,6 +3,22 @@
 ## [Unreleased]
 
 ### 2026-09-03
+- **fix (tcp4): wait for the network stack instead of asking once.** On the Dell
+  (C2NR0Q2), same firmware and same boot session, the *first* boot option
+  reported `EFI_TCP4 is not present` and the *second* — seconds later — found it
+  available and already bound. `ensure_available` ran one `ConnectController`
+  pass and checked immediately, so a platform that had not yet dispatched the
+  NIC's driver was recorded as one that carries no network stack at all.
+  `ConnectController` cannot bind a driver the platform has not loaded, so more
+  passes were never the answer: it now retries the full pass every 250 ms for up
+  to 5 s and reports how long it took, which also tells the two candidate causes
+  apart — a driver dispatched late, or a stack that binds asynchronously. The
+  window is spent only on a machine that was going to fail anyway, against a
+  boot that falls through to the local disk because the network was a moment
+  late, which is a machine nobody provisioned. `tcp4probe` reports the new
+  verdict too.
+- **verified: the UEFI network stack is a setup switch, and flipping it works.**
+  With it enabled the Dell reports `tcp4 : available`, already bound.
 - **feat (smbios): print the model next to the service tag.** Whether a platform
   carries the TCP/IP driver stack at all is a per-*model* fact — the first
   hardware run stopped at `EFI_TCP4 is not present` — so the console now names
