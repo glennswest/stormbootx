@@ -102,6 +102,16 @@ These have each cost a debugging session. Do not "simplify" them away.
       boundary and every streaming split. Unreferenced until #2 wires it up,
       and LTO drops it, so it costs the image 0 bytes today.
 
+### In progress
+
+- [ ] The transfer size inverts on jumbo. `chunk_for_mtu` sizes a command to
+      fit one frame, so a 9000 path gets 8 KiB and a 1500 path gets 64 KiB —
+      eight times *less* data per round trip on the faster network. The reads
+      are strictly serial (one command outstanding, `nvme.rs` `read`), so
+      throughput is transfer ÷ RTT and the frame argument buys nothing over
+      TCP, which segments to the MSS and never IP-fragments. Replace the guess
+      with the controller's own MDTS.
+
 ### Blocked on other repos
 
 - [ ] #3 (the rest) — the version compare needs `stormblock-pallet-format`
