@@ -98,9 +98,10 @@ an engine that is down — the console says which and the boot continues on
 whatever resolution below produced. An image nobody has assigned beats no image.
 `claim = no` opts a stick out entirely.
 
-## Finding the target
+## Finding the portal
 
-Where to attach. Three sources, first hit wins.
+Where to attach — the appliance address, not the image. Two sources, first hit
+wins, plus an opt-in third.
 
 ### 1. The media
 
@@ -110,27 +111,28 @@ there is no probing for "something that looks like our ESP" and no risk of
 writing to a partition that belongs to somebody else.
 
 ```ini
-# A portal line PINS this machine and turns discovery off entirely.
-portal = 192.168.31.202
-port   = 4420
-nqn    = nqn.2026-09.lo.g16:stormcos
-nsid   = 2
+# The appliance. nqn and nsid here are only the fallback, for a claim that
+# cannot be reached — an image nobody assigned beats no image.
+portal   = 192.168.31.202
+port     = 4420
+nqn      = nqn.2026-09.lo.g16:stormcos
+nsid     = 2
 
-# Or leave the portal out and let it discover. These are the knobs that go
-# with that:
-zone     = storm.lo   # where the _nvme-disc._tcp record lives
-discover = yes        # `no` pins to the compiled floor without naming an address
-
-# Claiming this machine's own image by service tag.
+# Which image is this machine's own, claimed by service tag.
 api_port = 9090       # the engine API, on the same host as the portal
-claim    = yes        # `no` leaves the machine on the nqn/nsid resolved above
+claim    = yes        # `no` leaves the machine on the nqn/nsid above
+
+# DNS discovery is OFF unless a stick asks for it.
+discover = yes        # opt in
+zone     = storm.lo   # where the _nvme-disc._tcp record lives
 ```
 
-`port`, `nqn` and `nsid` override discovery field by field, so one stick can
-take a different namespace out of the portal its network publishes without
-having its address pinned too.
+### 2. Compiled values
 
-### 2. DNS
+A floor, not a configuration — enough that a blank `dd`-written stick is useful
+before anyone has edited anything.
+
+### 3. DNS — opt-in, off by default
 
 ```text
 SRV  _nvme-disc._tcp.storm.lo  ->  portal.storm.lo:4420
@@ -138,10 +140,12 @@ TXT  _nvme-disc._tcp.storm.lo  ->  nqn=…  nsid=…
 A    portal.storm.lo           ->  192.168.31.202
 ```
 
-`_nvme-disc._tcp` is NVMe-oF TP8009's DNS-SD service name, so it is the
-standard name even though stormblock exposes no discovery controller — which is
-why TXT carries the subsystem NQN rather than pointing at
-`nqn.2014-08.org.nvmexpress.discovery`.
+`_nvme-disc._tcp` is NVMe-oF TP8009's DNS-SD service name. TXT carries the
+subsystem NQN directly rather than pointing at
+`nqn.2014-08.org.nvmexpress.discovery` — not because there is nothing there
+(stormblock does serve a discovery controller: `DISCOVERY_NQN`, log page
+`0x70`, `CNTRLTYPE=2`) but because one answer in DNS beats a second Connect and
+a log-page walk on a path this small.
 
 **The zone is fixed on purpose.** The obvious design asks DHCP for option 15 and
 queries `_nvme-disc._tcp.<that domain>`, which means reaching into `EFI_DHCP4`
@@ -166,11 +170,13 @@ The transport is DNS over TCP (RFC 7766), which reuses `tcp4.rs` and adds no
 second EFI protocol dependency. A resolver that does not answer costs five
 seconds and then falls through.
 
-### 3. Compiled values
-
-A floor, not a configuration — enough that a blank `dd`-written stick is useful
-before anyone has edited or published anything, and, more to the point, enough
-that a DNS outage is not a boot outage.
+DNS was the default while the portal was the thing a machine had to be told.
+It is not any more: the portal is a fixed appliance address, and the question
+worth answering — *which image* — is the service tag against that appliance.
+Leaving DNS in front of that is a second place for the answer to live, a
+resolver that has to be right before a machine can boot, and a timeout on every
+boot in a zone nobody published. `discover = yes` brings it back for a network
+that wants one image booting everywhere with no per-network config.
 
 ## Will it run on this machine?
 

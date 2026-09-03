@@ -9,12 +9,14 @@
 #
 #   dd if=<output> of=/dev/sdX bs=4M conv=fsync
 #
-# By default the stick names no target at all: it discovers the portal from the
-# network's own resolver (SRV/TXT _nvme-disc._tcp), so one image works on every
-# network and a portal that moves is a zone edit rather than a visit to every
-# machine. --pin writes the portal into \stormboot\stormboot.conf for a box
-# that must attach somewhere specific; --probe builds a diagnostic stick that
-# boots tcp4probe instead of the agent.
+# The stick names the portal — an appliance address — and nothing about which
+# image to boot. That is a fleet decision living next to the images, as a
+# boothost/<service tag> synonym the agent claims at boot. Moving a machine to
+# another version is a PUT on its name; the stick never changes.
+#
+# --discover asks DNS for the portal instead (opt-in, off by default: DNS is a
+# second place for the answer to live and a timeout on every boot in a zone
+# nobody published). --probe builds a diagnostic stick that boots tcp4probe.
 #
 # Runs ON the build box (dev.g8.lo). Output goes to /build/images — never
 # /tmp, which on dev is a tmpfs sized at half of RAM.
@@ -28,6 +30,8 @@ PORT="4420"
 NQN="nqn.2026-09.lo.g16:stormcos"
 NSID="2"
 ZONE="storm.lo"
+API_PORT="9090"                              # engine API on the portal host
+DISCOVER="no"                               # DNS discovery is opt-in now
 ESP_MIB="4"
 OUTDIR="/build/images"
 OUTPUT=""
@@ -40,7 +44,9 @@ usage() {
     cat <<'USAGE'
 
 Options:
-  --pin            write the portal into the config, disabling discovery
+  --pin            write only the portal, with no claim knobs
+  --discover       ask DNS for the portal (opt-in; off by default)
+  --api-port N     engine API port on the portal host (default 9090)
   --probe          boot tcp4probe instead of the agent (a diagnostic stick)
   --zone NAME      DNS zone holding _nvme-disc._tcp (default storm.lo)
   --portal ADDR    NVMe/TCP portal, with --pin (default 192.168.31.202)
@@ -58,6 +64,8 @@ while [[ $# -gt 0 ]]; do
         --pin)    PIN="yes"; shift ;;
         --probe)  PROBE="yes"; shift ;;
         --zone)   ZONE="$2"; shift 2 ;;
+        --discover) DISCOVER="yes"; shift ;;
+        --api-port) API_PORT="$2"; shift 2 ;;
         --portal) PORTAL="$2"; PIN="yes"; shift 2 ;;
         --port)   PORT="$2"; shift 2 ;;
         --nqn)    NQN="$2"; shift 2 ;;
@@ -110,22 +118,42 @@ port   = $PORT
 nqn    = $NQN
 nsid   = $NSID
 CONF
-else
+elif [[ "$DISCOVER" == "yes" ]]; then
     cat > "$WORK/stormboot.conf" <<CONF
-# stormbootx — this stick names no target and discovers one.
+# stormbootx — this stick discovers its portal over DNS.
 #
-# It asks whichever resolver DHCP hands it for the SRV and TXT records at
-# _nvme-disc._tcp.$ZONE, so the same image boots on every network and a portal
-# that moves is a zone edit rather than a visit to every machine. Publish the
-# records with scripts/publish-portal-dns.sh.
+# Opt-in: it asks whichever resolver DHCP hands it for the SRV and TXT records
+# at _nvme-disc._tcp.$ZONE. Publish them with scripts/publish-portal-dns.sh —
+# an unpublished zone costs a timeout on every boot before the floor is used.
 #
-# To pin this machine instead, add a portal line — that turns discovery off:
-#   portal = $PORTAL
-#
-# port, nqn and nsid may be set here on their own: they override discovery
-# field by field without pinning the address.
+# Which image this machine boots is still the service tag, not DNS. Discovery
+# only answers *where* the appliance is.
 zone     = $ZONE
 discover = yes
+CONF
+else
+    cat > "$WORK/stormboot.conf" <<CONF
+# stormbootx — the portal is an appliance address, the image is this machine's.
+#
+# Nothing here says which image to boot. That is a fleet decision and it lives
+# next to the images: a boothost/<service tag> synonym on the engine, claimed
+# at $PORTAL:$API_PORT in one request that answers with a copy-on-write clone
+# and the address, NQN and NSID reaching it. Moving this machine to another
+# version is a PUT on its name — this stick does not change.
+#
+# nqn and nsid below are only the fallback, for a claim that cannot be reached:
+# an image nobody assigned beats no image.
+#
+# DNS discovery is off. It was the default while the portal was the thing a
+# machine had to be told; the portal is now a fixed appliance address and the
+# interesting question is answered by the service tag. Add \`discover = yes\`
+# to bring it back.
+portal   = $PORTAL
+port     = $PORT
+nqn      = $NQN
+nsid     = $NSID
+api_port = $API_PORT
+claim    = yes
 CONF
 fi
 

@@ -190,11 +190,17 @@ pub fn resolve(d: &Defaults, note: &mut dyn FnMut(&str)) -> Config {
     let zone = file
         .and_then(|t| field(t, "zone"))
         .unwrap_or_else(|| d.zone.to_string());
-    // `discover = no` pins a machine to the compiled defaults without having to
-    // name a portal that would then also need maintaining.
-    let discover_off = file
+    // Discovery is **off unless a stick asks for it**. It was the default while
+    // the portal was the thing a machine had to be told; now the portal is a
+    // fixed appliance address and the interesting question — *which image* —
+    // is answered by the service tag against that appliance. DNS in front of
+    // that is a second place for the answer to live, a resolver that has to be
+    // right before a machine can boot, and a timeout on every boot in a zone
+    // nobody published. `discover = yes` brings it back for a network that
+    // wants it.
+    let discover_on = file
         .and_then(|t| field(t, "discover"))
-        .is_some_and(|v| matches!(v.as_str(), "no" | "false" | "0" | "off"));
+        .is_some_and(|v| matches!(v.as_str(), "yes" | "true" | "1" | "on"));
 
     cfg.stamp = file.and_then(|t| field(t, "stamp"));
     if let Some(p) = file.and_then(|t| field(t, "api_port")).and_then(|s| s.parse().ok()) {
@@ -210,8 +216,9 @@ pub fn resolve(d: &Defaults, note: &mut dyn FnMut(&str)) -> Config {
         // Pinned. Nothing is asked and nothing can move this machine.
         cfg.portal = p;
         cfg.source = format!("{CONF_PATH} (pinned)");
-    } else if discover_off {
-        note("discovery   : disabled by the config file");
+    } else if !discover_on {
+        // The ordinary case now: no portal line, no DNS, the compiled floor.
+        // Silent on purpose — this is not a fallback any more, it is the path.
     } else {
         note(&format!("discovery   : {}.{zone}", crate::dns::SERVICE));
         match crate::dns::discover(&zone, note) {
