@@ -3,6 +3,13 @@
 ## [Unreleased]
 
 ### 2026-09-03
+- **verified: the network path runs under Proxmox OVMF.** `tcp4probe` on VM
+  2062 reports every network protocol absent as found and all nine present
+  after a `ConnectController` pass, then configures a TCP4 child successfully.
+  Fedora's OVMF cannot do this, which had left the whole network path with no
+  emulator; Proxmox's build carries HTTP boot and so carries TCP4. A Proxmox VM
+  can also present a service tag — `smbios1` takes a base64 `serial=`, which is
+  the SMBIOS Type 1 field the agent reads.
 - **fix (nvme): the transfer size inverted on a jumbo path.** `chunk_for_mtu`
   sized a command so one reply landed in one frame, which meant a 9000 path
   rounded down to **8 KiB** a command while a 1500 path took the 64 KiB

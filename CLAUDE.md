@@ -83,6 +83,13 @@ These have each cost a debugging session. Do not "simplify" them away.
 - **Fedora's OVMF has no upper network stack.** SNP present, MNP/IP4/TCP4
   absent, and `ConnectController` over every handle does not change it. The
   obvious emulator cannot test the network path.
+- **Proxmox's OVMF does, and it is the emulator to use.** Verified 2026-09-03
+  on pve.g8.lo (`pve-edk2-firmware`, Nov 2025) with `tcp4probe` on VM 2062:
+  every protocol reads *absent* as found and all nine appear after a
+  `ConnectController` pass — the `BoundAfterFullPass` case #5 added. The boot
+  menu lists `UEFI HTTPv4/v6`, which is why: HTTP boot pulls TCP4 in. So the
+  network path *can* be exercised in a VM, on Proxmox rather than on Fedora's
+  OVMF.
 - **The transfer size comes from MDTS, never from the MTU.** Sizing a command
   to fit one frame inverts: a 9000 path lands on 8 KiB and a 1500 path on
   64 KiB. TCP segments to the MSS and never IP-fragments, so frames are not
@@ -128,6 +135,16 @@ These have each cost a debugging session. Do not "simplify" them away.
 
 ## Status
 
-v0.2.0. Built and verified as an artifact; **not yet run on hardware**. The
-first line to watch on a real machine is `tcp4 : available` — and on a model
-nobody has tried, run `tcp4probe` before writing an agent stick at all.
+v0.2.0. Built and verified as an artifact. **First real execution: 2026-09-03**
+— `tcp4probe` ran under Proxmox OVMF on VM 2062 (`stormbootx-test.g8.lo`) and
+reported TCP4 available after a full `ConnectController` pass, then configured
+a TCP4 child and got as far as a connect timeout, which is the probe's own
+"the stack works" case. The agent itself has still not attached anything.
+
+A Proxmox VM can carry a service tag: `smbios1` takes `serial=` base64-encoded
+(`QemuServer.pm:1593`), which is the SMBIOS Type 1 field `smbios.rs` reads. It
+is empty unless set — a VM with only `uuid=` reports no serial and the agent
+falls through to the local disk before it ever reaches the network.
+
+On a *physical* model nobody has tried, still run `tcp4probe` before writing an
+agent stick at all.
