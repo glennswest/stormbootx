@@ -97,6 +97,12 @@ fn main() -> Status {
         tcp4::Presence::BoundAfterFullPass => uefi::println!(
             "verdict     : TCP4 appeared after a pass over every handle."
         ),
+        tcp4::Presence::BoundAfterWait(ms) => uefi::println!(
+            "verdict     : TCP4 appeared only after waiting {ms} ms.\n\
+             \x20             The platform was not ready when this ran — its NIC driver had\n\
+             \x20             not been dispatched yet, or the stack binds asynchronously.\n\
+             \x20             Whichever boot option runs first on this model pays for it."
+        ),
         tcp4::Presence::Absent => {
             uefi::println!("verdict     : no TCP4. {}", tcp4::NO_TCP4_ADVICE);
             uefi::println!("============================================================");
