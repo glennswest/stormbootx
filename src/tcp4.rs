@@ -24,7 +24,7 @@ use core::ptr;
 use uefi::boot::{self, SearchType};
 use uefi::{Guid, Status, guid};
 use uefi_raw::protocol::network::ip4_config2::{
-    Ip4Config2DataType, Ip4Config2Policy, Ip4Config2Protocol,
+    Ip4Config2DataType, Ip4Config2InterfaceInfo, Ip4Config2Policy, Ip4Config2Protocol,
 };
 use uefi_raw::protocol::network::snp::NetworkMode;
 use uefi_raw::protocol::network::tcp4::{
@@ -237,6 +237,39 @@ fn connect_all() -> bool {
         }
     }
     available()
+}
+
+/// One interface's address, mask and policy, straight from the platform.
+///
+/// Returns `(address, mask, policy)` where policy is 0 static, 1 dhcp. An
+/// address of `0.0.0.0` with policy `dhcp` is the interesting case: it means
+/// the platform is asking and nothing has answered.
+pub fn interface_address(handle: uefi_raw::Handle) -> Option<([u8; 4], [u8; 4], i32)> {
+    let p = handle_protocol(handle, &IP4_CONFIG2)?;
+    let cfg = p as *mut Ip4Config2Protocol;
+    unsafe {
+        let mut policy = Ip4Config2Policy::STATIC;
+        let mut size = core::mem::size_of::<Ip4Config2Policy>();
+        let _ = ((*cfg).get_data)(
+            cfg,
+            Ip4Config2DataType::POLICY,
+            &mut size,
+            &mut policy as *mut _ as *mut core::ffi::c_void,
+        );
+
+        let mut info: Ip4Config2InterfaceInfo = core::mem::zeroed();
+        let mut size = core::mem::size_of::<Ip4Config2InterfaceInfo>();
+        let st = ((*cfg).get_data)(
+            cfg,
+            Ip4Config2DataType::INTERFACE_INFO,
+            &mut size,
+            &mut info as *mut _ as *mut core::ffi::c_void,
+        );
+        if st != Status::SUCCESS {
+            return Some(([0, 0, 0, 0], [0, 0, 0, 0], policy.0));
+        }
+        Some((info.station_addr.0, info.subnet_mask.0, policy.0))
+    }
 }
 
 /// Put the network interfaces in the order worth trying them in.

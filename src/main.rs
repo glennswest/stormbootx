@@ -43,6 +43,7 @@ mod config;
 mod dhcp4;
 mod nvme;
 mod registry;
+mod shell;
 mod sha256;
 mod smbios;
 mod tcp4;
@@ -282,6 +283,19 @@ fn fall_through(err: &str) -> Status {
 
     uefi::println!("");
     uefi::println!("no network boot: {err}");
+
+    // Offer a console before falling through. Firmware is the worst place to
+    // debug blind, and every question worth asking here — what NICs are there,
+    // what address do they hold, can this machine reach that host — needs a
+    // machine that has already failed, which is exactly this moment.
+    //
+    // Offered on a timer and never forced: a machine that reboots unattended
+    // must not stop at a prompt because nobody was watching. Silence takes the
+    // path it would have taken anyway.
+    if shell::offer(5) {
+        shell::run();
+    }
+
     if disks > 0 {
         // Short. This runs on every reboot while a portal is down, and a boot
         // path that adds half a minute to each of them is its own outage.
@@ -289,7 +303,6 @@ fn fall_through(err: &str) -> Status {
             "RESULT: falling through to the local disk ({disks} found). \
              The machine boots what it already has."
         );
-        uefi::boot::stall(core::time::Duration::from_secs(5));
     } else {
         // Nothing to fall through to, so there is time to read this and it is
         // the one case where a human is definitely needed.
