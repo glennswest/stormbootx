@@ -62,6 +62,16 @@ pub struct Config {
     /// whatever `nqn`/`nsid` resolution produced, which is what a stick pinned
     /// to one namespace wants.
     pub claim: bool,
+    /// A static address for this machine, when DHCP is not an option.
+    ///
+    /// Not every segment answers DHCP. The one this was first run on had no
+    /// relay pointed at its server, so every request — the platform's and this
+    /// binary's own — went nowhere and the boot failed with `NO_MAPPING` after
+    /// thirty seconds. An address written on the media needs nothing from the
+    /// network to be true, which is the same argument that put the portal here
+    /// rather than in DHCP.
+    pub ip: Option<[u8; 4]>,
+    pub netmask: Option<[u8; 4]>,
     /// Digest of the `BOOTX64.EFI` currently on this media, if it has been
     /// stamped. Absent on a stick written by `dd` and never updated.
     pub stamp: Option<String>,
@@ -172,6 +182,8 @@ pub fn resolve(d: &Defaults) -> Config {
         nsid: d.nsid,
         api_port: d.api_port,
         claim: true,
+        ip: None,
+        netmask: None,
         stamp: None,
         source: "compiled defaults".to_string(),
     };
@@ -187,6 +199,16 @@ pub fn resolve(d: &Defaults) -> Config {
     let file_nqn = file.and_then(|t| field(t, "nqn"));
     let file_nsid = file.and_then(|t| field(t, "nsid")).and_then(|s| s.parse().ok());
     cfg.stamp = file.and_then(|t| field(t, "stamp"));
+    cfg.ip = file.and_then(|t| field(t, "ip")).and_then(|s| parse_ipv4(&s));
+    // A /20 is the common case here and a wrong mask is a machine that cannot
+    // reach its own portal, so this defaults to nothing rather than guessing:
+    // an `ip` without a `netmask` is not a usable configuration and is ignored.
+    cfg.netmask = file
+        .and_then(|t| field(t, "netmask"))
+        .and_then(|s| parse_ipv4(&s));
+    if cfg.ip.is_some() && cfg.netmask.is_none() {
+        cfg.ip = None;
+    }
     if let Some(p) = file.and_then(|t| field(t, "api_port")).and_then(|s| s.parse().ok()) {
         cfg.api_port = p;
     }
