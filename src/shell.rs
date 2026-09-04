@@ -141,11 +141,18 @@ fn nics() {
         let m = unsafe { &*mode };
         let mac = m.permanent_address.0;
         uefi::println!(
-            "  nic {i}: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}  mtu {}  link {}  state {}",
+            "  nic {i}: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}  mtu {}  link {}  {}",
             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5],
             m.max_packet_size,
             if bool::from(m.media_present) { "UP" } else { "down" },
-            m.state
+            // Stopped is the one worth naming: a NIC the firmware has a driver
+            // for but never started carries no traffic and answers nothing.
+            match m.state.0 {
+                0 => "stopped",
+                1 => "started",
+                2 => "initialized",
+                _ => "?",
+            }
         );
     }
 }
