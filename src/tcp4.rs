@@ -554,7 +554,12 @@ the cable is in a port this firmware does not carry a stack for.",
                 if mac_len > 0 {
                     if let Some(lease) = crate::dhcp4::lease_for(&mac, mac_len) {
                         let [a, b, c, d] = lease.address;
-                        uefi::println!("    dhcp: leased {a}.{b}.{c}.{d} on this interface");
+                        let [m0, m1, m2, m3] = lease.subnet_mask;
+                        let [g0, g1, g2, g3] = lease.router;
+                        uefi::println!(
+                            "    dhcp: leased {a}.{b}.{c}.{d}/{m0}.{m1}.{m2}.{m3} \
+gw {g0}.{g1}.{g2}.{g3}"
+                        );
                         return match sock.configure(remote, port, Some(lease)) {
                             Ok(()) => Ok(sock),
                             Err(e2) => Err(e2),
