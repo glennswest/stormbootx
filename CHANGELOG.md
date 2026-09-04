@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+### 2026-09-04
+- **fix (tcp4): try every network interface, not the first one.** `connect_within`
+  took `handles.first()` and never looked at the others. A server has more than
+  one NIC — a 1 GbE management port and a 25 GbE data port — and each carries its
+  own network stack, so that was a coin flip. Landing on the port with no cable
+  produces exactly the symptom seen on the Dell: `tcp4 : available`, because
+  *some* interface has a stack, then `NO_MAPPING` forever, because *that* one has
+  no link and never will. No amount of waiting fixes a socket on the wrong NIC.
+- **feat (tcp4): try the fastest interface first.** This is the storage path, so
+  the NIC that matters is the one somebody wired for it. Interfaces are ranked
+  before any is tried: link state, then descending MTU, then enumeration order.
+  MTU stands in for speed because it is the honest signal available — 9000 means
+  somebody configured that port for storage, 1500 means they did not — and
+  because it costs nothing, coming from the SNP mode `EFI_TCP4.GetModeData`
+  already returns. No `EFI_ADAPTER_INFORMATION_PROTOCOL`, which is another
+  optional stack. A port with no media is ranked last rather than skipped: SNP
+  may not know, and dropping the only working interface is worse than one extra
+  attempt.
+- **feat (dhcp4): get an address ourselves instead of hoping firmware did.**
+  `Configure` with `use_default_address` needs the platform's IP4 driver to
+  already hold an address, i.e. somebody else's DHCP client to have run. On a
+  server that is not a given — the policy may be `STATIC`, or the platform may
+  only run DHCP as part of a PXE attempt nobody asked for — and the symptom is
+  `NO_MAPPING` with nothing to wait for. `EFI_DHCP4_PROTOCOL` is now driven
+  directly and the lease goes into `Tcp4ConfigData` as an explicit
+  `station_address`, so nothing downstream depends on the platform's IP4 setup.
+  Matched by MAC, since a DHCP4 and a TCP4 binding on the same NIC are different
+  handles. A **fallback**, never the first move: DHCP4 is an optional stack, so
+  a machine whose firmware lacks it is exactly as well off as before.
+- **feat (tcp4): ask the platform to run DHCP before waiting on it.**
+  `EFI_IP4_CONFIG2`'s policy is set to `DHCP` on every interface not already on
+  it, so leases are in flight everywhere while the retry loop runs.
+
 ### 2026-09-03
 - **fix (tcp4): wait for the network stack instead of asking once.** On the Dell
   (C2NR0Q2), same firmware and same boot session, the *first* boot option

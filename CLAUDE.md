@@ -82,6 +82,17 @@ These have each cost a debugging session. Do not "simplify" them away.
 - **Fedora's OVMF has no upper network stack.** SNP present, MNP/IP4/TCP4
   absent, and `ConnectController` over every handle does not change it. The
   obvious emulator cannot test the network path.
+- **A server has more than one network stack, and the first is not yours.**
+  Each NIC carries its own `EFI_TCP4` service binding, so `handles.first()` is a
+  coin flip between the 1 GbE management port and the 25 GbE storage port. The
+  wrong one gives `tcp4 : available` and then `NO_MAPPING` forever. Every
+  interface is tried, ranked by link then descending MTU — this is the storage
+  path, so the jumbo port goes first.
+- **Never assume the platform ran DHCP.** `use_default_address` needs an address
+  the platform already holds, and nothing guarantees one: the policy may be
+  `STATIC`, or DHCP may only run as part of a PXE attempt nobody asked for.
+  `dhcp4.rs` leases one directly and states it in `Tcp4ConfigData`. Fallback
+  only — `EFI_DHCP4` is optional, like every other stack this refuses to need.
 - **The first boot option may run before the network stack exists.** On the
   Dell (C2NR0Q2), same firmware and same boot session: the *first* boot option
   reported `EFI_TCP4 is not present` and the *second*, seconds later, found it
