@@ -633,26 +633,6 @@ configured.",
         Ok(sock)
     }
 
-    /// This interface's hardware address, and how many bytes of it are real.
-    fn hw_address(&self) -> ([u8; 32], usize) {
-        let mut snp: NetworkMode = unsafe { core::mem::zeroed() };
-        let st = unsafe {
-            ((*self.tcp).get_mode_data)(
-                self.tcp,
-                ptr::null_mut(),
-                ptr::null_mut(),
-                ptr::null_mut(),
-                ptr::null_mut(),
-                &mut snp,
-            )
-        };
-        if st != Status::SUCCESS {
-            return ([0u8; 32], 0);
-        }
-        let len = snp.hw_address_size as usize;
-        (snp.permanent_address.0, len.min(32))
-    }
-
     /// Configure with whatever address this interface's stack already holds.
     ///
     /// One pass, no waiting: the caller owns the timing, because waiting here
