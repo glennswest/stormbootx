@@ -239,22 +239,6 @@ fn connect_all() -> bool {
     available()
 }
 
-/// A station address written on the media, when the network will not supply one.
-///
-/// Set once from the config file before any socket is opened. It is a static
-/// because every socket on this path wants it and threading it through four
-/// call sites would be noise — there is exactly one machine and one address.
-static mut STATIC_ADDRESS: Option<([u8; 4], [u8; 4])> = None;
-
-/// Use `ip`/`netmask` instead of asking the network who we are.
-pub fn set_static_address(ip: [u8; 4], mask: [u8; 4]) {
-    unsafe { STATIC_ADDRESS = Some((ip, mask)) };
-}
-
-fn static_address() -> Option<([u8; 4], [u8; 4])> {
-    unsafe { STATIC_ADDRESS }
-}
-
 /// Put the network interfaces in the order worth trying them in.
 ///
 /// This is the storage path. The NIC that matters is the one somebody wired for
@@ -566,9 +550,6 @@ the cable is in a port this firmware does not carry a stack for.",
                 // one here and configure with the result explicitly — see
                 // `dhcp4.rs`. Matched by MAC, because a DHCP4 binding and a
                 // TCP4 binding on the same NIC are different handles.
-                if static_address().is_some() {
-                    return Err(e); // A configured address failed for some other reason.
-                }
                 let (mac, mac_len) = sock.hw_address();
                 if mac_len > 0 {
                     if let Some(lease) = crate::dhcp4::lease_for(&mac, mac_len) {
@@ -624,14 +605,9 @@ gw {g0}.{g1}.{g2}.{g3}"
         // With a lease of our own the address is stated outright, so nothing
         // downstream depends on the platform's IP4 configuration having been
         // set up by somebody else.
-        // Order of preference: an address written on the media, then one this
-        // binary leased itself, then whatever the platform holds. The first
-        // needs nothing from the network to be true, which on a segment with no
-        // DHCP relay is the difference between booting and not.
-        let (default, station, mask) = match (static_address(), lease) {
-            (Some((ip, m)), _) => (Boolean::FALSE, ip, m),
-            (None, Some(l)) => (Boolean::FALSE, l.address, l.subnet_mask),
-            (None, None) => (Boolean::TRUE, [0, 0, 0, 0], [0, 0, 0, 0]),
+        let (default, station, mask) = match lease {
+            Some(l) => (Boolean::FALSE, l.address, l.subnet_mask),
+            None => (Boolean::TRUE, [0, 0, 0, 0], [0, 0, 0, 0]),
         };
         let mut cfg = Tcp4ConfigData {
             type_of_service: 0,

@@ -154,15 +154,6 @@ fn run() -> Result<(), String> {
         let cfg = config::resolve(&DEFAULTS);
         uefi::println!("target      : {}", cfg.source);
 
-        // An address from the media, if one was written there. Applied before
-        // any socket opens, because every socket on this path wants it.
-        if let (Some(ip), Some(mask)) = (cfg.ip, cfg.netmask) {
-            let [a, b, c, d] = ip;
-            let [m0, m1, m2, m3] = mask;
-            uefi::println!("address     : {a}.{b}.{c}.{d}/{m0}.{m1}.{m2}.{m3} (from the media)");
-            tcp4::set_static_address(ip, mask);
-        }
-
         // Resolution says *where*; the claim says *which*. Which image this
         // machine runs is a fleet decision that lives next to the images, as a
         // `boothost/<service tag>` synonym — so moving this box to a new
