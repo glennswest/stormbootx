@@ -132,6 +132,35 @@ These have each cost a debugging session. Do not "simplify" them away.
   Every failure in discovery or attach falls through to the local disk. One
   provisioning outage must not become a fleet outage.
 
+## Asking the machine before booting it
+
+On a Dell with iDRAC, the hardware questions can be answered without a boot,
+which is worth remembering after a day spent inferring them from console output
+that turned out to come from three different stale sticks.
+
+```bash
+# Every component the Lifecycle Controller knows about.
+curl -sk -u root:<pw> -X POST -H 'Content-Type: application/json' \
+  https://<idrac>/redfish/v1/Managers/iDRAC.Embedded.1/Actions/Oem/EID_674_Manager.ExportSystemConfiguration \
+  -d '{"ExportFormat":"XML","ShareParameters":{"Target":"ALL"}}'
+# -> 202 + Location: a task; poll it, then: grep -oE 'FQDD="[^"]+"'
+```
+
+**Check `CollectSystemInventoryOnRestart` in that export before trusting it.**
+Disabled means the inventory is stale and proves nothing.
+
+That is how C2NR0Q2's real problem was found on 2026-09-04: the export listed
+`NIC.Embedded.1-1-1`, `NIC.Embedded.2-1-1` and nothing else — no `NIC.Slot.*`,
+no `RAID.Slot.*` — with CSIOR *enabled*, `Slot1`/`Slot2` enabled and
+`BootMode=Uefi`. Both add-in cards were absent from the bus, which on an R230
+means the riser they share. Every network symptom above it — no DHCP answer, no
+jumbo interface, `NO_MAPPING` on both NICs — was the machine honestly reporting
+that the port with the cable in it did not exist.
+
+iDRAC8's Redfish (firmware 2.50) is v1.0.2 and has **no** `PCIeDevices`,
+`Storage`, or manager `Attributes` endpoints. `EthernetInterfaces`,
+`Storage/Controllers`, `Logs/Sel` and the SCP export are what it does have.
+
 ## Work plan
 
 ### Done
