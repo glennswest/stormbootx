@@ -85,6 +85,12 @@ WANT="stormbootx"
 [[ "$PROBE" == "yes" ]] && WANT="tcp4probe"
 
 if [[ -z "$BIN" ]]; then
+# Stamp the build so the console can name itself. Three different stale sticks
+# in one machine produced three plausible-looking boot logs during bring-up, and
+# nothing on screen said which binary was talking.
+STORMBOOTX_BUILD="$(git -C "$(dirname "$0")/.." rev-parse --short HEAD 2>/dev/null || echo unknown)$(git -C "$(dirname "$0")/.." diff --quiet 2>/dev/null || echo -dirty)"
+export STORMBOOTX_BUILD
+
     say "building $WANT for x86_64-unknown-uefi"
     ( cd "$ROOT" && cargo build --release --target x86_64-unknown-uefi --bin "$WANT" )
     BIN="${CARGO_TARGET_DIR:-$ROOT/target}/x86_64-unknown-uefi/release/$WANT.efi"

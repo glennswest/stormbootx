@@ -89,7 +89,20 @@ fn banner(line: &str) {
 
 fn run() -> Result<(), String> {
     banner("");
-    banner("stormbootx — NVMe/TCP boot extension");
+    // Identify the build, always. Four separate boots during hardware bring-up
+    // were spent reading output from three *different* stale sticks in the same
+    // machine, each looking plausible, because nothing on the console said
+    // which binary was talking. A version and a commit cost one line.
+    match option_env!("STORMBOOTX_BUILD") {
+        Some(b) => uefi::println!(
+            "stormbootx {} ({b}) — NVMe/TCP boot extension",
+            env!("CARGO_PKG_VERSION")
+        ),
+        None => uefi::println!(
+            "stormbootx {} (unstamped build) — NVMe/TCP boot extension",
+            env!("CARGO_PKG_VERSION")
+        ),
+    }
     banner("============================================================");
 
     // 1. Who am I? No network, no configuration, no BMC.

@@ -78,7 +78,16 @@ fn main() -> Status {
     uefi::helpers::init().unwrap();
 
     uefi::println!("");
-    uefi::println!("tcp4probe — is there a TCP/IP stack in this firmware?");
+    match option_env!("STORMBOOTX_BUILD") {
+        Some(b) => uefi::println!(
+            "tcp4probe {} ({b}) — is there a TCP/IP stack in this firmware?",
+            env!("CARGO_PKG_VERSION")
+        ),
+        None => uefi::println!(
+            "tcp4probe {} (unstamped) — is there a TCP/IP stack in this firmware?",
+            env!("CARGO_PKG_VERSION")
+        ),
+    }
     uefi::println!("============================================================");
     uefi::println!("as found:");
     survey();
