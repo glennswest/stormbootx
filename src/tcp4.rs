@@ -289,14 +289,14 @@ pub fn interface_address(handle: uefi_raw::Handle) -> Option<([u8; 4], [u8; 4], 
 /// stack this binary will not depend on.
 ///
 /// Returns `(index, handle, mtu, link_up)`, best first.
-fn rank_interfaces(
-    handles: &boot::HandleBuffer,
-) -> Vec<(usize, uefi_raw::Handle, Option<u32>, bool)> {
-    let mut out: Vec<(usize, uefi_raw::Handle, Option<u32>, bool)> = handles
+type Ranked = (usize, uefi_raw::Handle, Option<u32>, bool, ([u8; 32], usize));
+
+fn rank_interfaces(handles: &boot::HandleBuffer) -> Vec<Ranked> {
+    let mut out: Vec<Ranked> = handles
         .iter()
         .enumerate()
         .map(|(i, h)| {
-            let (mtu, link, mac) = probe_interface(h.as_ptr());
+            let (mtu, link, mac, mac_len) = probe_interface(h.as_ptr());
             // Say what each interface *is*, before anything is tried. Without
             // this a failure to get an address is indistinguishable from a
             // cable in the wrong socket, and both look like "NO_MAPPING".
@@ -306,7 +306,7 @@ fn rank_interfaces(
                 match mtu { Some(m) => m, None => 0 },
                 if link { "UP" } else { "down/unknown" }
             );
-            (i, h.as_ptr(), mtu, link)
+            (i, h.as_ptr(), mtu, link, (mac, mac_len))
         })
         .collect();
     // Link up before link unknown; then larger MTU first; then enumeration
@@ -324,14 +324,14 @@ fn rank_interfaces(
 /// A child is created only to ask and destroyed immediately. `GetModeData` on
 /// an unconfigured instance is allowed to refuse, which is why both answers are
 /// optional rather than assumed.
-fn probe_interface(sb_handle: uefi_raw::Handle) -> (Option<u32>, bool, [u8; 6]) {
+fn probe_interface(sb_handle: uefi_raw::Handle) -> (Option<u32>, bool, [u8; 32], usize) {
     let Some(p) = handle_protocol(sb_handle, &TCP4_SERVICE_BINDING) else {
-        return (None, false, [0u8; 6]);
+        return (None, false, [0u8; 32], 0);
     };
     let sb = p as *mut ServiceBinding;
     let mut child: uefi_raw::Handle = ptr::null_mut();
     if unsafe { ((*sb).create_child)(sb, &mut child) } != Status::SUCCESS {
-        return (None, false, [0u8; 6]);
+        return (None, false, [0u8; 32], 0);
     }
     let result = match handle_protocol(child, &TCP4) {
         Some(t) => {
@@ -351,14 +351,13 @@ fn probe_interface(sb_handle: uefi_raw::Handle) -> (Option<u32>, bool, [u8; 6]) 
                 let mtu = (576..=65_535)
                     .contains(&snp.max_packet_size)
                     .then_some(snp.max_packet_size);
-                let mut mac = [0u8; 6];
-                mac.copy_from_slice(&snp.permanent_address.0[..6]);
-                (mtu, bool::from(snp.media_present), mac)
+                let len = (snp.hw_address_size as usize).min(32);
+                (mtu, bool::from(snp.media_present), snp.permanent_address.0, len)
             } else {
-                (None, false, [0u8; 6])
+                (None, false, [0u8; 32], 0)
             }
         }
-        None => (None, false, [0u8; 6]),
+        None => (None, false, [0u8; 32], 0),
     };
     unsafe { let _ = ((*sb).destroy_child)(sb, child); };
     result
@@ -519,37 +518,80 @@ impl Tcp4Socket {
         let mut waited = 0u64;
         let mut last = String::from("no interface could be configured");
 
-        loop {
-            for &(i, handle, mtu, link) in order.iter() {
-                match Self::open_on(handle, remote, port, secs) {
-                    Ok(mut sock) => {
-                        if handles.len() > 1 {
-                            let m = match mtu {
-                                Some(m) => m,
-                                None => 0,
-                            };
-                            uefi::println!(
-                                "    interface {i} answered (MTU {m}, link {})",
-                                if link { "up" } else { "unknown" }
-                            );
-                        }
-                        sock.do_connect()?;
-                        return Ok(sock);
-                    }
-                    Err(e) => last = e,
-                }
+        // Three phases, cheapest first. The first version of this ran DHCP on
+        // every interface on every round, and each attempt blocks through the
+        // driver's own retries — so four interfaces took minutes per round, the
+        // budget was never honoured, and the console filled with the same two
+        // lines forever. Ask the cheap question first and ask the expensive one
+        // once.
+        let announce = |i: usize, mtu: Option<u32>, link: bool| {
+            if handles.len() > 1 {
+                uefi::println!(
+                    "    interface {i} answered (MTU {}, link {})",
+                    mtu.unwrap_or(0),
+                    if link { "up" } else { "unknown" }
+                );
             }
+        };
+
+        // 1. Does any interface already hold an address?
+        for &(i, handle, mtu, link, _) in order.iter() {
+            match Self::open_on(handle, remote, port, secs, None) {
+                Ok(mut sock) => {
+                    announce(i, mtu, link);
+                    sock.do_connect()?;
+                    return Ok(sock);
+                }
+                Err(e) => last = e,
+            }
+        }
+
+        // 2. One DHCP of our own per interface — at most once each, because a
+        //    blocking Start costs seconds and repeating it buys nothing.
+        for &(i, handle, mtu, link, mac) in order.iter() {
+            let (mac_bytes, mac_len) = mac;
+            if mac_len == 0 {
+                continue;
+            }
+            uefi::println!("      nic {i}: asking for a lease");
+            let Some(lease) = crate::dhcp4::lease_for(&mac_bytes, mac_len) else {
+                continue;
+            };
+            let [a, b, c, d] = lease.address;
+            let [m0, m1, m2, m3] = lease.subnet_mask;
+            uefi::println!("      nic {i}: leased {a}.{b}.{c}.{d}/{m0}.{m1}.{m2}.{m3}");
+            match Self::open_on(handle, remote, port, secs, Some(lease)) {
+                Ok(mut sock) => {
+                    announce(i, mtu, link);
+                    sock.do_connect()?;
+                    return Ok(sock);
+                }
+                Err(e) => last = e,
+            }
+        }
+
+        // 3. Wait for the platform's own DHCP to land, retrying only the cheap
+        //    question. `request_dhcp` started leases everywhere; this is what
+        //    gives them time to arrive.
+        loop {
             if waited >= budget_ms {
                 return Err(format!(
-                    "{last} — after {} s across {} interface(s). An address never \
-arrived, so either nothing answers DHCP on the port with the cable in it, or \
-the cable is in a port this firmware does not carry a stack for.",
+                    "{last} — after {} s across {} interface(s). No interface \
+obtained an address: nothing answered DHCP on any of them, and none was already \
+configured.",
                     budget_ms / 1000,
                     handles.len()
                 ));
             }
             boot::stall(core::time::Duration::from_millis(STEP_MS));
             waited += STEP_MS;
+            for &(i, handle, mtu, link, _) in order.iter() {
+                if let Ok(mut sock) = Self::open_on(handle, remote, port, secs, None) {
+                    announce(i, mtu, link);
+                    sock.do_connect()?;
+                    return Ok(sock);
+                }
+            }
         }
     }
 
@@ -560,6 +602,7 @@ the cable is in a port this firmware does not carry a stack for.",
         remote: [u8; 4],
         port: u16,
         secs: u32,
+        lease: Option<crate::dhcp4::Lease>,
     ) -> Result<Self, String> {
         let sb = handle_protocol(sb_handle, &TCP4_SERVICE_BINDING)
             .ok_or("could not open the TCP4 service binding")?
@@ -586,33 +629,8 @@ the cable is in a port this firmware does not carry a stack for.",
             pending: Vec::new(),
             turns: (secs as u64 * 1_000_000 / POLL_INTERVAL_US) as u32,
         };
-        match sock.configure(remote, port, None) {
-            Ok(()) => Ok(sock),
-            Err(e) => {
-                // The platform has no address on this interface. Rather than
-                // wait on a DHCP client that may never have been started, run
-                // one here and configure with the result explicitly — see
-                // `dhcp4.rs`. Matched by MAC, because a DHCP4 binding and a
-                // TCP4 binding on the same NIC are different handles.
-                let (mac, mac_len) = sock.hw_address();
-                if mac_len > 0 {
-                    if let Some(lease) = crate::dhcp4::lease_for(&mac, mac_len) {
-                        let [a, b, c, d] = lease.address;
-                        let [m0, m1, m2, m3] = lease.subnet_mask;
-                        let [g0, g1, g2, g3] = lease.router;
-                        uefi::println!(
-                            "    dhcp: leased {a}.{b}.{c}.{d}/{m0}.{m1}.{m2}.{m3} \
-gw {g0}.{g1}.{g2}.{g3}"
-                        );
-                        return match sock.configure(remote, port, Some(lease)) {
-                            Ok(()) => Ok(sock),
-                            Err(e2) => Err(e2),
-                        };
-                    }
-                }
-                Err(e) // Drop destroys the child.
-            }
-        }
+        sock.configure(remote, port, lease)?; // Drop destroys the child.
+        Ok(sock)
     }
 
     /// This interface's hardware address, and how many bytes of it are real.
