@@ -49,12 +49,23 @@ pub struct Lease {
 /// bytes of an `EFI_MAC_ADDRESS` would compare padding that no one promises is
 /// zeroed.
 pub fn lease_for(mac: &[u8], mac_len: usize) -> Option<Lease> {
-    let handles = boot::locate_handle_buffer(SearchType::ByProtocol(&DHCP4_SERVICE_BINDING)).ok()?;
+    let handles = match boot::locate_handle_buffer(SearchType::ByProtocol(&DHCP4_SERVICE_BINDING)) {
+        Ok(h) => h,
+        Err(_) => {
+            // Say so rather than failing silently: "this firmware has no DHCP
+            // client" and "DHCP ran and nobody answered" are different
+            // problems and only one of them is ours.
+            uefi::println!("      dhcp: firmware carries no EFI_DHCP4");
+            return None;
+        }
+    };
+    uefi::println!("      dhcp: {} client(s); running one on this nic", handles.len());
     for h in handles.iter() {
         if let Some(lease) = try_one(h.as_ptr(), mac, mac_len) {
             return Some(lease);
         }
     }
+    uefi::println!("      dhcp: no client reached BOUND — nothing answered");
     None
 }
 

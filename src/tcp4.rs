@@ -263,7 +263,16 @@ fn rank_interfaces(
         .iter()
         .enumerate()
         .map(|(i, h)| {
-            let (mtu, link) = probe_interface(h.as_ptr());
+            let (mtu, link, mac) = probe_interface(h.as_ptr());
+            // Say what each interface *is*, before anything is tried. Without
+            // this a failure to get an address is indistinguishable from a
+            // cable in the wrong socket, and both look like "NO_MAPPING".
+            uefi::println!(
+                "      nic {i}: mac {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}  mtu {}  link {}",
+                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5],
+                match mtu { Some(m) => m, None => 0 },
+                if link { "UP" } else { "down/unknown" }
+            );
             (i, h.as_ptr(), mtu, link)
         })
         .collect();
@@ -282,14 +291,14 @@ fn rank_interfaces(
 /// A child is created only to ask and destroyed immediately. `GetModeData` on
 /// an unconfigured instance is allowed to refuse, which is why both answers are
 /// optional rather than assumed.
-fn probe_interface(sb_handle: uefi_raw::Handle) -> (Option<u32>, bool) {
+fn probe_interface(sb_handle: uefi_raw::Handle) -> (Option<u32>, bool, [u8; 6]) {
     let Some(p) = handle_protocol(sb_handle, &TCP4_SERVICE_BINDING) else {
-        return (None, false);
+        return (None, false, [0u8; 6]);
     };
     let sb = p as *mut ServiceBinding;
     let mut child: uefi_raw::Handle = ptr::null_mut();
     if unsafe { ((*sb).create_child)(sb, &mut child) } != Status::SUCCESS {
-        return (None, false);
+        return (None, false, [0u8; 6]);
     }
     let result = match handle_protocol(child, &TCP4) {
         Some(t) => {
@@ -309,12 +318,14 @@ fn probe_interface(sb_handle: uefi_raw::Handle) -> (Option<u32>, bool) {
                 let mtu = (576..=65_535)
                     .contains(&snp.max_packet_size)
                     .then_some(snp.max_packet_size);
-                (mtu, bool::from(snp.media_present))
+                let mut mac = [0u8; 6];
+                mac.copy_from_slice(&snp.permanent_address.0[..6]);
+                (mtu, bool::from(snp.media_present), mac)
             } else {
-                (None, false)
+                (None, false, [0u8; 6])
             }
         }
-        None => (None, false),
+        None => (None, false, [0u8; 6]),
     };
     unsafe { let _ = ((*sb).destroy_child)(sb, child); };
     result
