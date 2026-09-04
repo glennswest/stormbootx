@@ -16,13 +16,12 @@
 //! and silence takes the normal path. That is the same rule as everywhere else
 //! here: one provisioning outage must not become a fleet outage.
 
-use alloc::string::{String, ToString};
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use uefi::boot::{self, SearchType};
 use uefi::proto::console::text::Key;
 use uefi::{Guid, guid};
-use uefi_raw::Status;
 use uefi_raw::protocol::network::snp::{NetworkMode, SimpleNetworkProtocol};
 
 use crate::tcp4::{self, handle_protocol};
@@ -233,9 +232,4 @@ fn connect(args: &[&str]) {
         Ok(_) => uefi::println!("  OPEN — the path works and the port is listening"),
         Err(e) => uefi::println!("  FAILED — {e}"),
     }
-}
-
-/// Left for the caller to print; keeps the module free of boot policy.
-pub fn describe_offer() -> String {
-    "network console".to_string()
 }
