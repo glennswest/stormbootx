@@ -23,6 +23,9 @@ use core::ptr;
 
 use uefi::boot::{self, SearchType};
 use uefi::{Guid, Status, guid};
+use uefi_raw::protocol::network::ip4_config2::{
+    Ip4Config2DataType, Ip4Config2Policy, Ip4Config2Protocol,
+};
 use uefi_raw::protocol::network::snp::NetworkMode;
 use uefi_raw::protocol::network::tcp4::{
     Tcp4AccessPoint, Tcp4CompletionToken, Tcp4ConfigData, Tcp4ConnectionToken, Tcp4FragmentData,
@@ -54,6 +57,9 @@ struct RxData1 {
 
 pub const TCP4_SERVICE_BINDING: Guid = guid!("00720665-67eb-4a99-baf7-d3c33a1c7cc9");
 pub const TCP4: Guid = guid!("65530bc7-a359-410f-b010-5aadc7ec2b62");
+/// `EFI_IP4_CONFIG2_PROTOCOL` — where the platform keeps the interface's
+/// address policy, and the only place to say "run DHCP".
+const IP4_CONFIG2: Guid = guid!("5b446ed1-e30b-4faa-871a-3654eca36080");
 
 /// EFI_SERVICE_BINDING_PROTOCOL — two calls, and uefi-raw does not model it.
 #[repr(C)]
@@ -233,6 +239,62 @@ fn connect_all() -> bool {
     available()
 }
 
+/// Tell the platform to run DHCP, rather than assuming it already has.
+///
+/// `configure` asks for `use_default_address`, which needs the IP4 driver to
+/// *already hold* an address. Where the platform's policy is `STATIC` and no
+/// address was ever set, that never becomes true: `Configure` answers
+/// `NO_MAPPING` forever and waiting longer achieves nothing. Observed on a Dell
+/// that reported `tcp4 : available` and then `no IP address after 20s`.
+///
+/// `EFI_IP4_CONFIG2_PROTOCOL` is where the platform keeps that policy, and it
+/// is writable. Setting it to `DHCP` starts a lease; the caller's existing
+/// retry loop then has something to wait *for* rather than waiting on
+/// something nobody started.
+///
+/// Best-effort across every interface, because the one that matters is the one
+/// with a cable in it and this cannot tell which that is. Returns how many
+/// interfaces it actually switched, which is worth a console line: zero means
+/// every interface was already on DHCP and the problem is elsewhere.
+fn request_dhcp() -> usize {
+    let Ok(handles) = boot::locate_handle_buffer(SearchType::ByProtocol(&IP4_CONFIG2)) else {
+        return 0;
+    };
+    let mut switched = 0;
+    for h in handles.iter() {
+        let Some(p) = handle_protocol(h.as_ptr(), &IP4_CONFIG2) else {
+            continue;
+        };
+        let cfg = p as *mut Ip4Config2Protocol;
+        unsafe {
+            // Only switch an interface that is actually on STATIC. Rewriting
+            // DHCP over DHCP restarts a lease that may already be in flight.
+            let mut policy = Ip4Config2Policy::STATIC;
+            let mut size = core::mem::size_of::<Ip4Config2Policy>();
+            let got = ((*cfg).get_data)(
+                cfg,
+                Ip4Config2DataType::POLICY,
+                &mut size,
+                &mut policy as *mut _ as *mut core::ffi::c_void,
+            );
+            if got == Status::SUCCESS && policy == Ip4Config2Policy::DHCP {
+                continue;
+            }
+            let dhcp = Ip4Config2Policy::DHCP;
+            let st = ((*cfg).set_data)(
+                cfg,
+                Ip4Config2DataType::POLICY,
+                core::mem::size_of::<Ip4Config2Policy>(),
+                &dhcp as *const _ as *const core::ffi::c_void,
+            );
+            if st == Status::SUCCESS {
+                switched += 1;
+            }
+        }
+    }
+    switched
+}
+
 /// `ConnectController(handle, NULL, NULL, TRUE)` — bind every driver that will
 /// bind, recursively. Failures are the normal case (most handles are not
 /// controllers) and are not worth reporting.
@@ -342,14 +404,26 @@ impl Tcp4Socket {
                 Status::SUCCESS => return Ok(()),
                 Status::NO_MAPPING => {
                     if attempt == 0 {
-                        uefi::println!("    waiting for the firmware's DHCP lease...");
+                        // Do not just wait: NO_MAPPING on an interface whose
+                        // policy is STATIC never clears, because nobody ever
+                        // started a lease. Ask for one, then wait.
+                        match request_dhcp() {
+                            0 => uefi::println!(
+                                "    waiting for the firmware's DHCP lease..."
+                            ),
+                            n => uefi::println!(
+                                "    no address yet; asked {n} interface(s) to run DHCP"
+                            ),
+                        }
                     }
                     boot::stall(core::time::Duration::from_millis(500));
                 }
                 other => return Err(format!("TCP4 Configure failed: {other:?}")),
             }
         }
-        Err("no IP address after 20s (NO_MAPPING)".to_string())
+        Err("no IP address after 20s (NO_MAPPING). The interface was asked to run \
+DHCP and still has no address, so either nothing answered the request or the \
+port is not on a network that serves one.".to_string())
     }
 
     fn do_connect(&mut self) -> Result<(), String> {
