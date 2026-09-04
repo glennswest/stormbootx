@@ -542,10 +542,48 @@ the cable is in a port this firmware does not carry a stack for.",
             pending: Vec::new(),
             turns: (secs as u64 * 1_000_000 / POLL_INTERVAL_US) as u32,
         };
-        match sock.configure(remote, port) {
+        match sock.configure(remote, port, None) {
             Ok(()) => Ok(sock),
-            Err(e) => Err(e), // Drop destroys the child.
+            Err(e) => {
+                // The platform has no address on this interface. Rather than
+                // wait on a DHCP client that may never have been started, run
+                // one here and configure with the result explicitly — see
+                // `dhcp4.rs`. Matched by MAC, because a DHCP4 binding and a
+                // TCP4 binding on the same NIC are different handles.
+                let (mac, mac_len) = sock.hw_address();
+                if mac_len > 0 {
+                    if let Some(lease) = crate::dhcp4::lease_for(&mac, mac_len) {
+                        let [a, b, c, d] = lease.address;
+                        uefi::println!("    dhcp: leased {a}.{b}.{c}.{d} on this interface");
+                        return match sock.configure(remote, port, Some(lease)) {
+                            Ok(()) => Ok(sock),
+                            Err(e2) => Err(e2),
+                        };
+                    }
+                }
+                Err(e) // Drop destroys the child.
+            }
         }
+    }
+
+    /// This interface's hardware address, and how many bytes of it are real.
+    fn hw_address(&self) -> ([u8; 32], usize) {
+        let mut snp: NetworkMode = unsafe { core::mem::zeroed() };
+        let st = unsafe {
+            ((*self.tcp).get_mode_data)(
+                self.tcp,
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                &mut snp,
+            )
+        };
+        if st != Status::SUCCESS {
+            return ([0u8; 32], 0);
+        }
+        let len = snp.hw_address_size as usize;
+        (snp.permanent_address.0, len.min(32))
     }
 
     /// Configure with whatever address this interface's stack already holds.
@@ -553,14 +591,26 @@ the cable is in a port this firmware does not carry a stack for.",
     /// One pass, no waiting: the caller owns the timing, because waiting here
     /// would spend the whole budget on the first interface and never reach the
     /// one with the cable in it.
-    fn configure(&mut self, remote: [u8; 4], port: u16) -> Result<(), String> {
+    fn configure(
+        &mut self,
+        remote: [u8; 4],
+        port: u16,
+        lease: Option<crate::dhcp4::Lease>,
+    ) -> Result<(), String> {
+        // With a lease of our own the address is stated outright, so nothing
+        // downstream depends on the platform's IP4 configuration having been
+        // set up by somebody else.
+        let (default, station, mask) = match lease {
+            Some(l) => (Boolean::FALSE, l.address, l.subnet_mask),
+            None => (Boolean::TRUE, [0, 0, 0, 0], [0, 0, 0, 0]),
+        };
         let mut cfg = Tcp4ConfigData {
             type_of_service: 0,
             time_to_live: 64,
             access_point: Tcp4AccessPoint {
-                use_default_address: Boolean::TRUE,
-                station_address: Ipv4Address([0, 0, 0, 0]),
-                subnet_mask: Ipv4Address([0, 0, 0, 0]),
+                use_default_address: default,
+                station_address: Ipv4Address(station),
+                subnet_mask: Ipv4Address(mask),
                 station_port: 0,
                 remote_address: Ipv4Address(remote),
                 remote_port: port,

@@ -40,6 +40,7 @@ extern crate alloc;
 
 mod blockio;
 mod config;
+mod dhcp4;
 mod nvme;
 mod registry;
 mod sha256;
