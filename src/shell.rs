@@ -225,6 +225,7 @@ fn dhcp(args: &[&str]) {
 /// By default only network and storage controllers are listed, since those are
 /// the two this project ever cares about; `pci all` shows everything.
 fn pci(args: &[&str]) {
+    use uefi::Identify;
     use uefi::proto::pci::PciIoAddress;
     use uefi::proto::pci::root_bridge::PciRootBridgeIo;
 
