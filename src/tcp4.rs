@@ -239,6 +239,87 @@ fn connect_all() -> bool {
     available()
 }
 
+/// Put the network interfaces in the order worth trying them in.
+///
+/// This is the storage path. The NIC that matters is the one somebody wired for
+/// it, and on a server that is not the first handle the firmware happens to
+/// enumerate — it is the 25 GbE port with jumbo frames, sitting behind a 1 GbE
+/// management port that has no cable in it.
+///
+/// Ranked by link first (a port with no media is last, not skipped: `SNP` is
+/// allowed to not know, and a wrong guess that drops the only working interface
+/// is worse than an extra attempt), then by descending MTU. MTU stands in for
+/// speed because it is the honest signal available here — 9000 means somebody
+/// configured that port for storage, 1500 means they did not — and because it
+/// costs nothing: `EFI_TCP4.GetModeData` hands back the SNP mode, so no
+/// `EFI_ADAPTER_INFORMATION_PROTOCOL` is needed, which is another optional
+/// stack this binary will not depend on.
+///
+/// Returns `(index, handle, mtu, link_up)`, best first.
+fn rank_interfaces(
+    handles: &boot::HandleBuffer,
+) -> Vec<(usize, uefi_raw::Handle, Option<u32>, bool)> {
+    let mut out: Vec<(usize, uefi_raw::Handle, Option<u32>, bool)> = handles
+        .iter()
+        .enumerate()
+        .map(|(i, h)| {
+            let (mtu, link) = probe_interface(h.as_ptr());
+            (i, h.as_ptr(), mtu, link)
+        })
+        .collect();
+    // Link up before link unknown; then larger MTU first; then enumeration
+    // order, so the result is stable when nothing distinguishes two ports.
+    out.sort_by(|a, b| {
+        b.3.cmp(&a.3)
+            .then(b.2.unwrap_or(0).cmp(&a.2.unwrap_or(0)))
+            .then(a.0.cmp(&b.0))
+    });
+    out
+}
+
+/// The MTU and link state of one interface, without configuring anything.
+///
+/// A child is created only to ask and destroyed immediately. `GetModeData` on
+/// an unconfigured instance is allowed to refuse, which is why both answers are
+/// optional rather than assumed.
+fn probe_interface(sb_handle: uefi_raw::Handle) -> (Option<u32>, bool) {
+    let Some(p) = handle_protocol(sb_handle, &TCP4_SERVICE_BINDING) else {
+        return (None, false);
+    };
+    let sb = p as *mut ServiceBinding;
+    let mut child: uefi_raw::Handle = ptr::null_mut();
+    if unsafe { ((*sb).create_child)(sb, &mut child) } != Status::SUCCESS {
+        return (None, false);
+    }
+    let result = match handle_protocol(child, &TCP4) {
+        Some(t) => {
+            let tcp = t as *mut Tcp4Protocol;
+            let mut snp: NetworkMode = unsafe { core::mem::zeroed() };
+            let st = unsafe {
+                ((*tcp).get_mode_data)(
+                    tcp,
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                    &mut snp,
+                )
+            };
+            if st == Status::SUCCESS {
+                let mtu = (576..=65_535)
+                    .contains(&snp.max_packet_size)
+                    .then_some(snp.max_packet_size);
+                (mtu, bool::from(snp.media_present))
+            } else {
+                (None, false)
+            }
+        }
+        None => (None, false),
+    };
+    unsafe { let _ = ((*sb).destroy_child)(sb, child); };
+    result
+}
+
 /// Tell the platform to run DHCP, rather than assuming it already has.
 ///
 /// `configure` asks for `use_default_address`, which needs the IP4 driver to
@@ -365,8 +446,21 @@ impl Tcp4Socket {
         if handles.is_empty() {
             return Err("no TCP4 service binding handles".to_string());
         }
+        // Order them before trying any: this is the storage path, so the NIC
+        // that matters is the fast one. Link state first — a port with no cable
+        // is not a candidate at all — then descending MTU, because a jumbo
+        // interface is the one somebody configured for storage and a 1500
+        // management port is the one they did not. MTU is a proxy for link
+        // speed, and it is the right proxy here: it is what the transfer size
+        // is derived from, it comes from the SNP mode this code already reads,
+        // and it needs no EFI_ADAPTER_INFORMATION_PROTOCOL — another optional
+        // stack this binary refuses to depend on.
+        let order = rank_interfaces(&handles);
         if handles.len() > 1 {
-            uefi::println!("    {} network interfaces; trying each", handles.len());
+            uefi::println!(
+                "    {} network interfaces; trying the fastest first",
+                handles.len()
+            );
         }
 
         // Start a lease everywhere before waiting on anything. An interface
@@ -382,11 +476,18 @@ impl Tcp4Socket {
         let mut last = String::from("no interface could be configured");
 
         loop {
-            for (i, h) in handles.iter().enumerate() {
-                match Self::open_on(h.as_ptr(), remote, port, secs) {
+            for &(i, handle, mtu, link) in order.iter() {
+                match Self::open_on(handle, remote, port, secs) {
                     Ok(mut sock) => {
                         if handles.len() > 1 {
-                            uefi::println!("    interface {i} answered");
+                            let m = match mtu {
+                                Some(m) => m,
+                                None => 0,
+                            };
+                            uefi::println!(
+                                "    interface {i} answered (MTU {m}, link {})",
+                                if link { "up" } else { "unknown" }
+                            );
                         }
                         sock.do_connect()?;
                         return Ok(sock);
