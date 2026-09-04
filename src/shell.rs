@@ -92,6 +92,7 @@ pub fn run() {
             "state" | "net" => state(),
             "dhcp" => dhcp(&args),
             "connect" | "tcp" => connect(&args),
+            "pci" => pci(&args),
             "boot" | "continue" | "exit" | "quit" => {
                 uefi::println!("continuing.");
                 return;
@@ -106,6 +107,7 @@ fn help() {
     uefi::println!("  state             what address each interface has, and its policy");
     uefi::println!("  dhcp [n]          run DHCP on interface n, or on all of them");
     uefi::println!("  connect IP PORT   open a TCP connection, the way the attach does");
+    uefi::println!("  pci [all]         devices on the bus, driver or no driver");
     uefi::println!("  boot              stop reading and continue the boot");
 }
 
@@ -206,6 +208,115 @@ fn dhcp(args: &[&str]) {
             }
             None => uefi::println!("  nic {i}: no lease"),
         }
+    }
+}
+
+/// Every device on the PCI bus, whether or not firmware has a driver for it.
+///
+/// This is the command that separates "this machine has two NICs" from "this
+/// machine has four NICs and firmware only drives two of them". An SNP handle
+/// exists only where a UEFI driver bound; the bus itself does not care, so a
+/// card whose option ROM never loaded is invisible everywhere *except* here.
+///
+/// Read-only, and deliberately its own walk rather than the `enumerate()` the
+/// crate offers: enumeration is entitled to assign bus numbers, and a boot path
+/// has no business renumbering a live bus to satisfy a diagnostic.
+///
+/// By default only network and storage controllers are listed, since those are
+/// the two this project ever cares about; `pci all` shows everything.
+fn pci(args: &[&str]) {
+    use uefi::proto::pci::PciIoAddress;
+    use uefi::proto::pci::root_bridge::PciRootBridgeIo;
+
+    let all = args.first().is_some_and(|a| *a == "all");
+    let Ok(handles) = boot::locate_handle_buffer(SearchType::ByProtocol(&PciRootBridgeIo::GUID))
+    else {
+        uefi::println!("  no PCI root bridge — nothing to enumerate");
+        return;
+    };
+
+    let mut found = 0usize;
+    let mut nics = 0usize;
+    for h in handles.iter() {
+        let Ok(mut bridge) = boot::open_protocol_exclusive::<PciRootBridgeIo>(*h) else {
+            continue;
+        };
+        // Buses are discovered rather than swept: start at 0 and add whatever
+        // sits behind each bridge. A blind 0..=255 sweep is 65k config reads
+        // through firmware, and most of them address nothing.
+        let mut buses: Vec<u8> = alloc::vec![0];
+        let mut seen: Vec<u8> = Vec::new();
+        while let Some(bus) = buses.pop() {
+            if seen.contains(&bus) {
+                continue;
+            }
+            seen.push(bus);
+            for dev in 0..32u8 {
+                for fun in 0..8u8 {
+                    let mut addr = PciIoAddress::new(bus, dev, fun);
+                    addr.reg = 0;
+                    let Ok(id) = bridge.pci().read_one::<u32>(addr) else { continue };
+                    let vendor = (id & 0xFFFF) as u16;
+                    if vendor == 0xFFFF || vendor == 0 {
+                        // Function 0 absent means the whole device is absent.
+                        if fun == 0 {
+                            break;
+                        }
+                        continue;
+                    }
+                    let device = (id >> 16) as u16;
+
+                    addr.reg = 0x08;
+                    let Ok(class_reg) = bridge.pci().read_one::<u32>(addr) else { continue };
+                    let class = (class_reg >> 24) as u8;
+                    let subclass = (class_reg >> 16) as u8;
+
+                    addr.reg = 0x0C;
+                    let header = bridge
+                        .pci()
+                        .read_one::<u32>(addr)
+                        .map(|v| ((v >> 16) & 0xFF) as u8)
+                        .unwrap_or(0);
+
+                    // A PCI-to-PCI bridge names the bus behind it at 0x18+1.
+                    if (header & 0x7F) == 0x01 {
+                        addr.reg = 0x18;
+                        if let Ok(v) = bridge.pci().read_one::<u32>(addr) {
+                            let secondary = ((v >> 8) & 0xFF) as u8;
+                            if secondary != 0 {
+                                buses.push(secondary);
+                            }
+                        }
+                    }
+
+                    if class == 0x02 {
+                        nics += 1;
+                    }
+                    if all || class == 0x02 || class == 0x01 {
+                        found += 1;
+                        uefi::println!(
+                            "  {bus:02x}:{dev:02x}.{fun}  {vendor:04x}:{device:04x}  {}",
+                            match (class, subclass) {
+                                (0x02, _) => "network controller",
+                                (0x01, 0x08) => "storage (nvm)",
+                                (0x01, _) => "storage controller",
+                                _ => "device",
+                            }
+                        );
+                    }
+
+                    // Only a multifunction device has functions past 0.
+                    if fun == 0 && (header & 0x80) == 0 {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    if found == 0 {
+        uefi::println!("  nothing matched (try `pci all`)");
+    } else {
+        uefi::println!("  {nics} network controller(s) on the bus");
     }
 }
 
