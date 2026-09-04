@@ -343,12 +343,80 @@ impl Tcp4Socket {
     /// that spends half a minute proving the network is absent has already
     /// failed at its job. The attach itself keeps the long budget, because by
     /// then there is nothing to fall through to.
+    /// Open a socket on whichever interface can actually reach the target.
+    ///
+    /// **Every** TCP4 service binding is tried, not the first one. A server has
+    /// more than one NIC — a 1 GbE management port and a 25 GbE data port, say
+    /// — and each carries its own network stack, so `handles.first()` was a
+    /// coin flip. Landing on the port with no cable in it produces exactly the
+    /// symptom seen on the Dell: `tcp4 : available`, because *some* interface
+    /// has a stack, and then `NO_MAPPING` forever, because *that* one has no
+    /// link and never will. No amount of waiting fixes a socket on the wrong
+    /// NIC.
+    ///
+    /// Firmware will not say which port has the cable, so this asks the only
+    /// question that matters — can you configure? — of each in turn, and takes
+    /// the first that answers yes. DHCP is requested on every interface before
+    /// the wait starts, so a lease is in flight on all of them while this runs
+    /// rather than being started on one after twenty seconds of nothing.
     pub fn connect_within(remote: [u8; 4], port: u16, secs: u32) -> Result<Self, String> {
         let handles = boot::locate_handle_buffer(SearchType::ByProtocol(&TCP4_SERVICE_BINDING))
             .map_err(|e| format!("no EFI_TCP4 service binding: {e:?}"))?;
-        let sb_handle = *handles.first().ok_or("no TCP4 service binding handles")?;
+        if handles.is_empty() {
+            return Err("no TCP4 service binding handles".to_string());
+        }
+        if handles.len() > 1 {
+            uefi::println!("    {} network interfaces; trying each", handles.len());
+        }
 
-        let sb = handle_protocol(sb_handle.as_ptr(), &TCP4_SERVICE_BINDING)
+        // Start a lease everywhere before waiting on anything. An interface
+        // whose policy is STATIC never clears NO_MAPPING on its own.
+        let switched = request_dhcp();
+        if switched > 0 {
+            uefi::println!("    asked {switched} interface(s) to run DHCP");
+        }
+
+        const STEP_MS: u64 = 500;
+        let budget_ms = secs as u64 * 1000;
+        let mut waited = 0u64;
+        let mut last = String::from("no interface could be configured");
+
+        loop {
+            for (i, h) in handles.iter().enumerate() {
+                match Self::open_on(h.as_ptr(), remote, port, secs) {
+                    Ok(mut sock) => {
+                        if handles.len() > 1 {
+                            uefi::println!("    interface {i} answered");
+                        }
+                        sock.do_connect()?;
+                        return Ok(sock);
+                    }
+                    Err(e) => last = e,
+                }
+            }
+            if waited >= budget_ms {
+                return Err(format!(
+                    "{last} — after {} s across {} interface(s). An address never \
+arrived, so either nothing answers DHCP on the port with the cable in it, or \
+the cable is in a port this firmware does not carry a stack for.",
+                    budget_ms / 1000,
+                    handles.len()
+                ));
+            }
+            boot::stall(core::time::Duration::from_millis(STEP_MS));
+            waited += STEP_MS;
+        }
+    }
+
+    /// One attempt on one service binding. The child is destroyed on failure so
+    /// a retry does not leak one per round.
+    fn open_on(
+        sb_handle: uefi_raw::Handle,
+        remote: [u8; 4],
+        port: u16,
+        secs: u32,
+    ) -> Result<Self, String> {
+        let sb = handle_protocol(sb_handle, &TCP4_SERVICE_BINDING)
             .ok_or("could not open the TCP4 service binding")?
             as *mut ServiceBinding;
 
@@ -373,57 +441,37 @@ impl Tcp4Socket {
             pending: Vec::new(),
             turns: (secs as u64 * 1_000_000 / POLL_INTERVAL_US) as u32,
         };
-        sock.configure(remote, port)?;
-        sock.do_connect()?;
-        Ok(sock)
+        match sock.configure(remote, port) {
+            Ok(()) => Ok(sock),
+            Err(e) => Err(e), // Drop destroys the child.
+        }
     }
 
-    /// Configure with whatever address the firmware's stack already holds.
+    /// Configure with whatever address this interface's stack already holds.
     ///
-    /// `NO_MAPPING` means the stack is up but has no address yet — DHCP has
-    /// not finished. On a cold boot the lease often lands a second or two
-    /// after an application starts, so this is a timing condition to wait out,
-    /// not a failure to report.
+    /// One pass, no waiting: the caller owns the timing, because waiting here
+    /// would spend the whole budget on the first interface and never reach the
+    /// one with the cable in it.
     fn configure(&mut self, remote: [u8; 4], port: u16) -> Result<(), String> {
-        for attempt in 0..40 {
-            let mut cfg = Tcp4ConfigData {
-                type_of_service: 0,
-                time_to_live: 64,
-                access_point: Tcp4AccessPoint {
-                    use_default_address: Boolean::TRUE,
-                    station_address: Ipv4Address([0, 0, 0, 0]),
-                    subnet_mask: Ipv4Address([0, 0, 0, 0]),
-                    station_port: 0,
-                    remote_address: Ipv4Address(remote),
-                    remote_port: port,
-                    active_flag: Boolean::TRUE,
-                },
-                control_option: ptr::null_mut::<Tcp4Option>(),
-            };
-            match unsafe { ((*self.tcp).configure)(self.tcp, &mut cfg) } {
-                Status::SUCCESS => return Ok(()),
-                Status::NO_MAPPING => {
-                    if attempt == 0 {
-                        // Do not just wait: NO_MAPPING on an interface whose
-                        // policy is STATIC never clears, because nobody ever
-                        // started a lease. Ask for one, then wait.
-                        match request_dhcp() {
-                            0 => uefi::println!(
-                                "    waiting for the firmware's DHCP lease..."
-                            ),
-                            n => uefi::println!(
-                                "    no address yet; asked {n} interface(s) to run DHCP"
-                            ),
-                        }
-                    }
-                    boot::stall(core::time::Duration::from_millis(500));
-                }
-                other => return Err(format!("TCP4 Configure failed: {other:?}")),
-            }
+        let mut cfg = Tcp4ConfigData {
+            type_of_service: 0,
+            time_to_live: 64,
+            access_point: Tcp4AccessPoint {
+                use_default_address: Boolean::TRUE,
+                station_address: Ipv4Address([0, 0, 0, 0]),
+                subnet_mask: Ipv4Address([0, 0, 0, 0]),
+                station_port: 0,
+                remote_address: Ipv4Address(remote),
+                remote_port: port,
+                active_flag: Boolean::TRUE,
+            },
+            control_option: ptr::null_mut::<Tcp4Option>(),
+        };
+        match unsafe { ((*self.tcp).configure)(self.tcp, &mut cfg) } {
+            Status::SUCCESS => Ok(()),
+            Status::NO_MAPPING => Err("no address on this interface (NO_MAPPING)".to_string()),
+            other => Err(format!("TCP4 Configure failed: {other:?}")),
         }
-        Err("no IP address after 20s (NO_MAPPING). The interface was asked to run \
-DHCP and still has no address, so either nothing answered the request or the \
-port is not on a network that serves one.".to_string())
     }
 
     fn do_connect(&mut self) -> Result<(), String> {
