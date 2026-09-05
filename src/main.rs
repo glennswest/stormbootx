@@ -252,7 +252,7 @@ fn run() -> Result<(), String> {
     banner("RESULT: image attached; starting its bootloader.");
     banner("============================================================");
     blockio::boot_attached(handle)?;
-    Err("the attached image did not boot; nothing to chain-load".to_string())
+    Err(String::from("the attached image did not boot; nothing to chain-load"))
 }
 
 #[entry]

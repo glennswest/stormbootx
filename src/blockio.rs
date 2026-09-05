@@ -22,7 +22,7 @@ use uefi::proto::BootPolicy;
 use uefi::proto::device_path::DevicePath;
 use uefi::proto::device_path::build::{self, DevicePathBuilder};
 use uefi::proto::media::fs::SimpleFileSystem;
-use uefi::{Handle, cstr16, guid};
+use uefi::{Handle, Identify, cstr16, guid};
 use uefi::Status;
 use uefi_raw::protocol::block::{BlockIoMedia, BlockIoProtocol};
 use uefi_raw::Boolean;
@@ -221,8 +221,8 @@ pub fn publish(ns: Namespace) -> Result<uefi_raw::Handle, String> {
     // off, and it identifies our disk when chain-loading picks the ESP back
     // out. Leaked, because a protocol interface outlives this call.
     let dp: &'static DevicePath = {
-        let mut buf = alloc::vec![0u8; 32];
-        let path = DevicePathBuilder::with_buf(&mut buf)
+        let mut buf = alloc::vec::Vec::new();
+        let path = DevicePathBuilder::with_vec(&mut buf)
             .push(&build::hardware::Vendor {
                 vendor_guid: DISK_DP_GUID,
                 vendor_defined_data: &[],
@@ -279,8 +279,8 @@ const DEVICE_PATH_GUID: Guid = guid!("09576e91-6d3f-11d2-8e39-00a0c969723b");
 /// that is the caller's cue to fall through to whatever else there is.
 pub fn boot_attached(disk: uefi_raw::Handle) -> Result<(), String> {
     let file = cstr16!("\\EFI\\BOOT\\BOOTX64.EFI");
-    let mut fbuf = [0u8; 64];
-    let file_path = DevicePathBuilder::with_buf(&mut fbuf)
+    let mut fbuf = alloc::vec::Vec::new();
+    let file_path = DevicePathBuilder::with_vec(&mut fbuf)
         .push(&build::media::FilePath { path_name: file })
         .and_then(|b| b.finalize())
         .map_err(|e| format!("file path build failed: {e:?}"))?;
@@ -340,5 +340,5 @@ fn device_path_has_guid(handle: uefi_raw::Handle, g: &Guid) -> bool {
     let Some(dp) = device_path_of(handle) else {
         return false;
     };
-    dp.node_iter().any(|node| node.data().len() >= 16 && &node.data()[..16] == g.as_bytes())
+    dp.node_iter().any(|node| node.data().len() >= 16 && &node.data()[..16] == &g.to_bytes())
 }
