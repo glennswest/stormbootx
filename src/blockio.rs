@@ -17,7 +17,12 @@ use alloc::format;
 use alloc::string::String;
 use core::ptr;
 
-use uefi::boot::{self, SearchType};
+use uefi::boot::{self, LoadImageSource, SearchType};
+use uefi::proto::BootPolicy;
+use uefi::proto::device_path::DevicePath;
+use uefi::proto::device_path::build::{self, DevicePathBuilder};
+use uefi::proto::media::fs::SimpleFileSystem;
+use uefi::{Handle, cstr16, guid};
 use uefi::Status;
 use uefi_raw::protocol::block::{BlockIoMedia, BlockIoProtocol};
 use uefi_raw::Boolean;
@@ -203,9 +208,40 @@ pub fn publish(ns: Namespace) -> Result<uefi_raw::Handle, String> {
         return Err(format!("InstallProtocolInterface failed: {st:?}"));
     }
 
-    // Bind the partition and filesystem drivers to the new handle. Installing
-    // BlockIO alone leaves a block device nothing has looked at: no GPT is
-    // parsed and no ESP appears.
+    // A device path, or the partition driver will not bind. EDK2's PartitionDxe
+    // opens *both* BlockIO and DevicePath on a controller before it will parse
+    // a GPT — a handle carrying BlockIO alone is one it skips, so no HD child
+    // appears and no ESP with it. OVMF's partition driver is lenient here and
+    // this was missed under it; real firmware is not, and the visible symptom
+    // is a machine that attaches the image and then drops to setup because
+    // there was never anything bootable on the handle.
+    //
+    // The path is a single vendor node with this project's own GUID: it needs
+    // to be a valid, unique path for the partition driver to hang HD() nodes
+    // off, and it identifies our disk when chain-loading picks the ESP back
+    // out. Leaked, because a protocol interface outlives this call.
+    let dp: &'static DevicePath = {
+        let mut buf = alloc::vec![0u8; 32];
+        let path = DevicePathBuilder::with_buf(&mut buf)
+            .push(&build::hardware::Vendor {
+                vendor_guid: DISK_DP_GUID,
+                vendor_defined_data: &[],
+            })
+            .and_then(|b| b.finalize())
+            .map_err(|e| format!("device path build failed: {e:?}"))?;
+        Box::leak(path.to_boxed())
+    };
+    unsafe {
+        boot::install_protocol_interface(
+            Some(Handle::from_ptr(handle).ok_or("null block handle")?),
+            &DEVICE_PATH_GUID,
+            dp.as_ffi_ptr() as *const core::ffi::c_void,
+        )
+        .map_err(|e| format!("InstallProtocolInterface(DevicePath) failed: {e:?}"))?;
+    }
+
+    // Bind the partition and filesystem drivers to the new handle, recursively,
+    // so the GPT is parsed and the ESP's FAT is mounted.
     unsafe {
         if let Some(st_ptr) = uefi::table::system_table_raw() {
             if let Some(bs) = st_ptr.as_ref().boot_services.as_ref() {
@@ -216,4 +252,93 @@ pub fn publish(ns: Namespace) -> Result<uefi_raw::Handle, String> {
     }
 
     Ok(handle)
+}
+
+/// The vendor GUID naming a disk this binary published. Not an architectural
+/// constant — just a unique value so the device path is well-formed and so
+/// chain-loading can tell our ESP from a local one.
+const DISK_DP_GUID: Guid = guid!("6d7a1f2e-9c34-4b8a-b1d0-5e2f7a0c9b41");
+/// `EFI_DEVICE_PATH_PROTOCOL`.
+const DEVICE_PATH_GUID: Guid = guid!("09576e91-6d3f-11d2-8e39-00a0c969723b");
+
+/// Boot the image just attached, by loading its ESP's bootloader.
+///
+/// Publishing a block device does **not** make the firmware boot it: a UEFI
+/// boot manager boots the entries in `BootOrder`, and a disk that appears
+/// while a boot option is *running* is not in that list — so the manager, when
+/// this option returns, moves to the next entry and, finding none, drops to
+/// setup. That is the machine going to BIOS after "firmware can boot it".
+///
+/// So do not return to the manager: load `\EFI\BOOT\BOOTX64.EFI` off the
+/// attached ESP and start it here. That is the removable-media default path
+/// every whole-disk image carries (shim, or a bootloader), and starting it
+/// hands the machine to the image's own boot chain exactly as booting the disk
+/// from the menu would.
+///
+/// Only returns on failure — a started image that itself exits comes back, and
+/// that is the caller's cue to fall through to whatever else there is.
+pub fn boot_attached(disk: uefi_raw::Handle) -> Result<(), String> {
+    let file = cstr16!("\\EFI\\BOOT\\BOOTX64.EFI");
+    let mut fbuf = [0u8; 64];
+    let file_path = DevicePathBuilder::with_buf(&mut fbuf)
+        .push(&build::media::FilePath { path_name: file })
+        .and_then(|b| b.finalize())
+        .map_err(|e| format!("file path build failed: {e:?}"))?;
+
+    let handles = boot::locate_handle_buffer(SearchType::ByProtocol(&SimpleFileSystem::GUID))
+        .map_err(|e| format!("no filesystems to boot: {e:?}"))?;
+
+    // Prefer an ESP that is a partition of the disk we just published — its
+    // device path carries our vendor GUID. On a diskless target it is the only
+    // one; where a local disk also has an ESP, this is what keeps us off it.
+    let mut ordered: alloc::vec::Vec<uefi_raw::Handle> =
+        handles.iter().map(|h| h.as_ptr()).collect();
+    ordered.sort_by_key(|&h| !device_path_has_guid(h, &DISK_DP_GUID));
+
+    let image = boot::image_handle();
+    let mut last = String::from("no ESP carried a bootloader");
+    for h in ordered {
+        let Some(dp) = device_path_of(h) else { continue };
+        let full = match dp.append_path(file_path) {
+            Ok(f) => f,
+            Err(e) => {
+                last = format!("append_path failed: {e:?}");
+                continue;
+            }
+        };
+        match boot::load_image(
+            image,
+            LoadImageSource::FromDevicePath {
+                device_path: &full,
+                boot_policy: BootPolicy::ExactMatch,
+            },
+        ) {
+            Ok(loaded) => {
+                let _ = disk;
+                uefi::println!("boot        : starting \\EFI\\BOOT\\BOOTX64.EFI from the image");
+                // Returns only if the started image exits — then keep trying,
+                // and failing that, fall through.
+                match boot::start_image(loaded) {
+                    Ok(()) => last = String::from("the image's bootloader exited"),
+                    Err(e) => last = format!("the image's bootloader returned {e:?}"),
+                }
+            }
+            Err(e) => last = format!("load of BOOTX64.EFI failed: {e:?}"),
+        }
+    }
+    Err(last)
+}
+
+/// A handle's device path, read without an exclusive open (drivers hold it).
+fn device_path_of(handle: uefi_raw::Handle) -> Option<&'static DevicePath> {
+    let p = crate::tcp4::handle_protocol(handle, &DEVICE_PATH_GUID)?;
+    Some(unsafe { DevicePath::from_ffi_ptr(p as *const _) })
+}
+
+/// Does a handle's device path contain a vendor node with this GUID?
+fn device_path_has_guid(handle: uefi_raw::Handle, g: &Guid) -> bool {
+    let Some(dp) = device_path_of(handle) else {
+        return false;
+    };
+    dp.node_iter().any(|node| node.data().len() >= 16 && &node.data()[..16] == g.as_bytes())
 }

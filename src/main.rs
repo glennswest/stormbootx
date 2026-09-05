@@ -240,27 +240,29 @@ fn run() -> Result<(), String> {
         ns.max_transfer / 1024
     );
 
-    // 5. Hand it to the firmware as an ordinary disk.
+    // 5. Publish it as an ordinary disk, then boot it.
     let handle = blockio::publish(ns)?;
     uefi::println!("blockio     : published on handle {handle:p}");
 
+    // Do not hand back to the firmware boot manager and hope it boots the new
+    // disk — it will not, because the disk is not in BootOrder, and the machine
+    // drops to setup instead. Chain-load the image's own bootloader. This does
+    // not return unless the bootloader fails or exits.
     banner("");
-    banner("RESULT: remote image is a local disk. Firmware can boot it.");
+    banner("RESULT: image attached; starting its bootloader.");
     banner("============================================================");
-    Ok(())
+    blockio::boot_attached(handle)?;
+    Err("the attached image did not boot; nothing to chain-load".to_string())
 }
 
 #[entry]
 fn main() -> Status {
     uefi::helpers::init().unwrap();
 
+    // run() hands off to the image's bootloader and does not return on
+    // success; every path back here is a failure to fall through from.
     match run() {
-        Ok(()) => {
-            // Stay resident briefly so the console is readable, then return so
-            // the boot manager proceeds to the disk just published.
-            uefi::boot::stall(core::time::Duration::from_secs(5));
-            Status::SUCCESS
-        }
+        Ok(()) => fall_through("attach succeeded but no bootloader started"),
         Err(err) => fall_through(&err),
     }
 }
