@@ -13,14 +13,18 @@
   hid this), and the ESP is matched **strictly** by that vendor node — an early
   loose version booted a stale Windows install off a local SAS disk instead of
   the image, which a boot agent must never do.
-- **diagnostic:** proved on a Dell R230 that `stormcos-sno-10.22` cannot boot
-  because it is a **512-byte-sector GPT served on a 4096-byte-block namespace**.
-  The GPT header is at byte 512 (512-byte LBA1); the firmware and Linux both
-  read LBA1 at byte 4096, find zeros, and correctly see no GPT — so no ESP, and
-  nothing to chain-load. The image itself is intact (ESP + kernel1/system1/
-  kube1/data1 + the two slabs). stormbootx read the 4096-byte block size from
-  the namespace and published it faithfully; the mismatch is in how the image
-  is composed vs. served. Filed upstream.
+- **milestone: the chain-load hands off to stormcos's own bootloader.** On the
+  R230, stormbootx started `\\EFI\\BOOT\\BOOTX64.EFI` off the attached
+  image and it was `stormuefi 0.5.1`, which ran and took over — the full path
+  is proven: tag → claim → attach → publish → chain-load → stormcos's loader.
+- **diagnostic (stormcos#31):** `stormcos-sno-10.22` is built for **512-byte
+  sectors** but served on a **4096-byte-block namespace**, confirmed at every
+  layer: the GPT header is at byte 512 (zeros at 4096), and each pallet
+  superblock's `STORMPAL` magic sits at `LBA*512`, not `LBA*4096`. So stormuefi,
+  reading the media at its 4096-byte block size, finds 0 pallets and exits. The
+  image is intact; the geometry is wrong for how it is served. stormbootx read
+  the 4096-byte block size from the namespace and published it faithfully — the
+  fix is to compose the golden at 4096-byte geometry. Not a stormbootx bug.
 
 
 ### 2026-09-05
