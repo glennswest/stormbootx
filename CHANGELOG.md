@@ -3,6 +3,27 @@
 ## [Unreleased]
 
 ### 2026-09-05
+- **fix (blockio): chain-load, and boot only the attached disk.** The agent now
+  loads `\\EFI\\BOOT\\BOOTX64.EFI` off the attached image's ESP and starts
+  it, instead of publishing a block device and hoping the firmware boot manager
+  picks it up (it does not — a disk that appears mid-boot-option is not in
+  BootOrder, so the machine dropped to setup). Two parts: a vendor device-path
+  node is installed on the published handle so EDK2's PartitionDxe will bind and
+  parse the GPT (BlockIO alone is skipped on real firmware; OVMF was lenient and
+  hid this), and the ESP is matched **strictly** by that vendor node — an early
+  loose version booted a stale Windows install off a local SAS disk instead of
+  the image, which a boot agent must never do.
+- **diagnostic:** proved on a Dell R230 that `stormcos-sno-10.22` cannot boot
+  because it is a **512-byte-sector GPT served on a 4096-byte-block namespace**.
+  The GPT header is at byte 512 (512-byte LBA1); the firmware and Linux both
+  read LBA1 at byte 4096, find zeros, and correctly see no GPT — so no ESP, and
+  nothing to chain-load. The image itself is intact (ESP + kernel1/system1/
+  kube1/data1 + the two slabs). stormbootx read the 4096-byte block size from
+  the namespace and published it faithfully; the mismatch is in how the image
+  is composed vs. served. Filed upstream.
+
+
+### 2026-09-05
 - **milestone: first complete NVMe/TCP attach on real hardware.** A Dell R230
   (service tag C2NR0Q2) booted the agent over iDRAC virtual media and attached a
   32 GiB clone from forge over a 25 GbE Mellanox port: `claimed a clone of this
