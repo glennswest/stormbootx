@@ -278,6 +278,19 @@ const DEVICE_PATH_GUID: Guid = guid!("09576e91-6d3f-11d2-8e39-00a0c969723b");
 /// Only returns on failure — a started image that itself exits comes back, and
 /// that is the caller's cue to fall through to whatever else there is.
 pub fn boot_attached(disk: uefi_raw::Handle) -> Result<(), String> {
+    // The disk we published — its device path is the single vendor node we
+    // installed. An ESP belongs to *this* disk only if its own device path
+    // begins with that exact node; the partition driver appends an HD() node
+    // after it. Anything else is a local disk, and a boot agent must never
+    // boot one of those: booting whatever OS the machine already had is how a
+    // provisioning boot silently launched a stale Windows install instead of
+    // the image it just attached.
+    let our_dp = device_path_of(disk).ok_or("attached disk has no device path")?;
+    let our_first = our_dp
+        .node_iter()
+        .next()
+        .ok_or("attached disk device path is empty")?;
+
     let file = cstr16!("\\EFI\\BOOT\\BOOTX64.EFI");
     let mut fbuf = alloc::vec::Vec::new();
     let file_path = DevicePathBuilder::with_vec(&mut fbuf)
@@ -288,17 +301,19 @@ pub fn boot_attached(disk: uefi_raw::Handle) -> Result<(), String> {
     let handles = boot::locate_handle_buffer(SearchType::ByProtocol(&SimpleFileSystem::GUID))
         .map_err(|e| format!("no filesystems to boot: {e:?}"))?;
 
-    // Prefer an ESP that is a partition of the disk we just published — its
-    // device path carries our vendor GUID. On a diskless target it is the only
-    // one; where a local disk also has an ESP, this is what keeps us off it.
-    let mut ordered: alloc::vec::Vec<uefi_raw::Handle> =
-        handles.iter().map(|h| h.as_ptr()).collect();
-    ordered.sort_by_key(|&h| !device_path_has_guid(h, &DISK_DP_GUID));
-
     let image = boot::image_handle();
-    let mut last = String::from("no ESP carried a bootloader");
-    for h in ordered {
-        let Some(dp) = device_path_of(h) else { continue };
+    let mut considered = 0usize;
+    let mut last = String::from("the attached image had no bootable ESP");
+    for h in handles.iter() {
+        let Some(dp) = device_path_of(h.as_ptr()) else { continue };
+        // Strict: only an ESP whose first node is our disk's node. No fallback
+        // to any other filesystem, ever.
+        match dp.node_iter().next() {
+            Some(first) if first == our_first => {}
+            _ => continue,
+        }
+        considered += 1;
+
         let full = match dp.append_path(file_path) {
             Ok(f) => f,
             Err(e) => {
@@ -314,10 +329,7 @@ pub fn boot_attached(disk: uefi_raw::Handle) -> Result<(), String> {
             },
         ) {
             Ok(loaded) => {
-                let _ = disk;
-                uefi::println!("boot        : starting \\EFI\\BOOT\\BOOTX64.EFI from the image");
-                // Returns only if the started image exits — then keep trying,
-                // and failing that, fall through.
+                uefi::println!("boot        : starting \\EFI\\BOOT\\BOOTX64.EFI from the attached image");
                 match boot::start_image(loaded) {
                     Ok(()) => last = String::from("the image's bootloader exited"),
                     Err(e) => last = format!("the image's bootloader returned {e:?}"),
@@ -325,6 +337,11 @@ pub fn boot_attached(disk: uefi_raw::Handle) -> Result<(), String> {
             }
             Err(e) => last = format!("load of BOOTX64.EFI failed: {e:?}"),
         }
+    }
+    if considered == 0 {
+        return Err(String::from(
+            "the attached image published no ESP — its GPT has no EFI System Partition, or the partition driver did not bind it",
+        ));
     }
     Err(last)
 }
@@ -335,10 +352,3 @@ fn device_path_of(handle: uefi_raw::Handle) -> Option<&'static DevicePath> {
     Some(unsafe { DevicePath::from_ffi_ptr(p as *const _) })
 }
 
-/// Does a handle's device path contain a vendor node with this GUID?
-fn device_path_has_guid(handle: uefi_raw::Handle, g: &Guid) -> bool {
-    let Some(dp) = device_path_of(handle) else {
-        return false;
-    };
-    dp.node_iter().any(|node| node.data().len() >= 16 && &node.data()[..16] == &g.to_bytes())
-}
