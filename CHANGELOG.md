@@ -3,6 +3,20 @@
 ## [Unreleased]
 
 ### 2026-09-05
+- **COMPLETE: full diskless boot on real hardware.** A PowerEdge R230 (service
+  tag C2NR0Q2) booted stormcos end to end over 25 GbE NVMe/TCP: stormbootx read
+  the service tag, claimed `boothost/C2NR0Q2`, attached the 4K golden from
+  forge, published it as `EFI_BLOCK_IO`, and chain-loaded `\\EFI\\BOOT\\
+  BOOTX64.EFI` — which is stormuefi 0.5.2, now finding all 4 pallets (kernel1/
+  system1/kube1/data1), verifying the manifest, and starting Linux
+  6.17.1-300.fc43. The mlx5 25G port came up and stormcos began bridging. Every
+  fix in v0.3.0 plus the chain-load, strict-ESP, 4K image geometry (stormcos#31)
+  and stormuefi GPT-LBA probe (stormuefi 0.5.2, stormcos#32) converged in one
+  boot. stormbootx's job — get a machine from firmware to a booting OS image
+  over the network, with nothing local — is proven.
+
+
+### 2026-09-05
 - **fix (blockio): chain-load, and boot only the attached disk.** The agent now
   loads `\\EFI\\BOOT\\BOOTX64.EFI` off the attached image's ESP and starts
   it, instead of publishing a block device and hoping the firmware boot manager
