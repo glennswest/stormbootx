@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### 2026-09-05
+- **milestone: first complete NVMe/TCP attach on real hardware.** A Dell R230
+  (service tag C2NR0Q2) booted the agent over iDRAC virtual media and attached a
+  32 GiB clone from forge over a 25 GbE Mellanox port: `claimed a clone of this
+  machine's image`, `namespace 8388608 blocks x 4096 bytes`, `transfer 128 KiB
+  per command (controller MDTS 5)`, `blockio published`, `RESULT: remote image
+  is a local disk`. Every v0.3.0 fix confirmed on metal in one boot — the
+  4096-byte LBA read from FLBAS, the MDTS-derived transfer size, multi-NIC
+  selection, and the service-tag claim end to end. The three-day bring-up hit
+  five walls (UEFI stack disabled, wrong-NIC `NO_MAPPING`, `GlobalSlotDriver`
+  hiding both add-in cards, a switch/Mellanox FEC mismatch, and a red-herring
+  DHCP relay), every one infrastructure or firmware rather than the binary. See
+  the Status section in CLAUDE.md.
+
+
 ### 2026-09-04
 - **fix (tcp4): try every network interface, not the first one.** `connect_within`
   took `handles.first()` and never looked at the others. A server has more than

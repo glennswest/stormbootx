@@ -212,23 +212,57 @@ iDRAC8's Redfish (firmware 2.50) is v1.0.2 and has **no** `PCIeDevices`,
 
 ## Status
 
-v0.3.0. **Ran on real hardware 2026-09-03** — a Dell, service tag C2NR0Q2,
-booted the agent off a USB stick and read its own service tag out of SMBIOS
-with no network, no DHCP and no BMC. With the UEFI network stack
-enabled in setup it reports `tcp4 : available`, already bound. The next wall is
-DHCP: an older stick got as far as `no IP address after 20s (NO_MAPPING)`.
-Nothing past `tcp4` has been exercised on metal yet.
+v0.3.0. **First complete NVMe/TCP attach on real hardware: 2026-09-05**, on a
+Dell PowerEdge R230 (service tag C2NR0Q2) booting the agent over iDRAC virtual
+media, attaching a 32 GiB clone from forge over a 25 GbE Mellanox port:
 
-Earlier the same day, under Proxmox OVMF: **First real execution: 2026-09-03**
-— `tcp4probe` ran under Proxmox OVMF on VM 2062 (`stormbootx-test.g8.lo`) and
-reported TCP4 available after a full `ConnectController` pass, then configured
-a TCP4 child and got as far as a connect timeout, which is the probe's own
-"the stack works" case. The agent itself has still not attached anything.
+```
+service tag : C2NR0Q2
+tcp4        : available
+claim       : boothost/C2NR0Q2 at 192.168.31.202:9090
+    interface 0 answered (MTU 1500, link up)
+  claimed a clone of this machine's image
+  portal    : 192.168.31.202:4420  nsid 7
+  namespace : 8388608 blocks x 4096 bytes  (32 GiB)
+  transfer  : 128 KiB per command  (controller MDTS 5; path MTU 1500)
+blockio     : published on handle 0x8301ae98
+RESULT: remote image is a local disk. Firmware can boot it.
+```
 
-A Proxmox VM can carry a service tag: `smbios1` takes `serial=` base64-encoded
-(`QemuServer.pm:1593`), which is the SMBIOS Type 1 field `smbios.rs` reads. It
-is empty unless set — a VM with only `uuid=` reports no serial and the agent
-falls through to the local disk before it ever reaches the network.
+Every fix in v0.3.0 confirmed on metal in that one boot: the 4096-byte LBA read
+from FLBAS (not assumed 512), the MDTS-derived 128 KiB transfer (not the
+inverted 8 KiB), multi-NIC selection taking the live 25G port over a
+`handles.first()` guess, and the service-tag claim end to end.
 
-On a *physical* model nobody has tried, still run `tcp4probe` before writing an
-agent stick at all.
+### The bring-up, and what each wall was
+
+Three days, and every failure was real hardware or infrastructure, not the
+binary — but each one first looked like a stormbootx bug:
+
+1. `EFI_TCP4 is not present` — the UEFI network stack was disabled in setup.
+   Enabling it fixed the onboard ports; the console `tcp4` line and #5's
+   ConnectController-with-wait were what made it legible.
+2. `NO_MAPPING` after 20 s — assumed missing DHCP, was really `handles.first()`
+   landing on a NIC with no cable. Fixed by trying every interface, fastest by
+   MTU first.
+3. Only 2 of 4 NICs present — `GlobalSlotDriverDisable = Enabled` in BIOS
+   disabled every slot's option ROM, so both add-in cards were invisible to
+   firmware. Found via the iDRAC SCP export, not a boot.
+4. All 4 NICs present but 25G ports `link down` — FEC mismatch. The dsw1
+   S5148F defaulted the SFP28 ports to `cl108-rs`; the Mellanox wanted `off`,
+   the only FEC this XPliant platform's `fec` command accepts. Proved with an
+   A/B: `fec off` port linked at 25G, `cl108` port stayed dark. Set `fec off`
+   on all 48 ports.
+5. Link up but no lease — a red herring; the g16 DHCP server was on the L2 and
+   answered directly once a port carried traffic.
+
+### Known follow-ups
+
+- Cosmetic: the per-NIC table reprints on every `connect_within` (the claim
+  opens one socket, the attach opens two), so the ranking prints three times a
+  boot. Rank/print once and pass the socket down.
+- The Mellanox presents MTU 1500 to firmware, so the path is not jumbo
+  end-to-end even though the switch ports are 9216. Transfer size is unaffected
+  (MDTS drives it), but raising the card's UEFI MTU would let a 9000 path show.
+- Three `boothost-C2NR0Q2` clones accumulated from repeated claims during
+  bring-up; harmless, but the claim mints a fresh clone each call.
