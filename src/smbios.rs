@@ -18,9 +18,92 @@ use uefi::{Guid, guid};
 const SMBIOS_GUID: Guid = guid!("eb9d2d31-2d88-11d3-9a16-0090273fc14d");
 const SMBIOS3_GUID: Guid = guid!("f2fd1544-9794-4a2c-992e-e5bbcf20e394");
 
+/// A DMI string only counts as an identity if it identifies *this* machine.
+///
+/// Boards with nothing burned in do not leave the field empty — they fill it
+/// with a constant, and every board of that model carries the same one. A node
+/// claiming `boothost/Default string` resolves to whatever the last machine
+/// with that placeholder was assigned, which is worse than failing: it boots,
+/// and it boots as somebody else.
+pub fn usable(raw: &str) -> Option<String> {
+    let v = raw.trim();
+    if v.is_empty() {
+        return None;
+    }
+    let low = v.to_ascii_lowercase();
+    let placeholder = matches!(
+        low.as_str(),
+        "none" | "unknown" | "default string" | "system serial number"
+            | "not applicable" | "not specified" | "n/a" | "invalid"
+    ) || low.contains("to be filled")
+        || low.contains("o.e.m.")
+        || v.chars().all(|c| c == '0' || c == '.' || c == '-' || c == ' ');
+    if placeholder { None } else { Some(v.into()) }
+}
+
+/// Where the machine's identity comes from, for the console line.
+///
+/// Worth printing: a whitebox identified by its NIC becomes a different
+/// machine to the boot server when that card is swapped, and "it stopped
+/// finding its image after I changed the network card" is a sentence nobody
+/// connects to anything unless the source was on screen the day it worked.
+pub enum Identity {
+    SystemSerial(String),
+    BoardSerial(String),
+    ChassisSerial(String),
+    Mac(String),
+}
+
+impl Identity {
+    pub fn value(&self) -> &str {
+        match self {
+            Identity::SystemSerial(v)
+            | Identity::BoardSerial(v)
+            | Identity::ChassisSerial(v)
+            | Identity::Mac(v) => v,
+        }
+    }
+
+    pub fn source(&self) -> &'static str {
+        match self {
+            Identity::SystemSerial(_) => "SMBIOS system serial",
+            Identity::BoardSerial(_) => "SMBIOS baseboard serial",
+            Identity::ChassisSerial(_) => "SMBIOS chassis serial",
+            Identity::Mac(_) => "first NIC MAC",
+        }
+    }
+}
+
 /// Read the system serial number (the service tag on Dell hardware).
+///
+/// The same SMBIOS Type 1 field every vendor uses and every vendor names
+/// differently: Dell a Service Tag, HPE and Lenovo and Cisco a Serial Number.
 pub fn service_tag() -> Option<String> {
-    unsafe { find_type1_string(table()?, 0x07) }
+    unsafe { find_type1_string(table()?, 0x07) }.and_then(|v| usable(&v))
+}
+
+/// The identity this machine should be addressed by, best source first.
+///
+/// Type 1 covers every major vendor. Type 2 is second because the ODM boards —
+/// Supermicro, Quanta, Wiwynn, Inventec and most whiteboxes — commonly leave
+/// the system serial as a placeholder and burn the real number into the
+/// baseboard. Type 3 catches the remainder. `mac` is the floor: unique by
+/// construction, present on anything that can netboot at all, and the reason
+/// a board carrying nothing else is still addressable rather than unbootable.
+pub fn identity(mac: Option<&str>) -> Option<Identity> {
+    let t = table();
+    if let Some(t) = t {
+        if let Some(v) = unsafe { find_type_string(t, 1, 0x07) }.and_then(|v| usable(&v)) {
+            return Some(Identity::SystemSerial(v));
+        }
+        if let Some(v) = unsafe { find_type_string(t, 2, 0x07) }.and_then(|v| usable(&v)) {
+            return Some(Identity::BoardSerial(v));
+        }
+        if let Some(v) = unsafe { find_type_string(t, 3, 0x06) }.and_then(|v| usable(&v)) {
+            return Some(Identity::ChassisSerial(v));
+        }
+    }
+    mac.map(|m| Identity::Mac(m.replace(':', "").to_ascii_uppercase()))
 }
 
 /// Manufacturer and product name, for the console line.
@@ -100,7 +183,16 @@ unsafe fn smbios_table(entry: *const u8) -> *const u8 {
 /// assumed: a short Type 1 is legal — the fields were added over successive
 /// SMBIOS versions — and reading past `len` walks into the string table and
 /// returns whatever byte happens to sit there as a string index.
-unsafe fn find_type1_string(mut p: *const u8, offset: usize) -> Option<String> {
+unsafe fn find_type1_string(p: *const u8, offset: usize) -> Option<String> {
+    find_type_string(p, 1, offset)
+}
+
+/// One string out of the first structure of `want_type`, by offset.
+///
+/// Type 1 is System Information, Type 2 the Baseboard and Type 3 the Chassis.
+/// They carry a serial number each, and which of them a vendor actually fills
+/// in is a per-model fact rather than a rule.
+unsafe fn find_type_string(mut p: *const u8, want_type: u8, offset: usize) -> Option<String> {
     // Bounded so a malformed table cannot spin forever in firmware.
     for _ in 0..2048 {
         let stype = *p;
@@ -113,7 +205,7 @@ unsafe fn find_type1_string(mut p: *const u8, offset: usize) -> Option<String> {
         }
 
         let strings = p.add(len);
-        if stype == 1 {
+        if stype == want_type {
             if offset >= len {
                 return None;
             }

@@ -62,6 +62,15 @@ pub struct Config {
     /// whatever `nqn`/`nsid` resolution produced, which is what a stick pinned
     /// to one namespace wants.
     pub claim: bool,
+    /// The machine's identity, stated rather than discovered.
+    ///
+    /// Discovery is a convenience for a machine nobody has told; a machine
+    /// that *has* been told should not have its answer second-guessed by
+    /// firmware. Stating one is also the only way to bench-test a box as
+    /// another host without touching the boot server, and the only way to
+    /// name a board whose SMBIOS serial is a placeholder shared by every
+    /// board of its model.
+    pub tag: Option<String>,
     /// Digest of the `BOOTX64.EFI` currently on this media, if it has been
     /// stamped. Absent on a stick written by `dd` and never updated.
     pub stamp: Option<String>,
@@ -171,6 +180,7 @@ pub fn resolve(d: &Defaults) -> Config {
         nqn: d.nqn.to_string(),
         nsid: d.nsid,
         api_port: d.api_port,
+        tag: None,
         claim: true,
         stamp: None,
         source: "compiled defaults".to_string(),
@@ -187,6 +197,8 @@ pub fn resolve(d: &Defaults) -> Config {
     let file_nqn = file.and_then(|t| field(t, "nqn"));
     let file_nsid = file.and_then(|t| field(t, "nsid")).and_then(|s| s.parse().ok());
     cfg.stamp = file.and_then(|t| field(t, "stamp"));
+    // A stated tag wins over anything SMBIOS says. See `Config::tag`.
+    cfg.tag = file.and_then(|t| field(t, "tag")).filter(|v| !v.is_empty());
     if let Some(p) = file.and_then(|t| field(t, "api_port")).and_then(|s| s.parse().ok()) {
         cfg.api_port = p;
     }

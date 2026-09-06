@@ -107,8 +107,26 @@ fn run() -> Result<(), String> {
     banner("============================================================");
 
     // 1. Who am I? No network, no configuration, no BMC.
-    let tag = smbios::service_tag().ok_or("SMBIOS carries no system serial number")?;
-    uefi::println!("service tag : {tag}");
+    // A stated tag wins. Discovery is a convenience for a machine nobody has
+    // told; one that has been told should not have its answer second-guessed,
+    // and stating one is the only way to bench-test a box as another host or
+    // to name a board whose SMBIOS serial is a placeholder shared by every
+    // board of its model.
+    let tag = match cfg.tag.clone() {
+        Some(t) => {
+            uefi::println!("service tag : {t}  (stated in {})", config::CONF_PATH);
+            t
+        }
+        None => {
+            let id = smbios::identity(None).ok_or(
+                "no usable identity: the SMBIOS system, baseboard and chassis serials are \
+                 all empty or a shared placeholder. State one with `tag = <id>` in \
+                 \\stormboot\\stormboot.conf",
+            )?;
+            uefi::println!("service tag : {}  ({})", id.value(), id.source());
+            id.value().to_string()
+        }
+    };
     if let Some(model) = smbios::model() {
         // Printed because whether a platform carries the TCP/IP driver stack is
         // a per-model fact, not a per-machine one. A console line naming the
