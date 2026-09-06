@@ -24,7 +24,7 @@ use core::ptr;
 use uefi::boot::{self, OpenProtocolAttributes, OpenProtocolParams, SearchType};
 use uefi::proto::device_path::DevicePath;
 use uefi::proto::device_path::hardware::Pci;
-use uefi::{Guid, Status, guid};
+use uefi::{Guid, Handle, Status, guid};
 use uefi_raw::protocol::network::ip4_config2::{
     Ip4Config2DataType, Ip4Config2InterfaceInfo, Ip4Config2Policy, Ip4Config2Protocol,
 };
@@ -369,7 +369,7 @@ fn probe_interface(sb_handle: uefi_raw::Handle) -> (Option<u32>, bool, [u8; 32],
 /// last PCI node of its device path. `None` when the handle has no device path
 /// or no PCI node — nothing to match, so the caller treats it as not ours.
 /// `GetProtocol`, never exclusive: this only reads the path.
-fn pci_devfn(handle: boot::Handle) -> Option<(u8, u8)> {
+fn pci_devfn(handle: Handle) -> Option<(u8, u8)> {
     let dp = unsafe {
         boot::open_protocol::<DevicePath>(
             OpenProtocolParams {
