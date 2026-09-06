@@ -52,7 +52,7 @@ use alloc::vec::Vec;
 use core::time::Duration;
 
 use uefi::Identify;
-use uefi::boot::{self, SearchType};
+use uefi::boot::{self, OpenProtocolAttributes, OpenProtocolParams, SearchType};
 use uefi::proto::pci::PciIoAddress;
 use uefi::proto::pci::root_bridge::PciRootBridgeIo;
 
@@ -627,7 +627,20 @@ pub fn apply(want: Option<Fec>) -> Summary {
     };
 
     for h in handles.iter() {
-        let Ok(mut bridge) = boot::open_protocol_exclusive::<PciRootBridgeIo>(*h) else {
+        // GetProtocol, never exclusive. An exclusive open of the PCI root
+        // bridge makes UEFI DisconnectController every BY_DRIVER agent under it
+        // — PciBusDxe and, beneath it, the NIC drivers — so an exclusive open
+        // here tears down the very network stack the next step needs, and often
+        // fails outright when PciBusDxe will not detach mid-boot (leaving the
+        // scan empty and the NICs dead). Borrow the interface; disturb nothing.
+        let params = OpenProtocolParams {
+            handle: *h,
+            agent: boot::image_handle(),
+            controller: None,
+        };
+        let Ok(mut bridge) = (unsafe {
+            boot::open_protocol::<PciRootBridgeIo>(params, OpenProtocolAttributes::GetProtocol)
+        }) else {
             continue;
         };
         for (addr, device) in mellanox_functions(&mut bridge) {
