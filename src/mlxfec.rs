@@ -480,10 +480,14 @@ impl Dev<'_> {
         r_reg: usize,
     ) -> Result<(), String> {
         let mut buf = vec![0u32; HDR_DWORDS + reg.len()];
-        // OperationTlv: type 1, length 4 dwords, dr 0, status 0.
+        // OperationTlv dword 0 (packets_layout.h): status[8:15) dr[15]
+        // len[16:27) Type[27:32). Type 1 (operation), length 4 dwords.
         buf[0] = (1 << 27) | (4 << 16);
-        // class 1 (register access), method, r 0, register id.
-        buf[1] = (1 << 24) | (method << 17) | id as u32;
+        // OperationTlv dword 1: tlv_class[0:8) method[8:15) r[15]
+        // register_id[16:32). class 1 = register access, r 0. The earlier form
+        // mirrored all three fields (class at 24, method at 17, id at 0), which
+        // the firmware rejected as ICMD status 4 (bad parameter).
+        buf[1] = ((id as u32) << 16) | (method << 8) | 1;
         buf[2] = 0;
         buf[3] = 0;
         // reg_tlv: type 3, length in dwords including itself.
