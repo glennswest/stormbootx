@@ -41,6 +41,7 @@ extern crate alloc;
 mod blockio;
 mod config;
 mod dhcp4;
+mod mlxfec;
 mod nvme;
 mod registry;
 mod shell;
@@ -133,6 +134,16 @@ fn run() -> Result<(), String> {
         // model is what makes that something to write down once.
         uefi::println!("model       : {model}");
     }
+
+    // 1b. The NIC's 25G FEC, before the network is asked for anything. The
+    //     fabric switch is pinned to one FEC mode (its OS10 has no `fec auto`)
+    //     and the card must match or the link never trains — the failure that
+    //     looks like "no DHCP" and is really no link. Read-only for now: this
+    //     names the exact ConnectX on the bus and its current/next-boot FEC on
+    //     the console, so the silicon is confirmed before a write is ever wired.
+    //     Nothing here is fatal; an unrecognised card is named and skipped.
+    uefi::println!("nic fec     :");
+    let _ = mlxfec::apply(None);
 
     // 2. Is there a usable TCP stack? Presence of SNP is not enough — the
     //    layered IP4/TCP4 drivers are a separate build option in firmware, and
