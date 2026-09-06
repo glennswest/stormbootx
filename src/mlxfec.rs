@@ -471,7 +471,8 @@ impl Dev<'_> {
             | (1 << 25); // over_en, as mlxconfig sets it
         reg[1] = tlv_type;
         let reg_size = NV_DATA_MAX + NV_HDR_DWORDS * 4;
-        match self.access_reg(REG_MNVDA, METHOD_GET, &mut reg, reg_size, NV_HDR_DWORDS, reg.len()) {
+        let reg_len = reg.len();
+        match self.access_reg(REG_MNVDA, METHOD_GET, &mut reg, reg_size, NV_HDR_DWORDS, reg_len) {
             Ok(()) => {}
             Err(e) if e.contains("resource not available") => return Ok(None),
             Err(e) => return Err(e),
@@ -489,7 +490,8 @@ impl Dev<'_> {
         reg[1] = tlv_type;
         reg[NV_HDR_DWORDS..].copy_from_slice(data);
         let reg_size = len + NV_HDR_DWORDS * 4;
-        self.access_reg(REG_MNVDA, METHOD_SET, &mut reg, reg_size, reg.len(), NV_HDR_DWORDS)
+        let reg_len = reg.len();
+        self.access_reg(REG_MNVDA, METHOD_SET, &mut reg, reg_size, reg_len, NV_HDR_DWORDS)
     }
 
     /// Ask firmware to prepare for the warm boot that will apply NV config.
