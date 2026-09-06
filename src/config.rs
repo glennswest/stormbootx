@@ -116,6 +116,16 @@ fn open_fs(handle: Handle) -> Option<ScopedProtocol<SimpleFileSystem>> {
 }
 
 /// Read a file from the boot volume as text.
+/// The tag stated in the config file, read on its own.
+///
+/// The identity is needed before the rest of the configuration is resolved —
+/// it is the first thing printed and the thing the claim is keyed on — so this
+/// reads that one field rather than reordering the boot to suit it.
+pub fn stated_tag() -> Option<String> {
+    let text = read_file(CONF_PATH)?;
+    field(&text, "tag").filter(|v| !v.is_empty())
+}
+
 pub fn read_file(path: &str) -> Option<String> {
     let handle = boot_volume()?;
     let mut fs = open_fs(handle)?;

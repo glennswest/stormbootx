@@ -49,7 +49,7 @@ mod smbios;
 mod tcp4;
 
 use alloc::format;
-use alloc::string::String;
+use alloc::string::{String, ToString};
 
 use uefi::prelude::*;
 
@@ -112,7 +112,7 @@ fn run() -> Result<(), String> {
     // and stating one is the only way to bench-test a box as another host or
     // to name a board whose SMBIOS serial is a placeholder shared by every
     // board of its model.
-    let tag = match cfg.tag.clone() {
+    let tag = match config::stated_tag() {
         Some(t) => {
             uefi::println!("service tag : {t}  (stated in {})", config::CONF_PATH);
             t
