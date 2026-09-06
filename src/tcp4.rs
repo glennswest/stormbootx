@@ -600,8 +600,29 @@ impl Tcp4Socket {
             }
         }
 
-        // 2. One DHCP of our own per interface — at most once each, because a
-        //    blocking Start costs seconds and repeating it buys nothing.
+        // 2. Give the platform's own DHCP time to land, retrying only the cheap
+        //    question. `request_dhcp` started leases everywhere; on a fresh boot
+        //    the lease is simply not back yet when phase 1 ran. This is the
+        //    common case on a network with a DHCP server, so it comes *before*
+        //    our own client — waiting a moment beats four failing rounds that
+        //    read as broken when the platform was about to answer anyway.
+        while waited < budget_ms {
+            boot::stall(core::time::Duration::from_millis(STEP_MS));
+            waited += STEP_MS;
+            for &(i, handle, mtu, link, _) in order.iter() {
+                if let Ok(mut sock) = Self::open_on(handle, remote, port, secs, None) {
+                    announce(i, mtu, link);
+                    sock.do_connect()?;
+                    return Ok(sock);
+                }
+            }
+        }
+
+        // 3. Last resort: a DHCP client of our own, at most once per interface.
+        //    Only reached when the platform produced no address in the whole
+        //    budget — its policy is STATIC, or it has no EFI_DHCP4 of its own.
+        //    A blocking Start costs seconds, so it runs once each and only here,
+        //    never ahead of the platform that usually just needed a moment.
         for &(i, handle, mtu, link, mac) in order.iter() {
             let (mac_bytes, mac_len) = mac;
             if mac_len == 0 {
@@ -624,29 +645,12 @@ impl Tcp4Socket {
             }
         }
 
-        // 3. Wait for the platform's own DHCP to land, retrying only the cheap
-        //    question. `request_dhcp` started leases everywhere; this is what
-        //    gives them time to arrive.
-        loop {
-            if waited >= budget_ms {
-                return Err(format!(
-                    "{last} — after {} s across {} interface(s). No interface \
-obtained an address: nothing answered DHCP on any of them, and none was already \
-configured.",
-                    budget_ms / 1000,
-                    handles.len()
-                ));
-            }
-            boot::stall(core::time::Duration::from_millis(STEP_MS));
-            waited += STEP_MS;
-            for &(i, handle, mtu, link, _) in order.iter() {
-                if let Ok(mut sock) = Self::open_on(handle, remote, port, secs, None) {
-                    announce(i, mtu, link);
-                    sock.do_connect()?;
-                    return Ok(sock);
-                }
-            }
-        }
+        Err(format!(
+            "{last} — after {} s across {} interface(s). No interface obtained an \
+address: nothing answered DHCP on any of them, and none was already configured.",
+            budget_ms / 1000,
+            handles.len()
+        ))
     }
 
     /// One attempt on one service binding. The child is destroyed on failure so
