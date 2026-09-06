@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### 2026-09-06
+- **feat: `tag = <id>` in `stormboot.conf` states the machine's identity (#9).** A stated tag wins over anything SMBIOS says. Discovery is a convenience for a machine nobody has told; one that has been told should not have its answer second-guessed by firmware. It is also the only way to bench-test a box as another host without touching the boot server, and the only way to name a board whose SMBIOS serial is a placeholder.
+- **feat: identity falls through the SMBIOS structures that actually carry it (#7).** Type 1 (System) covers Dell, HPE, Lenovo and Cisco — the same field, named differently by each. Type 2 (Baseboard) is second because the ODM boards commonly leave the system serial as a placeholder and burn the real number into the baseboard; Type 3 (Chassis) catches the remainder. Placeholders are now rejected rather than used: `Default string`, `To be filled by O.E.M.`, `System Serial Number`, all-zero and the rest are shared by every board of a model, so a node claiming one boots as somebody else. The console line names which source answered, because a machine identified by one thing and later re-identified by another is a failure nobody connects to a hardware change unless it was on screen the day it worked.
+
 ### 2026-09-05
 - **COMPLETE: full diskless boot on real hardware.** A PowerEdge R230 (service
   tag C2NR0Q2) booted stormcos end to end over 25 GbE NVMe/TCP: stormbootx read
