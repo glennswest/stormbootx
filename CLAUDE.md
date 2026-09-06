@@ -189,27 +189,33 @@ iDRAC8's Redfish (firmware 2.50) is v1.0.2 and has **no** `PCIeDevices`,
       boundary and every streaming split. Unreferenced until #2 wires it up,
       and LTO drops it, so it costs the image 0 bytes today.
 
-### In progress
+### Done (recent)
 
-- [ ] **#7 — set the NIC's 25G FEC to RS from stormbootx.** dsw1 (Dell
-      S5148F, OS10 10.4.3.6) cannot be upgraded, has no `fec auto`, and the
-      fleet runs 25GBASE-SR optics with `fec off` on both ends — out of spec
-      for SR, and 1/1/5 + 1/1/7 sat line-protocol-down for three days with
-      light present until the switch port was bounced (2026-09-06). There is
-      no MFT/mlxconfig anywhere in the fleet and no OS at boot time, so the
-      NIC side is set here. Design: the mlxconfig path, not the HCA command
-      queue — the ConnectX PCIe vendor-specific capability (semaphore +
-      address/data window into CR space) carrying an ICMD, writing the
-      `PHY_FEC_OVERRIDE` NV-config TLV via MNVDA. Works while the Mellanox
-      UEFI driver owns the device (mlxconfig runs under a live kernel driver
-      the same way); needs only `PciRootBridgeIo` config-space access, which
-      the shell's `pci` command already uses. Layouts from mstflint (BSD).
-      Order: (1) read-only query of the current TLV, printed at boot and from
-      a shell command; (2) write RS when it differs, then a NIC reset so
-      firmware re-reads NV config; (3) per port on dsw1, `fec CL108-RS`
-      (the 25G RS mode — CL91 is 100G) only after that host has the TLV
-      written, or the link drops. Verify the first card with mstflint from a
-      Linux host before the fleet.
+- [x] **#7 — the 25G FEC fix was switch-side, and mlxfec reads it
+      (2026-09-06).** The flaky SR links (1/1/5 + 1/1/7 line-protocol-down for
+      days, port 5 dead) were a FEC *mismatch*: the Dell S5148F fabric was
+      pinned to `fec off`, while the ConnectX-4 Lx device-default already
+      **negotiates** cl108-rs. Setting the switch to RS matched both ends and
+      every link came up stable — including the dead port — with no
+      shut/no-shut. The card needed no change; the fix was rolled to all 48
+      SFP28 ports. The gotcha that cost the day: on OS10 10.4.3.6 the keyword is
+      a **standalone, uppercase** interface command — `fec CL108-RS` (also
+      `CL74-FC`, `CL91-RS`, `off`). Lowercase, `no fec off`, and putting it
+      under `speed` are all rejected as "Illegal parameter". `fec ?` lists them
+      but only renders over an interactive TTY (`ssh -tt`, stdin held open).
+
+      `mlxfec` (built along the way) is a working UEFI ConnectX FEC read/write:
+      it finds the card over `PciRootBridgeIo` config space (GetProtocol, never
+      exclusive — exclusive tears down PciBusDxe and the NIC drivers), clears
+      the cap9 semaphore the Mellanox UEFI driver parks for its whole lifetime
+      (held value 0x3/0x7), runs an ICMD MNVDA access-register, and decodes the
+      NV FEC override. **Kept read-only** (`apply(None)`): it prints each port's
+      current/next-boot FEC at boot as a diagnostic. The write path
+      (`apply(Some(Fec::Rs))`, NV write + MFRL warm reset) is proven on the R230
+      but deliberately uncalled — the card negotiates RS on its own, so pinning
+      it is optional determinism, not a need. Every wall (GetProtocol vs
+      exclusive; the parked cap9 lock; the OperationTlv dword-1 bit layout) is
+      in the git history.
 
 ### Blocked on other repos
 

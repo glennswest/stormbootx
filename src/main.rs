@@ -135,13 +135,17 @@ fn run() -> Result<(), String> {
         uefi::println!("model       : {model}");
     }
 
-    // 1b. The NIC's 25G FEC, before the network is asked for anything. The
-    //     fabric switch is pinned to one FEC mode (its OS10 has no `fec auto`)
-    //     and the card must match or the link never trains — the failure that
-    //     looks like "no DHCP" and is really no link. Read-only for now: this
-    //     names the exact ConnectX on the bus and its current/next-boot FEC on
-    //     the console, so the silicon is confirmed before a write is ever wired.
-    //     Nothing here is fatal; an unrecognised card is named and skipped.
+    // 1b. Read and report the NIC's 25G FEC, before the network is used. This
+    //     is a diagnostic, not a fix: on 2026-09-06 the flaky-SR-link problem
+    //     turned out to be switch-side — the fabric (Dell S5148F) was pinned to
+    //     `fec off`, and the ConnectX's device-default already *negotiates*
+    //     cl108-rs, so setting the switch to `CL108-RS` matched both ends and
+    //     the links (including a port dead for days) came up stable. The card
+    //     needed no change. The write path is built and proven on that
+    //     hardware — `apply(Some(Fec::Rs))` pins the NV FEC override and
+    //     warm-resets — but is deliberately left uncalled: read-only for now,
+    //     since the card negotiates RS on its own. Nothing here is fatal; an
+    //     unrecognised card is named and skipped.
     uefi::println!("nic fec     :");
     let _ = mlxfec::apply(None);
 
