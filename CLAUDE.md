@@ -209,13 +209,23 @@ iDRAC8's Redfish (firmware 2.50) is v1.0.2 and has **no** `PCIeDevices`,
       exclusive — exclusive tears down PciBusDxe and the NIC drivers), clears
       the cap9 semaphore the Mellanox UEFI driver parks for its whole lifetime
       (held value 0x3/0x7), runs an ICMD MNVDA access-register, and decodes the
-      NV FEC override. **Kept read-only** (`apply(None)`): it prints each port's
-      current/next-boot FEC at boot as a diagnostic. The write path
-      (`apply(Some(Fec::Rs))`, NV write + MFRL warm reset) is proven on the R230
-      but deliberately uncalled — the card negotiates RS on its own, so pinning
-      it is optional determinism, not a need. Every wall (GetProtocol vs
-      exclusive; the parked cap9 lock; the OperationTlv dword-1 bit layout) is
-      in the git history.
+      NV FEC override. `apply(None)` prints each port's current/next-boot FEC at
+      boot as a diagnostic. Every wall (GetProtocol vs exclusive; the parked
+      cap9 lock; the OperationTlv dword-1 bit layout) is in the git history.
+
+      **Self-heal (0.3.4):** after the stack binds, `tcp4::matched_all_down`
+      matches the ConnectX's 25G ports — by each interface's device-path PCI
+      device/function against `mlxfec::connectx_devfns()`, so never a 1G onboard
+      NIC or another vendor — and if *every* one of the card's ports is
+      link-down, main calls `apply(Some(Fec::Rs))` to pin the FEC override to RS
+      and warm-resets once. Idempotent: the write is skipped when FEC is already
+      RS, so it resets at most once then falls through instead of looping, and a
+      machine with any live 25G link never reaches it. It fires only on a real
+      link-down, so it costs nothing while healthy — the read path was proven on
+      the R230; the write half gets its first live exercise only when it fires.
+      PAOS (live port status) is *not* ICMD-reachable on CX4 Lx (only the
+      MNVDA-family NV registers are), which is why the trigger reads link from
+      SNP via the device-path match rather than from the card.
 
 ### Blocked on other repos
 
