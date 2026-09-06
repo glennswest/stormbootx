@@ -34,6 +34,7 @@ OUTPUT=""
 BIN=""
 PIN="no"
 PROBE="no"
+ISO="no"
 
 usage() {
     sed -n '2,20p' "$0" | sed 's/^# \?//'
@@ -57,6 +58,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --pin)    PIN="yes"; shift ;;
         --probe)  PROBE="yes"; shift ;;
+        --iso)    ISO="yes"; shift ;;
         --api-port) API_PORT="$2"; shift 2 ;;
         --portal) PORTAL="$2"; PIN="yes"; shift 2 ;;
         --port)   PORT="$2"; shift 2 ;;
@@ -70,12 +72,20 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-OUTPUT="${OUTPUT:-$OUTDIR/stormbootx.img}"
+if [[ "$ISO" == "yes" ]]; then
+    OUTPUT="${OUTPUT:-$OUTDIR/stormbootx.iso}"
+else
+    OUTPUT="${OUTPUT:-$OUTDIR/stormbootx.img}"
+fi
 case "$OUTPUT" in
     /tmp/*) die "refusing to write a disk image into /tmp (tmpfs = RAM); use $OUTDIR" ;;
 esac
 
-for tool in mkfs.fat mmd mcopy sfdisk; do
+# The ISO wraps the same ESP as an El Torito UEFI boot image (xorriso); the raw
+# .img lays it into a GPT partition (sfdisk). Only one of the two is needed.
+NEED="sfdisk"
+[[ "$ISO" == "yes" ]] && NEED="xorriso"
+for tool in mkfs.fat mmd mcopy "$NEED"; do
     command -v "$tool" >/dev/null || die "$tool not installed on the build host"
 done
 
@@ -151,11 +161,26 @@ mcopy -i "$ESP" "$WORK/stormboot.conf" ::/stormboot/stormboot.conf
 
 mkdir -p "$(dirname "$OUTPUT")"
 rm -f "$OUTPUT"
-truncate -s "$(( ESP_MIB + 2 ))M" "$OUTPUT"
-sfdisk --quiet --label gpt "$OUTPUT" <<EOF
+
+if [[ "$ISO" == "yes" ]]; then
+    # An El Torito UEFI ISO for iDRAC/BMC virtual media, where a raw GPT disk is
+    # awkward to mount. The ESP is the boot image (no emulation); the .efi and
+    # conf are also laid loose in the ISO9660 tree, matching the layout the
+    # first hand-built ISO used and firmware is happy to read either way.
+    ISOROOT="$WORK/iso"
+    mkdir -p "$ISOROOT/EFI/BOOT" "$ISOROOT/stormboot"
+    cp "$ESP" "$ISOROOT/esp.img"
+    cp "$BIN" "$ISOROOT/EFI/BOOT/BOOTX64.EFI"
+    cp "$WORK/stormboot.conf" "$ISOROOT/stormboot/stormboot.conf"
+    xorriso -as mkisofs -V STORMBOOTX -e esp.img -no-emul-boot \
+        -o "$OUTPUT" "$ISOROOT" >/dev/null 2>&1
+else
+    truncate -s "$(( ESP_MIB + 2 ))M" "$OUTPUT"
+    sfdisk --quiet --label gpt "$OUTPUT" <<EOF
 start=2048, size=$(( ESP_MIB * 2048 )), type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, name="STORMBOOTX"
 EOF
-dd if="$ESP" of="$OUTPUT" bs=1M seek=1 conv=notrunc status=none
+    dd if="$ESP" of="$OUTPUT" bs=1M seek=1 conv=notrunc status=none
+fi
 
 say "binary  $(du -h "$BIN" | cut -f1)  $BIN"
 say "image   $(du -h "$OUTPUT" | cut -f1)  $OUTPUT"
