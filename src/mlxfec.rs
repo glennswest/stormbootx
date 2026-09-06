@@ -264,8 +264,10 @@ impl Dev<'_> {
     /// Take the capability's semaphore: the ticket counter, written back and
     /// read back (mtcr_ul_com.c:1476-1512).
     fn vsc_lock(&mut self) -> Result<(), String> {
+        let mut last = 0u32;
         for _ in 0..VSC_RETRIES {
-            if self.cfg_read(self.vsec + VSC_SEMAPHORE)? != 0 {
+            last = self.cfg_read(self.vsec + VSC_SEMAPHORE)?;
+            if last != 0 {
                 boot::stall(Duration::from_millis(1));
                 continue;
             }
@@ -275,7 +277,14 @@ impl Dev<'_> {
                 return Ok(());
             }
         }
-        Err(String::from("VSC semaphore never came free"))
+        // The value it stuck on says which failure this is: a small non-zero
+        // ticket means the Mellanox UEFI driver is holding it (contention);
+        // 0xffffffff means the read itself is failing (a wrong VSC offset or a
+        // config path that does not reach the card).
+        Err(format!(
+            "VSC semaphore never came free (held value {last:#010x}, vsec @ {:#04x})",
+            self.vsec
+        ))
     }
 
     fn vsc_unlock(&mut self) {
