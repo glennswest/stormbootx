@@ -263,26 +263,55 @@ impl Dev<'_> {
 
     /// Take the capability's semaphore: the ticket counter, written back and
     /// read back (mtcr_ul_com.c:1476-1512).
+    /// One pass of the ticket handshake: read the semaphore, and if it is free
+    /// take it with the next ticket. `Ok(true)` means taken.
+    fn vsc_try_take(&mut self) -> Result<bool, String> {
+        if self.cfg_read(self.vsec + VSC_SEMAPHORE)? != 0 {
+            return Ok(false);
+        }
+        let ticket = self.cfg_read(self.vsec + VSC_COUNTER)?;
+        self.cfg_write(self.vsec + VSC_SEMAPHORE, ticket)?;
+        Ok(self.cfg_read(self.vsec + VSC_SEMAPHORE)? == ticket)
+    }
+
     fn vsc_lock(&mut self) -> Result<(), String> {
+        // First, the cooperative path: wait for whoever holds it to release.
         let mut last = 0u32;
         for _ in 0..VSC_RETRIES {
-            last = self.cfg_read(self.vsec + VSC_SEMAPHORE)?;
-            if last != 0 {
-                boot::stall(Duration::from_millis(1));
-                continue;
-            }
-            let ticket = self.cfg_read(self.vsec + VSC_COUNTER)?;
-            self.cfg_write(self.vsec + VSC_SEMAPHORE, ticket)?;
-            if self.cfg_read(self.vsec + VSC_SEMAPHORE)? == ticket {
+            if self.vsc_try_take()? {
                 return Ok(());
             }
+            last = self.cfg_read(self.vsec + VSC_SEMAPHORE)?;
+            boot::stall(Duration::from_millis(1));
         }
-        // The value it stuck on says which failure this is: a small non-zero
-        // ticket means the Mellanox UEFI driver is holding it (contention);
-        // 0xffffffff means the read itself is failing (a wrong VSC offset or a
-        // config path that does not reach the card).
+        // It never released. On this platform that is the Mellanox UEFI driver,
+        // which takes cap9 at init and *parks* it for its whole lifetime to keep
+        // tools out — the held value is a small init-time ticket (0x3, 0x7), not
+        // a value that moves. The driver does not use the address/data window
+        // itself; its own path is the HCA command queue on the main BAR. So a
+        // parked lock is safe to clear and retake for the window's duration.
+        // 0xffffffff would instead mean the read never reached the card, and
+        // clearing it would be pointless — so only force a plausible parked
+        // ticket, never a dead bus.
+        if last == 0 || last == 0xffff_ffff {
+            return Err(format!(
+                "VSC semaphore unreadable or never held (last {last:#010x}, vsec @ {:#04x})",
+                self.vsec
+            ));
+        }
+        uefi::println!(
+            "    (cap9 parked at {last:#x} by the UEFI driver — clearing and taking the window)"
+        );
+        self.cfg_write(self.vsec + VSC_SEMAPHORE, 0)?;
+        boot::stall(Duration::from_millis(1));
+        for _ in 0..VSC_RETRIES {
+            if self.vsc_try_take()? {
+                return Ok(());
+            }
+            boot::stall(Duration::from_millis(1));
+        }
         Err(format!(
-            "VSC semaphore never came free (held value {last:#010x}, vsec @ {:#04x})",
+            "VSC semaphore would not take even after clearing a parked lock (last {last:#010x}, vsec @ {:#04x})",
             self.vsec
         ))
     }
