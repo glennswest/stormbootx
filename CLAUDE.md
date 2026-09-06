@@ -189,6 +189,28 @@ iDRAC8's Redfish (firmware 2.50) is v1.0.2 and has **no** `PCIeDevices`,
       boundary and every streaming split. Unreferenced until #2 wires it up,
       and LTO drops it, so it costs the image 0 bytes today.
 
+### In progress
+
+- [ ] **#7 — set the NIC's 25G FEC to RS from stormbootx.** dsw1 (Dell
+      S5148F, OS10 10.4.3.6) cannot be upgraded, has no `fec auto`, and the
+      fleet runs 25GBASE-SR optics with `fec off` on both ends — out of spec
+      for SR, and 1/1/5 + 1/1/7 sat line-protocol-down for three days with
+      light present until the switch port was bounced (2026-09-06). There is
+      no MFT/mlxconfig anywhere in the fleet and no OS at boot time, so the
+      NIC side is set here. Design: the mlxconfig path, not the HCA command
+      queue — the ConnectX PCIe vendor-specific capability (semaphore +
+      address/data window into CR space) carrying an ICMD, writing the
+      `PHY_FEC_OVERRIDE` NV-config TLV via MNVDA. Works while the Mellanox
+      UEFI driver owns the device (mlxconfig runs under a live kernel driver
+      the same way); needs only `PciRootBridgeIo` config-space access, which
+      the shell's `pci` command already uses. Layouts from mstflint (BSD).
+      Order: (1) read-only query of the current TLV, printed at boot and from
+      a shell command; (2) write RS when it differs, then a NIC reset so
+      firmware re-reads NV config; (3) per port on dsw1, `fec CL108-RS`
+      (the 25G RS mode — CL91 is 100G) only after that host has the TLV
+      written, or the link drops. Verify the first card with mstflint from a
+      Linux host before the fleet.
+
 ### Blocked on other repos
 
 - [ ] #3 (the rest) — the version compare needs `stormblock-pallet-format`
