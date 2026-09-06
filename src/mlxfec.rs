@@ -707,6 +707,37 @@ pub fn apply(want: Option<Fec>) -> Summary {
     sum
 }
 
+/// The `(device, function)` of every ConnectX physical function this code
+/// recognises, read from PCI config space. Lets the caller match the card's own
+/// NICs against the bound network interfaces by their device-path PCI node, so
+/// the FEC self-heal fires only for this card's 25G ports and never for a 1G
+/// onboard NIC or another vendor.
+pub fn connectx_devfns() -> Vec<(u8, u8)> {
+    let mut out = Vec::new();
+    let Ok(handles) = boot::locate_handle_buffer(SearchType::ByProtocol(&PciRootBridgeIo::GUID))
+    else {
+        return out;
+    };
+    for h in handles.iter() {
+        let params = OpenProtocolParams {
+            handle: *h,
+            agent: boot::image_handle(),
+            controller: None,
+        };
+        let Ok(mut bridge) = (unsafe {
+            boot::open_protocol::<PciRootBridgeIo>(params, OpenProtocolAttributes::GetProtocol)
+        }) else {
+            continue;
+        };
+        for (addr, device) in mellanox_functions(&mut bridge) {
+            if KNOWN.iter().any(|(id, _)| *id == device) {
+                out.push((addr.dev, addr.fun));
+            }
+        }
+    }
+    out
+}
+
 fn one_card(
     bridge: &mut PciRootBridgeIo,
     addr: PciIoAddress,

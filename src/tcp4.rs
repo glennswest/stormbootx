@@ -21,7 +21,9 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::ptr;
 
-use uefi::boot::{self, SearchType};
+use uefi::boot::{self, OpenProtocolAttributes, OpenProtocolParams, SearchType};
+use uefi::proto::device_path::DevicePath;
+use uefi::proto::device_path::hardware::Pci;
 use uefi::{Guid, Status, guid};
 use uefi_raw::protocol::network::ip4_config2::{
     Ip4Config2DataType, Ip4Config2InterfaceInfo, Ip4Config2Policy, Ip4Config2Protocol,
@@ -361,6 +363,58 @@ fn probe_interface(sb_handle: uefi_raw::Handle) -> (Option<u32>, bool, [u8; 32],
     };
     unsafe { let _ = ((*sb).destroy_child)(sb, child); };
     result
+}
+
+/// The PCI `(device, function)` an interface handle sits on, taken from the
+/// last PCI node of its device path. `None` when the handle has no device path
+/// or no PCI node — nothing to match, so the caller treats it as not ours.
+/// `GetProtocol`, never exclusive: this only reads the path.
+fn pci_devfn(handle: boot::Handle) -> Option<(u8, u8)> {
+    let dp = unsafe {
+        boot::open_protocol::<DevicePath>(
+            OpenProtocolParams {
+                handle,
+                agent: boot::image_handle(),
+                controller: None,
+            },
+            OpenProtocolAttributes::GetProtocol,
+        )
+    }
+    .ok()?;
+    let mut found = None;
+    for node in dp.node_iter() {
+        if let Ok(pci) = <&Pci>::try_from(node) {
+            found = Some((pci.device(), pci.function()));
+        }
+    }
+    found
+}
+
+/// Whether every bound network interface that sits on one of `pci` — matched by
+/// its device-path PCI device+function — reports link down.
+///
+/// `Some(true)` only when at least one such interface was found and all of them
+/// are down; `Some(false)` when one is up; `None` when none matched, which is
+/// "unknown" and must not be acted on. This is how the FEC self-heal fires only
+/// for the card's own 25G ports, never a 1G onboard NIC or another vendor.
+pub fn matched_all_down(pci: &[(u8, u8)]) -> Option<bool> {
+    if pci.is_empty() {
+        return None;
+    }
+    let handles = boot::locate_handle_buffer(SearchType::ByProtocol(&TCP4_SERVICE_BINDING)).ok()?;
+    let mut matched = 0usize;
+    let mut any_up = false;
+    for h in handles.iter() {
+        let Some(df) = pci_devfn(*h) else { continue };
+        if pci.contains(&df) {
+            matched += 1;
+            let (_, link, _, _) = probe_interface(h.as_ptr());
+            if link {
+                any_up = true;
+            }
+        }
+    }
+    if matched == 0 { None } else { Some(!any_up) }
 }
 
 /// Tell the platform to run DHCP, rather than assuming it already has.

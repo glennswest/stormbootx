@@ -166,6 +166,25 @@ fn run() -> Result<(), String> {
         tcp4::Presence::Absent => return Err(tcp4::NO_TCP4_ADVICE.into()),
     }
 
+    // 2b. Self-heal (#7): if every 25G port on this machine's ConnectX is
+    //     link-down, the likeliest cause is a FEC mismatch keeping them dark —
+    //     the failure that looks like "no network" and is really no link. Pin
+    //     the card's FEC override to RS and warm-reset once so firmware
+    //     re-reads NV config. Gated to fire only on a real problem: the
+    //     interface must sit on a recognised ConnectX PF (never a 1G onboard
+    //     NIC or another vendor), every such port must be down, and the write
+    //     is skipped when the FEC is already RS — so it resets at most once and
+    //     then falls through instead of looping. A machine with any live 25G
+    //     link never reaches this.
+    let cx = mlxfec::connectx_devfns();
+    if tcp4::matched_all_down(&cx) == Some(true) {
+        uefi::println!("nic fec     : all 25G ConnectX ports link-down — pinning FEC to RS");
+        if mlxfec::apply(Some(mlxfec::Fec::Rs)).reset_needed() {
+            uefi::println!("              FEC written; warm-resetting to apply");
+            uefi::runtime::reset(uefi::runtime::ResetType::WARM, Status::SUCCESS, None);
+        }
+    }
+
     // 3. What should I boot?
     let attach = if USE_REGISTRY {
         // Reuse a clone this machine already holds, so a reboot reattaches the
