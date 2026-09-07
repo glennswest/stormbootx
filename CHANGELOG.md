@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [v0.3.7] — 2026-09-07
+
+### Added
+- **feat(shell): `fec [MODE]` and `reset` — the operator-driven way back (#7).** `fec` alone reads every ConnectX port's current and next-boot FEC; `fec default|rs|fc|off|autoneg` writes the NV override; `reset` warm-resets so firmware re-reads it. This is now the **only** thing in stormbootx that writes FEC, and a person has to type it. Needed because switching the self-heal off in v0.3.6 stops the write recurring but does not undo the one already on the card: C2NR0Q2 booted v0.3.6 and reported `02:00.0/02:00.1 ConnectX-4 Lx port 1/2: current rs, next boot rs` on all four entries — the self-heal's write, confirmed on the metal. Both ports lit and neither linked against a switch on `fec CL108-RS`, so the card's NV `rs` (TLV value 2) is not the same RS the S5148F means by CL108. `fec default` restores value 0, which is what carried these links for 16 h 51 m before anything wrote to them.
+
 ## [v0.3.6] — 2026-09-07
 
 ### Fixed

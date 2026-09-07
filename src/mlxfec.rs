@@ -228,9 +228,8 @@ pub struct Summary {
 impl Summary {
     /// Whether this boot changed something that only a reset will apply.
     ///
-    /// Uncalled since 2026-09-07: nothing writes at boot any more, so nothing
-    /// asks for a reset. Kept with the write path it belongs to.
-    #[allow(dead_code)]
+    /// Nothing on the boot path writes any more, so nothing there asks for a
+    /// reset; the shell's `fec` command is what uses this now.
     pub fn reset_needed(&self) -> bool {
         self.written > 0
     }

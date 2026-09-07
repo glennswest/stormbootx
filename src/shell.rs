@@ -93,6 +93,11 @@ pub fn run() {
             "dhcp" => dhcp(&args),
             "connect" | "tcp" => connect(&args),
             "pci" => pci(&args),
+            "fec" => fec(&args),
+            "reset" | "reboot" => {
+                uefi::println!("warm-resetting.");
+                uefi::runtime::reset(uefi::runtime::ResetType::WARM, uefi::Status::SUCCESS, None);
+            }
             "boot" | "continue" | "exit" | "quit" => {
                 uefi::println!("continuing.");
                 return;
@@ -108,7 +113,40 @@ fn help() {
     uefi::println!("  dhcp [n]          run DHCP on interface n, or on all of them");
     uefi::println!("  connect IP PORT   open a TCP connection, the way the attach does");
     uefi::println!("  pci [all]         devices on the bus, driver or no driver");
+    uefi::println!("  fec [MODE]        read the ConnectX FEC; with MODE, write it");
+    uefi::println!("                    MODE: default | rs | fc | off | autoneg");
+    uefi::println!("  reset             warm-reset, so firmware re-reads NV config");
     uefi::println!("  boot              stop reading and continue the boot");
+}
+
+/// Read, and on request write, the ConnectX NV FEC override.
+///
+/// This is the **only** thing in stormbootx that writes FEC, and it is driven
+/// by a person typing it. The boot path used to do it on its own and that is
+/// what put the R230's card here: a one-shot link sample read a healthy card as
+/// all-down and pinned RS on both ports, after which they lit but never linked
+/// against a switch on `fec CL108-RS`. Card-side persistent config is an
+/// operator decision, not a boot-time guess — see `main.rs` step 2b.
+///
+/// `fec default` is the way back: value 0, what the card shipped with and what
+/// carried these links for 16 h 51 m before anything wrote to them.
+fn fec(args: &[&str]) {
+    let Some(mode) = args.first() else {
+        crate::mlxfec::apply(None);
+        uefi::println!("  read-only. `fec default` restores the card's own setting.");
+        return;
+    };
+    let Some(want) = crate::mlxfec::Fec::parse(mode) else {
+        uefi::println!("  `{mode}` is not a FEC mode — default | rs | fc | off | autoneg");
+        return;
+    };
+    uefi::println!("  writing FEC {} to every ConnectX port", want.name());
+    let sum = crate::mlxfec::apply(Some(want));
+    if sum.reset_needed() {
+        uefi::println!("  written. `reset` the machine for firmware to re-read NV config.");
+    } else {
+        uefi::println!("  nothing to write — every port already reads {}.", want.name());
+    }
 }
 
 /// Every NIC the firmware has a driver for — **not** only those carrying TCP4.
