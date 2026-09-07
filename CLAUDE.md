@@ -275,7 +275,9 @@ inverted 8 KiB), multi-NIC selection taking the live 25G port over a
 ### The bring-up, and what each wall was
 
 Three days, and every failure was real hardware or infrastructure, not the
-binary — but each one first looked like a stormbootx bug:
+binary — but each one first looked like a stormbootx bug. One of the fixes
+was itself wrong: item 4's `fec off` on the switch got the link up that day
+and broke the fabric later (see the `#7` correction). The rest held.
 
 1. `EFI_TCP4 is not present` — the UEFI network stack was disabled in setup.
    Enabling it fixed the onboard ports; the console `tcp4` line and #5's
