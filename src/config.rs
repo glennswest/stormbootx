@@ -116,6 +116,24 @@ fn open_fs(handle: Handle) -> Option<ScopedProtocol<SimpleFileSystem>> {
 }
 
 /// Read a file from the boot volume as text.
+/// The FEC mode stated in the config file, read on its own.
+///
+/// Read here, before the rest of the configuration, for the same reason
+/// `stated_tag` is: the card has to be settled before the network is asked for
+/// anything, and a write costs a warm reset.
+///
+/// **Absent on every normal stick, and that is the point.** Nothing in this
+/// binary decides on its own that a card's persistent config needs rewriting —
+/// the boot path once did, from a single link sample, and pinned a card whose
+/// ports then lit and never linked (`main.rs` step 2b). This is the deliberate
+/// way back: a recovery stick says `fec = default`, writes it once, warm-resets,
+/// and finds nothing to do on the boot after. An unparseable value is ignored
+/// rather than guessed at — writing the wrong FEC is what made this necessary.
+pub fn stated_fec() -> Option<crate::mlxfec::Fec> {
+    let text = read_text(CONF_PATH)?;
+    crate::mlxfec::Fec::parse(&field(&text, "fec")?)
+}
+
 /// The tag stated in the config file, read on its own.
 ///
 /// The identity is needed before the rest of the configuration is resolved —

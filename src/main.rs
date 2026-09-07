@@ -149,6 +149,20 @@ fn run() -> Result<(), String> {
     uefi::println!("nic fec     :");
     let _ = mlxfec::apply(None);
 
+    //     A recovery stick, and only a recovery stick, may state `fec = MODE`
+    //     in stormboot.conf. That is an operator saying so on one piece of
+    //     media, not this code inferring it from link state — the distinction
+    //     that matters, and the one step 2b is about. Write once, warm-reset
+    //     once, and the next boot of the same stick finds nothing to do.
+    if let Some(want) = config::stated_fec() {
+        uefi::println!("              media states fec = {} — writing it", want.name());
+        if mlxfec::apply(Some(want)).reset_needed() {
+            uefi::println!("              FEC written; warm-resetting to apply");
+            uefi::runtime::reset(uefi::runtime::ResetType::WARM, Status::SUCCESS, None);
+        }
+        uefi::println!("              already {} — nothing written", want.name());
+    }
+
     // 2. Is there a usable TCP stack? Presence of SNP is not enough — the
     //    layered IP4/TCP4 drivers are a separate build option in firmware, and
     //    even when they are built in nothing may have bound them yet.

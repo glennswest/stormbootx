@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [v0.3.8] — 2026-09-07
+
+### Added
+- **feat(config): `fec = MODE` on the media, and `--fec MODE` to build a recovery stick (#7).** Stated in `stormboot.conf` and read by `config::stated_fec()` before the network is touched, it writes the ConnectX NV FEC override once and warm-resets. Needed because the v0.3.7 shell command is only reachable *after* the attach fails, and on a machine with no link that means sitting through four DHCP timeouts before the prompt appears — with the SOL session dropping mid-boot more often than not. A recovery stick does it unattended, on the first boot, with no console at all. **Absent from every normal stick, and that is the point:** this is an operator saying so on one piece of media, not the boot path inferring it from link state, which is exactly the distinction step 2b exists to draw. An unparseable value is ignored rather than guessed at.
+
 ## [v0.3.7] — 2026-09-07
 
 ### Added

@@ -274,7 +274,7 @@ iDRAC8's Redfish (firmware 2.50) is v1.0.2 and has **no** `PCIeDevices`,
 
 ## Status
 
-v0.3.7. **First complete NVMe/TCP attach on real hardware: 2026-09-05**, on a
+v0.3.8. **First complete NVMe/TCP attach on real hardware: 2026-09-05**, on a
 Dell PowerEdge R230 (service tag C2NR0Q2) booting the agent over iDRAC virtual
 media, attaching a 32 GiB clone from forge over a 25 GbE Mellanox port:
 

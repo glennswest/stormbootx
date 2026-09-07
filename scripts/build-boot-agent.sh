@@ -35,6 +35,7 @@ BIN=""
 PIN="no"
 PROBE="no"
 ISO="no"
+FEC=""
 
 usage() {
     sed -n '2,20p' "$0" | sed 's/^# \?//'
@@ -44,6 +45,8 @@ Options:
   --pin            write only the portal, with no claim knobs
   --api-port N     engine API port on the portal host (default 9090)
   --probe          boot tcp4probe instead of the agent (a diagnostic stick)
+  --fec MODE       recovery stick: write this FEC to the ConnectX, then reset
+                   (default|rs|fc|off|autoneg). Absent from a normal stick.
   --portal ADDR    NVMe/TCP portal, with --pin (default 192.168.31.202)
   --port N         portal port (default 4420)
   --nqn NQN        subsystem NQN (default nqn.2026-09.lo.g16:stormcos)
@@ -58,6 +61,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --pin)    PIN="yes"; shift ;;
         --probe)  PROBE="yes"; shift ;;
+        --fec)    FEC="$2"; shift 2 ;;
         --iso)    ISO="yes"; shift ;;
         --api-port) API_PORT="$2"; shift 2 ;;
         --portal) PORTAL="$2"; PIN="yes"; shift 2 ;;
@@ -145,6 +149,17 @@ nqn      = $NQN
 nsid     = $NSID
 api_port = $API_PORT
 claim    = yes
+CONF
+fi
+
+# A recovery stick, and nothing else. Stated by the operator on this one piece
+# of media; the boot path never decides this for itself (see main.rs step 2b).
+if [[ -n "$FEC" ]]; then
+    cat >> "$WORK/stormboot.conf" <<CONF
+
+# RECOVERY STICK: write this FEC to every ConnectX port, then warm-reset once.
+# Remove this line (or use a normal stick) as soon as the card is back.
+fec      = $FEC
 CONF
 fi
 
