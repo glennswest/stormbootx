@@ -227,6 +227,10 @@ pub struct Summary {
 
 impl Summary {
     /// Whether this boot changed something that only a reset will apply.
+    ///
+    /// Uncalled since 2026-09-07: nothing writes at boot any more, so nothing
+    /// asks for a reset. Kept with the write path it belongs to.
+    #[allow(dead_code)]
     pub fn reset_needed(&self) -> bool {
         self.written > 0
     }
@@ -710,8 +714,10 @@ pub fn apply(want: Option<Fec>) -> Summary {
 /// The `(device, function)` of every ConnectX physical function this code
 /// recognises, read from PCI config space. Lets the caller match the card's own
 /// NICs against the bound network interfaces by their device-path PCI node, so
-/// the FEC self-heal fires only for this card's 25G ports and never for a 1G
-/// onboard NIC or another vendor.
+/// the FEC self-heal fired only for this card's 25G ports and never for a 1G
+/// onboard NIC or another vendor. Uncalled since the self-heal was switched off
+/// on 2026-09-07; see `main.rs` step 2b.
+#[allow(dead_code)]
 pub fn connectx_devfns() -> Vec<(u8, u8)> {
     let mut out = Vec::new();
     let Ok(handles) = boot::locate_handle_buffer(SearchType::ByProtocol(&PciRootBridgeIo::GUID))

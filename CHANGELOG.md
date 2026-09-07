@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-09-07
+- **fix(fec): switch off the boot-time FEC self-heal (#7).** The step that pinned the ConnectX NV FEC override to RS and warm-reset when every 25G port read link-down no longer runs. Its first live firing is the R230's last: on 2026-09-07 both of C2NR0Q2's 25G ports (dsw1 `1/1/5` and `1/1/7`) dropped together at 16:22 UTC and never came back, after **16 h 51 m of continuous link** on a fabric already correctly set to `fec CL108-RS`. dsw1 was not involved — up 4 days, no login since the previous evening, FEC `CL108-RS` configured *and* operational on all 48 ports, uplinks forwarding throughout. The card stayed powered with one port lasing at −2.1 dBm without PCS lock and the other dark, which is a card-configuration state, not a fabric one. The trigger is the defect: `matched_all_down` samples `snp.media_present` **once, with no settle wait**, so a healthy card probed early enough in UEFI reads all-down — the exact trap `ensure_available` already documents and retries around, because a 25G RS link needs seconds after a reset and *time was the answer*. The write self-limits (skipped once FEC is already RS), which is why this cost one bad write and not a boot loop. There was nothing to fix regardless: the ConnectX-4 Lx device-default *negotiates* cl108-rs, so a correct fabric matches it with no card-side change. `mlxfec` keeps the write path and `apply(None)` still reports current/next-boot FEC per port at boot.
+
 ### 2026-09-06
 - **docs:** the bring-up history's item 4 recorded `fec off` on all 48 dsw1
   SFP28 ports as the fix for the 25G link-down; that was the wrong conclusion

@@ -141,11 +141,11 @@ fn run() -> Result<(), String> {
     //     `fec off`, and the ConnectX's device-default already *negotiates*
     //     cl108-rs, so setting the switch to `CL108-RS` matched both ends and
     //     the links (including a port dead for days) came up stable. The card
-    //     needed no change. The write path is built and proven on that
-    //     hardware — `apply(Some(Fec::Rs))` pins the NV FEC override and
-    //     warm-resets — but is deliberately left uncalled: read-only for now,
-    //     since the card negotiates RS on its own. Nothing here is fatal; an
-    //     unrecognised card is named and skipped.
+    //     needed no change. The write path exists in `mlxfec` and works, but
+    //     nothing on the boot path calls it: `apply(None)` reads and reports,
+    //     and that is all this does. See step 2b for why the one thing that
+    //     did write was switched off. Nothing here is fatal; an unrecognised
+    //     card is named and skipped.
     uefi::println!("nic fec     :");
     let _ = mlxfec::apply(None);
 
@@ -166,24 +166,37 @@ fn run() -> Result<(), String> {
         tcp4::Presence::Absent => return Err(tcp4::NO_TCP4_ADVICE.into()),
     }
 
-    // 2b. Self-heal (#7): if every 25G port on this machine's ConnectX is
-    //     link-down, the likeliest cause is a FEC mismatch keeping them dark —
-    //     the failure that looks like "no network" and is really no link. Pin
-    //     the card's FEC override to RS and warm-reset once so firmware
-    //     re-reads NV config. Gated to fire only on a real problem: the
-    //     interface must sit on a recognised ConnectX PF (never a 1G onboard
-    //     NIC or another vendor), every such port must be down, and the write
-    //     is skipped when the FEC is already RS — so it resets at most once and
-    //     then falls through instead of looping. A machine with any live 25G
-    //     link never reaches this.
-    let cx = mlxfec::connectx_devfns();
-    if tcp4::matched_all_down(&cx) == Some(true) {
-        uefi::println!("nic fec     : all 25G ConnectX ports link-down — pinning FEC to RS");
-        if mlxfec::apply(Some(mlxfec::Fec::Rs)).reset_needed() {
-            uefi::println!("              FEC written; warm-resetting to apply");
-            uefi::runtime::reset(uefi::runtime::ResetType::WARM, Status::SUCCESS, None);
-        }
-    }
+    // 2b. The FEC self-heal used to run here, and is switched off (2026-09-07).
+    //
+    //     It fired when every 25G ConnectX port read link-down, pinned the
+    //     card's NV FEC override to RS and warm-reset once. The trigger is
+    //     wrong, and the machine it was written for is what proved it: on
+    //     2026-09-07 the R230's two 25G ports (dsw1 1/1/5 and 1/1/7) dropped
+    //     together at 16:22 UTC and never came back — after 16 h 51 m of
+    //     continuous link on a fabric already correctly set to `fec CL108-RS`.
+    //     The card stayed powered, one port lasing without PCS lock and the
+    //     other dark, which is a card-configuration state and not a fabric one.
+    //
+    //     The trigger reads link exactly once, through `snp.media_present`, with
+    //     no settle wait — the same trap `ensure_available` already documents
+    //     and already retries around, because a 25G RS link takes seconds to
+    //     come up after a reset and *time was the answer*. So a healthy card,
+    //     sampled early enough in UEFI, reads all-down; the write then happens
+    //     for no reason and the warm reset re-enters UEFI early enough to do it
+    //     again. It self-limits — the write is skipped once the FEC is already
+    //     RS — which is why this cost one bad write rather than a boot loop.
+    //
+    //     There is nothing for it to fix in the first place: the ConnectX-4 Lx
+    //     device-default *negotiates* cl108-rs, so a correct fabric matches it
+    //     with no card-side change at all. The failure this was built for was
+    //     switch-side (`fec off` on all 48 SFP28 ports) and was fixed on the
+    //     switch. A boot-time NV write to the NIC is a large hammer for a
+    //     problem the card does not have.
+    //
+    //     `mlxfec` keeps the write path — it works, it is hard-won, and #7's
+    //     history is in it. Reading is still done, above. If this is ever
+    //     revived it needs a settle wait before it believes "all down", and a
+    //     reason to prefer pinning over the device default.
 
     // 3. What should I boot?
     let attach = if USE_REGISTRY {

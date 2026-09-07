@@ -395,8 +395,15 @@ fn pci_devfn(handle: Handle) -> Option<(u8, u8)> {
 ///
 /// `Some(true)` only when at least one such interface was found and all of them
 /// are down; `Some(false)` when one is up; `None` when none matched, which is
-/// "unknown" and must not be acted on. This is how the FEC self-heal fires only
+/// "unknown" and must not be acted on. This is how the FEC self-heal fired only
 /// for the card's own 25G ports, never a 1G onboard NIC or another vendor.
+///
+/// Uncalled since 2026-09-07: the self-heal is off (see `main.rs` step 2b). The
+/// PCI matching here is sound and worth keeping — what is not is the link
+/// sample it feeds, taken once with no settle wait, which reads a healthy card
+/// as all-down when the probe lands early enough in UEFI. Anything reviving
+/// this must wait for the link before believing it.
+#[allow(dead_code)]
 pub fn matched_all_down(pci: &[(u8, u8)]) -> Option<bool> {
     if pci.is_empty() {
         return None;

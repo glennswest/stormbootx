@@ -131,6 +131,19 @@ These have each cost a debugging session. Do not "simplify" them away.
 - **A boot path must never need the network in order to boot without it.**
   Every failure in discovery or attach falls through to the local disk. One
   provisioning outage must not become a fleet outage.
+- **Link-down early in UEFI is not evidence of anything.** A 25G RS link needs
+  seconds to come up after a reset, and `snp.media_present` sampled once at
+  that moment reads a perfectly healthy card as dark. This is the same fact as
+  the `ensure_available` retry above, and forgetting it in a second place cost
+  the R230 its 25G ports on 2026-09-07: the FEC self-heal believed a single
+  all-down sample, wrote NV config to the card and warm-reset. **Never let a
+  one-shot link read authorise a write.** If a decision depends on link state,
+  wait for it the way `ensure_available` waits for the stack.
+- **Persistent config on the NIC is not stormbootx's to change at boot.** The
+  card negotiates what it needs; a wrong fabric is fixed on the fabric, where
+  the change is visible, reversible and applies to every host at once. A
+  boot-time NV write is invisible, per-machine, survives reinstall, and can
+  only be undone from the thing it just broke the network on.
 
 ## Asking the machine before booting it
 
@@ -213,19 +226,30 @@ iDRAC8's Redfish (firmware 2.50) is v1.0.2 and has **no** `PCIeDevices`,
       boot as a diagnostic. Every wall (GetProtocol vs exclusive; the parked
       cap9 lock; the OperationTlv dword-1 bit layout) is in the git history.
 
-      **Self-heal (0.3.4):** after the stack binds, `tcp4::matched_all_down`
-      matches the ConnectX's 25G ports — by each interface's device-path PCI
-      device/function against `mlxfec::connectx_devfns()`, so never a 1G onboard
-      NIC or another vendor — and if *every* one of the card's ports is
-      link-down, main calls `apply(Some(Fec::Rs))` to pin the FEC override to RS
-      and warm-resets once. Idempotent: the write is skipped when FEC is already
-      RS, so it resets at most once then falls through instead of looping, and a
-      machine with any live 25G link never reaches it. It fires only on a real
-      link-down, so it costs nothing while healthy — the read path was proven on
-      the R230; the write half gets its first live exercise only when it fires.
-      PAOS (live port status) is *not* ICMD-reachable on CX4 Lx (only the
-      MNVDA-family NV registers are), which is why the trigger reads link from
-      SNP via the device-path match rather than from the card.
+      **Self-heal (0.3.4) — switched off in 0.3.6, 2026-09-07.** It fired when
+      every recognised ConnectX 25G port read link-down, pinned the NV FEC
+      override to RS and warm-reset once. Its first live firing is the only one
+      it got: the R230's two 25G ports (dsw1 `1/1/5` and `1/1/7`) dropped
+      together at 16:22 UTC and never came back, after **16 h 51 m of
+      continuous link** on a fabric already correctly on `fec CL108-RS`. dsw1
+      was not involved — up 4 days, no login since the previous evening, FEC
+      `CL108-RS` configured *and* operational on all 48, uplinks forwarding
+      throughout; the card stayed powered with one port lasing at −2.1 dBm
+      without PCS lock and the other dark, which is a card-configuration state.
+      **The defect is the trigger, not the write:** `matched_all_down` samples
+      `snp.media_present` once with no settle wait, so a healthy card probed
+      early enough in UEFI reads all-down — the same trap `ensure_available`
+      documents and already retries around, because a 25G RS link needs seconds
+      after a reset and *time was the answer*. The write self-limits (skipped
+      once FEC is already RS), which is why this cost one bad write and not a
+      boot loop. And there was nothing to fix: the CX4 Lx device-default
+      *negotiates* cl108-rs, so a correct fabric matches it with no card-side
+      change. Reviving it needs a settle wait before it believes "all down" and
+      a reason to prefer pinning over the device default. PAOS (live port
+      status) is *not* ICMD-reachable on CX4 Lx (only the MNVDA-family NV
+      registers are), which is why the trigger read link from SNP via the
+      device-path match rather than from the card — and why a wait, not a
+      better source, is the fix.
 
 ### Blocked on other repos
 
