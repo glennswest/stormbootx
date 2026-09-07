@@ -130,7 +130,7 @@ fn open_fs(handle: Handle) -> Option<ScopedProtocol<SimpleFileSystem>> {
 /// and finds nothing to do on the boot after. An unparseable value is ignored
 /// rather than guessed at — writing the wrong FEC is what made this necessary.
 pub fn stated_fec() -> Option<crate::mlxfec::Fec> {
-    let text = read_text(CONF_PATH)?;
+    let text = read_file(CONF_PATH)?;
     crate::mlxfec::Fec::parse(&field(&text, "fec")?)
 }
 
