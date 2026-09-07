@@ -286,11 +286,17 @@ binary — but each one first looked like a stormbootx bug:
 3. Only 2 of 4 NICs present — `GlobalSlotDriverDisable = Enabled` in BIOS
    disabled every slot's option ROM, so both add-in cards were invisible to
    firmware. Found via the iDRAC SCP export, not a boot.
-4. All 4 NICs present but 25G ports `link down` — FEC mismatch. The dsw1
-   S5148F defaulted the SFP28 ports to `cl108-rs`; the Mellanox wanted `off`,
-   the only FEC this XPliant platform's `fec` command accepts. Proved with an
-   A/B: `fec off` port linked at 25G, `cl108` port stayed dark. Set `fec off`
-   on all 48 ports.
+4. All 4 NICs present but 25G ports `link down` — a FEC mismatch, and the
+   conclusion drawn here was **wrong and is the breaking change**. The A/B at
+   the time (`fec off` linked, `cl108` stayed dark) was read as "the Mellanox
+   wants no FEC", and `fec off` was set on all 48 SFP28 ports of dsw1. That
+   is what later left ports line-protocol-down for days with light present and
+   produced other faults on the links that did come up: no FEC on 25GBASE-SR is
+   out of spec, and the ConnectX-4 Lx device-default negotiates cl108-rs.
+   Corrected 2026-09-06 (#7): the switch ports run `fec CL108-RS` — the
+   standalone uppercase interface command; lowercase and `no fec off` are
+   rejected — and the card is left alone. **Never set `fec off` on the 25G
+   ports again.** See the `#7` entry in the work plan.
 5. Link up but no lease — a red herring; the g16 DHCP server was on the L2 and
    answered directly once a port carried traffic.
 

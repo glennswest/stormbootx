@@ -3,6 +3,13 @@
 ## [Unreleased]
 
 ### 2026-09-06
+- **docs:** the bring-up history's item 4 recorded `fec off` on all 48 dsw1
+  SFP28 ports as the fix for the 25G link-down; that was the wrong conclusion
+  and the change that later broke the fabric (ports dark for days, faults on
+  the links that came up). Rewritten to name it as the breaking change and to
+  point at the `#7` correction: switch ports on `fec CL108-RS`, card untouched.
+
+### 2026-09-06
 - **fix(tcp4): stop running our own DHCP on every NIC before the platform answers.** `connect_within` ran its own EFI_DHCP4 client on all interfaces (four failing rounds, "no client reached BOUND") before waiting for the platform DHCP that `request_dhcp` had already kicked off — which is the path that actually works. Swapped: wait for the platform lease first (the common case), then our own client only as a last resort when the platform produced nothing in the whole budget (STATIC policy or no EFI_DHCP4). Same fallback, no noisy failing rounds when the platform was about to answer.
 - **feat(fec): self-heal when the 25G ConnectX links are down (#7).** If every recognised ConnectX 25G port is link-down after the stack binds (matched by the interface device-path PCI device/function against the card BDFs — never a 1G onboard NIC), stormbootx pins the card FEC override to RS and warm-resets once. Idempotent: skipped when FEC is already RS, so it resets at most once then falls through instead of looping; a machine with any live 25G link never reaches it. Read path stays the boot diagnostic.
 - **RESOLVED (#7): the flaky 25G links were switch-side, not the card.** The Dell S5148F fabric was pinned to `fec off` while the ConnectX-4 Lx device-default negotiates cl108-rs; setting the switch to `CL108-RS` (a standalone, uppercase OS10 interface command) matched both ends and every SR link came up stable, including a port dead for days, with no shut/no-shut. Rolled to all 48 SFP28 ports. `mlxfec` is kept **read-only** (`apply(None)`) — a boot-time FEC diagnostic. The proven write path (`apply(Some(Fec::Rs))`) is retained but uncalled: the card negotiates RS on its own.
