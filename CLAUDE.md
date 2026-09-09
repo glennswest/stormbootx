@@ -139,6 +139,14 @@ These have each cost a debugging session. Do not "simplify" them away.
   all-down sample, wrote NV config to the card and warm-reset. **Never let a
   one-shot link read authorise a write.** If a decision depends on link state,
   wait for it the way `ensure_available` waits for the stack.
+- **The 25G links dropping is usually the switch, not this binary.** dsw1
+  latches an SFP28 port every time the peer powers off: light present, no PCS
+  lock, immune to `shutdown`/`no shutdown` and to every host-side reset. Only a
+  FEC *transition* clears it — both ports came up on the final stage of the
+  walk, on CL108-RS, the value they had held for twelve hours. It is automated
+  in the **`dswfecfix`** repo, running on the switch under cron; do not
+  re-implement the recovery here, and do not read a dark 25G link on this
+  fabric as evidence about stormbootx until that log has been checked.
 - **Persistent config on the NIC is not stormbootx's to change at boot.** The
   card negotiates what it needs; a wrong fabric is fixed on the fabric, where
   the change is visible, reversible and applies to every host at once. A
