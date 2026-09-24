@@ -1,9 +1,16 @@
 # CLAUDE.md — stormbootx
 
-A UEFI application that attaches a remote image over NVMe/TCP and publishes it
-as `EFI_BLOCK_IO_PROTOCOL`, so the firmware's own partition, FAT and boot
-manager machinery boots a disk that is not in the chassis. 57 KB, `no_std`, one
-firmware protocol dependency (`EFI_TCP4`).
+A UEFI application that attaches a remote image over NVMe/TCP, publishes it
+as `EFI_BLOCK_IO_PROTOCOL` so the firmware's partition and FAT drivers see its
+GPT and ESP, and chain-loads the image's `\EFI\BOOT\BOOTX64.EFI`. ~110 KB,
+`no_std`, one required firmware protocol (`EFI_TCP4`).
+
+**It is stage one of two, not a duplicate of stormuefi.** stormbootx answers
+*which image* and attaches it; the `BOOTX64.EFI` it starts on a stormcos image
+is **stormuefi**, which selects, verifies and boots a pallet off that disk and
+has no network code at all. A node booting from its own drive runs stormuefi
+alone. Legacy BIOS is **stormboot4bios** (planned, own repo; both stages in one
+loader, and #10 is its prerequisite here).
 
 Read the cross-project rules in `../CLAUDE.md` first — in particular **build on
 `dev.g8.lo`, never on the Mac**, and **nothing persists on the SSD**.
@@ -58,12 +65,15 @@ deliberately, in its own commit, and rebuild.
 | File | Job |
 |---|---|
 | `src/smbios.rs` | the service tag, before any network exists |
-| `src/tcp4.rs` | a blocking socket over the firmware's own TCP stack |
+| `src/tcp4.rs` | a blocking socket over the firmware's own TCP stack; ranks every NIC |
+| `src/dhcp4.rs` | lease an address when the platform has not |
 | `src/nvme.rs` | the NVMe/TCP initiator |
-| `src/blockio.rs` | publish the namespace as a block device, then `ConnectController` |
+| `src/blockio.rs` | publish the namespace as a block device, then chain-load its `BOOTX64.EFI` |
 | `src/registry.rs` | claim this machine's image, keyed on the service tag |
 | `src/sha256.rs` | the digest, because `EFI_HASH2` is optional |
 | `src/config.rs` | the target, read from the media rather than compiled in |
+| `src/shell.rs` | timed, never-forced failure console before the fall-through |
+| `src/mlxfec.rs` | ConnectX FEC NV read; write only on a `fec =` recovery stick |
 | `src/tcp4probe.rs` | second binary: does this machine's firmware carry TCP4? |
 
 ## Load-bearing facts
@@ -79,6 +89,11 @@ These have each cost a debugging session. Do not "simplify" them away.
   is never pumped never retires and the boot hangs with no error.
 - **`ConnectController` after installing BlockIO.** Installing the protocol
   alone leaves a block device nothing has looked at — no GPT parsed, no ESP.
+- **Chain-load; never leave the boot to the boot manager.** A disk that appears
+  mid-boot-option is not in `BootOrder`; the machine drops to setup. Real EDK2
+  also skips a bare BlockIO in `PartitionDxe`, so the handle carries a vendor
+  device-path node, and the ESP is matched **strictly** by it — a loose match
+  once booted a stale Windows install off a local SAS disk.
 - **Fedora's OVMF has no upper network stack.** SNP present, MNP/IP4/TCP4
   absent, and `ConnectController` over every handle does not change it. The
   obvious emulator cannot test the network path.
@@ -259,6 +274,22 @@ iDRAC8's Redfish (firmware 2.50) is v1.0.2 and has **no** `PCIeDevices`,
       device-path match rather than from the card — and why a wait, not a
       better source, is the fix.
 
+**Issue numbering:** the FEC work above and its commits say `#7`, but GitHub
+#7 is *boot identity* (placeholder serials, ODM boards). No issue was ever
+filed for the FEC work. #7's substance is largely done — Type 2/3 fallthrough,
+placeholder rejection, and `tag =` (#9, closed) — and it is still open.
+
+- [x] #8 — closed as mis-framed: the tag already reaches the appliance as the
+      host NQN on every connect; per-host discovery is stormblock's.
+- [x] #9 — `tag = <id>` in `stormboot.conf` overrides SMBIOS.
+
+### Open, no external blocker
+
+- [ ] #10 — extract `nvme.rs` (and the claim) into a transport-generic
+      `no_std` crate. Prerequisite for stormboot4bios.
+- [ ] #11 — per-machine boot intent (`install` / `local` / `auto`) read
+      before the claim.
+
 ### Blocked on other repos
 
 - [ ] #3 (the rest) — the version compare needs `stormblock-pallet-format`
@@ -282,7 +313,9 @@ iDRAC8's Redfish (firmware 2.50) is v1.0.2 and has **no** `PCIeDevices`,
 
 ## Status
 
-v0.3.8. **First complete NVMe/TCP attach on real hardware: 2026-09-05**, on a
+v0.3.8. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
+(and the same day, the full chain: chain-load into stormuefi and a running
+stormcos kernel), on a
 Dell PowerEdge R230 (service tag C2NR0Q2) booting the agent over iDRAC virtual
 media, attaching a 32 GiB clone from forge over a 25 GbE Mellanox port:
 
