@@ -1,10 +1,11 @@
 //! Publish the remote namespace as `EFI_BLOCK_IO_PROTOCOL`.
 //!
-//! This is the point of the whole extension. Once a handle carries BlockIO,
-//! the firmware's own machinery takes over: the partition driver reads the GPT
-//! and produces a handle per partition, the FAT driver mounts the ESP, and the
-//! boot manager can load an image from a disk that does not exist on this
-//! machine. Nothing above needs to know the blocks arrive over TCP.
+//! This is the point of the whole extension. Once a handle carries BlockIO and
+//! a device path, the firmware's own drivers take over: the partition driver
+//! reads the GPT and produces a handle per partition, and the FAT driver mounts
+//! the ESP. `boot_attached` then loads the ESP's `BOOTX64.EFI` itself, because
+//! the boot manager will not boot a disk that appeared mid-boot. Nothing above
+//! needs to know the blocks arrive over TCP.
 //!
 //! The protocol's function pointers are bare `extern "efiapi"` functions with
 //! no context argument, so the namespace they act on has to be reachable from

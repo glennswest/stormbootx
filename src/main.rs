@@ -4,7 +4,7 @@
 //! initramfs and no local media beyond the binary itself. The sequence is:
 //!
 //!   service tag (SMBIOS)  ->  claim boothost/<tag>  ->  attach nvme-tcp://
-//!     ->  publish EFI_BLOCK_IO_PROTOCOL  ->  firmware boots it
+//!     ->  publish EFI_BLOCK_IO_PROTOCOL  ->  chain-load its BOOTX64.EFI
 //!
 //! *Which* image a machine boots is a fleet decision, and it lives next to the
 //! images rather than on the media or in DHCP: a `boothost/<service tag>`
@@ -12,9 +12,11 @@
 //! the golden that machine is assigned *and* the address, NQN and NSID that
 //! reach it. Moving a box to a new version is a PUT on its name.
 //!
-//! Once BlockIO is installed the firmware's own machinery does the rest: the
-//! partition driver reads the GPT, the FAT driver mounts the ESP, and the boot
-//! manager loads a bootloader from a disk that is not in this chassis.
+//! Once BlockIO is installed the firmware's own drivers read the GPT and mount
+//! the ESP, and this binary then loads `\EFI\BOOT\BOOTX64.EFI` from that ESP
+//! and starts it — on a stormcos image, stormuefi. It does not hand back to
+//! the boot manager: a disk that appears mid-boot-option is not in
+//! `BootOrder`, so the manager would never boot it (see `blockio::boot_attached`).
 //!
 //! Identity is the **service tag**, not a MAC. NICs get swapped and added to,
 //! and then a MAC-keyed boot server thinks it is looking at a different
