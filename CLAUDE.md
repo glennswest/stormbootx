@@ -294,10 +294,28 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Blocked on other repos
 
-- [ ] #3 (the rest) — the version compare needs `stormblock-pallet-format`
-      (stormblock) linked in for the intended version, and a marker that a
-      booted stormcos node writes where firmware can read it before any OS
-      runs. The marker is filed as **stormcos#30** with a proposed shape.
+- [ ] #3 (the rest) — **blocked, re-checked 2026-09-24 (now P0).** Three
+      things, none of them in this repo:
+      1. **stormblock#123** (P0) — an installed disk has no ESP and no kernel
+         pallets, so "fall through to the local disk" boots nothing today.
+         Nothing on this side can skip to a disk that cannot boot.
+      2. **stormcos#30** — nothing writes an installed marker yet, and its
+         natural home is the ESP that #123 adds.
+      3. **The compare key** — an owner decision, see below.
+
+      The owner's rule on #11 (2026-09-24) supersedes the issue's "different →
+      reinstall": a node boots **local** unless there is a new golden **and**
+      an install was requested. So #3 is the "is there a new golden?" half and
+      #11 the "was it requested?" half; neither reinstalls on its own.
+
+      Found while re-checking: the intended golden is answerable **without a
+      claim**. `GET /api/v1/synonyms/boothost/<tag>` returns the synonym's
+      target volume, `version` and free-form `label` and mints nothing, where
+      the issue's plan (attach, read `version_label` via
+      `stormblock-pallet-format`) needs a claim — a fresh clone every boot,
+      the churn #11 and stormblock#119 want gone. Using the GET means the
+      marker has to carry the same key (e.g. the initramfs's
+      `claimed_from.volume`), which is the contract stormcos#30 has to agree.
 - [ ] #4 (the registration half) — reporting this machine's inventory back.
       Everything wanted is reachable before any OS: MACs from
       `EFI_SIMPLE_NETWORK`, memory/CPU/chassis from SMBIOS types 17/16/4/3,
