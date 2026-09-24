@@ -1,298 +1,270 @@
 # stormbootx
 
-**A UEFI NVMe/TCP boot extension. No kernel, no initramfs, no PXE.**
+**A UEFI boot agent that attaches a remote disk over NVMe/TCP and boots it.**
+No kernel, no initramfs, no PXE, no TFTP. It uses the firmware's own TCP stack.
 
-A ~110 KB UEFI application on a USB stick. It reads the machine's service tag
-out of SMBIOS, attaches a remote image over `nvme-tcp://`, publishes it as
-`EFI_BLOCK_IO_PROTOCOL` so the firmware's own partition and FAT drivers find
-the GPT and the ESP, and then chain-loads `\EFI\BOOT\BOOTX64.EFI` off that
-ESP — a bootloader on a disk that is not in the chassis.
+It runs from a USB stick or a virtual-media ISO. It reads the machine's
+identity from SMBIOS, claims that machine's image from the storage engine,
+attaches it over NVMe/TCP, publishes it as `EFI_BLOCK_IO_PROTOCOL`, and
+chain-loads the `\EFI\BOOT\BOOTX64.EFI` on the attached disk. If any step
+fails, it falls through to the local disk.
 
 ```
-service tag (SMBIOS)  →  claim boothost/<tag>  →  attach nvme-tcp://
-    →  publish EFI_BLOCK_IO_PROTOCOL  →  chain-load the image's BOOTX64.EFI
+identity (conf or SMBIOS) → claim boothost/<tag> → NVMe/TCP attach
+    → publish BlockIO + device path → ConnectController
+    → load \EFI\BOOT\BOOTX64.EFI from the attached ESP → StartImage
 ```
 
 ## Where it sits in the boot
 
-stormbootx is the **first of two stages**. It answers *which image* and gets
-it attached; it knows nothing about what is inside. On a stormcos image the
-`BOOTX64.EFI` it starts is [stormuefi](https://github.com/glennswest/stormuefi),
-which finds the pallets on the attached disk, verifies them, selects one with
-fallback and starts the kernel.
+stormbootx is **stage one of two**. It decides *which image* and attaches it,
+and knows nothing about what is inside. On a stormcos image the `BOOTX64.EFI`
+it starts is [stormuefi](https://github.com/glennswest/stormuefi), which finds
+the pallets, verifies them and starts the kernel.
 
 ```
-USB stick       stormbootx   tag → claim → NVMe/TCP attach → publish BlockIO
-                                                           → chain-load ↓
-attached clone  stormuefi    pallets → verify → select → kernel + initramfs → Linux
+USB stick / ISO   stormbootx   tag → claim → attach → publish → chain-load ↓
+attached clone    stormuefi    pallets → select → verify → kernel + initramfs → Linux
 ```
 
 | How the machine boots | stormbootx | stormuefi |
 |---|---|---|
 | over the network, from forge | attaches the image | boots the kernel out of it |
-| from its own drive, after flow-over | not involved | boots the kernel out of it |
+| from its own drive | not involved | boots the kernel out of it |
 
-stormuefi never talks to the network: every byte it reads from a network boot
-goes through the BlockIO handle stormbootx published. Proven end to end on the
-R230 (C2NR0Q2) on 2026-09-05.
+Legacy-BIOS machines are served by neither. That is the planned
+**stormboot4bios**, and #10 (extracting the initiator) is its prerequisite
+here.
 
-Legacy-BIOS machines are served by neither. That is **stormboot4bios**
-(planned, its own repo): one loader doing both stages, sharing this initiator
-(#10) and stormuefi's `stormblock-pallet-format`.
+## What it touches at boot
 
-### Why chain-load, not "the firmware boots it"
+At boot it **reads** only `\stormboot\stormboot.conf` from the volume it was
+loaded from. It writes to three things:
 
-Publishing a block device and leaving it to the boot manager does not work on
-real firmware: a disk that appears in the middle of a boot option is not in
-`BootOrder`, and the machine drops to setup. Two further details are
-load-bearing:
-
-- **A vendor device-path node on the published handle.** EDK2's `PartitionDxe`
-  on real firmware skips a bare BlockIO; OVMF was lenient and hid this.
-- **The ESP is matched strictly by that node.** An early, looser match booted a
-  stale Windows install off a local SAS disk instead of the image.
-
-Nothing in that path is a file transfer. There is no PXE, no TFTP, no DHCP boot
-option, and no HTTP first hop — the only transport is NVMe/TCP.
-
-## Why it is this small
-
-| | Size |
+| What | When |
 |---|---|
-| `stormbootx.efi` | **~110 KB** (v0.3.8) |
-| `tcp4probe.efi`, the firmware diagnostic | ~35 KB |
-| the media image | 6 MB (1 MB GPT alignment + a 4 MB FAT16 ESP) |
-| a kernel + initramfs UKI, for comparison | 64 MB |
+| the attached clone on the engine | the booted OS writes to its disk, and the BlockIO handle is read-write |
+| the platform's IP4 policy (`EFI_IP4_CONFIG2`) | any interface set to `STATIC` is switched to `DHCP` when a socket is opened; on EDK2-based firmware this setting is kept in NVRAM |
+| the ConnectX NV FEC setting | only with `fec =` on a recovery stick, or `fec MODE` typed at the failure console; followed by a warm reset |
 
-**The firmware already has the network stack.** `EFI_TCP4_PROTOCOL` means the
-platform's own TCP/IP and NIC driver do the networking, so this carries no
-network stack, no NIC driver and no libc. What is added on top is only the NVMe
-layer: PDU framing, the ICReq/ICResp handshake, the Fabrics Connect capsule,
-admin and I/O queues, and the R2T/H2CData write flow.
+## What it does, step by step
 
-## Identity is the service tag, not a MAC
+`src/main.rs`, `run()`:
 
-The chassis serial — the Dell service tag — read from the SMBIOS table the
-firmware already published in the EFI configuration table. It costs no network,
-no DHCP, no BMC and no configuration.
+1. **Banner**: version and build stamp (`b<n>-<sha>`, set by the build
+   script), so the console always says which binary is talking.
+2. **Identity.**
+   - `tag = <id>` in `stormboot.conf` wins over everything.
+   - Otherwise SMBIOS (`src/smbios.rs`, via the `_SM3_` or `_SM_` entry in the
+     EFI configuration table): the serial of Type 1 (System), then Type 2
+     (Baseboard), then Type 3 (Chassis). The first one that is not a
+     placeholder is used.
+   - **Placeholders are rejected**: empty, `none`, `unknown`,
+     `default string`, `system serial number`, `not applicable`,
+     `not specified`, `n/a`, `invalid`, anything containing `to be filled` or
+     `o.e.m.`, and all-zero strings.
+   - No usable identity is a failure, and the boot falls through.
+   - The console prints the source, plus the SMBIOS model when there is one.
+3. **NIC FEC report** (`src/mlxfec.rs`). It prints every ConnectX port's
+   current and next-boot FEC, read only. If `fec =` is set in the conf, it
+   writes that value and warm-resets once. The next boot then finds nothing to
+   change.
+4. **TCP4** (`tcp4::ensure_available`).
+   1. It checks whether TCP4 is present.
+   2. If not, it runs `ConnectController` on the NIC (SNP) handles, then on
+      every handle.
+   3. Then it waits up to 5 s, retrying every 250 ms.
+   4. The console says which of those worked. If none did, the boot falls
+      through with advice on the firmware setting.
+5. **Where and which.** `config::resolve` gives the portal from the conf,
+   falling back to compiled defaults. Unless the conf says `claim = no`, it
+   then claims the machine's image:
 
-- **Type 1 (System)** first: Dell, HPE, Lenovo and Cisco all carry it there.
-- **Type 2 (Baseboard)**, then **Type 3 (Chassis)**: ODM boards often leave the
-  system serial as a placeholder and burn the real number into the baseboard.
-- **Placeholders are rejected**, not used — `Default string`, `To be filled by
-  O.E.M.`, all-zero and the rest are shared by every board of a model, so a node
-  claiming one boots as somebody else.
-- **`tag = <id>` in `stormboot.conf` wins over all of it** — for a board with no
-  usable serial, or to bench-test a box as another host.
+   ```
+   POST http://<portal>:<api_port>/api/v1/synonyms/boothost/<tag>/claim   body {}
+   ```
 
-The console names which source answered. The tag also goes out on every NVMe
-connect as the host NQN (`nqn.2026-09.lo.storm:host-<tag>`), so the appliance
-knows who is asking.
+   The reply supplies the address, port, NQN and NSID. Both `address`/`port`
+   and `traddr`/`trsvcid` spellings are accepted, with port defaulting to
+   4420 and NSID to 1. A 404 is reported as "no `boothost/<tag>` synonym". Any
+   claim failure falls back to the conf's own `nqn`/`nsid` rather than
+   failing.
+6. **Attach** (`src/nvme.rs`). The host NQN is
+   `nqn.2026-09.lo.storm:host-<tag>`, so the target knows which machine is
+   connecting. The console prints the namespace geometry and the transfer
+   size.
+7. **Publish** (`src/blockio.rs`). BlockIO is installed with the namespace's
+   own block size (read from FLBAS, so 4096 on a 4K namespace). A device path
+   of one hardware vendor node (`6d7a1f2e-9c34-4b8a-b1d0-5e2f7a0c9b41`) goes
+   on the same handle, then `ConnectController` recursively.
+8. **Chain-load.** It looks for `\EFI\BOOT\BOOTX64.EFI` on a filesystem whose
+   device path **starts with that vendor node**, which means an ESP on the
+   attached disk only. It is never a local disk. `LoadImage` + `StartImage`.
+   Success never returns.
 
-A NIC can be swapped or added to, and then a MAC-keyed boot server believes it
-is looking at a different machine. The service tag is the chassis, and it is
-what is printed on the pull-out tab when someone has to find the box.
+### Why chain-load
 
-## Modules
+Publishing a disk and returning to the boot manager does not boot it. A disk
+that appears while a boot option is running is not in `BootOrder`, so the
+manager moves on and drops to setup. Real EDK2's `PartitionDxe` also skips a
+handle that has BlockIO but no device path. That is why step 7 installs one.
+OVMF is lenient here and hid it. The ESP match is strict because an earlier,
+looser version booted a stale Windows install off a local SAS disk.
 
-| File | Job |
+## The network path
+
+`src/tcp4.rs` and `src/dhcp4.rs`. A socket is opened for the claim and for
+each NVMe queue, and each open works like this:
+
+- **Every TCP4 interface is tried**, ranked by link state and then by
+  descending MTU, because each NIC carries its own stack. The ranking is
+  printed.
+- Any interface set to `STATIC` is switched to `DHCP` first (see the table
+  above).
+- **Three phases, cheapest first:**
+  1. an interface that already has an address;
+  2. waiting for the platform's DHCP, up to the socket budget;
+  3. a DHCP client of its own over `EFI_DHCP4`, once per interface, matched
+     to the TCP4 interface by MAC. The lease is stated explicitly in
+     `Tcp4ConfigData`.
+- Timeout: 30 s per operation (`Tcp4Socket::connect`), for both the claim and
+  the attach.
+
+## The NVMe/TCP initiator
+
+`src/nvme.rs` was ported from sbregistry's host initiator.
+
+- It speaks ICReq/ICResp, then Fabrics Connect on the admin and I/O queues,
+  then Property Get/Set, `CC.EN`, and Identify for the controller and the
+  namespace. Reads use C2HData. Writes use R2T/H2CData.
+- **PSDT = 01b (SGL) on every command.** A zero FLAGS byte means PRPs, which
+  do not exist over a fabric.
+- **`CC.EN` before any admin command.** Identify on a disabled controller is a
+  Command Sequence Error.
+- **Synchronous, one command in flight.** There is no write pipelining.
+- **No header or data digests.** A target that insists on them is refused.
+- **Transfer size comes from the controller's MDTS**:
+  `2^(12+MPSMIN) × 2^MDTS`, capped at 512 KiB, or 64 KiB if MDTS is 0. It is
+  never derived from the MTU. Against stormblock (MDTS 5) that is 128 KiB per
+  command.
+
+## When it fails
+
+Every error in `run()` ends in `fall_through`:
+
+1. It prints `no network boot: <reason>`.
+2. It offers a console: *press c within 5 s*. Silence continues, so an
+   unattended machine never stops at a prompt.
+3. It counts local disks (whole, non-removable BlockIO devices).
+   - If there are any, it prints `falling through to the local disk (N found)`.
+   - If there are none, it says so and waits 30 s.
+4. It returns `EFI_ABORTED`, so the boot manager tries the next boot option.
+
+The console (`src/shell.rs`):
+
+| Command | Does |
 |---|---|
-| `smbios.rs` | the service tag, before any network exists |
-| `tcp4.rs` | a blocking socket over the firmware's own TCP stack |
-| `nvme.rs` | the NVMe/TCP initiator |
-| `dhcp4.rs` | lease an address directly when the platform has not |
-| `blockio.rs` | publish the namespace as a block device, then chain-load its `BOOTX64.EFI` |
-| `registry.rs` | claim this machine's image, keyed on the service tag |
-| `config.rs` | where to attach: the file, then the compiled floor |
-| `shell.rs` | a timed, never-forced console on failure, before falling through |
-| `mlxfec.rs` | reads (and on a recovery stick, writes) ConnectX FEC NV config |
-| `sha256.rs` | the digest, for self-update (#2); unreferenced until then |
-| `tcp4probe.rs` | a second binary — will this firmware run the agent at all? |
+| `nics` | every network interface the firmware knows |
+| `state` | each interface's address and IP4 policy |
+| `dhcp [n]` | run DHCP on interface n, or all |
+| `connect IP PORT` | open a TCP connection the way the attach does |
+| `pci [all]` | devices on the bus, with or without a driver |
+| `fec [MODE]` | read the ConnectX FEC; with MODE (`default`/`rs`/`fc`/`off`/`autoneg`), write it |
+| `reset` | warm reset, so firmware re-reads NV config |
+| `boot` | leave the console and continue the fall-through |
 
-### The NVMe layer is ported, not rewritten
+## `stormboot.conf`
 
-From sbregistry's `src/nvme.rs`, which is validated against real hardware. The
-wire format is the part most likely to be subtly wrong, and two of its lessons
-are load-bearing:
+`\stormboot\stormboot.conf` on the volume the binary was loaded from, found
+through `EFI_LOADED_IMAGE_PROTOCOL`. It uses `key = value` lines, and `#`
+starts a comment. Each key stands alone, so a typo in one does not reset the
+others.
 
-- **PSDT = 01b on every command.** There are no PRPs over a fabric. A zero FLAGS
-  byte says "PRPs are used", and a controller that validates it rejects the
-  command with Invalid Field before it looks at the SGL. stormblockmk does not
-  check; the Linux target does.
-- **The controller must be enabled before admin commands.** Fabrics Connect only
-  establishes a queue; Identify before `CC.EN` is answered with Command Sequence
-  Error on a conforming target.
+| Key | Default (compiled) | Meaning |
+|---|---|---|
+| `portal` | `192.168.31.202` | NVMe/TCP portal, and the host the claim goes to |
+| `port` | `4420` | NVMe/TCP port |
+| `nqn` | `nqn.2026-09.lo.g16:stormcos` | subsystem NQN if the claim fails or is off |
+| `nsid` | `2` | namespace if the claim fails or is off |
+| `api_port` | `9090` | engine API port on the portal host |
+| `claim` | `yes` | `no` / `false` / `0` / `off` skips the claim |
+| `tag` | none (SMBIOS) | states the identity |
+| `fec` | none | **recovery sticks only**: write this FEC and warm-reset |
+| `stamp` | none | parsed, not yet used; for self-update (#2) |
 
-## Which image, and where
+## `tcp4probe`
 
-Two questions, answered in different places on purpose.
+A second binary, `src/tcp4probe.rs`, to run first on a new server model. It
+reports which network-stack protocols are present layer by layer, runs a
+`ConnectController` pass when TCP4 is missing, and then creates and
+configures a TCP4 child. Presence alone does not prove the agent will work.
+A stick that boots it is made with `--probe` (see *Getting it onto a stick*).
 
-**Which image** is a fleet decision — *this box runs 10.22* — so it lives next
-to the images, as a `boothost/<service tag>` synonym on the storage engine. At
-boot the agent claims it:
+## Build
 
-```
-POST /api/v1/synonyms/boothost/C2NR0Q2/claim
-  -> a copy-on-write clone of the golden that machine is assigned, costing
-     nothing until it is written
-  -> and the address, NQN and NSID that reach it
-```
-
-One request, and the answer is bootable. Moving a machine to a new version is a
-`PUT` on its name — nothing on the media changes and nobody visits the machine.
-The engine's API is the same host as the portal (`api_port`, default 9090): one
-serves the bytes, the other says which bytes.
-
-It is keyed on the service tag rather than a MAC because that names the chassis
-and survives a network card being swapped. It is not in DHCP because a lease is
-not a source of truth, it does not survive a change of boot method, and one
-static string cannot answer the same name with different locations.
-
-**A claim that fails is not a failed boot.** No synonym for this machine, a 404,
-an engine that is down — the console says which and the boot continues on
-whatever resolution below produced. An image nobody has assigned beats no image.
-`claim = no` opts a stick out entirely.
-
-## Finding the portal
-
-Where to attach — the appliance address, not the image. Two sources, first hit
-wins, and neither touches the network.
-
-There was a third: DNS SRV/TXT discovery of the portal. It is **gone**, not
-switched off. It made sense while the portal was the thing a machine had to be
-told; once the portal became a fixed appliance address and the service tag
-answered the interesting question, DNS was a second place for the answer to
-live, a resolver that had to be right before a machine could boot, and a
-timeout on every boot in a zone nobody published.
-
-### 1. The media
-
-`\stormboot\stormboot.conf` on the ESP, found through
-`EFI_LOADED_IMAGE_PROTOCOL` — the exact volume this image was loaded from, so
-there is no probing for "something that looks like our ESP" and no risk of
-writing to a partition that belongs to somebody else.
-
-```ini
-# The appliance. nqn and nsid here are only the fallback, for a claim that
-# cannot be reached — an image nobody assigned beats no image.
-portal   = 192.168.31.202
-port     = 4420
-nqn      = nqn.2026-09.lo.g16:stormcos
-nsid     = 2
-
-# Which image is this machine's own, claimed by service tag.
-api_port = 9090       # the engine API, on the same host as the portal
-claim    = yes        # `no` leaves the machine on the nqn/nsid above
-
-# Optional. States the identity instead of reading it from SMBIOS.
-# tag    = C2NR0Q2
-
-# Recovery sticks only (--fec). Writes this FEC to the ConnectX NV config once
-# and warm-resets. Absent on every normal stick: nothing in the boot path
-# decides on its own to rewrite a card.
-# fec    = default
-```
-
-### 2. Compiled values
-
-A floor, not a configuration — enough that a blank `dd`-written stick is useful
-before anyone has edited anything.
-
-## Will it run on this machine?
-
-`tcp4probe.efi` is a second 24 KB binary that answers that before anyone writes
-a stick, and it is the thing to run first on every new server model. It surveys
-the nine protocols of the network stack layer by layer — firmware that stops at
-MNP shows up as exactly that rather than as "no TCP4", which is a different
-conversation with a vendor — then creates and configures a TCP4 child, because
-presence is necessary and not sufficient.
-
-`stormbootx` itself runs a `ConnectController` pass before giving up on TCP4:
-UEFI binds drivers on demand, and an application that only calls
-`LocateHandleBuffer` never creates the demand, so a stack that is built in but
-unbound looks identical to one that is absent. The console says which of the
-three ways TCP4 turned out to be reachable.
-
-## Building
-
-Builds on `dev.g8.lo`, never a workstation.
+On `dev.g8.lo`, never the workstation:
 
 ```bash
 export CARGO_TARGET_DIR=/build/cargo/stormbootx
 cargo build --release --target x86_64-unknown-uefi
-
-# The normal stick: names the portal, claims its image by service tag.
-./scripts/build-boot-agent.sh
-
-# A stick pinned to one namespace, for a machine that must not move.
-./scripts/build-boot-agent.sh --pin --portal 192.168.31.202 \
-    --nqn nqn.2026-09.lo.g16:stormcos --nsid 2
-
-# A diagnostic stick that boots tcp4probe instead of the agent.
-./scripts/build-boot-agent.sh --probe --output /build/images/tcp4probe.img
-
-# Also write an El Torito UEFI ISO, for iDRAC virtual media.
-./scripts/build-boot-agent.sh --iso
-
-# A FEC recovery stick (see `fec =` above).
-./scripts/build-boot-agent.sh --fec default
-
-dd if=/build/images/stormbootx.img of=/dev/sdX bs=4M conv=fsync
 ```
 
-`src/sha256.rs` is the one part that can be exercised without a machine to
-boot — it touches only `core` and names no `crate::` item, so it compiles
-standalone:
+That builds `stormbootx.efi` (~110 KB) and `tcp4probe.efi` (~35 KB). There is
+no host target and no `cargo test`. `src/sha256.rs` is the exception: it
+depends only on `core` and runs its FIPS vectors standalone:
 
 ```bash
 rustc --edition 2021 --test src/sha256.rs -o $CARGO_TARGET_DIR/sha256-test && \
   $CARGO_TARGET_DIR/sha256-test
 ```
 
-Output goes to `/build/images` — never `/tmp`, which on dev is a tmpfs sized at
-half of RAM.
+### Getting it onto a stick
 
-## What it needs from the firmware
+Packaging only; nothing here runs at boot. `scripts/build-boot-agent.sh`
+(on dev) puts the built `.efi` and a `stormboot.conf` onto boot media in
+`/build/images`: a GPT `.img` to `dd` onto a USB stick, or with `--iso` an
+El Torito `.iso` for iDRAC virtual media instead.
 
-`EFI_TCP4_PROTOCOL`, which is **not** implied by the machine having a NIC: the
-platform's TCP/IP stack is a separate set of DXE drivers that firmware often
-loads only when network boot is enabled in setup. The agent checks and says so
-rather than failing obscurely.
+```bash
+./scripts/build-boot-agent.sh                    # claims by service tag
+./scripts/build-boot-agent.sh --iso              # same, as an ISO
+./scripts/build-boot-agent.sh --pin --portal 192.168.31.202 \
+    --nqn nqn.2026-09.lo.g16:stormcos --nsid 2   # one fixed namespace, no claim
+./scripts/build-boot-agent.sh --probe            # boots tcp4probe instead
+./scripts/build-boot-agent.sh --fec default      # FEC recovery stick
+```
 
-On Dell that is **Integrated NIC → Enabled with PXE**, or **UEFI Network
-Stack** under Network Settings — not because anything wants PXE, but because it
-is what makes the firmware load MNP/IP4/TCP4. The stack may also arrive late:
-on the R230 the first boot option found no TCP4 and the second, seconds later,
-found it bound, so the agent waits up to 5 s for it.
+`--help` lists the rest (`--api-port`, `--port`, `--size`, `--binary`,
+`--output`).
 
-Once TCP4 is there, the agent does not trust the platform's choices:
+## Firmware requirements
 
-- **Every interface is tried**, ranked by link and then descending MTU, because
-  a server has one TCP4 service per NIC and the first is often the 1 GbE
-  management port with no route to the portal.
-- **It leases its own address** over `EFI_DHCP4` when the platform has not run
-  DHCP (which it often only does inside a PXE attempt).
+- **`EFI_TCP4`**, which having a NIC does not imply. On Dell, set Integrated
+  NIC to **Enabled with PXE**, or enable **UEFI Network Stack** under Network
+  Settings. `GlobalSlotDriverDisable` must be off, or add-in cards have no
+  UEFI driver.
+- `EFI_DHCP4` is optional. It is only used when the platform produced no
+  address.
+- For emulation, use **Proxmox's OVMF**, which has the stack. Fedora's OVMF
+  has no upper network stack at all.
 
-Worth knowing before reaching for the obvious emulator: **Fedora's OVMF has no
-upper network stack at all** — SNP appears, MNP/IP4/TCP4 do not, and a
-`ConnectController` pass over every handle does not change that. **Proxmox's
-OVMF does** (`pve-edk2-firmware`): its HTTP boot support pulls TCP4 in, so the
-network path can be exercised in a VM there.
+## In the code, not active
 
-## When it fails
-
-Every failure — no TCP4, no claim, no attach, no bootloader on the image —
-**falls through to the local disk.** One provisioning outage must not become a
-fleet outage. Before it does, it offers a timed console (`shell.rs`) that shows
-the NICs, their addresses and whether a host is reachable; silence takes the
-normal path, so an unattended machine never stops at a prompt.
+- `registry::claim` / `registry::existing`: the older sbregistry
+  `/v1/clones/claim` path at `sbregistry.gt.lo:5100`, behind
+  `USE_REGISTRY = false` in `main.rs`.
+- `config::render` / `config::write_file`, `sha256.rs`, and the `stamp` key:
+  the self-update path (#2), not wired up.
+- The FEC self-heal (automatic write on "all ports down") was switched off in
+  0.3.6. It was triggered by a single link sample. The reasoning is in
+  `main.rs` step 2b.
 
 ## Status
 
-**Running on hardware since 2026-09-05.** A PowerEdge R230 (C2NR0Q2) booted
-over iDRAC virtual media, claimed `boothost/C2NR0Q2`, attached a 32 GiB clone
-from forge over 25 GbE, and chain-loaded stormuefi off it, which started
-stormcos's kernel:
+v0.3.8. Running on hardware since 2026-09-05. A Dell PowerEdge R230 (C2NR0Q2)
+booted the ISO over iDRAC virtual media, claimed `boothost/C2NR0Q2`, attached
+a 32 GiB 4K clone from forge over 25 GbE, and chain-loaded stormuefi, which
+started stormcos:
 
 ```
 service tag : C2NR0Q2
@@ -300,19 +272,24 @@ tcp4        : available
 claim       : boothost/C2NR0Q2 at 192.168.31.202:9090
   claimed a clone of this machine's image
   portal    : 192.168.31.202:4420  nsid 7
+attaching   : nqn.2026-09.lo.storm:host-C2NR0Q2
   namespace : 8388608 blocks x 4096 bytes  (32 GiB)
   transfer  : 128 KiB per command  (controller MDTS 5; path MTU 1500)
 blockio     : published on handle 0x8301ae98
 RESULT: image attached; starting its bootloader.
+boot        : starting \EFI\BOOT\BOOTX64.EFI from the attached image
 ```
 
-Open work is tracked as issues: registration and the intended image (#4),
-skipping to the disk when nothing changed (#3, #11), self-update of the stick
-(#2), and extracting the initiator for stormboot4bios (#10).
+Open issues:
 
-Related: [stormuefi](https://github.com/glennswest/stormuefi) (the second
-stage — pallet selection and kernel start, on the network clone and later on
-the local disk), [stormnetboot](https://github.com/glennswest/stormnetboot)
-(the boot server and the post-`switch_root` agent), and
-[dswfecfix](https://github.com/glennswest/dswfecfix) (the switch-side recovery
-for dsw1's 25G port latch).
+| Issue | What |
+|---|---|
+| #2 | self-update of the stick |
+| #3, #11 | skipping to the disk when nothing changed; a per-machine boot intent |
+| #4 | inventory registration |
+| #7 | the identity follow-ups |
+| #10 | extracting the initiator for stormboot4bios |
+
+Related: [stormuefi](https://github.com/glennswest/stormuefi) (stage two) and
+[stormnetboot](https://github.com/glennswest/stormnetboot) (the boot server and
+the post-`switch_root` agent).

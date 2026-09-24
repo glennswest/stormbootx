@@ -50,7 +50,9 @@ offered `uefi` 0.40 against the 0.39 the code was written for. Nothing here
 should change under a build nobody asked to change it. Bump the pin
 deliberately, in its own commit, and rebuild.
 
-`./scripts/build-boot-agent.sh` writes the GPT/ESP image to `/build/images`.
+`./scripts/build-boot-agent.sh` is packaging only: it puts the built `.efi` and a
+`stormboot.conf` onto a GPT `.img` (or, with `--iso`, an `.iso` instead) in
+`/build/images`. Nothing in the agent creates media.
 
 ## Version locations
 
@@ -69,7 +71,7 @@ deliberately, in its own commit, and rebuild.
 | `src/dhcp4.rs` | lease an address when the platform has not |
 | `src/nvme.rs` | the NVMe/TCP initiator |
 | `src/blockio.rs` | publish the namespace as a block device, then chain-load its `BOOTX64.EFI` |
-| `src/registry.rs` | claim this machine's image, keyed on the service tag |
+| `src/registry.rs` | claim `boothost/<tag>`; also the old sbregistry `/v1/clones/claim` path, compiled out by `USE_REGISTRY = false` |
 | `src/sha256.rs` | the digest, because `EFI_HASH2` is optional |
 | `src/config.rs` | the target, read from the media rather than compiled in |
 | `src/shell.rs` | timed, never-forced failure console before the fall-through |
