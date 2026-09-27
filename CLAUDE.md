@@ -84,6 +84,7 @@ deliberately, in its own commit, and rebuild.
 |---|---|
 | `src/smbios.rs` | the service tag, before any network exists |
 | `src/tcp4.rs` | a blocking socket over the firmware's own TCP stack; ranks every NIC |
+| `src/drivers.rs` | load NIC drivers from `\stormboot\drivers` on the media (#26), after the platform's own bind |
 | `src/dhcp4.rs` | lease an address when the platform has not |
 | `src/nvme.rs` | the NVMe/TCP initiator |
 | `src/blockio.rs` | publish the namespace as a block device, then chain-load its `BOOTX64.EFI` |
@@ -145,6 +146,13 @@ These have each cost a debugging session. Do not "simplify" them away.
   is the UEFI network stack: Integrated NIC set to **Enabled with PXE**, or
   **UEFI Network Stack** under Network Settings. Enabling PXE is not because
   anything wants PXE — it is what makes firmware load MNP/IP4/TCP4.
+- **The stack can be there with no driver under it** (#26, Supermicro X9,
+  2026-09-27). SnpDxe…TcpDxe all loaded, Network stack = Enabled, and the
+  only UEFI NIC driver in the firmware (`PRO/1000`) manages no device: the
+  Intel 10G and the ConnectX-3 carry legacy option ROMs only. No SNP, so no
+  TCP4, and no setup switch fixes it. The media carries the driver
+  (`\stormboot\drivers`, iPXE `.efidrv`). The platform's own drivers
+  bind first, so a media driver never displaces a native one.
 - **Proxmox's OVMF does, and it is the emulator to use.** Verified 2026-09-03
   on pve.g8.lo (`pve-edk2-firmware`, Nov 2025) with `tcp4probe` on VM 2062:
   every protocol reads *absent* as found and all nine appear after a

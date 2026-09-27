@@ -40,7 +40,8 @@ here.
 ## What it touches at boot
 
 At boot it **reads** only `\stormboot\stormboot.conf` from the volume it was
-loaded from. It writes to three things:
+loaded from, and **loads** any `*.efi` in `\stormboot\drivers\` on that
+volume as a NIC driver (#26; absent on ordinary media). It writes to three things:
 
 | What | When |
 |---|---|
@@ -196,6 +197,18 @@ looser version booted a stale Windows install off a local SAS disk.
 
 ## The network path
 
+**NIC drivers from the media (#26, `src/drivers.rs`).** Before TCP4 is looked
+for, every `*.efi` in `\stormboot\drivers\` on the boot volume is loaded
+(`LoadImage` by device path) and started, then every handle is connected. One
+`ConnectController` pass runs first, so the platform's own drivers claim every
+NIC they will take and a media driver only gets the ones nothing else wanted.
+The console prints `drivers : N of M started from \stormboot\drivers` and one
+line per file; a driver that fails is reported and skipped. This is for
+firmware that has the TCP/IP stack but no UEFI driver for its NICs, like the
+Supermicro X9 blades (legacy-only Intel 10G and ConnectX-3). No directory, no
+change.
+
+
 `src/tcp4.rs` and `src/dhcp4.rs`. A socket is opened for the intent read,
 the claim, and each NVMe queue (admin and one I/O), and each open works like
 this:
@@ -325,9 +338,18 @@ El Torito `.iso` for iDRAC virtual media instead.
     --nqn nqn.2026-09.lo.g16:stormcos --nsid 2   # one fixed namespace, no claim
 ./scripts/build-boot-agent.sh --probe            # boots tcp4probe instead
 ./scripts/build-boot-agent.sh --fec default      # FEC recovery stick
+
+# NIC drivers for firmware without them (#26): iPXE as EFI drivers
+./scripts/build-nic-drivers.sh /build/images/drivers
+./scripts/build-boot-agent.sh --iso --drivers /build/images/drivers
 ```
 
-`--help` lists the rest (`--api-port`, `--port`, `--size`, `--binary`,
+`build-nic-drivers.sh` builds iPXE's `intelx` (Intel 82599/X540/X552) and
+`hermon` (ConnectX-3) as `bin-x86_64-efi/*.efidrv` at a pinned commit, named
+`ipxe-*.efi`, beside an `IPXE-SOURCE.txt` naming that commit. iPXE is GPL-2
+and ships as separate binaries on the media.
+
+`--help` lists the rest (`--drivers`, `--api-port`, `--port`, `--size`, `--binary`,
 `--output`).
 
 ## Ports, health and shipping
@@ -359,6 +381,10 @@ or iDRAC virtual media.
   NIC to **Enabled with PXE**, or enable **UEFI Network Stack** under Network
   Settings. `GlobalSlotDriverDisable` must be off, or add-in cards have no
   UEFI driver.
+- **A UEFI driver for the NIC**, or one on the media (#26). On the
+  Supermicro X9 blades the stack is there (Advanced → PCIe/PCI/PnP →
+  **Network stack = Enabled**), but their NICs carry legacy option ROMs only,
+  so the media has to bring `--drivers`.
 - `EFI_DHCP4` is optional. It is only used when the platform produced no
   address.
 - For emulation, use **Proxmox's OVMF**, which has the stack. Fedora's OVMF

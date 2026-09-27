@@ -165,6 +165,8 @@ Read from the volume it booted from. `key = value`, each key independent.
   carried to the machine. How it should be published is open (#21).
 - **Updated** by rewriting the stick. Self-update (#2) is planned.
 - **Firmware needs `EFI_TCP4`** (on Dell: *UEFI Network Stack* on).
+- **…and a UEFI driver for its NIC**, or one on the media in
+  `\stormboot\drivers` (#26: the Supermicro X9 blades have legacy-only NICs).
   `tcp4probe` checks a new server model first.
 
 ---
