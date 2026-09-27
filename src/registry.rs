@@ -136,6 +136,23 @@ pub fn claim_boothost(
     attach_from(body)
 }
 
+/// Read this machine's boot intent, before anything is claimed.
+///
+/// `GET /api/v1/synonyms/boothost/<tag>/intent`, the contract proposed on
+/// stormblock#148. Returns the status and body as they arrived. Deciding what
+/// they mean is `intent::from_reply`, which reads every doubt as `auto`.
+pub fn boot_intent(
+    server: [u8; 4],
+    port: u16,
+    host: &str,
+    service_tag: &str,
+) -> Result<(u16, String), String> {
+    let path = format!("/api/v1/synonyms/{BOOTHOST_NS}/{service_tag}/intent");
+    let response = request(server, port, host, "GET", &path, None)?;
+    let (status, body) = split_response(&response)?;
+    Ok((status, body.to_string()))
+}
+
 /// Claim an image for this machine.
 ///
 /// The service tag is the `consumer`, which is exactly what that field is for

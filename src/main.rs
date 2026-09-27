@@ -3,12 +3,14 @@
 //! Boots a machine from an image that lives in sbregistry, with no kernel, no
 //! initramfs and no local media beyond the binary itself. The sequence is:
 //!
-//!   service tag (SMBIOS)  ->  claim boothost/<tag>  ->  attach nvme-tcp://
+//!   service tag (SMBIOS)  ->  boot intent  ->  claim boothost/<tag>  ->  attach nvme-tcp://
 //!     ->  publish EFI_BLOCK_IO_PROTOCOL  ->  chain-load its BOOTX64.EFI
 //!
 //! *Which* image a machine boots is a fleet decision, and it lives next to the
 //! images rather than on the media or in DHCP: a `boothost/<service tag>`
-//! synonym on the storage engine. One request returns a copy-on-write clone of
+//! synonym on the storage engine. An intent beside it (`install`, `local` or
+//! `auto`, see `intent.rs`) is read first, and `local` falls through to the
+//! disk without claiming anything. One request returns a copy-on-write clone of
 //! the golden that machine is assigned *and* the address, NQN and NSID that
 //! reach it. Moving a box to a new version is a PUT on its name.
 //!
@@ -43,6 +45,7 @@ extern crate alloc;
 mod blockio;
 mod config;
 mod dhcp4;
+mod intent;
 mod mlxfec;
 mod nvme;
 mod registry;
@@ -249,6 +252,44 @@ fn run() -> Result<(), String> {
         let claimed = if cfg.claim {
             let [a, b, c, d] = cfg.portal;
             let host = format!("{a}.{b}.{c}.{d}:{}", cfg.api_port);
+
+            // 3a. What has this machine been told to do? Read before the
+            //     claim, because the claim mints a clone and `local` is there so
+            //     that nothing is minted. Every doubt reads as `auto`, which is
+            //     what every boot did before intents existed (see intent.rs).
+            let reply = registry::boot_intent(cfg.portal, cfg.api_port, &host, &tag);
+            let said = match &reply {
+                Ok((status, body)) => intent::from_reply(*status, body),
+                Err(_) => intent::Reply::Status(0),
+            };
+            let chosen = said.intent();
+            match (&reply, said) {
+                (_, intent::Reply::Stated(i)) => {
+                    uefi::println!("intent      : {}", i.name())
+                }
+                (_, intent::Reply::NotFound) => uefi::println!(
+                    "intent      : auto  (the engine has none for {tag}, or no intent route)"
+                ),
+                (Err(e), _) => {
+                    uefi::println!("intent      : auto  (could not ask the engine: {e})")
+                }
+                (_, intent::Reply::Status(code)) => {
+                    uefi::println!("intent      : auto  (the engine answered HTTP {code})")
+                }
+                (_, intent::Reply::Unreadable(Some(v))) => {
+                    uefi::println!("intent      : auto  (unrecognised intent \"{v}\")")
+                }
+                (_, intent::Reply::Unreadable(None)) => {
+                    uefi::println!("intent      : auto  (the reply stated no intent)")
+                }
+            }
+            if !chosen.claims() {
+                return Err(format!(
+                    "boot intent for {tag} is `{}`: nothing claimed",
+                    chosen.name()
+                ));
+            }
+
             uefi::println!("claim       : {}/{tag} at {host}", registry::BOOTHOST_NS);
             match registry::claim_boothost(cfg.portal, cfg.api_port, &host, &tag) {
                 Ok(a) => {
@@ -391,7 +432,7 @@ fn fall_through(err: &str) -> Status {
         // the one case where a human is definitely needed.
         uefi::println!(
             "RESULT: nothing to fall through to — this machine has no local disk \
-             and could not reach a portal."
+             and nothing booted from the network."
         );
         uefi::boot::stall(core::time::Duration::from_secs(30));
     }
