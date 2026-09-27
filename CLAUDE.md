@@ -386,8 +386,16 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       Two constraints: collect it **before** `blockio::publish`, or the machine
       reports the namespace it just attached as its own hardware; and `BLOCK_IO`
       only shows what firmware bound a driver for, so the PCI scan is needed as
-      well as, not instead of. Blocked on the payload shape.
-- [ ] #2 — self-update of the boot media. SHA-256 is done; what is left is
+      well as, not instead of. Blocked on the payload shape. **P3
+      (2026-09-27 validation):** stormipmi now reads CPU and memory over
+      Redfish for machines with a BMC, and the report's home is stormipmi's
+      machine record or stormblock#177's claim record, not a `BootHost`
+      (stormnetboot#8 is no longer on the path). Whether firmware
+      registration is still wanted beyond machines without a BMC is an
+      owner call.
+- [ ] #2 — self-update of the boot media (P3). stormbootx has no golden and
+      nothing publishes `stormbootx.efi`, so there is not yet an artifact for a
+      controlled digest to name. SHA-256 is done; what is left is
       gated on #4, because updating to "whatever was on the last image
       attached" is exactly the uncontrolled update this must not become. The
       next piece that needs no one else is hashing a file through
