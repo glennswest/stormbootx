@@ -31,7 +31,7 @@
 //! or TFTP anywhere at all.
 //!
 //! **Nothing in here is fatal.** Every failure — no service tag, no TCP stack,
-//! no resolver, no portal, a target that refuses the connection — ends in the
+//! no engine, no portal, a target that refuses the connection — ends in the
 //! same place: the firmware moves on to the local disk and the machine boots
 //! what it already has. A boot path that needs the network in order to boot
 //! *without* the network turns one provisioning outage into a fleet outage,

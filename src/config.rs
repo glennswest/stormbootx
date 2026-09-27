@@ -75,7 +75,7 @@ pub struct Config {
     /// stamped. Absent on a stick written by `dd` and never updated.
     pub stamp: Option<String>,
     /// Where the target came from, for the console line. Worth spelling out:
-    /// "the file said so" and "a resolver said so" are different failures when
+    /// "the file said so" and "the compiled floor said so" are different failures when
     /// a machine attaches somewhere unexpected.
     pub source: String,
 }

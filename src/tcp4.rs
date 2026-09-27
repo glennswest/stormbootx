@@ -522,12 +522,11 @@ impl Tcp4Socket {
 
     /// Connect with a per-operation timeout of `secs`.
     ///
-    /// Anything on the *discovery* path wants a short one. A DNS server that is
-    /// not there must cost a few seconds and then fall through, not thirty:
-    /// discovery is an optimisation over the compiled defaults, and a boot path
-    /// that spends half a minute proving the network is absent has already
-    /// failed at its job. The attach itself keeps the long budget, because by
-    /// then there is nothing to fall through to.
+    /// Anything interactive or optional wants a short one: the console's
+    /// `connect` uses 8 s, because a person is waiting on it. The intent read,
+    /// the claim and the attach all use `connect`'s 30 s. (This used to serve
+    /// DNS portal discovery, removed 2026-09-03.)
+    ///
     /// Open a socket on whichever interface can actually reach the target.
     ///
     /// **Every** TCP4 service binding is tried, not the first one. A server has
