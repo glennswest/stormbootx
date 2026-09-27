@@ -4,8 +4,13 @@
 //! forge), with no kernel, no initramfs and no local media beyond the binary
 //! itself. The sequence is:
 //!
-//!   service tag (SMBIOS)  ->  boot intent  ->  claim boothost/<tag>  ->  attach nvme-tcp://
+//!   identity (conf or SMBIOS, then MAC)  ->  boot intent  ->  claim  ->  attach nvme-tcp://
 //!     ->  publish EFI_BLOCK_IO_PROTOCOL  ->  chain-load its BOOTX64.EFI
+//!
+//! The claim is `boothost/<tag>` for a tag the media states, and otherwise
+//! `boothost/default` carrying the machine's MAC (#15, `universal.rs`): one
+//! boot medium for every machine, each getting a clone of its own. An engine
+//! too old for that is claimed by SMBIOS serial, as before.
 //!
 //! *Which* image a machine boots is a fleet decision, and it lives next to the
 //! images rather than on the media or in DHCP: a `boothost/<service tag>`
@@ -21,10 +26,12 @@
 //! the boot manager: a disk that appears mid-boot-option is not in
 //! `BootOrder`, so the manager would never boot it (see `blockio::boot_attached`).
 //!
-//! Identity is the **service tag**, not a MAC. NICs get swapped and added to,
-//! and then a MAC-keyed boot server thinks it is looking at a different
-//! machine. The service tag is the chassis, it needs no network to read, and
-//! it is what is printed on the pull-out tab when someone has to find the box.
+//! Identity used to be the **service tag** alone, on the reasoning that NICs
+//! get swapped and the service tag is the chassis. Serials turned out not to
+//! be unique (seven Supermicro MicroCloud nodes share one), so a machine
+//! nothing has named is now known to the engine by its MAC until it is given
+//! a name there; the engine keeps the MAC and a unique serial as aliases of
+//! that name (stormblock#199/#200), which is what survives a NIC swap.
 //!
 //! Deliberately not used: EFI_HTTP (a driver stack firmware may not carry, when
 //! one HTTP request over the TCP4 we already need is a hundred lines), and PXE
@@ -54,6 +61,7 @@ mod shell;
 mod sha256;
 mod smbios;
 mod tcp4;
+mod universal;
 
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -117,20 +125,27 @@ fn run() -> Result<(), String> {
     // and stating one is the only way to bench-test a box as another host or
     // to name a board whose SMBIOS serial is a placeholder shared by every
     // board of its model.
-    let tag = match config::stated_tag() {
+    //
+    // No stated tag and no usable serial is no longer the end: the MAC, read
+    // once the network stack exists (step 2a), identifies the machine.
+    let stated = config::stated_tag();
+    let serial = match &stated {
         Some(t) => {
             uefi::println!("service tag : {t}  (stated in {})", config::CONF_PATH);
-            t
+            None
         }
-        None => {
-            let id = smbios::identity(None).ok_or(
-                "no usable identity: the SMBIOS system, baseboard and chassis serials are \
-                 all empty or a shared placeholder. State one with `tag = <id>` in \
-                 \\stormboot\\stormboot.conf",
-            )?;
-            uefi::println!("service tag : {}  ({})", id.value(), id.source());
-            id.value().to_string()
-        }
+        None => match smbios::identity(None) {
+            Some(id) => {
+                uefi::println!("service tag : {}  ({})", id.value(), id.source());
+                Some(id.value().to_string())
+            }
+            None => {
+                uefi::println!(
+                    "service tag : none  (no usable SMBIOS serial; the MAC will identify it)"
+                );
+                None
+            }
+        },
     };
     if let Some(model) = smbios::model() {
         // Printed because whether a platform carries the TCP/IP driver stack is
@@ -183,6 +198,29 @@ fn run() -> Result<(), String> {
         ),
         tcp4::Presence::Absent => return Err(tcp4::NO_TCP4_ADVICE.into()),
     }
+
+    // 2a. The machine's MAC: its identity to the engine when the media names
+    //     none (#15). Read now because the NICs a platform left unbound only
+    //     exist after `ensure_available`.
+    let mac = tcp4::machine_mac();
+    let mac_colon = mac.map(|(m, _)| String::from_utf8_lossy(&universal::mac_colon(&m)).into_owned());
+    match (&mac_colon, mac) {
+        (Some(c), Some((_, n))) => uefi::println!("mac         : {c}  (lowest of {n} NIC(s))"),
+        _ => uefi::println!("mac         : none usable"),
+    }
+
+    // What an older engine is asked for, and what the host NQN falls back to:
+    // the stated tag, else the SMBIOS serial, else the MAC (#7's floor).
+    let tag = match (&stated, &serial) {
+        (Some(t), _) | (None, Some(t)) => t.clone(),
+        (None, None) => smbios::identity(mac_colon.as_deref())
+            .map(|id| id.value().to_string())
+            .ok_or(
+                "no usable identity: no stated tag, the SMBIOS system, baseboard and chassis \
+                 serials are all empty or a shared placeholder, and no NIC has a usable MAC. \
+                 State one with `tag = <id>` in \\stormboot\\stormboot.conf",
+            )?,
+    };
 
     // 2b. The FEC self-heal used to run here, and is switched off (2026-09-07).
     //
@@ -252,11 +290,43 @@ fn run() -> Result<(), String> {
             let [a, b, c, d] = cfg.portal;
             let host = format!("{a}.{b}.{c}.{d}:{}", cfg.api_port);
 
+            // Universal boot (#15) when the media names nobody and the engine
+            // gives each machine claiming the default a clone of its own. An
+            // engine from before stormblock#200 would give them all one, so
+            // it is asked for its version first and anything else is "no".
+            let default_mac = if stated.is_none() { mac.map(|(m, _)| m).zip(mac_colon.clone()) } else { None };
+            let universal = default_mac.is_some()
+                && match registry::engine_version(cfg.portal, cfg.api_port, &host) {
+                    Ok(v) if universal::supports_default_claim(&v) => {
+                        uefi::println!("engine      : stormblock {v}  (default claim by MAC)");
+                        true
+                    }
+                    Ok(v) => {
+                        uefi::println!(
+                            "engine      : stormblock {v}  (before universal boot; claiming by tag)"
+                        );
+                        false
+                    }
+                    Err(e) => {
+                        uefi::println!("engine      : version unknown ({e}); claiming by tag");
+                        false
+                    }
+                };
+            // The name the intent is read under: the MAC as twelve hex digits,
+            // which the engine resolves as an alias to whatever the machine is
+            // called now, or the tag.
+            let intent_key = match (&default_mac, universal) {
+                (Some((m, _)), true) => {
+                    String::from_utf8_lossy(&universal::provisional_name(m)[4..]).into_owned()
+                }
+                _ => tag.clone(),
+            };
+
             // 3a. What has this machine been told to do? Read before the
             //     claim, because the claim mints a clone and `local` is there so
             //     that nothing is minted. Every doubt reads as `auto`, which is
             //     what every boot did before intents existed (see intent.rs).
-            let reply = registry::boot_intent(cfg.portal, cfg.api_port, &host, &tag);
+            let reply = registry::boot_intent(cfg.portal, cfg.api_port, &host, &intent_key);
             let said = match &reply {
                 Ok((status, body)) => intent::from_reply(*status, body),
                 Err(_) => intent::Reply::Status(0),
@@ -267,7 +337,7 @@ fn run() -> Result<(), String> {
                     uefi::println!("intent      : {}", i.name())
                 }
                 (_, intent::Reply::NotFound) => uefi::println!(
-                    "intent      : auto  (the engine has none for {tag}, or no intent route)"
+                    "intent      : auto  (the engine has none for {intent_key}, or no intent route)"
                 ),
                 (Err(e), _) => {
                     uefi::println!("intent      : auto  (could not ask the engine: {e})")
@@ -284,22 +354,69 @@ fn run() -> Result<(), String> {
             }
             if !chosen.claims() {
                 return Err(format!(
-                    "boot intent for {tag} is `{}`: nothing claimed",
+                    "boot intent for {intent_key} is `{}`: nothing claimed",
                     chosen.name()
                 ));
             }
 
-            uefi::println!("claim       : {}/{tag} at {host}", registry::BOOTHOST_NS);
-            match registry::claim_boothost(cfg.portal, cfg.api_port, &host, &tag) {
-                Ok(a) => {
-                    uefi::println!("  claimed a clone of this machine's image");
-                    Some(a)
+            let by_tag = || {
+                uefi::println!("claim       : {}/{tag} at {host}", registry::BOOTHOST_NS);
+                match registry::claim_boothost(cfg.portal, cfg.api_port, &host, &tag) {
+                    Ok(a) => {
+                        uefi::println!("  claimed a clone of this machine's image");
+                        Some(a)
+                    }
+                    Err(e) => {
+                        uefi::println!("  {e}");
+                        uefi::println!("  falling back to the resolved target");
+                        None
+                    }
                 }
-                Err(e) => {
-                    uefi::println!("  {e}");
-                    uefi::println!("  falling back to the resolved target");
-                    None
+            };
+            match default_mac.as_ref().filter(|_| universal) {
+                Some((m, colon)) => {
+                    let provisional = universal::provisional_name(m);
+                    let provisional = core::str::from_utf8(&provisional).unwrap_or("mac-?");
+                    uefi::println!(
+                        "claim       : {}/default as {colon} at {host}",
+                        registry::BOOTHOST_NS
+                    );
+                    match registry::claim_default(
+                        cfg.portal,
+                        cfg.api_port,
+                        &host,
+                        colon,
+                        serial.as_deref(),
+                    ) {
+                        Ok(a) => {
+                            match (&a.host, a.provisional) {
+                                (Some(h), false) => {
+                                    uefi::println!("  booting {h}'s image (this MAC is its alias)")
+                                }
+                                (Some(h), true) => {
+                                    uefi::println!("  booting the default image as {h}")
+                                }
+                                (None, _) => {
+                                    uefi::println!("  booting the default image as {provisional}")
+                                }
+                            }
+                            Some(a)
+                        }
+                        // No default to give: a machine the engine already
+                        // knows by its serial can still boot that, and with
+                        // no default the engine cannot mint a serial host.
+                        Err((404, e)) if serial.is_some() => {
+                            uefi::println!("  {e}");
+                            by_tag()
+                        }
+                        Err((_, e)) => {
+                            uefi::println!("  {e}");
+                            uefi::println!("  falling back to the resolved target");
+                            None
+                        }
+                    }
                 }
+                None => by_tag(),
             }
         } else {
             uefi::println!("claim       : disabled by the config file");
@@ -311,6 +428,8 @@ fn run() -> Result<(), String> {
             port: cfg.port,
             nqn: cfg.nqn,
             nsid: cfg.nsid,
+            host: None,
+            provisional: false,
         })
     };
 
@@ -322,9 +441,15 @@ fn run() -> Result<(), String> {
     );
     uefi::println!("  nqn       : {}", attach.nqn);
 
-    // 4. Attach. The host NQN is derived from the service tag so the target
-    //    sees a stable initiator identity across reboots.
-    let hostnqn = format!("nqn.2026-09.lo.storm:host-{tag}");
+    // 4. Attach. The host NQN is derived from the machine's name so the target
+    //    sees a stable initiator identity across reboots: the engine's name
+    //    for it when the claim said one, else the tag. Not the serial for a
+    //    machine booted as `mac-<hex>`, which may be the chassis serial seven
+    //    other nodes share.
+    let hostnqn = format!(
+        "nqn.2026-09.lo.storm:host-{}",
+        attach.host.as_deref().unwrap_or(&tag)
+    );
     uefi::println!("attaching   : {hostnqn}");
 
     let ns = nvme::Namespace::attach(

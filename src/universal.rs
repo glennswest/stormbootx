@@ -1,0 +1,158 @@
+//! Universal boot: one boot medium for every machine, none of them named on it
+//! (#15, stormblock#200).
+//!
+//! A machine that has not been told who it is (no `tag =` on the media) claims
+//! `boothost/default` and says which machine it is with its MAC:
+//!
+//! ```text
+//! POST /api/v1/synonyms/boothost/default/claim  {"mac":"aa:bb:cc:dd:ee:ff", "serial":"…"}
+//! ```
+//!
+//! The engine gives it a copy-on-write clone of the default release **of its
+//! own**, recorded as host `mac-<hex>` until someone names it, and a second
+//! claim from the same MAC gets the same host back. A MAC and not the SMBIOS
+//! serial, because serials are not unique: seven of the eight Supermicro
+//! MicroCloud nodes report the chassis serial, so a serial-keyed claim would
+//! boot all seven as one machine.
+//!
+//! Two decisions live here, both pure:
+//!
+//! - **Whether the engine can take that claim at all** (`supports_default_claim`).
+//!   The shape is stormblock's #200, which landed after v19.3.0. An engine from
+//!   v17 to v19.3.0 reads `default` as one more tag: every machine would claim
+//!   the same boot clone name, and each claim releases the clone the last
+//!   machine is running on. Older engines have no fallback at all. So the
+//!   default is claimed only from an engine whose public `/api/v1/health`
+//!   reports a version strictly after 19.3.0, and anything unreadable is "no".
+//! - **Which MAC is the machine's** (`better_mac`). The owner's words are "the
+//!   first NIC's MAC". Handle order is not stable enough to mean that: SNP
+//!   handles appear as drivers bind, and `tcp4::ensure_available` may bind
+//!   some of them on demand. The lowest valid unicast MAC across every NIC is
+//!   the same answer on every boot of the same hardware.
+//!
+//! Same constraints as `intent.rs` and `sha256.rs`: `core` only and no
+//! `crate::` item, so the tests run on the host:
+//!
+//! ```text
+//! rustc --edition 2021 --test src/universal.rs -o t/universal-test
+//! ```
+
+/// The last stormblock release without the #200 default claim.
+const BEFORE_DEFAULT_CLAIM: (u32, u32, u32) = (19, 3, 0);
+
+/// Whether an engine reporting `version` gives a `boothost/default` claim
+/// carrying a MAC its own clone per machine.
+///
+/// `version` is the `version` field of `/api/v1/health`, as it arrived. A
+/// leading `v` and a pre-release or build suffix are tolerated; anything else
+/// that does not read as `MAJOR.MINOR.PATCH` is `false`, because the wrong
+/// "yes" is the shared-clone hazard and the wrong "no" is today's behaviour.
+pub fn supports_default_claim(version: &str) -> bool {
+    parse_version(version).is_some_and(|v| v > BEFORE_DEFAULT_CLAIM)
+}
+
+fn parse_version(v: &str) -> Option<(u32, u32, u32)> {
+    let v = v.trim();
+    let v = v.strip_prefix('v').unwrap_or(v);
+    // `19.4.0-rc1` and `19.4.0+abc` are 19.4.0 for this purpose.
+    let core_part = v.split(['-', '+']).next()?;
+    let mut parts = core_part.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    let patch = parts.next()?.parse().ok()?;
+    parts.next().is_none().then_some((major, minor, patch))
+}
+
+/// Whether six bytes can identify a machine: not all zeros, not broadcast, and
+/// not a group address (the I/G bit, the low bit of the first octet).
+pub fn usable_mac(mac: &[u8; 6]) -> bool {
+    *mac != [0; 6] && *mac != [0xff; 6] && mac[0] & 1 == 0
+}
+
+/// Of the machine's MAC so far and one more NIC's, the one that identifies it:
+/// the lowest usable one. Unusable candidates never win.
+pub fn better_mac(best: Option<[u8; 6]>, candidate: [u8; 6]) -> Option<[u8; 6]> {
+    if !usable_mac(&candidate) {
+        return best;
+    }
+    match best {
+        Some(b) if b <= candidate => Some(b),
+        _ => Some(candidate),
+    }
+}
+
+const HEX: &[u8; 16] = b"0123456789abcdef";
+
+/// `aa:bb:cc:dd:ee:ff`, the form the engine stores a MAC alias in.
+pub fn mac_colon(mac: &[u8; 6]) -> [u8; 17] {
+    let mut out = [b':'; 17];
+    for (i, b) in mac.iter().enumerate() {
+        out[i * 3] = HEX[(b >> 4) as usize];
+        out[i * 3 + 1] = HEX[(b & 0xf) as usize];
+    }
+    out
+}
+
+/// `mac-aabbccddeeff`, the provisional host the engine names a machine that
+/// booted the default and has not been named (stormblock
+/// `provisional_host_name`).
+pub fn provisional_name(mac: &[u8; 6]) -> [u8; 16] {
+    let mut out = *b"mac-000000000000";
+    for (i, b) in mac.iter().enumerate() {
+        out[4 + i * 2] = HEX[(b >> 4) as usize];
+        out[4 + i * 2 + 1] = HEX[(b & 0xf) as usize];
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_engines_after_19_3_0_take_the_default_claim() {
+        assert!(!supports_default_claim("13.7.0")); // forge, 2026-09-27
+        assert!(!supports_default_claim("17.0.0")); // the shared-tag range
+        assert!(!supports_default_claim("19.3.0"));
+        assert!(supports_default_claim("19.3.1"));
+        assert!(supports_default_claim("19.4.0"));
+        assert!(supports_default_claim("20.0.0"));
+        assert!(supports_default_claim("v19.4.0"));
+        assert!(supports_default_claim("19.4.0-rc1"));
+    }
+
+    #[test]
+    fn an_unreadable_version_is_no() {
+        for v in ["", "19", "19.4", "19.4.0.1", "latest", "19.x.0", " "] {
+            assert!(!supports_default_claim(v), "{v:?}");
+        }
+    }
+
+    #[test]
+    fn unusable_macs_never_identify() {
+        assert!(!usable_mac(&[0; 6]));
+        assert!(!usable_mac(&[0xff; 6]));
+        assert!(!usable_mac(&[0x01, 0x00, 0x5e, 0, 0, 1])); // multicast
+        assert!(usable_mac(&[0x02, 0, 0, 0, 0, 1])); // locally administered is fine
+        assert_eq!(better_mac(None, [0; 6]), None);
+        assert_eq!(better_mac(Some([0x10; 6]), [0xff; 6]), Some([0x10; 6]));
+    }
+
+    #[test]
+    fn the_lowest_mac_wins_whatever_the_order() {
+        let a = [0x0c, 0xc4, 0x7a, 0x00, 0x00, 0x02];
+        let b = [0x0c, 0xc4, 0x7a, 0x00, 0x00, 0x01];
+        let c = [0xec, 0x0d, 0x9a, 0x11, 0x22, 0x33];
+        let fold = |order: &[[u8; 6]]| order.iter().fold(None, |m, n| better_mac(m, *n));
+        assert_eq!(fold(&[a, b, c]), Some(b));
+        assert_eq!(fold(&[c, a, b]), Some(b));
+        assert_eq!(fold(&[b, c, a]), Some(b));
+    }
+
+    #[test]
+    fn names_match_the_engine() {
+        let m = [0xac, 0x1f, 0x6b, 0x8a, 0xa7, 0x9c];
+        assert_eq!(&mac_colon(&m), b"ac:1f:6b:8a:a7:9c");
+        assert_eq!(&provisional_name(&m), b"mac-ac1f6b8aa79c");
+    }
+}

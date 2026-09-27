@@ -241,6 +241,36 @@ fn connect_all() -> bool {
     available()
 }
 
+/// The MAC this machine is known by when nothing has named it (#15), and how
+/// many NICs it was chosen from.
+///
+/// Read from every `EFI_SIMPLE_NETWORK` handle's permanent address, not only
+/// the ones carrying TCP4: identity is about the machine, not about which port
+/// is cabled today. The lowest usable one wins (`universal::better_mac`), so
+/// the answer does not depend on the order drivers happened to bind in. Only
+/// 6-byte hardware addresses count. Call it after `ensure_available`, which is
+/// what binds a NIC firmware left unconnected.
+pub fn machine_mac() -> Option<([u8; 6], usize)> {
+    let handles = boot::locate_handle_buffer(SearchType::ByProtocol(&SNP)).ok()?;
+    let mut best = None;
+    for h in handles.iter() {
+        let Some(p) = handle_protocol(h.as_ptr(), &SNP) else { continue };
+        let snp = p as *mut uefi_raw::protocol::network::snp::SimpleNetworkProtocol;
+        let mode: *mut NetworkMode = unsafe { (*snp).mode };
+        if mode.is_null() {
+            continue;
+        }
+        let m = unsafe { &*mode };
+        if m.hw_address_size != 6 {
+            continue;
+        }
+        let mut mac = [0u8; 6];
+        mac.copy_from_slice(&m.permanent_address.0[..6]);
+        best = crate::universal::better_mac(best, mac);
+    }
+    best.map(|m| (m, handles.len()))
+}
+
 /// One interface's address, mask and policy, straight from the platform.
 ///
 /// Returns `(address, mask, policy)` where policy is 0 static, 1 dhcp. An

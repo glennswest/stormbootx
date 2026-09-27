@@ -90,9 +90,10 @@ pub fn service_tag() -> Option<String> {
 /// baseboard. Type 3 catches the remainder. `mac` is meant to be the floor:
 /// unique by construction, present on anything that can netboot at all, and the
 /// reason a board carrying nothing else is still addressable rather than
-/// unbootable. **Not wired up yet:** `main.rs` passes `None`, because the
-/// identity is read before the network, so a board with no usable serial falls
-/// through today unless `tag =` names it. The MAC floor is #7's open item.
+/// unbootable. `main.rs` reads the serials first with `None` (before the
+/// network exists) and calls again with the MAC once it does (#15). A machine
+/// nothing has named usually claims the default by MAC instead, so this tag
+/// is what an engine too old for that is asked for.
 pub fn identity(mac: Option<&str>) -> Option<Identity> {
     let t = table();
     if let Some(t) = t {

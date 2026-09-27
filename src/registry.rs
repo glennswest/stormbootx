@@ -1,7 +1,10 @@
 //! Claiming an image by service tag, and reading the boot intent beside it.
 //!
 //! The live path is the storage engine's (stormblock): `boot_intent` reads
-//! `boothost/<tag>/intent` and `claim_boothost` claims `boothost/<tag>`.
+//! `boothost/<tag>/intent`, `claim_boothost` claims `boothost/<tag>`, and
+//! `claim_default` claims `boothost/default` by MAC for a machine nothing has
+//! named (#15, see `universal.rs`). `engine_version` reads the public health
+//! endpoint, which is how the last of those knows it is safe to make.
 //! `claim` and `existing` are the old sbregistry `/v1/clones/claim` path,
 //! compiled out by `USE_REGISTRY = false` in `main.rs`.
 //!
@@ -32,6 +35,13 @@ pub struct Attach {
     pub port: u16,
     pub nqn: String,
     pub nsid: u32,
+    /// The engine's name for this machine, from a boothost claim reply's
+    /// `host.name` (stormblock#199/#200): a tag, a name it was given, or
+    /// `mac-<hex>` while it has none. `None` from an engine that does not say.
+    pub host: Option<String>,
+    /// `host.provisional`: this machine booted the default and nobody has
+    /// named it yet.
+    pub provisional: bool,
 }
 
 pub fn parse_ipv4(s: &str) -> Option<[u8; 4]> {
@@ -121,13 +131,13 @@ pub const BOOTHOST_NS: &str = "boothost";
 /// Which image that is stays a fleet decision made next to the images — moving
 /// this machine is a `PUT` on its synonym, not a visit to the machine.
 ///
-/// **A machine nobody has assigned claims its own tag too, never
-/// `boothost/default`** (#15). The default is the engine's fallback: a claim
-/// for a tag with no synonym pins that tag to whatever `boothost/default`
-/// names, creating `boothost/<tag>`, and from then on it is an ordinary
-/// machine that stormcentral can move. Claiming `default` directly would give
-/// every new machine the same boot clone name, so each one's claim would
-/// release the clone an earlier one is still running from.
+/// Used for a tag the media states, and for the SMBIOS serial against an
+/// engine too old for `claim_default` (#15). Since stormblock v17 a claim for
+/// a tag with no synonym pins that tag to whatever `boothost/default` names,
+/// so an unassigned serial still boots — but a serial shared by several
+/// machines (the MicroCloud chassis serial) boots them all as one, which is
+/// why a machine nothing has named claims the default by its MAC instead
+/// wherever the engine allows it.
 pub fn claim_boothost(
     server: [u8; 4],
     port: u16,
@@ -156,6 +166,74 @@ pub fn claim_boothost(
         return Err(format!("claim returned HTTP {status}: {}", body.trim()));
     }
     attach_from(body)
+}
+
+/// Claim the default image for a machine nothing has named (#15).
+///
+/// `POST /api/v1/synonyms/boothost/default/claim` with `{"mac": …}`: the
+/// engine (stormblock#200) makes or finds this machine's own host by its MAC
+/// — `mac-<hex>` until it is named — and answers with a copy-on-write clone
+/// of the default release for that host alone.
+///
+/// **Only against an engine that `universal::supports_default_claim`.** An
+/// engine from before #200 reads `default` as one shared tag, and each
+/// machine's claim would release the clone another is running from.
+///
+/// The error carries the HTTP status (0 when nothing answered), so a caller
+/// can tell "no default to give" (404) from everything else.
+///
+/// `serial` is sent as well when SMBIOS has a usable one. Today's engine reads
+/// only the MAC; carrying the serial lets it resolve a machine already
+/// registered by its serial to that host (filed on stormblock), which this
+/// client cannot check for itself, because every read but the claim needs a
+/// token.
+pub fn claim_default(
+    server: [u8; 4],
+    port: u16,
+    host: &str,
+    mac: &str,
+    serial: Option<&str>,
+) -> Result<Attach, (u16, String)> {
+    let body = match serial {
+        Some(s) => format!("{{\"mac\":\"{mac}\",\"serial\":\"{}\"}}", json_str(s)),
+        None => format!("{{\"mac\":\"{mac}\"}}"),
+    };
+    let path = format!("/api/v1/synonyms/{BOOTHOST_NS}/default/claim");
+    let response = request(server, port, host, "POST", &path, Some(&body)).map_err(|e| (0, e))?;
+    let (status, body) = split_response(&response).map_err(|e| (0, e))?;
+    if !(200..300).contains(&status) {
+        // A 404 here is the engine saying it has no `boothost/default` to give
+        // a new machine; its own text says so better than a fixed line would.
+        return Err((status, match field(body, "error") {
+            Some(e) => format!("the engine gave no default image (HTTP {status}): {e}"),
+            None => format!("default claim returned HTTP {status}: {}", body.trim()),
+        }));
+    }
+    attach_from(body).map_err(|e| (status, e))
+}
+
+/// The engine's version, from `GET /api/v1/health` — the one read on its API
+/// that needs no token (stormblock#107).
+pub fn engine_version(server: [u8; 4], port: u16, host: &str) -> Result<String, String> {
+    let response = request(server, port, host, "GET", "/api/v1/health", None)?;
+    let (status, body) = split_response(&response)?;
+    if !(200..300).contains(&status) {
+        return Err(format!("health returned HTTP {status}"));
+    }
+    field(body, "version").ok_or_else(|| "health reported no version".to_string())
+}
+
+/// A string made safe to put between JSON quotes. An SMBIOS serial is printable
+/// ASCII in practice, but it is still firmware-supplied text.
+fn json_str(s: &str) -> String {
+    let mut out = String::new();
+    for c in s.chars().filter(|c| !c.is_control()) {
+        if c == '"' || c == '\\' {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
 }
 
 /// Read this machine's boot intent, before anything is claimed.
@@ -241,11 +319,26 @@ fn attach_from(body: &str) -> Result<Attach, String> {
     let nsid = field(body, "nsid")
         .and_then(|n| n.parse::<u32>().ok())
         .unwrap_or(1);
+    // `"host": {"aliases": […], "claimed_as": …, "name": …, "provisional": …}`
+    // since stormblock#199. Read inside that object only, so a `"name"`
+    // elsewhere in the reply (the volume's) is never taken for the host's.
+    // The aliases array holds strings and no braces, so the first `}` ends it.
+    let host_obj = body.find("\"host\"").and_then(|at| {
+        let rest = body[at + 6..].trim_start().strip_prefix(':')?.trim_start();
+        let rest = rest.strip_prefix('{')?;
+        Some(&rest[..rest.find('}')?])
+    });
+    let host = host_obj.and_then(|h| field(h, "name"));
+    let provisional = host_obj
+        .and_then(|h| field(h, "provisional"))
+        .is_some_and(|p| p == "true");
     Ok(Attach {
         address,
         port,
         nqn,
         nsid,
+        host,
+        provisional,
     })
 }
 
