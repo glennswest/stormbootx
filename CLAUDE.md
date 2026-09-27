@@ -396,7 +396,13 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
          not yet on metal.
       2. **stormcos#30** — nothing writes an installed marker yet, and its
          natural home is the ESP that #123 adds.
-      3. **The compare key** — an owner decision, see below.
+      3. **The compare key** — an owner decision, #19, see below.
+         **Re-checked 2026-09-27: still unanswered, so no code.** New
+         since: on stormblock ≥ 17 the `GET boothost/<tag>` below needs a
+         token (only the claim and `/api/v1/health` are open), so option 2
+         also needs an engine change: e.g. the intended golden's key in the
+         `…/intent` reply (stormblock#148). Recorded on #19. With #15 the
+         key is read under the MAC-resolved name, not the serial.
 
       The owner's rule on #11 (2026-09-24) supersedes the issue's "different →
       reinstall": a node boots **local** unless there is a new golden **and**
