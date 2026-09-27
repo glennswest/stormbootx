@@ -302,6 +302,16 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 - [ ] #10 — extract `nvme.rs` (and the claim) into a transport-generic
       `no_std` crate. Prerequisite for stormboot4bios.
 
+- [ ] #15 — default image. **In progress 2026-09-27.** The fallback already
+      lives in the engine: since stormblock v17.0.0 (#107), `POST
+      …/boothost/<tag>/claim` for a tag with no synonym pins that tag to
+      whatever `boothost/default` names and boots it. So stormbootx keeps
+      claiming its own tag. The remaining work here is the console line (relay
+      the engine's 404 text, which names whether `boothost/default` is missing)
+      and the docs. forge still runs stormblock 13.7.0 and has no
+      `boothost/default`. Managing the default is stormcentral#29 / stormipmi
+      (`/api/v1/machines/default`).
+
 ### Blocked on other repos
 
 - [ ] #11 — per-machine boot intent. **The stormbootx half landed on
