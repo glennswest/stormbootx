@@ -336,6 +336,17 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
+- [ ] #26 — **NIC UEFI drivers from the boot media (P0, 2026-09-27). In
+      progress.** Supermicro X9 blades (server1–8) carry SnpDxe…TcpDxe but no
+      UEFI driver for their NICs (Intel 10G `IBA XE`, ConnectX-3 `FlexBoot`,
+      both legacy-only), so there is no SNP handle and no TCP4. Plan:
+      `src/drivers.rs` loads every `\stormboot\drivers\*.efi` on the boot
+      volume (after a platform `ConnectController` pass, so native drivers
+      claim their NICs first), then connects everything and reports each
+      driver; `scripts/build-nic-drivers.sh` builds iPXE's `intelx` and
+      `hermon` `.efidrv` at a pinned commit; `build-boot-agent.sh --drivers
+      DIR` lays them on the media. Done when server1 prints `tcp4 : available`.
+
 - [ ] #13 — presentation at `docs/presentation.md` (Marp). **In progress
       2026-09-27.** Drawn from the #12-audited README and the code; slide 2
       matches `stormcentral check` (stormbootx: kind `boot`, → stormblock;
