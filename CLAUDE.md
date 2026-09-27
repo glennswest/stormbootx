@@ -17,12 +17,19 @@ Read the cross-project rules in `../CLAUDE.md` first — in particular **build o
 
 ## Build
 
+Push first, then `sc-build` from this checkout. It builds the pushed commit
+on dev.g8.lo as `stormbuild`. There is no checkout on dev, and no `ssh root@`.
+The plain `cargo build && cargo test` default does not suit a `no_std` UEFI
+crate, so name the command. This builds the binary and runs both host suites:
+
 ```bash
-ssh root@dev.g8.lo
-cd /root/work/stormbootx && git pull
-export CARGO_TARGET_DIR=/build/cargo/stormbootx
-cargo build --release --target x86_64-unknown-uefi
+sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
+  rustc --edition 2021 --test src/intent.rs -o t/intent-test && ./t/intent-test && \
+  rustc --edition 2021 --test src/sha256.rs -o t/sha256-test && ./t/sha256-test'
 ```
+
+Don't `ls target/...` afterwards. dev sets its own `CARGO_TARGET_DIR`, so the
+`ls` fails, and sc-build files that as a `build-failure` issue (#16 was one).
 
 There is no `cargo test`: this is a `no_std` UEFI binary with no host target, so
 the compile *is* the check. A macOS build is not possible at all here — the
@@ -42,6 +49,10 @@ rustc --edition 2021 --test src/sha256.rs -o $CARGO_TARGET_DIR/sha256-test && \
 
 Anything that gives that module a dependency on the rest of the crate takes
 those vectors out of reach. Don't.
+
+`src/intent.rs` follows the same rule for the same reason: it parses the boot
+intent reply and decides, using `core` only, and the HTTP exchange stays in
+`registry.rs`. Its tests are the proof that every doubt reads as `auto`.
 
 `Cargo.lock` is tracked, as it should be for anything that produces a binary.
 Without it every build resolved fresh, and this is a firmware binary whose
@@ -71,7 +82,8 @@ deliberately, in its own commit, and rebuild.
 | `src/dhcp4.rs` | lease an address when the platform has not |
 | `src/nvme.rs` | the NVMe/TCP initiator |
 | `src/blockio.rs` | publish the namespace as a block device, then chain-load its `BOOTX64.EFI` |
-| `src/registry.rs` | claim `boothost/<tag>`; also the old sbregistry `/v1/clones/claim` path, compiled out by `USE_REGISTRY = false` |
+| `src/intent.rs` | the boot intent (`install`/`local`/`auto`) read before the claim; every doubt is `auto` |
+| `src/registry.rs` | read the intent and claim `boothost/<tag>`; also the old sbregistry `/v1/clones/claim` path, compiled out by `USE_REGISTRY = false` |
 | `src/sha256.rs` | the digest, because `EFI_HASH2` is optional |
 | `src/config.rs` | the target, read from the media rather than compiled in |
 | `src/shell.rs` | timed, never-forced failure console before the fall-through |
@@ -289,26 +301,30 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 - [ ] #10 — extract `nvme.rs` (and the claim) into a transport-generic
       `no_std` crate. Prerequisite for stormboot4bios.
-- [ ] #11 — per-machine boot intent (`install` / `local` / `auto`) read
-      before the claim. **In progress 2026-09-27.** Plan: `src/intent.rs`, a
-      standalone module like `sha256.rs` (core only, host-testable with
-      `rustc --test`), parses the reply to `GET
-      /api/v1/synonyms/boothost/<tag>/intent`, the contract proposed on
-      **stormblock#148**, and decides. `local` falls through to the disk
-      with no claim and no clone. `install` claims as today. `auto`, and any
-      failure to read (404, no route, engine down, bad body), also claims as
-      today. `auto` stays today's behaviour until #3 can tell an installed,
-      current disk apart, which needs stormcos#30. The engine route doesn't
-      exist yet (stormblock#148), so on metal every read is a 404 and reads
-      as `auto`. Nothing regresses while it lands.
 
 ### Blocked on other repos
 
+- [ ] #11 — per-machine boot intent. **The stormbootx half landed on
+      2026-09-27** (`src/intent.rs`, `registry::boot_intent`, step 3a in
+      `run()`). It reads `GET /api/v1/synonyms/boothost/<tag>/intent` before
+      the claim. `local` falls through with no claim and no clone. `install`
+      and `auto` claim as before. Every doubt (404, non-2xx, unreachable, no
+      intent or an unknown one) reads as `auto`. It's verified by sc-build: the
+      binary builds and `intent.rs`'s 7 host tests pass. **Still open on:**
+      - **stormblock#148**: the engine route, the one-shot `install` → `local`
+        reset, and carrying `install` in the claim reply for the initramfs.
+        Until it lands every read is a 404 and every boot is `auto`, exactly
+        as before.
+      - **#3**: `auto` booting an installed, current disk locally (the owner's
+        "new golden **and** requested" rule). This needs stormcos#30.
+      - Not yet seen on metal: nothing can serve `local` until #148 lands.
+
 - [ ] #3 (the rest) — **blocked, re-checked 2026-09-24 (now P0).** Three
       things, none of them in this repo:
-      1. **stormblock#123** (P0) — an installed disk has no ESP and no kernel
-         pallets, so "fall through to the local disk" boots nothing today.
-         Nothing on this side can skip to a disk that cannot boot.
+      1. ~~**stormblock#123**~~, closed 2026-09-24 in stormblock v16.2.0: the
+         flow-over now lays an ESP (stormuefi) and kernel pallets, so an
+         installed disk boots on its own. It has been verified under OVMF but
+         not yet on metal.
       2. **stormcos#30** — nothing writes an installed marker yet, and its
          natural home is the ESP that #123 adds.
       3. **The compare key** — an owner decision, see below.

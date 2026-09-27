@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### 2026-09-27
+- **feat(boot): a per-machine boot intent, read before the claim (#11).** `GET /api/v1/synonyms/boothost/<tag>/intent`, the contract proposed on stormblock#148. `local` falls through to the local disk at once, with no claim and so no clone minted on forge. `install` and `auto` claim and boot as before. **Any doubt reads as `auto`** (404, non-2xx, unreachable engine, no intent or an unknown one), so a failed read can't keep a machine off an install it was asked for. The console prints the intent and why it defaulted. The engine doesn't serve the route yet, so until stormblock#148 lands every boot is `auto`: unchanged behaviour. The parse-and-decide logic is `src/intent.rs`, `core`-only like `sha256.rs`, with 7 host tests run by `rustc --test`.
+- **fix(boot): the no-local-disk fall-through no longer says "could not reach a portal".** It is now also reached by a `local` intent, so it says "nothing booted from the network".
+- **docs:** README documents the intent step. CLAUDE.md's Build section uses `sc-build` instead of `ssh root@dev.g8.lo` and names the full build-and-test command. The module map gains `intent.rs`, and the work plan notes that stormblock#123 is closed.
+
 ### 2026-09-24
 - **docs: module comments in `main.rs` and `blockio.rs` said "firmware boots it".** They predated the chain-load (2026-09-05). They now say the agent loads the attached ESP's `BOOTX64.EFI` itself and why. Comment-only change.
 - **docs: README rewritten from the code.** Step-by-step as `run()` executes it; the exact SMBIOS placeholder list; the three-phase socket open (existing address → wait for platform DHCP → own `EFI_DHCP4` client) with its 30 s budget; the NVMe/TCP specifics (no PDU digests, MDTS formula, 64 KiB/512 KiB bounds); the full `stormboot.conf` key table with compiled defaults; the failure console's commands; what the agent writes at boot, including that it switches any `STATIC` IP4 policy to `DHCP`, which the old README never mentioned; and what is in the code but inactive (`USE_REGISTRY`, the self-update helpers, the switched-off FEC self-heal). Corrects this morning's edit, which said `--iso` writes an ISO *as well as* the `.img` (it is instead). Packaging (`build-boot-agent.sh`) is now a short subsection under Build rather than a section of its own.

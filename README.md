@@ -7,10 +7,11 @@ It runs from a USB stick or a virtual-media ISO. It reads the machine's
 identity from SMBIOS, claims that machine's image from the storage engine,
 attaches it over NVMe/TCP, publishes it as `EFI_BLOCK_IO_PROTOCOL`, and
 chain-loads the `\EFI\BOOT\BOOTX64.EFI` on the attached disk. If any step
-fails, it falls through to the local disk.
+fails, or the machine's boot intent is `local`, it falls through to the local
+disk.
 
 ```
-identity (conf or SMBIOS) → claim boothost/<tag> → NVMe/TCP attach
+identity (conf or SMBIOS) → boot intent → claim boothost/<tag> → NVMe/TCP attach
     → publish BlockIO + device path → ConnectController
     → load \EFI\BOOT\BOOTX64.EFI from the attached ESP → StartImage
 ```
@@ -78,7 +79,29 @@ loaded from. It writes to three things:
       through with advice on the firmware setting.
 5. **Where and which.** `config::resolve` gives the portal from the conf,
    falling back to compiled defaults. Unless the conf says `claim = no`, it
-   then claims the machine's image:
+   first reads the machine's **boot intent** (`src/intent.rs`):
+
+   ```
+   GET http://<portal>:<api_port>/api/v1/synonyms/boothost/<tag>/intent   → {"intent":"…"}
+   ```
+
+   | intent | what stormbootx does |
+   |---|---|
+   | `install` | claims and boots the image, as below |
+   | `local` | falls through to the local disk at once: no claim, no clone |
+   | `auto` | claims and boots, as every boot did before intents existed |
+
+   Set a state on the engine and power-cycle the machine to get it. **Any
+   doubt reads as `auto`**: a 404, a non-2xx, an unreachable engine, or a body
+   with no intent or an unknown one. Only an explicit `local` skips the
+   network image, so a failed read can't keep a machine off an install it was
+   asked for. The console prints the intent and, when it defaulted, why. The
+   contract is the one proposed on stormblock#148, and the engine doesn't serve
+   it yet, so today every read is a 404 and every boot is `auto`. Resetting
+   `install` back to `local` after the install is the engine's job.
+   `auto` does not yet boot an installed, current disk locally. That needs #3.
+
+   Then it claims the machine's image:
 
    ```
    POST http://<portal>:<api_port>/api/v1/synonyms/boothost/<tag>/claim   body {}
@@ -210,12 +233,17 @@ cargo build --release --target x86_64-unknown-uefi
 ```
 
 That builds `stormbootx.efi` (~110 KB) and `tcp4probe.efi` (~35 KB). There is
-no host target and no `cargo test`. `src/sha256.rs` is the exception: it
-depends only on `core` and runs its FIPS vectors standalone:
+no host target and no `cargo test`. `src/sha256.rs` and `src/intent.rs` are
+the exceptions: each depends only on `core` and runs its tests standalone:
 
 ```bash
 rustc --edition 2021 --test src/sha256.rs -o $CARGO_TARGET_DIR/sha256-test && \
   $CARGO_TARGET_DIR/sha256-test
+```
+
+```bash
+rustc --edition 2021 --test src/intent.rs -o $CARGO_TARGET_DIR/intent-test && \
+  $CARGO_TARGET_DIR/intent-test
 ```
 
 ### Getting it onto a stick
