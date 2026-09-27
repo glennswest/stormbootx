@@ -66,9 +66,13 @@ loaded from. It writes to three things:
      `default string`, `system serial number`, `not applicable`,
      `not specified`, `n/a`, `invalid`, anything containing `to be filled` or
      `o.e.m.`, and all-zero strings.
-   - No usable identity is a failure, and the boot falls through. The first
-     NIC MAC as a last resort is planned (#7), not wired up.
-   - The console prints the source, plus the SMBIOS model when there is one.
+   - No usable serial is no longer a failure: once the network stack exists
+     (step 4) the machine's **MAC** identifies it, the lowest usable unicast
+     permanent address across every NIC (`tcp4::machine_mac`), so the answer
+     does not depend on driver bind order. Only no serial *and* no MAC falls
+     through.
+   - The console prints the source, plus the SMBIOS model when there is one,
+     and a `mac` line after step 4.
 3. **NIC FEC report** (`src/mlxfec.rs`). It prints every ConnectX port's
    current and next-boot FEC, read only. If `fec =` is set in the conf, it
    writes that value and warm-resets once. The next boot then finds nothing to
@@ -86,6 +90,9 @@ loaded from. It writes to three things:
 
    ```
    GET http://<portal>:<api_port>/api/v1/synonyms/boothost/<tag>/intent   → {"intent":"…"}
+
+   (A machine claiming the default reads it under its MAC's twelve hex
+   digits, which the engine resolves as an alias.)
    ```
 
    | intent | what stormbootx does |
@@ -104,10 +111,11 @@ loaded from. It writes to three things:
    `install` back to `local` after the install is the engine's job.
    `auto` does not yet boot an installed, current disk locally. That needs #3.
 
-   Then it claims the machine's image:
+   Then it claims the machine's image, one of two ways:
 
    ```
-   POST http://<portal>:<api_port>/api/v1/synonyms/boothost/<tag>/claim   body {}
+   POST http://<portal>:<api_port>/api/v1/synonyms/boothost/<tag>/claim      body {}
+   POST http://<portal>:<api_port>/api/v1/synonyms/boothost/default/claim    body {"mac":"…","serial":"…"}
    ```
 
    The reply supplies the address, port, NQN and NSID. Both `address`/`port`
@@ -115,21 +123,35 @@ loaded from. It writes to three things:
    4420 and NSID to 1. Any claim failure falls back to the conf's own
    `nqn`/`nsid` rather than failing.
 
-   **A machine nobody has assigned still boots: the default image** (#15).
-   It claims its own tag like any other machine. The engine (stormblock
-   v17.0.0 and later) sees there is no `boothost/<tag>`, creates one pointing
-   at whatever `boothost/default` names, and answers the claim from it. From
-   then on the machine is ordinary: it shows up under its tag and can be
-   moved to its own release. Changing the default later does not move
-   machines already pinned to it. stormbootx never claims `boothost/default`
-   directly. Every new machine would then share one boot clone name, and
-   each claim would release the clone an earlier machine is still running
-   from. A 404 prints the engine's own text, which says when there is no
-   `boothost/default` either. The default is set through stormipmi's
-   `/api/v1/machines/default` (stormcentral#29).
+   **Universal boot: one medium for every machine** (#15, stormblock#200).
+   A machine whose media states no `tag =` claims `boothost/default` and says
+   which machine it is with its MAC. The engine gives it a copy-on-write
+   clone of the default release **of its own**, recorded as host
+   `mac-<hex>` until it is named, and the same MAC gets the same host back on
+   every boot. The console says `booting the default image as mac-<hex>`, or,
+   once the machine has a name the MAC is an alias of, `booting <name>'s
+   image`. Not the SMBIOS serial: serials are not unique (seven Supermicro
+   MicroCloud nodes report one chassis serial), and a serial claim would boot
+   them all as one machine. The serial rides along in the body so the engine
+   can resolve a machine it already knows by serial (C2NR0Q2) to that host;
+   stormbootx cannot check that itself, because every read but the claim
+   needs a token.
+
+   **Only against an engine that has #200**, told by the public
+   `/api/v1/health` version being after 19.3.0. An engine from v17 to 19.3.0
+   reads `default` as one shared tag, and each machine's claim would release
+   the clone another is running from. Against those, or when the version
+   can't be read, it claims `boothost/<serial>` as before, and the engine
+   (v17 and later) pins an unknown serial to `boothost/default`. If a #200
+   engine has no `boothost/default` to give (404) and the machine has a
+   serial, it tries the serial claim too; with no default the engine cannot
+   mint a serial host, so that only finds one that already exists. A stated
+   `tag =` is always claimed as that tag. The default is set through
+   stormipmi's `/api/v1/machines/default` (stormcentral#29).
 6. **Attach** (`src/nvme.rs`). The host NQN is
-   `nqn.2026-09.lo.storm:host-<tag>`, so the target knows which machine is
-   connecting. The console prints the namespace geometry and the transfer
+   `nqn.2026-09.lo.storm:host-<name>`, so the target knows which machine is
+   connecting: the engine's name for the machine from the claim reply
+   (`mac-<hex>` for one it booted as the default), else the tag. The console prints the namespace geometry and the transfer
    size.
 7. **Publish** (`src/blockio.rs`). BlockIO is installed with the namespace's
    own block size (read from FLBAS, so 4096 on a 4K namespace). A device path
@@ -250,14 +272,15 @@ crate, so name the command:
 ```bash
 sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   rustc --edition 2021 --test src/intent.rs -o t/intent-test && ./t/intent-test && \
-  rustc --edition 2021 --test src/sha256.rs -o t/sha256-test && ./t/sha256-test'
+  rustc --edition 2021 --test src/sha256.rs -o t/sha256-test && ./t/sha256-test && \
+  rustc --edition 2021 --test src/universal.rs -o t/universal-test && ./t/universal-test'
 ```
 
-That builds `stormbootx.efi` (117,248 bytes at v0.4.0 + #15) and
-`tcp4probe.efi` (35,328), then runs the two host test
-suites. There is no host target and no `cargo test`. `src/sha256.rs` and
-`src/intent.rs` are the exceptions: each uses only `core` and names no
-`crate::` item, so each compiles as its own crate with `rustc --test`.
+That builds `stormbootx.efi` and `tcp4probe.efi`, then runs the three host
+test suites. There is no host target and no `cargo test`. `src/sha256.rs`,
+`src/intent.rs` and `src/universal.rs` are the exceptions: each uses only
+`core` and names no `crate::` item, so each compiles as its own crate with
+`rustc --test`.
 `--edition 2021` is required, because bare `rustc` defaults to 2015, where
 `core` is not in scope.
 
@@ -272,7 +295,7 @@ Packaging only; nothing here runs at boot. `scripts/build-boot-agent.sh`
 El Torito `.iso` for iDRAC virtual media instead.
 
 ```bash
-./scripts/build-boot-agent.sh                    # claims by service tag
+./scripts/build-boot-agent.sh                    # one stick for every machine
 ./scripts/build-boot-agent.sh --iso              # same, as an ISO
 ./scripts/build-boot-agent.sh --pin --portal 192.168.31.202 \
     --nqn nqn.2026-09.lo.g16:stormcos --nsid 2   # one fixed namespace, no claim
@@ -291,12 +314,12 @@ only makes outbound connections:
 
 | To | Default | Set by |
 |---|---|---|
-| engine API (intent read, claim) | `<portal>:9090`, HTTP/1.1 | `api_port` |
+| engine API (health, intent read, claim) | `<portal>:9090`, HTTP/1.1 | `api_port` |
 | NVMe/TCP portal (attach) | `<portal>:4420`, or what the claim returns | `port`, or the claim reply |
 
 The portal defaults to `192.168.31.202` (forge). Since stormblock v17.0.0 the
 engine API requires a token for everything except `POST
-…/boothost/<tag>/claim`. stormbootx sends none, because firmware has nowhere to
+…/boothost/<tag>/claim` and `GET /api/v1/health`. stormbootx sends none, because firmware has nowhere to
 keep one. The intent route (stormblock#148) will need the same exemption, and
 until it has one a read gets a 401, which reads as `auto`.
 
@@ -358,7 +381,7 @@ Open issues:
 | #7 | the identity follow-ups |
 | #10 | extracting the initiator for stormboot4bios |
 | #13, #14 | a presentation; test containers per the stormcos test standard |
-| #15 | the default image: client side done, waiting on an engine that serves it |
+| #15 | universal boot: client side done, waiting on an engine with stormblock#200 and a `boothost/default` |
 
 A slide deck of the above is in [`docs/presentation.md`](docs/presentation.md)
 (Marp: `npx @marp-team/marp-cli docs/presentation.md`).

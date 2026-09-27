@@ -26,7 +26,8 @@ crate, so name the command. This builds the binary and runs both host suites:
 ```bash
 sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   rustc --edition 2021 --test src/intent.rs -o t/intent-test && ./t/intent-test && \
-  rustc --edition 2021 --test src/sha256.rs -o t/sha256-test && ./t/sha256-test'
+  rustc --edition 2021 --test src/sha256.rs -o t/sha256-test && ./t/sha256-test && \
+  rustc --edition 2021 --test src/universal.rs -o t/universal-test && ./t/universal-test'
 ```
 
 Don't `ls target/...` afterwards. dev sets its own `CARGO_TARGET_DIR`, so the
@@ -49,7 +50,11 @@ those vectors out of reach. Don't.
 
 `src/intent.rs` follows the same rule for the same reason: it parses the boot
 intent reply and decides, using `core` only, and the HTTP exchange stays in
-`registry.rs`. Its tests are the proof that every doubt reads as `auto`.
+`registry.rs`. Its tests are the proof that every doubt reads as `auto`. `src/universal.rs`
+(#15) is the third: the engine-version gate, the MAC choice and the claim
+reply's `host` object, `core` only. `tcp4probe.rs` includes it by `#[path]`
+because `tcp4.rs` uses it, so a new `crate::` use in `tcp4.rs` must be
+carried there too (#24 was that).
 
 `Cargo.lock` is tracked, as it should be for anything that produces a binary.
 Without it every build resolved fresh, and this is a firmware binary whose
@@ -80,7 +85,8 @@ deliberately, in its own commit, and rebuild.
 | `src/nvme.rs` | the NVMe/TCP initiator |
 | `src/blockio.rs` | publish the namespace as a block device, then chain-load its `BOOTX64.EFI` |
 | `src/intent.rs` | the boot intent (`install`/`local`/`auto`) read before the claim; every doubt is `auto` |
-| `src/registry.rs` | read the intent and claim `boothost/<tag>`; also the old sbregistry `/v1/clones/claim` path, compiled out by `USE_REGISTRY = false` |
+| `src/registry.rs` | read the intent; claim `boothost/<tag>`, or `boothost/default` by MAC; read the engine's version; also the old sbregistry `/v1/clones/claim` path, compiled out by `USE_REGISTRY = false` |
+| `src/universal.rs` | universal boot (#15): is the engine new enough, which MAC is the machine's, what host the reply named |
 | `src/sha256.rs` | the digest, because `EFI_HASH2` is optional |
 | `src/config.rs` | the target, read from the media rather than compiled in |
 | `src/shell.rs` | timed, never-forced failure console before the fall-through |
@@ -154,11 +160,20 @@ These have each cost a debugging session. Do not "simplify" them away.
   place for the answer to live and a timeout on every boot in a zone nobody
   published. Don't reintroduce it without a network that needs one image
   booting everywhere with no per-network config.
-- **An unassigned machine claims its own tag, never `boothost/default`.**
-  The default image is the engine's fallback (stormblock ≥ 17): the claim for
-  an unknown tag pins it to `boothost/default`. A client-side second claim of
-  `default` would share one boot clone name across every new machine, and
-  each claim releases the previous clone of that name.
+- **A machine nothing has named claims `boothost/default` by its MAC — and
+  only from an engine with stormblock#200** (#15, universal boot). There
+  the engine keys the claim on the MAC and gives each machine its own
+  clone (`mac-<hex>`). On an engine from v17 to 19.3.0 the same claim is
+  tag `default`: one boot clone name for every machine, each claim
+  releasing the clone the last one is running on. So `universal.rs` gates
+  it on the public `/api/v1/health` version being **strictly after 19.3.0**,
+  and an unreadable version is "no". Don't loosen that gate to make a test
+  pass. Not the SMBIOS serial either: serials are not unique (seven
+  MicroCloud nodes share one), and a serial claim pins them all to one host.
+- **The MAC is the lowest usable one of every NIC, not `handles.first()`.**
+  SNP handles appear in driver-bind order, which `ensure_available`'s
+  on-demand binding can change between boots. Same lesson as the multi-NIC
+  fact below, in the identity instead of the socket.
 - **A boot path must never need the network in order to boot without it.**
   Every failure in discovery or attach falls through to the local disk. One
   provisioning outage must not become a fleet outage.
@@ -335,28 +350,28 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       would copy. Decisions needed: where the engine comes from, where a
       TCP4-capable OVMF comes from, and whether TCG (no KVM) is acceptable.
 
-- [ ] #15 — **universal boot (P0, owner 2026-09-27).** One ISO boots any
-      machine with no tag: it claims `boothost/default` carrying its MAC, and
-      the engine (stormblock#200, on stormblock main after v19.3.0) gives it
-      its own CoW clone as host `mac-<hex>`. **In progress 2026-09-27.** Plan:
-      1. `src/universal.rs`, `core`-only with host tests like `intent.rs`: the
-         engine-version gate (strictly after 19.3.0; v17–19.3.0 read `default`
-         as one shared tag, whose claims release each other's clones) and the
-         MAC choice (lowest valid unicast permanent MAC of every SNP handle —
-         "first NIC", but independent of handle order).
-      2. `registry::engine_version` (public `/api/v1/health`) and
-         `registry::claim_default` (`{"mac":…,"serial":…}`), reading
-         `host.name`/`provisional` from the reply.
-      3. `run()`: stated `tag =` claims that tag. Otherwise, on a #200 engine,
-         claim the default by MAC and print `booting the default image as
-         mac-<hex>`; on an older engine, claim the SMBIOS serial as before
-         (the MAC is now #7's floor when there is no serial). Host NQN is the
-         engine's host name for the machine.
-      4. stormblock issue: honour `serial` in a default claim when it already
-         names a host (C2NR0Q2), since a tokenless client can't GET to check.
-      Before this, the client claimed its own tag and the engine fell back
-      (v17), which pins shared SMBIOS serials (Supermicro MicroCloud) to one
-      host.
+- [ ] #15 — **universal boot (P0, owner 2026-09-27). The stormbootx side is
+      done (2026-09-27, sc-build passing).** One ISO boots any machine with
+      no tag: with no `tag =`, it claims `boothost/default` carrying
+      `{"mac", "serial"}` and the engine (stormblock#200, on stormblock main
+      after v19.3.0) gives it its own CoW clone as host `mac-<hex>`. The
+      console says `booting the default image as mac-<hex>`, or `booting
+      <name>'s image` once the MAC is an alias. Pieces: `src/universal.rs`
+      (version gate strictly after 19.3.0; lowest usable MAC; the reply's
+      `host`, tested against the engine's sorted-key reply),
+      `tcp4::machine_mac`, `registry::{engine_version, claim_default}`, and
+      step 2a/3 in `run()`. Older engines or an unreadable version claim the
+      serial as before; the MAC is now #7's floor for a board with no
+      serial. A #200 engine's 404 (no default) retries by serial, which
+      can then only find an existing host. Host NQN = the engine's host name.
+      **Still open on (none in this repo):**
+      - a stormblock release containing #200, and forge on it (forge ran
+        **13.7.0** on 2026-09-27 via `/api/v1/health`);
+      - stormcentral#29 / stormipmi: something sets `boothost/default`;
+      - the stormblock issue filed for the `serial` hint, so a machine the
+        engine already knows by serial (C2NR0Q2) keeps its host instead of
+        becoming `mac-<hex>` — until then, alias its MAC to it (#199);
+      - a metal check: two machines, one ISO, no tag, two clones.
 
 - [ ] #11 — per-machine boot intent. **The stormbootx half landed on
       2026-09-27** (`src/intent.rs`, `registry::boot_intent`, step 3a in

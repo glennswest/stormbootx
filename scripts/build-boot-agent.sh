@@ -10,9 +10,13 @@
 #   dd if=<output> of=/dev/sdX bs=4M conv=fsync
 #
 # The stick names the portal — an appliance address — and nothing about which
-# image to boot. That is a fleet decision living next to the images, as a
-# boothost/<service tag> synonym the agent claims at boot. Moving a machine to
-# another version is a PUT on its name; the stick never changes.
+# image to boot. That is a fleet decision living next to the images: the agent
+# claims boothost/default by the machine's MAC (universal boot, #15), and the
+# engine gives each machine its own clone, as mac-<hex> until it is named, or
+# the image of the name the MAC is an alias of. Engines older than
+# stormblock#200 are claimed by service tag. Moving a machine to another
+# version is a PUT on its name; the stick never changes, and one stick boots
+# every machine.
 #
 # --probe builds a diagnostic stick that boots tcp4probe instead of the agent.
 #
@@ -135,9 +139,10 @@ else
 # stormbootx — the portal is an appliance address, the image is this machine's.
 #
 # Nothing here says which image to boot. That is a fleet decision and it lives
-# next to the images: a boothost/<service tag> synonym on the engine, claimed
-# at $PORTAL:$API_PORT in one request that answers with a copy-on-write clone
-# and the address, NQN and NSID reaching it. Moving this machine to another
+# next to the images: this machine's boothost synonym on the engine, claimed
+# at $PORTAL:$API_PORT as boothost/default by its MAC (or by service tag on an
+# engine older than stormblock#200), in one request that answers with a
+# copy-on-write clone and the address, NQN and NSID reaching it. Moving this machine to another
 # version is a PUT on its name — this stick does not change.
 #
 # nqn and nsid below are only the fallback, for a claim that cannot be reached:
@@ -205,7 +210,7 @@ elif [[ "$PIN" == "yes" ]]; then
     say "target  nvme-tcp://$PORTAL:$PORT/$NQN?nsid=$NSID  (pinned, no claim knobs)"
 else
     say "portal  $PORTAL:$PORT  (named, no DNS)"
-    say "image   claimed as boothost/<service tag> at $PORTAL:$API_PORT"
+    say "image   claimed as boothost/default by MAC at $PORTAL:$API_PORT (by service tag on older engines)"
     say "        falling back to $NQN?nsid=$NSID if the claim cannot be reached"
 fi
 cat <<EOF
