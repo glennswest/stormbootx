@@ -115,7 +115,6 @@ fn open_fs(handle: Handle) -> Option<ScopedProtocol<SimpleFileSystem>> {
     boot::open_protocol_exclusive::<SimpleFileSystem>(handle).ok()
 }
 
-/// Read a file from the boot volume as text.
 /// The FEC mode stated in the config file, read on its own.
 ///
 /// Read here, before the rest of the configuration, for the same reason
@@ -144,6 +143,7 @@ pub fn stated_tag() -> Option<String> {
     field(&text, "tag").filter(|v| !v.is_empty())
 }
 
+/// Read a file from the boot volume as text.
 pub fn read_file(path: &str) -> Option<String> {
     let handle = boot_volume()?;
     let mut fs = open_fs(handle)?;

@@ -1,4 +1,9 @@
-//! Claiming an image from sbregistry, keyed on the service tag.
+//! Claiming an image by service tag, and reading the boot intent beside it.
+//!
+//! The live path is the storage engine's (stormblock): `boot_intent` reads
+//! `boothost/<tag>/intent` and `claim_boothost` claims `boothost/<tag>`.
+//! `claim` and `existing` are the old sbregistry `/v1/clones/claim` path,
+//! compiled out by `USE_REGISTRY = false` in `main.rs`.
 //!
 //! HTTP is spoken directly over TCP4 rather than through EFI_HTTP_PROTOCOL.
 //! One request is a hundred lines; EFI_HTTP is a whole driver stack that
@@ -15,7 +20,7 @@ use alloc::vec::Vec;
 
 use crate::tcp4::Tcp4Socket;
 
-/// Everything needed to attach, as sbregistry reports it.
+/// Everything needed to attach, as the claim reply reports it.
 ///
 /// Taken from the **response**, never assumed from the request: older
 /// stormblockmk ignores the requested protocol and exports iSCSI regardless,

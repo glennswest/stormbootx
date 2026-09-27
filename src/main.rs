@@ -1,7 +1,8 @@
 //! stormbootx — a UEFI NVMe/TCP boot extension.
 //!
-//! Boots a machine from an image that lives in sbregistry, with no kernel, no
-//! initramfs and no local media beyond the binary itself. The sequence is:
+//! Boots a machine from an image that lives on the storage engine (stormblock,
+//! forge), with no kernel, no initramfs and no local media beyond the binary
+//! itself. The sequence is:
 //!
 //!   service tag (SMBIOS)  ->  boot intent  ->  claim boothost/<tag>  ->  attach nvme-tcp://
 //!     ->  publish EFI_BLOCK_IO_PROTOCOL  ->  chain-load its BOOTX64.EFI
@@ -59,7 +60,8 @@ use alloc::string::{String, ToString};
 
 use uefi::prelude::*;
 
-/// Where sbregistry lives, for the claim path.
+/// Where sbregistry lives, for the old `/v1/clones/claim` path. Compiled out
+/// by `USE_REGISTRY = false`; the live path is the boothost claim below.
 const REGISTRY_IP: [u8; 4] = [192, 168, 200, 22];
 const REGISTRY_PORT: u16 = 5100;
 const REGISTRY_HOST: &str = "sbregistry.gt.lo:5100";
@@ -67,14 +69,11 @@ const REGISTRY_HOST: &str = "sbregistry.gt.lo:5100";
 /// The golden to claim when this machine has no clone yet.
 const GOLDEN: &str = "stormcos-edge";
 
-/// Attach a fixed target instead of asking the registry.
+/// Take the old sbregistry path instead of the engine's boothost claim.
 ///
-/// The registry claim is the model — a CoW clone per service tag, bound to the
-/// machine that holds it. This exists because the two halves have to be proven
-/// separately: a direct attach exercises SMBIOS, TCP4, the NVMe/TCP handshake
-/// and BlockIO with nothing else in the path, so a failure here is a failure in
-/// *this* binary rather than in a claim that returned the wrong thing. Set
-/// `USE_REGISTRY` once the volume being served is a per-machine clone.
+/// Off. The engine's `boothost/<tag>` claim, which mints a per-machine clone,
+/// replaced it, and is what runs when this is `false` (step 3). Kept because
+/// the code is small and is the only record of the sbregistry contract.
 const USE_REGISTRY: bool = false;
 
 /// The floor: what to attach when the config file says nothing.
