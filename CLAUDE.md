@@ -312,6 +312,18 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Blocked on other repos
 
+- [ ] #14 — test containers (short/medium/long). **Waiting on an owner
+      decision, 2026-09-27.** stormbootx only runs in firmware, so a real test
+      boots the `.efi` in a UEFI VM. What exists: the runner
+      (stormcentral `testruns.rs`) gives a Job no token, no privileged mode,
+      no `/dev/kvm` and reads no `requires:`; the node's stormblock needs a
+      token for everything but the claim (stormcos#89); stormvm boots UEFI
+      only from a golden/volume and its serial console is unproven live, and
+      its OVMF is not known to carry TCP4. stormblock's own test runs a
+      private engine on loopback, which is the pattern a self-contained test
+      would copy. Decisions needed: where the engine comes from, where a
+      TCP4-capable OVMF comes from, and whether TCG (no KVM) is acceptable.
+
 - [ ] #15 — default image. **The stormbootx half is done (2026-09-27).**
       The fallback lives in the engine: since stormblock v17.0.0 (#107,
       `claim_boothost` in `src/mgmt/api/synonyms.rs`), `POST
