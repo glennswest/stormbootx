@@ -15,7 +15,8 @@
 //! MicroCloud nodes report the chassis serial, so a serial-keyed claim would
 //! boot all seven as one machine.
 //!
-//! Two decisions live here, both pure:
+//! Two decisions live here, both pure, and the one piece of the claim reply
+//! the console and the host NQN need (`claimed_host`):
 //!
 //! - **Whether the engine can take that claim at all** (`supports_default_claim`).
 //!   The shape is stormblock's #200, which landed after v19.3.0. An engine from
@@ -105,6 +106,47 @@ pub fn provisional_name(mac: &[u8; 6]) -> [u8; 16] {
     out
 }
 
+/// The engine's name for the machine, and whether it is still provisional,
+/// from a boothost claim reply (stormblock#199/#200):
+///
+/// ```text
+/// "host": {"aliases": […], "claimed_as": …, "mac": …, "name": "mac-…", "new": …, "provisional": true}
+/// ```
+///
+/// Read inside that object only, so a `"name"` elsewhere in the reply (the
+/// volume's) is never taken for the host's. The aliases array holds strings
+/// and no braces, so the first `}` ends the object. `None` from an engine that
+/// sends no `host`.
+pub fn claimed_host(body: &str) -> Option<(&str, bool)> {
+    let at = body.find("\"host\"")? + "\"host\"".len();
+    let rest = body[at..].trim_start().strip_prefix(':')?.trim_start();
+    let rest = rest.strip_prefix('{')?;
+    let obj = &rest[..rest.find('}')?];
+    let name = value(obj, "name")?.strip_prefix('"')?;
+    let name = &name[..name.find('"')?];
+    let provisional = value(obj, "provisional").is_some_and(|v| v.starts_with("true"));
+    Some((name, provisional))
+}
+
+/// What follows `"key":` in a flat object, untrimmed at the end.
+fn value<'a>(obj: &'a str, key: &str) -> Option<&'a str> {
+    let mut from = 0;
+    while let Some(i) = obj[from..].find(key) {
+        let start = from + i;
+        let end = start + key.len();
+        from = end;
+        let quoted = start > 0
+            && obj.as_bytes()[start - 1] == b'"'
+            && obj.as_bytes().get(end) == Some(&b'"');
+        if quoted {
+            if let Some(v) = obj[end + 1..].trim_start().strip_prefix(':') {
+                return Some(v.trim_start());
+            }
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -147,6 +189,23 @@ mod tests {
         assert_eq!(fold(&[a, b, c]), Some(b));
         assert_eq!(fold(&[c, a, b]), Some(b));
         assert_eq!(fold(&[b, c, a]), Some(b));
+    }
+
+    // The shape stormblock's claim_boothost sends: serde_json without
+    // preserve_order, so keys are sorted and `provisional` ends the object.
+    const REPLY: &str = r#"{"attach":{"address":"192.168.31.202","nqn":"nqn.x","nsid":7,"port":4420},"claimed_from":{"release":1,"synonym":"boothost/mac-ac1f6b8aa79c","version":1,"volume":2},"host":{"aliases":["ac:1f:6b:8a:a7:9c"],"claimed_as":"default","mac":"ac:1f:6b:8a:a7:9c","name":"mac-ac1f6b8aa79c","new":true,"provisional":true},"host_golden":{"collected":[],"minted":true,"synonym":"hostgolden/mac-ac1f6b8aa79c","volume":2},"kept":[],"released":[],"volume":{"access":"rw","id":3,"name":"boothost-mac-ac1f6b8aa79c","sealed":false}}"#;
+
+    #[test]
+    fn the_host_is_read_from_its_own_object() {
+        assert_eq!(claimed_host(REPLY), Some(("mac-ac1f6b8aa79c", true)));
+        let named = REPLY
+            .replace(r#""name":"mac-ac1f6b8aa79c""#, r#""name":"server3""#)
+            .replace(r#""provisional":true"#, r#""provisional":false"#);
+        assert_eq!(claimed_host(&named), Some(("server3", false)));
+        // Pretty-printed, and an engine from before #199 that sends no host.
+        let pretty = "{\n  \"host\": {\n    \"name\": \"C2NR0Q2\",\n    \"provisional\": false\n  }\n}";
+        assert_eq!(claimed_host(pretty), Some(("C2NR0Q2", false)));
+        assert_eq!(claimed_host(r#"{"attach":{"nqn":"x"},"volume":{"name":"v"}}"#), None);
     }
 
     #[test]

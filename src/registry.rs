@@ -319,21 +319,11 @@ fn attach_from(body: &str) -> Result<Attach, String> {
     let nsid = field(body, "nsid")
         .and_then(|n| n.parse::<u32>().ok())
         .unwrap_or(1);
-    // `"host": {"aliases": […], "claimed_as": …, "name": …, "provisional": …}`
-    // since stormblock#199. Read inside that object only, so a `"name"`
-    // elsewhere in the reply (the volume's) is never taken for the host's.
-    // The aliases array holds strings and no braces, so the first `}` ends it.
-    // The `}` stays in the slice: serde_json sorts keys, `provisional` comes
-    // last, and `field` needs a terminator after a bare `true`.
-    let host_obj = body.find("\"host\"").and_then(|at| {
-        let rest = body[at + 6..].trim_start().strip_prefix(':')?.trim_start();
-        let rest = rest.strip_prefix('{')?;
-        Some(&rest[..=rest.find('}')?])
-    });
-    let host = host_obj.and_then(|h| field(h, "name"));
-    let provisional = host_obj
-        .and_then(|h| field(h, "provisional"))
-        .is_some_and(|p| p == "true");
+    // Since stormblock#199 the reply says which host this is (`universal.rs`).
+    let (host, provisional) = match crate::universal::claimed_host(body) {
+        Some((h, p)) => (Some(h.to_string()), p),
+        None => (None, false),
+    };
     Ok(Attach {
         address,
         port,
