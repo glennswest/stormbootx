@@ -133,14 +133,17 @@ pub fn stated_fec() -> Option<crate::mlxfec::Fec> {
     crate::mlxfec::Fec::parse(&field(&text, "fec")?)
 }
 
-/// The tag stated in the config file, read on its own.
+/// The name stated in the config file, read on its own: `name =`, or its older
+/// spelling `tag =` (#23). `name` wins when a file has both.
 ///
 /// The identity is needed before the rest of the configuration is resolved —
 /// it is the first thing printed and the thing the claim is keyed on — so this
 /// reads that one field rather than reordering the boot to suit it.
 pub fn stated_tag() -> Option<String> {
     let text = read_file(CONF_PATH)?;
-    field(&text, "tag").filter(|v| !v.is_empty())
+    field(&text, "name")
+        .filter(|v| !v.is_empty())
+        .or_else(|| field(&text, "tag").filter(|v| !v.is_empty()))
 }
 
 /// Read a file from the boot volume as text.
@@ -226,7 +229,9 @@ pub fn resolve(d: &Defaults) -> Config {
     let file_nsid = file.and_then(|t| field(t, "nsid")).and_then(|s| s.parse().ok());
     cfg.stamp = file.and_then(|t| field(t, "stamp"));
     // A stated tag wins over anything SMBIOS says. See `Config::tag`.
-    cfg.tag = file.and_then(|t| field(t, "tag")).filter(|v| !v.is_empty());
+    cfg.tag = file
+        .and_then(|t| field(t, "name").or_else(|| field(t, "tag")))
+        .filter(|v| !v.is_empty());
     if let Some(p) = file.and_then(|t| field(t, "api_port")).and_then(|s| s.parse().ok()) {
         cfg.api_port = p;
     }
