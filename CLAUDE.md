@@ -368,7 +368,7 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       - a stormblock release containing #200, and forge on it (forge ran
         **13.7.0** on 2026-09-27 via `/api/v1/health`);
       - stormcentral#29 / stormipmi: something sets `boothost/default`;
-      - the stormblock issue filed for the `serial` hint, so a machine the
+      - stormblock#202, the `serial` hint, so a machine the
         engine already knows by serial (C2NR0Q2) keeps its host instead of
         becoming `mac-<hex>` — until then, alias its MAC to it (#199);
       - a metal check: two machines, one ISO, no tag, two clones.

@@ -133,9 +133,9 @@ loaded from. It writes to three things:
    image`. Not the SMBIOS serial: serials are not unique (seven Supermicro
    MicroCloud nodes report one chassis serial), and a serial claim would boot
    them all as one machine. The serial rides along in the body so the engine
-   can resolve a machine it already knows by serial (C2NR0Q2) to that host;
-   stormbootx cannot check that itself, because every read but the claim
-   needs a token.
+   can resolve a machine it already knows by serial (C2NR0Q2) to that host
+   (stormblock#202). stormbootx cannot check that itself, because every read
+   but the claim needs a token.
 
    **Only against an engine that has #200**, told by the public
    `/api/v1/health` version being after 19.3.0. An engine from v17 to 19.3.0

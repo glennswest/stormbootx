@@ -184,7 +184,7 @@ pub fn claim_boothost(
 ///
 /// `serial` is sent as well when SMBIOS has a usable one. Today's engine reads
 /// only the MAC; carrying the serial lets it resolve a machine already
-/// registered by its serial to that host (filed on stormblock), which this
+/// registered by its serial to that host (stormblock#202), which this
 /// client cannot check for itself, because every read but the claim needs a
 /// token.
 pub fn claim_default(
