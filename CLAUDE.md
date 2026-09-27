@@ -379,8 +379,12 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       serial. A #200 engine's 404 (no default) retries by serial, which
       can then only find an existing host. Host NQN = the engine's host name.
       **Still open on (none in this repo):**
-      - a stormblock release containing #200, and forge on it (forge ran
-        **13.7.0** on 2026-09-27 via `/api/v1/health`);
+      - a stormblock **golden** containing #200, and forge on it. #200 is
+        released in **v19.4.0** (6af6ad3); its claim reply and
+        `ClaimRequest` were re-read at that tag and match `universal.rs`'s
+        tests, and 19.4.0 passes the gate. But the newest stormblock golden
+        is `stormblock@e00a1b0`, 16 commits before v19.4.0, and forge ran
+        **13.7.0** (`/api/v1/health`, re-checked 2026-09-27);
       - stormcentral#29 / stormipmi: something sets `boothost/default`;
       - stormblock#202, the `serial` hint, so a machine the
         engine already knows by serial (C2NR0Q2) keeps its host instead of
