@@ -360,6 +360,9 @@ Open issues:
 | #13, #14 | a presentation; test containers per the stormcos test standard |
 | #15 | the default image: client side done, waiting on an engine that serves it |
 
+A slide deck of the above is in [`docs/presentation.md`](docs/presentation.md)
+(Marp: `npx @marp-team/marp-cli docs/presentation.md`).
+
 Related: [stormuefi](https://github.com/glennswest/stormuefi) (stage two) and
 [stormnetboot](https://github.com/glennswest/stormnetboot) (the earlier
 network-boot project, whose PXE chain this USB/NVMe-TCP path retired).
