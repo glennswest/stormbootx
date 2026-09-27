@@ -354,6 +354,13 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       driver; `scripts/build-nic-drivers.sh` builds iPXE's `intelx` and
       `hermon` `.efidrv` at a pinned commit; `build-boot-agent.sh --drivers
       DIR` lays them on the media. Done when server1 prints `tcp4 : available`.
+      **State 2026-09-27:** the generic loader (`src/drivers.rs`,
+      `build-boot-agent.sh --drivers`) is on main and driver-agnostic.
+      **iPXE is ON HOLD** (master, 2026-09-27): the owner has not authorised
+      it; it was a proposal. Do not build, ship or extend anything using
+      `scripts/build-nic-drivers.sh` until the owner picks which driver goes
+      on the media (iPXE `.efidrv`, Intel's UEFI UNDI from the PREBOOT
+      package, or something else). No ISO with drivers has been built.
 
 - [ ] #13 — presentation at `docs/presentation.md` (Marp). **In progress
       2026-09-27.** Drawn from the #12-audited README and the code; slide 2
