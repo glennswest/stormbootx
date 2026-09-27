@@ -307,17 +307,24 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 - [ ] #10 — extract `nvme.rs` (and the claim) into a transport-generic
       `no_std` crate. Prerequisite for stormboot4bios.
 
-- [ ] #15 — default image. **In progress 2026-09-27.** The fallback already
-      lives in the engine: since stormblock v17.0.0 (#107), `POST
-      …/boothost/<tag>/claim` for a tag with no synonym pins that tag to
-      whatever `boothost/default` names and boots it. So stormbootx keeps
-      claiming its own tag. The remaining work here is the console line (relay
-      the engine's 404 text, which names whether `boothost/default` is missing)
-      and the docs. forge still runs stormblock 13.7.0 and has no
-      `boothost/default`. Managing the default is stormcentral#29 / stormipmi
-      (`/api/v1/machines/default`).
-
 ### Blocked on other repos
+
+- [ ] #15 — default image. **The stormbootx half is done (2026-09-27).**
+      The fallback lives in the engine: since stormblock v17.0.0 (#107,
+      `claim_boothost` in `src/mgmt/api/synonyms.rs`), `POST
+      …/boothost/<tag>/claim` for a tag with no synonym creates
+      `boothost/<tag>` pinned to whatever `boothost/default` names, and boots
+      it. So stormbootx keeps claiming its own tag. The only change here was
+      relaying the engine's 404 `error` text (`no synonym boothost/<tag> and no
+      boothost/default to give a new machine`) on the console. sc-build passes.
+      **Still open on:**
+      - forge runs stormblock **13.7.0** (checked 2026-09-27 via
+        `/api/v1/health`) and has no `boothost/default`, so nothing can serve
+        the fallback yet. Upgrading forge is a stormcos release, not this repo.
+      - stormcentral#29 / stormipmi: something has to set and manage
+        `boothost/default`.
+      - #4: the new machine registering itself by its tag.
+      - Not yet seen on metal.
 
 - [ ] #11 — per-machine boot intent. **The stormbootx half landed on
       2026-09-27** (`src/intent.rs`, `registry::boot_intent`, step 3a in
