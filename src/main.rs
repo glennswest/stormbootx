@@ -53,6 +53,7 @@ extern crate alloc;
 mod blockio;
 mod config;
 mod dhcp4;
+mod dnsname;
 mod intent;
 mod mlxfec;
 mod nvme;
@@ -255,6 +256,10 @@ fn run() -> Result<(), String> {
     //     reason to prefer pinning over the device default.
 
     // 3. What should I boot?
+    // The DNS name the network gives this machine (#23): full name, the host
+    // label the engine knows it by, and where it came from. Set in step 3b.
+    let mut dns: Option<(String, String, &'static str)> = None;
+
     let attach = if USE_REGISTRY {
         // Reuse a clone this machine already holds, so a reboot reattaches the
         // same volume rather than minting another.
@@ -290,33 +295,51 @@ fn run() -> Result<(), String> {
             let [a, b, c, d] = cfg.portal;
             let host = format!("{a}.{b}.{c}.{d}:{}", cfg.api_port);
 
-            // Universal boot (#15) when the media names nobody and the engine
-            // gives each machine claiming the default a clone of its own. An
-            // engine from before stormblock#200 would give them all one, so
-            // it is asked for its version first and anything else is "no".
+            // The engine's version first. It is the first request of the boot,
+            // so it is also what brings the network up, and it says which
+            // interface reached the engine: the one whose lease names the
+            // machine (#23). Universal boot (#15) needs an engine that gives
+            // each machine claiming the default a clone of its own; one from
+            // before stormblock#200 would give them all one, so anything but
+            // a version after 19.3.0 is "no".
+            let (version, iface) = registry::engine_version(cfg.portal, cfg.api_port, &host);
             let default_mac = if stated.is_none() { mac.map(|(m, _)| m).zip(mac_colon.clone()) } else { None };
-            let universal = default_mac.is_some()
-                && match registry::engine_version(cfg.portal, cfg.api_port, &host) {
-                    Ok(v) if universal::supports_default_claim(&v) => {
-                        uefi::println!("engine      : stormblock {v}  (default claim by MAC)");
-                        true
-                    }
-                    Ok(v) => {
-                        uefi::println!(
-                            "engine      : stormblock {v}  (before universal boot; claiming by tag)"
-                        );
-                        false
-                    }
-                    Err(e) => {
-                        uefi::println!("engine      : version unknown ({e}); claiming by tag");
-                        false
-                    }
-                };
-            // The name the intent is read under: the MAC as twelve hex digits,
-            // which the engine resolves as an alias to whatever the machine is
-            // called now, or the tag.
-            let intent_key = match (&default_mac, universal) {
-                (Some((m, _)), true) => {
+            let universal = match &version {
+                Ok(v) if universal::supports_default_claim(v) => {
+                    uefi::println!("engine      : stormblock {v}  (universal boot)");
+                    default_mac.is_some()
+                }
+                Ok(v) => {
+                    uefi::println!("engine      : stormblock {v}  (before universal boot)");
+                    false
+                }
+                Err(e) => {
+                    uefi::println!("engine      : version unknown ({e})");
+                    false
+                }
+            };
+
+            // 3b. The machine's DNS name, when the media states none (#23):
+            //     DHCP option 12 on the interface that reached the engine,
+            //     else the PTR of its address. The engine knows hosts by the
+            //     first label. No name is not a failure; the MAC and the
+            //     serial are still there.
+            if stated.is_none() {
+                dns = iface.and_then(|i| network_name(&i));
+                match &dns {
+                    Some((full, _, from)) => uefi::println!("name        : {full}  (from {from})"),
+                    None => uefi::println!("name        : none from DHCP or reverse DNS"),
+                }
+            }
+            let dns_host = dns.as_ref().map(|(_, h, _)| h.clone());
+
+            // The name the intent is read under: the stated tag, the DNS name,
+            // the MAC as twelve hex digits (which the engine resolves as an
+            // alias to whatever the machine is called now), or the serial.
+            let intent_key = match (&stated, &dns_host, &default_mac, universal) {
+                (Some(_), ..) => tag.clone(),
+                (None, Some(h), ..) => h.clone(),
+                (None, None, Some((m, _)), true) => {
                     String::from_utf8_lossy(&universal::provisional_name(m)[4..]).into_owned()
                 }
                 _ => tag.clone(),
@@ -359,64 +382,91 @@ fn run() -> Result<(), String> {
                 ));
             }
 
-            let by_tag = || {
-                uefi::println!("claim       : {}/{tag} at {host}", registry::BOOTHOST_NS);
-                match registry::claim_boothost(cfg.portal, cfg.api_port, &host, &tag) {
-                    Ok(a) => {
-                        uefi::println!("  claimed a clone of this machine's image");
-                        Some(a)
-                    }
-                    Err(e) => {
-                        uefi::println!("  {e}");
-                        uefi::println!("  falling back to the resolved target");
-                        None
-                    }
-                }
+            // 3c. Claim, best name first. A 404 means "not under this name",
+            //     so the next one is tried; anything else falls back to the
+            //     resolved target rather than guessing at another identity.
+            let claim_as = |name: &str, hints: bool| {
+                uefi::println!("claim       : {}/{name} at {host}", registry::BOOTHOST_NS);
+                let (m, s) = if hints { (mac_colon.as_deref(), serial.as_deref()) } else { (None, None) };
+                registry::claim_boothost(cfg.portal, cfg.api_port, &host, name, m, s)
             };
-            match default_mac.as_ref().filter(|_| universal) {
-                Some((m, colon)) => {
-                    let provisional = universal::provisional_name(m);
-                    let provisional = core::str::from_utf8(&provisional).unwrap_or("mac-?");
-                    uefi::println!(
-                        "claim       : {}/default as {colon} at {host}",
-                        registry::BOOTHOST_NS
-                    );
-                    match registry::claim_default(
-                        cfg.portal,
-                        cfg.api_port,
-                        &host,
-                        colon,
-                        serial.as_deref(),
-                    ) {
-                        Ok(a) => {
-                            match (&a.host, a.provisional) {
-                                (Some(h), false) => {
-                                    uefi::println!("  booting {h}'s image (this MAC is its alias)")
-                                }
-                                (Some(h), true) => {
-                                    uefi::println!("  booting the default image as {h}")
-                                }
-                                (None, _) => {
-                                    uefi::println!("  booting the default image as {provisional}")
-                                }
-                            }
-                            Some(a)
-                        }
-                        // No default to give: a machine the engine already
-                        // knows by its serial can still boot that, and with
-                        // no default the engine cannot mint a serial host.
-                        Err((404, e)) if serial.is_some() => {
-                            uefi::println!("  {e}");
-                            by_tag()
-                        }
-                        Err((_, e)) => {
-                            uefi::println!("  {e}");
-                            uefi::println!("  falling back to the resolved target");
-                            None
-                        }
-                    }
+            let claimed_ok = |a: registry::Attach| {
+                match &a.host {
+                    Some(h) => uefi::println!("  claimed a clone of {h}'s image"),
+                    None => uefi::println!("  claimed a clone of this machine's image"),
                 }
-                None => by_tag(),
+                Some(a)
+            };
+            let give_up = |e: &str| -> Option<registry::Attach> {
+                uefi::println!("  {e}");
+                uefi::println!("  falling back to the resolved target");
+                None
+            };
+            let by_tag = || match claim_as(&tag, false) {
+                Ok(a) => claimed_ok(a),
+                Err((_, e)) => give_up(&e),
+            };
+
+            // A stated tag is the answer, and the only one tried.
+            if stated.is_some() {
+                by_tag()
+            } else {
+                let by_name = match &dns_host {
+                    Some(h) => match claim_as(h, true) {
+                        Ok(a) => Ok(claimed_ok(a)),
+                        Err((404, e)) => {
+                            uefi::println!("  {e}");
+                            Err(())
+                        }
+                        Err((_, e)) => Ok(give_up(&e)),
+                    },
+                    None => Err(()),
+                };
+                match by_name {
+                    Ok(done) => done,
+                    Err(()) => match default_mac.as_ref().filter(|_| universal) {
+                        Some((m, colon)) => {
+                            let provisional = universal::provisional_name(m);
+                            let provisional = core::str::from_utf8(&provisional).unwrap_or("mac-?");
+                            uefi::println!(
+                                "claim       : {}/default as {colon} at {host}",
+                                registry::BOOTHOST_NS
+                            );
+                            match registry::claim_default(
+                                cfg.portal,
+                                cfg.api_port,
+                                &host,
+                                colon,
+                                serial.as_deref(),
+                            ) {
+                                Ok(a) => {
+                                    match (&a.host, a.provisional) {
+                                        (Some(h), false) => uefi::println!(
+                                            "  booting {h}'s image (this MAC is its alias)"
+                                        ),
+                                        (Some(h), true) => {
+                                            uefi::println!("  booting the default image as {h}")
+                                        }
+                                        (None, _) => uefi::println!(
+                                            "  booting the default image as {provisional}"
+                                        ),
+                                    }
+                                    Some(a)
+                                }
+                                // No default to give: a machine the engine
+                                // already knows by its serial can still boot
+                                // that, and with no default the engine cannot
+                                // mint a serial host.
+                                Err((404, e)) if serial.is_some() => {
+                                    uefi::println!("  {e}");
+                                    by_tag()
+                                }
+                                Err((_, e)) => give_up(&e),
+                            }
+                        }
+                        None => by_tag(),
+                    },
+                }
             }
         } else {
             uefi::println!("claim       : disabled by the config file");
@@ -448,7 +498,11 @@ fn run() -> Result<(), String> {
     //    other nodes share.
     let hostnqn = format!(
         "nqn.2026-09.lo.storm:host-{}",
-        attach.host.as_deref().unwrap_or(&tag)
+        attach
+            .host
+            .as_deref()
+            .or(dns.as_ref().map(|(_, h, _)| h.as_str()))
+            .unwrap_or(&tag)
     );
     uefi::println!("attaching   : {hostnqn}");
 
@@ -499,6 +553,50 @@ fn run() -> Result<(), String> {
     banner("============================================================");
     blockio::boot_attached(handle)?;
     Err(String::from("the attached image did not boot; nothing to chain-load"))
+}
+
+/// The machine's DNS name from the network it booted on (#23): DHCP option 12
+/// on this interface's lease (with option 15 for the domain), else the PTR of
+/// the interface's address asked of the option 6 DNS server. Returns the full
+/// name, the host label the engine knows it by, and the source.
+fn network_name(iface: &registry::Interface) -> Option<(String, String, &'static str)> {
+    let (mac, mac_len, addr) = iface;
+    let reply = dhcp4::reply_for(&mac[..], *mac_len);
+    let msg: &[u8] = reply.as_deref().unwrap_or(&[]);
+    if let Some(name) = dnsname::dhcp_option(msg, dnsname::OPT_HOST_NAME).and_then(dnsname::text) {
+        match dnsname::host_label(name) {
+            Some(host) => {
+                let domain = dnsname::dhcp_option(msg, dnsname::OPT_DOMAIN)
+                    .and_then(dnsname::text)
+                    .filter(|d| dnsname::valid_name(d));
+                let full = match domain {
+                    Some(d) if !name.contains('.') => format!("{name}.{d}"),
+                    _ => name.to_string(),
+                };
+                return Some((full, host.to_string(), "DHCP"));
+            }
+            None => uefi::println!("name        : DHCP host name {name:?} is not a DNS name; ignored"),
+        }
+    }
+    let server = dnsname::dhcp_option(msg, dnsname::OPT_DNS).and_then(dnsname::first_dns)?;
+    let full = ptr_lookup(server, *addr)?;
+    let host = dnsname::host_label(&full)?.to_string();
+    Some((full, host, "reverse DNS"))
+}
+
+/// One PTR query over DNS/TCP. Any failure is "no name", never an error: the
+/// machine still has its MAC and serial.
+fn ptr_lookup(server: [u8; 4], addr: [u8; 4]) -> Option<String> {
+    let id = u16::from_be_bytes([addr[2] ^ 0x5b, addr[3]]);
+    let mut query = [0u8; 64];
+    let n = dnsname::ptr_query(addr, id, &mut query);
+    let mut sock = tcp4::Tcp4Socket::connect_within(server, 53, 5).ok()?;
+    sock.send(&query[..n]).ok()?;
+    let len = sock.read_exact(2).ok()?;
+    let msg = sock.read_exact(u16::from_be_bytes([len[0], len[1]]) as usize).ok()?;
+    let mut out = [0u8; 256];
+    let k = dnsname::ptr_answer(&msg, id, &mut out)?;
+    core::str::from_utf8(&out[..k]).ok().map(String::from)
 }
 
 #[entry]

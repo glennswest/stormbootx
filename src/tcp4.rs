@@ -824,6 +824,33 @@ address: nothing answered DHCP on any of them, and none was already configured."
         (576..=65_535).contains(&snp.max_packet_size).then_some(snp.max_packet_size)
     }
 
+    /// Which wire this connection is on: its NIC's permanent MAC (and that
+    /// address's length) and the local address it connected from.
+    ///
+    /// The DHCP name (#23) is read from *this* interface's lease, because a
+    /// server with a management port and a storage port may hold a different
+    /// reservation on each, and the one that reached the engine is the one the
+    /// machine is booting as. After a connect the station address is the real
+    /// one even when the socket was configured with `use_default_address`.
+    pub fn interface(&self) -> Option<([u8; 32], usize, [u8; 4])> {
+        let mut cfg: Tcp4ConfigData = unsafe { core::mem::zeroed() };
+        let mut snp: NetworkMode = unsafe { core::mem::zeroed() };
+        let st = unsafe {
+            ((*self.tcp).get_mode_data)(
+                self.tcp,
+                ptr::null_mut(),
+                &mut cfg,
+                ptr::null_mut(),
+                ptr::null_mut(),
+                &mut snp,
+            )
+        };
+        let len = (snp.hw_address_size as usize).min(32);
+        let addr = cfg.access_point.station_address.0;
+        (st == Status::SUCCESS && len > 0 && addr != [0; 4])
+            .then_some((snp.permanent_address.0, len, addr))
+    }
+
     /// Drive the stack until a token retires.
     ///
     /// `Poll` is what gives the TCP driver cycles; without it nothing ever

@@ -69,6 +69,10 @@ fn field(body: &str, key: &str) -> Option<String> {
     }
 }
 
+/// The wire a request went out on: NIC MAC, its length, and the local address
+/// (`Tcp4Socket::interface`).
+pub type Interface = ([u8; 32], usize, [u8; 4]);
+
 fn request(
     server: [u8; 4],
     port: u16,
@@ -77,7 +81,19 @@ fn request(
     path: &str,
     body: Option<&str>,
 ) -> Result<String, String> {
+    request_on(server, port, host, method, path, body).map(|(r, _)| r)
+}
+
+fn request_on(
+    server: [u8; 4],
+    port: u16,
+    host: &str,
+    method: &str,
+    path: &str,
+    body: Option<&str>,
+) -> Result<(String, Option<Interface>), String> {
     let mut sock = Tcp4Socket::connect(server, port)?;
+    let iface = sock.interface();
 
     let mut req = format!("{method} {path} HTTP/1.1\r\nHost: {host}\r\n");
     req.push_str("User-Agent: stormbootx\r\nAccept: application/json\r\nConnection: close\r\n");
@@ -92,7 +108,8 @@ fn request(
 
     sock.send(req.as_bytes())?;
     let raw = sock.read_to_end(256 * 1024)?;
-    String::from_utf8(raw).map_err(|_| "response was not UTF-8".to_string())
+    let text = String::from_utf8(raw).map_err(|_| "response was not UTF-8".to_string())?;
+    Ok((text, iface))
 }
 
 fn split_response(response: &str) -> Result<(u16, &str), String> {
@@ -138,15 +155,24 @@ pub const BOOTHOST_NS: &str = "boothost";
 /// machines (the MicroCloud chassis serial) boots them all as one, which is
 /// why a machine nothing has named claims the default by its MAC instead
 /// wherever the engine allows it.
+///
+/// Also used for the machine's DNS name (#23). That claim carries the MAC and
+/// serial as `{"mac", "serial"}` so the engine can tie a name it has not seen
+/// to a host it already knows by either; a stated tag sends `{}` as before.
+/// The error carries the HTTP status (0 when nothing answered): a 404 means
+/// "not under this name", and the caller may try the next one.
 pub fn claim_boothost(
     server: [u8; 4],
     port: u16,
     host: &str,
     service_tag: &str,
-) -> Result<Attach, String> {
+    mac: Option<&str>,
+    serial: Option<&str>,
+) -> Result<Attach, (u16, String)> {
     let path = format!("/api/v1/synonyms/{BOOTHOST_NS}/{service_tag}/claim");
-    let response = request(server, port, host, "POST", &path, Some("{}"))?;
-    let (status, body) = split_response(&response)?;
+    let body = hints(mac, serial);
+    let response = request(server, port, host, "POST", &path, Some(&body)).map_err(|e| (0, e))?;
+    let (status, body) = split_response(&response).map_err(|e| (0, e))?;
     if status == 404 {
         // Worth separating from every other failure: it is not a fault, it is
         // this machine having no image assigned yet, and the console line that
@@ -157,15 +183,27 @@ pub fn claim_boothost(
         // *nor* a `boothost/default` to give a new machine (#15), and it says
         // so. An older engine never looks for the default, and its text says
         // only which synonym is missing.
-        return Err(match field(body, "error") {
+        return Err((404, match field(body, "error") {
             Some(e) => format!("the engine has no image for {service_tag}: {e}"),
             None => format!("no {BOOTHOST_NS}/{service_tag} synonym on this engine"),
-        });
+        }));
     }
     if !(200..300).contains(&status) {
-        return Err(format!("claim returned HTTP {status}: {}", body.trim()));
+        return Err((status, format!("claim returned HTTP {status}: {}", body.trim())));
     }
-    attach_from(body)
+    attach_from(body).map_err(|e| (status, e))
+}
+
+/// `{"mac": …, "serial": …}` with whichever are known, or `{}`.
+fn hints(mac: Option<&str>, serial: Option<&str>) -> String {
+    let mut fields = Vec::new();
+    if let Some(m) = mac {
+        fields.push(format!("\"mac\":\"{}\"", json_str(m)));
+    }
+    if let Some(s) = serial {
+        fields.push(format!("\"serial\":\"{}\"", json_str(s)));
+    }
+    format!("{{{}}}", fields.join(","))
 }
 
 /// Claim the default image for a machine nothing has named (#15).
@@ -194,10 +232,7 @@ pub fn claim_default(
     mac: &str,
     serial: Option<&str>,
 ) -> Result<Attach, (u16, String)> {
-    let body = match serial {
-        Some(s) => format!("{{\"mac\":\"{mac}\",\"serial\":\"{}\"}}", json_str(s)),
-        None => format!("{{\"mac\":\"{mac}\"}}"),
-    };
+    let body = hints(Some(mac), serial);
     let path = format!("/api/v1/synonyms/{BOOTHOST_NS}/default/claim");
     let response = request(server, port, host, "POST", &path, Some(&body)).map_err(|e| (0, e))?;
     let (status, body) = split_response(&response).map_err(|e| (0, e))?;
@@ -213,14 +248,27 @@ pub fn claim_default(
 }
 
 /// The engine's version, from `GET /api/v1/health` — the one read on its API
-/// that needs no token (stormblock#107).
-pub fn engine_version(server: [u8; 4], port: u16, host: &str) -> Result<String, String> {
-    let response = request(server, port, host, "GET", "/api/v1/health", None)?;
-    let (status, body) = split_response(&response)?;
-    if !(200..300).contains(&status) {
-        return Err(format!("health returned HTTP {status}"));
-    }
-    field(body, "version").ok_or_else(|| "health reported no version".to_string())
+/// that needs no token (stormblock#107) — and the interface that reached it.
+///
+/// It is the first request of a boot, so it is also what brings the network
+/// up; the interface comes back even when the version does not, because the
+/// DHCP name (#23) is read from that interface's lease.
+pub fn engine_version(
+    server: [u8; 4],
+    port: u16,
+    host: &str,
+) -> (Result<String, String>, Option<Interface>) {
+    let (response, iface) = match request_on(server, port, host, "GET", "/api/v1/health", None) {
+        Ok(r) => r,
+        Err(e) => return (Err(e), None),
+    };
+    let version = split_response(&response).and_then(|(status, body)| {
+        if !(200..300).contains(&status) {
+            return Err(format!("health returned HTTP {status}"));
+        }
+        field(body, "version").ok_or_else(|| "health reported no version".to_string())
+    });
+    (version, iface)
 }
 
 /// A string made safe to put between JSON quotes. An SMBIOS serial is printable

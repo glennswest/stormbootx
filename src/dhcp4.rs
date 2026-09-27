@@ -25,6 +25,8 @@
 //! own address is used when it has one; this runs only when it does not, and a
 //! machine whose firmware carries no DHCP4 is exactly as well off as before.
 
+use alloc::vec::Vec;
+
 use uefi::boot::{self, SearchType};
 use uefi::{Guid, guid};
 use uefi_raw::Status;
@@ -66,6 +68,55 @@ pub fn lease_for(mac: &[u8], mac_len: usize) -> Option<Lease> {
         }
     }
     uefi::println!("      dhcp: no client reached BOUND — nothing answered");
+    None
+}
+
+/// The DHCP reply that bound the interface with MAC `mac`, as the raw
+/// BOOTP/DHCP message (header onwards), for its options (#23).
+///
+/// Whoever ran DHCP — the platform's IP4 configuration or `lease_for` above —
+/// the lease belongs to the NIC's DHCP4 *service*, and EDK2's `GetModeData`
+/// reports the service's state and selected reply to any child, configured or
+/// not. So a fresh child is made only to ask, and destroyed: it was never
+/// configured, so destroying it releases nothing. Firmware that reports no
+/// reply, or a state other than bound, gives `None`, never a guess.
+pub fn reply_for(mac: &[u8], mac_len: usize) -> Option<Vec<u8>> {
+    let handles = boot::locate_handle_buffer(SearchType::ByProtocol(&DHCP4_SERVICE_BINDING)).ok()?;
+    for h in handles.iter() {
+        let Some(sb) = handle_protocol(h.as_ptr(), &DHCP4_SERVICE_BINDING) else { continue };
+        let sb = sb as *mut ServiceBinding;
+        let mut child: uefi_raw::Handle = core::ptr::null_mut();
+        if unsafe { ((*sb).create_child)(sb, &mut child) } != Status::SUCCESS {
+            continue;
+        }
+        let reply = handle_protocol(child, &DHCP4).and_then(|p| {
+            let dhcp = p as *mut Dhcp4Protocol;
+            let mut mode: Dhcp4ModeData = unsafe { core::mem::zeroed() };
+            let ok = unsafe { ((*dhcp).get_mode_data)(dhcp, &mut mode) } == Status::SUCCESS
+                && mac_len > 0
+                && mac_len <= mode.client_mac_address.0.len()
+                && mode.client_mac_address.0[..mac_len] == mac[..mac_len]
+                && matches!(
+                    mode.state,
+                    Dhcp4State::BOUND | Dhcp4State::RENEWING | Dhcp4State::REBINDING
+                )
+                && !mode.reply_packet.is_null();
+            if !ok {
+                return None;
+            }
+            // `length` counts the message from the header on; the struct is
+            // packed, so the header starts 8 bytes in.
+            let packet = mode.reply_packet as *const u8;
+            let length = unsafe { core::ptr::read_unaligned(packet.add(4) as *const u32) } as usize;
+            (240..=65_536).contains(&length).then(|| {
+                unsafe { core::slice::from_raw_parts(packet.add(8), length) }.to_vec()
+            })
+        });
+        unsafe { let _ = ((*sb).destroy_child)(sb, child); };
+        if reply.is_some() {
+            return reply;
+        }
+    }
     None
 }
 
