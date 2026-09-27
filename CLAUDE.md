@@ -356,11 +356,13 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       DIR` lays them on the media. Done when server1 prints `tcp4 : available`.
       **State 2026-09-27:** the generic loader (`src/drivers.rs`,
       `build-boot-agent.sh --drivers`) is on main and driver-agnostic.
-      **iPXE is ON HOLD** (master, 2026-09-27): the owner has not authorised
-      it; it was a proposal. Do not build, ship or extend anything using
-      `scripts/build-nic-drivers.sh` until the owner picks which driver goes
-      on the media (iPXE `.efidrv`, Intel's UEFI UNDI from the PREBOOT
-      package, or something else). No ISO with drivers has been built.
+      **iPXE is the owner-approved INTERIM** (2026-09-27): EFI drivers only
+      (`.efidrv`, no PXE). The long-term driver is a `no_std` Rust
+      SNP crate written from the Intel datasheets, not translated from
+      iPXE (#27). The master builds the interim ISO on dev
+      (`/build/images/stormbootx-26.iso`) and tests it on server1; this
+      session doesn't duplicate that build. Close #26 on server1's
+      `tcp4 : available` and claim.
 
 - [ ] #13 — presentation at `docs/presentation.md` (Marp). **In progress
       2026-09-27.** Drawn from the #12-audited README and the code; slide 2

@@ -344,10 +344,12 @@ El Torito `.iso` for iDRAC virtual media instead.
 ./scripts/build-boot-agent.sh --iso --drivers /build/images/drivers
 ```
 
-**On hold (2026-09-27): which driver ships is an open owner decision on #26; don't use this script yet.** `build-nic-drivers.sh` builds iPXE's `intelx` (Intel 82599/X540/X552) and
+`build-nic-drivers.sh` builds iPXE's `intelx` (Intel 82599/X540/X552) and
 `hermon` (ConnectX-3) as `bin-x86_64-efi/*.efidrv` at a pinned commit, named
 `ipxe-*.efi`, beside an `IPXE-SOURCE.txt` naming that commit. iPXE is GPL-2
-and ships as separate binaries on the media.
+and ships as separate binaries on the media. It is the interim, EFI drivers
+only (no PXE), approved by the owner; the long-term replacement is a `no_std`
+Rust driver written from the Intel datasheets (#27).
 
 `--help` lists the rest (`--drivers`, `--api-port`, `--port`, `--size`, `--binary`,
 `--output`).

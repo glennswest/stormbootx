@@ -10,6 +10,9 @@
 #   intelx  -> ipxe-intelx.efi   Intel 82599 / X540 / X552 10G
 #   hermon  -> ipxe-hermon.efi   Mellanox ConnectX-3 (15b3:1003)
 #
+# The owner-approved INTERIM (2026-09-27): EFI drivers only, no PXE. The
+# long-term driver is a no_std Rust crate from the Intel datasheets (#27).
+#
 # iPXE is GPL-2 and ships as separate binaries beside stormbootx, with a note
 # naming the exact source commit. Pinned: a driver on boot media changes only
 # when someone changes IPXE_REF, in its own commit.
