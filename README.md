@@ -66,7 +66,8 @@ loaded from. It writes to three things:
      `default string`, `system serial number`, `not applicable`,
      `not specified`, `n/a`, `invalid`, anything containing `to be filled` or
      `o.e.m.`, and all-zero strings.
-   - No usable identity is a failure, and the boot falls through.
+   - No usable identity is a failure, and the boot falls through. The first
+     NIC MAC as a last resort is planned (#7), not wired up.
    - The console prints the source, plus the SMBIOS model when there is one.
 3. **NIC FEC report** (`src/mlxfec.rs`). It prints every ConnectX port's
    current and next-boot FEC, read only. If `fec =` is set in the conf, it
@@ -252,7 +253,8 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   rustc --edition 2021 --test src/sha256.rs -o t/sha256-test && ./t/sha256-test'
 ```
 
-That builds `stormbootx.efi` and `tcp4probe.efi`, then runs the two host test
+That builds `stormbootx.efi` (117,248 bytes at v0.4.0 + #15) and
+`tcp4probe.efi` (35,328), then runs the two host test
 suites. There is no host target and no `cargo test`. `src/sha256.rs` and
 `src/intent.rs` are the exceptions: each uses only `core` and names no
 `crate::` item, so each compiles as its own crate with `rustc --test`.

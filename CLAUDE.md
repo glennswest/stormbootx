@@ -2,7 +2,7 @@
 
 A UEFI application that attaches a remote image over NVMe/TCP, publishes it
 as `EFI_BLOCK_IO_PROTOCOL` so the firmware's partition and FAT drivers see its
-GPT and ESP, and chain-loads the image's `\EFI\BOOT\BOOTX64.EFI`. ~110 KB,
+GPT and ESP, and chain-loads the image's `\EFI\BOOT\BOOTX64.EFI`. ~115 KB,
 `no_std`, one required firmware protocol (`EFI_TCP4`).
 
 **It is stage one of two, not a duplicate of stormuefi.** stormbootx answers

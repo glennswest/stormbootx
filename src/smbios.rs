@@ -87,9 +87,12 @@ pub fn service_tag() -> Option<String> {
 /// Type 1 covers every major vendor. Type 2 is second because the ODM boards —
 /// Supermicro, Quanta, Wiwynn, Inventec and most whiteboxes — commonly leave
 /// the system serial as a placeholder and burn the real number into the
-/// baseboard. Type 3 catches the remainder. `mac` is the floor: unique by
-/// construction, present on anything that can netboot at all, and the reason
-/// a board carrying nothing else is still addressable rather than unbootable.
+/// baseboard. Type 3 catches the remainder. `mac` is meant to be the floor:
+/// unique by construction, present on anything that can netboot at all, and the
+/// reason a board carrying nothing else is still addressable rather than
+/// unbootable. **Not wired up yet:** `main.rs` passes `None`, because the
+/// identity is read before the network, so a board with no usable serial falls
+/// through today unless `tag =` names it. The MAC floor is #7's open item.
 pub fn identity(mac: Option<&str>) -> Option<Identity> {
     let t = table();
     if let Some(t) = t {
