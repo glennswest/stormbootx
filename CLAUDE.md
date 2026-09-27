@@ -304,6 +304,17 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
+- [ ] #12 — docs rewritten from the code. **In progress 2026-09-27.** The
+      README was rewritten from code on 2026-09-24 (b1347d9); this pass
+      re-audits every claim against the source as of v0.4.0 + #15. Found so
+      far: README build section predates sc-build; the stamp format is
+      `<sha>[-dirty]`, not `b<n>-<sha>`; `main.rs`/`registry.rs` headers still
+      say sbregistry; a stray doc line on `config::stated_fec`; `tmp/` not in
+      `.gitignore`; the NIC table now prints four times (intent read added a
+      socket). Checked against other repos: stormblock claim fallback + 404
+      text, stormipmi `/api/v1/machines/default`, stormuefi. stormbootx is not
+      a stormcos component (no golden) — it ships as boot media.
+
 - [ ] #10 — extract `nvme.rs` (and the claim) into a transport-generic
       `no_std` crate. Prerequisite for stormboot4bios.
 

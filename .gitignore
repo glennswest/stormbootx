@@ -2,3 +2,13 @@ target/
 *.img
 *.efi
 .DS_Store
+
+# Scratch and logs
+tmp/
+*.log
+
+# Secrets
+.env
+.env.*
+*.pem
+*.key
