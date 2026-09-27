@@ -54,6 +54,7 @@ mod blockio;
 mod config;
 mod dhcp4;
 mod dnsname;
+mod drivers;
 mod intent;
 mod mlxfec;
 mod nvme;
@@ -181,6 +182,22 @@ fn run() -> Result<(), String> {
             uefi::runtime::reset(uefi::runtime::ResetType::WARM, Status::SUCCESS, None);
         }
         uefi::println!("              already {} — nothing written", want.name());
+    }
+
+    // 1c. NIC drivers the media carries (#26). A platform can have the whole
+    //     upper stack and no UEFI driver for its own NICs (the Supermicro X9
+    //     blades), and then there is no SNP for TCP4 to sit on. The platform's
+    //     drivers bind first; a media driver only takes a NIC nothing else did.
+    let loaded = drivers::load_from_media();
+    if !loaded.is_empty() {
+        let ok = loaded.iter().filter(|l| l.result.is_ok()).count();
+        uefi::println!("drivers     : {ok} of {} started from {}", loaded.len(), drivers::DRIVERS_DIR);
+        for l in &loaded {
+            match &l.result {
+                Ok(()) => uefi::println!("    {}  started", l.name),
+                Err(e) => uefi::println!("    {}  not started: {e}", l.name),
+            }
+        }
     }
 
     // 2. Is there a usable TCP stack? Presence of SNP is not enough — the

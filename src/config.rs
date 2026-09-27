@@ -179,6 +179,39 @@ pub fn read_file(path: &str) -> Option<String> {
     String::from_utf8(out).ok()
 }
 
+/// The regular files in a directory on the boot volume, by name. Empty when
+/// the directory is absent, which is the normal case (#26: only media built
+/// with `--drivers` carries one).
+pub fn list_dir(path: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    let Some(handle) = boot_volume() else { return names };
+    let Some(mut fs) = open_fs(handle) else { return names };
+    let Ok(mut root) = fs.open_volume() else { return names };
+
+    let mut buf = [0u16; 256];
+    let Ok(path16) = CStr16::from_str_with_buf(path, &mut buf) else { return names };
+    let Ok(dir) = root.open(path16, FileMode::Read, FileAttribute::empty()) else {
+        return names;
+    };
+    let mut dir = match dir.into_type() {
+        Ok(FileType::Dir(d)) => d,
+        _ => return names,
+    };
+    // A bounded walk: a corrupt directory must not become an endless boot.
+    while names.len() < 64 {
+        match dir.read_entry_boxed() {
+            Ok(Some(info)) => {
+                if !info.attribute().contains(FileAttribute::DIRECTORY) {
+                    names.push(info.file_name().to_string());
+                }
+            }
+            _ => break,
+        }
+    }
+    names.sort();
+    names
+}
+
 /// Pull `key = value` out of a flat config file, ignoring comments.
 fn field(text: &str, key: &str) -> Option<String> {
     for line in text.lines() {

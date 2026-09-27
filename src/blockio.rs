@@ -348,7 +348,7 @@ pub fn boot_attached(disk: uefi_raw::Handle) -> Result<(), String> {
 }
 
 /// A handle's device path, read without an exclusive open (drivers hold it).
-fn device_path_of(handle: uefi_raw::Handle) -> Option<&'static DevicePath> {
+pub(crate) fn device_path_of(handle: uefi_raw::Handle) -> Option<&'static DevicePath> {
     let p = crate::tcp4::handle_protocol(handle, &DEVICE_PATH_GUID)?;
     Some(unsafe { DevicePath::from_ffi_ptr(p as *const _) })
 }

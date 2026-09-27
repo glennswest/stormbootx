@@ -40,6 +40,7 @@ PIN="no"
 PROBE="no"
 ISO="no"
 FEC=""
+DRIVERS=""
 
 usage() {
     sed -n '2,20p' "$0" | sed 's/^# \?//'
@@ -51,6 +52,8 @@ Options:
   --probe          boot tcp4probe instead of the agent (a diagnostic stick)
   --fec MODE       recovery stick: write this FEC to the ConnectX, then reset
                    (default|rs|fc|off|autoneg). Absent from a normal stick.
+  --drivers DIR    lay DIR's files in \stormboot\drivers; stormbootx loads each
+                   *.efi as a NIC driver (#26; scripts/build-nic-drivers.sh)
   --portal ADDR    NVMe/TCP portal, with --pin (default 192.168.31.202)
   --port N         portal port (default 4420)
   --nqn NQN        subsystem NQN (default nqn.2026-09.lo.g16:stormcos)
@@ -67,6 +70,7 @@ while [[ $# -gt 0 ]]; do
         --probe)  PROBE="yes"; shift ;;
         --fec)    FEC="$2"; shift 2 ;;
         --iso)    ISO="yes"; shift ;;
+        --drivers) DRIVERS="$2"; shift 2 ;;
         --api-port) API_PORT="$2"; shift 2 ;;
         --portal) PORTAL="$2"; PIN="yes"; shift 2 ;;
         --port)   PORT="$2"; shift 2 ;;
@@ -114,6 +118,9 @@ export STORMBOOTX_BUILD
     BIN="${CARGO_TARGET_DIR:-$ROOT/target}/x86_64-unknown-uefi/release/$WANT.efi"
 fi
 [[ -f "$BIN" ]] || die "no $WANT.efi at $BIN"
+if [[ -n "$DRIVERS" ]]; then
+    compgen -G "$DRIVERS/*.efi" >/dev/null || die "no *.efi in $DRIVERS (run scripts/build-nic-drivers.sh)"
+fi
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -178,6 +185,13 @@ mkfs.fat -F 16 -s 1 -n STORMBOOTX "$ESP" >/dev/null
 mmd   -i "$ESP" ::/EFI ::/EFI/BOOT ::/stormboot
 mcopy -i "$ESP" "$BIN" ::/EFI/BOOT/BOOTX64.EFI
 mcopy -i "$ESP" "$WORK/stormboot.conf" ::/stormboot/stormboot.conf
+# NIC drivers for firmware that has none of its own (#26). Loaded from the
+# volume that booted, so on an ISO it is the ESP boot image that must carry
+# them; the loose ISO9660 copy below is for reading, not for booting.
+if [[ -n "$DRIVERS" ]]; then
+    mmd -i "$ESP" ::/stormboot/drivers
+    mcopy -i "$ESP" "$DRIVERS"/* ::/stormboot/drivers/
+fi
 
 mkdir -p "$(dirname "$OUTPUT")"
 rm -f "$OUTPUT"
@@ -192,6 +206,10 @@ if [[ "$ISO" == "yes" ]]; then
     cp "$ESP" "$ISOROOT/esp.img"
     cp "$BIN" "$ISOROOT/EFI/BOOT/BOOTX64.EFI"
     cp "$WORK/stormboot.conf" "$ISOROOT/stormboot/stormboot.conf"
+    if [[ -n "$DRIVERS" ]]; then
+        mkdir -p "$ISOROOT/stormboot/drivers"
+        cp "$DRIVERS"/* "$ISOROOT/stormboot/drivers/"
+    fi
     xorriso -as mkisofs -V STORMBOOTX -e esp.img -no-emul-boot \
         -o "$OUTPUT" "$ISOROOT" >/dev/null 2>&1
 else
@@ -204,6 +222,9 @@ fi
 
 say "binary  $(du -h "$BIN" | cut -f1)  $BIN"
 say "image   $(du -h "$OUTPUT" | cut -f1)  $OUTPUT"
+if [[ -n "$DRIVERS" ]]; then
+    say "drivers $(cd "$DRIVERS" && ls *.efi | tr '\n' ' ')(\\stormboot\\drivers)"
+fi
 if [[ "$PROBE" == "yes" ]]; then
     say "boots   tcp4probe — reports whether this firmware carries a TCP/IP stack"
 elif [[ "$PIN" == "yes" ]]; then

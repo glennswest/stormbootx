@@ -232,7 +232,7 @@ pub fn ensure_available() -> Presence {
 }
 
 /// `ConnectController` over every handle, then ask again.
-fn connect_all() -> bool {
+pub fn connect_all() -> bool {
     if let Ok(handles) = boot::locate_handle_buffer(SearchType::AllHandles) {
         for h in handles.iter() {
             connect(h.as_ptr());
@@ -529,7 +529,7 @@ fn connect(handle: uefi_raw::Handle) {
 }
 
 /// What to tell an operator when there is no TCP4 stack to be had.
-pub const NO_TCP4_ADVICE: &str = "EFI_TCP4 is not present. Binding the firmware's own drivers did not      produce it, and neither did waiting five seconds and binding again. Enable network boot / the NIC's UEFI PXE stack in setup so      the platform loads its TCP/IP drivers, then run tcp4probe on this model to      confirm. Note that Fedora's OVMF ships no upper network stack at all, so      this is expected under that emulator.";
+pub const NO_TCP4_ADVICE: &str = "EFI_TCP4 is not present. Binding the firmware's own drivers did not      produce it, and neither did waiting five seconds and binding again. Enable network boot / the NIC's UEFI PXE stack in setup so      the platform loads its TCP/IP drivers, then run tcp4probe on this model to      confirm. Note that Fedora's OVMF ships no upper network stack at all, so      this is expected under that emulator. A platform that has the stack but no      UEFI driver for its NICs (legacy option ROMs only) needs one on the media,      in \\stormboot\\drivers (see scripts/build-nic-drivers.sh).";
 
 pub struct Tcp4Socket {
     sb: *mut ServiceBinding,
