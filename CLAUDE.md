@@ -335,22 +335,28 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       would copy. Decisions needed: where the engine comes from, where a
       TCP4-capable OVMF comes from, and whether TCG (no KVM) is acceptable.
 
-- [ ] #15 — default image. **The stormbootx half is done (2026-09-27).**
-      The fallback lives in the engine: since stormblock v17.0.0 (#107,
-      `claim_boothost` in `src/mgmt/api/synonyms.rs`), `POST
-      …/boothost/<tag>/claim` for a tag with no synonym creates
-      `boothost/<tag>` pinned to whatever `boothost/default` names, and boots
-      it. So stormbootx keeps claiming its own tag. The only change here was
-      relaying the engine's 404 `error` text (`no synonym boothost/<tag> and no
-      boothost/default to give a new machine`) on the console. sc-build passes.
-      **Still open on:**
-      - forge runs stormblock **13.7.0** (checked 2026-09-27 via
-        `/api/v1/health`) and has no `boothost/default`, so nothing can serve
-        the fallback yet. Upgrading forge is a stormcos release, not this repo.
-      - stormcentral#29 / stormipmi: something has to set and manage
-        `boothost/default`.
-      - #4: the new machine registering itself by its tag.
-      - Not yet seen on metal.
+- [ ] #15 — **universal boot (P0, owner 2026-09-27).** One ISO boots any
+      machine with no tag: it claims `boothost/default` carrying its MAC, and
+      the engine (stormblock#200, on stormblock main after v19.3.0) gives it
+      its own CoW clone as host `mac-<hex>`. **In progress 2026-09-27.** Plan:
+      1. `src/universal.rs`, `core`-only with host tests like `intent.rs`: the
+         engine-version gate (strictly after 19.3.0; v17–19.3.0 read `default`
+         as one shared tag, whose claims release each other's clones) and the
+         MAC choice (lowest valid unicast permanent MAC of every SNP handle —
+         "first NIC", but independent of handle order).
+      2. `registry::engine_version` (public `/api/v1/health`) and
+         `registry::claim_default` (`{"mac":…,"serial":…}`), reading
+         `host.name`/`provisional` from the reply.
+      3. `run()`: stated `tag =` claims that tag. Otherwise, on a #200 engine,
+         claim the default by MAC and print `booting the default image as
+         mac-<hex>`; on an older engine, claim the SMBIOS serial as before
+         (the MAC is now #7's floor when there is no serial). Host NQN is the
+         engine's host name for the machine.
+      4. stormblock issue: honour `serial` in a default claim when it already
+         names a host (C2NR0Q2), since a tokenless client can't GET to check.
+      Before this, the client claimed its own tag and the engine fell back
+      (v17), which pins shared SMBIOS serials (Supermicro MicroCloud) to one
+      host.
 
 - [ ] #11 — per-machine boot intent. **The stormbootx half landed on
       2026-09-27** (`src/intent.rs`, `registry::boot_intent`, step 3a in
