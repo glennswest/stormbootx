@@ -312,6 +312,11 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       matches `stormcentral check` (stormbootx: kind `boot`, → stormblock;
       nothing depends on it). "Golden kind" is stated as none (media only),
       with #21 as the open decision.
+      **State at session restart (2026-09-27):** deck written and pushed
+      (e173e48, linked from README, changelog entry). Verification sc-build
+      (build + host tests + optional Marp render if the build box has npx)
+      was running and its result is unknown — re-run it, then close #13 with
+      what it showed.
 
 - [ ] #10 — extract `nvme.rs` (and the claim) into a transport-generic
       `no_std` crate. Prerequisite for stormboot4bios.
