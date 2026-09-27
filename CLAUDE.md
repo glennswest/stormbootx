@@ -298,19 +298,14 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 - [x] #8 — closed as mis-framed: the tag already reaches the appliance as the
       host NQN on every connect; per-host discovery is stormblock's.
 - [x] #9 — `tag = <id>` in `stormboot.conf` overrides SMBIOS.
+- [x] #12 — docs re-audited against the code (2026-09-27, f41d587, sc-build
+      passing). README build → sc-build, stamp format, sockets, a *Ports,
+      health and shipping* section (no listener; ships as media, no golden),
+      stormblock v17 token rule; sbregistry/DNS leftovers in module docs; the
+      unwired MAC identity floor stated (#7). Cross-refs checked against
+      stormblock, stormipmi and stormuefi source.
 
 ### Open, no external blocker
-
-- [ ] #12 — docs rewritten from the code. **In progress 2026-09-27.** The
-      README was rewritten from code on 2026-09-24 (b1347d9); this pass
-      re-audits every claim against the source as of v0.4.0 + #15. Found so
-      far: README build section predates sc-build; the stamp format is
-      `<sha>[-dirty]`, not `b<n>-<sha>`; `main.rs`/`registry.rs` headers still
-      say sbregistry; a stray doc line on `config::stated_fec`; `tmp/` not in
-      `.gitignore`; the NIC table now prints four times (intent read added a
-      socket). Checked against other repos: stormblock claim fallback + 404
-      text, stormipmi `/api/v1/machines/default`, stormuefi. stormbootx is not
-      a stormcos component (no golden) — it ships as boot media.
 
 - [ ] #10 — extract `nvme.rs` (and the claim) into a transport-generic
       `no_std` crate. Prerequisite for stormboot4bios.
