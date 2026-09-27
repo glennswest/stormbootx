@@ -74,14 +74,6 @@ impl Identity {
     }
 }
 
-/// Read the system serial number (the service tag on Dell hardware).
-///
-/// The same SMBIOS Type 1 field every vendor uses and every vendor names
-/// differently: Dell a Service Tag, HPE and Lenovo and Cisco a Serial Number.
-pub fn service_tag() -> Option<String> {
-    unsafe { find_type1_string(table()?, 0x07) }.and_then(|v| usable(&v))
-}
-
 /// The identity this machine should be addressed by, best source first.
 ///
 /// Type 1 covers every major vendor. Type 2 is second because the ODM boards —
