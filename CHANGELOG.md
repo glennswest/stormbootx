@@ -3,6 +3,10 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-09-27
+- **feat(claim): a machine with no `boothost/<tag>` boots the default image (#15).** The fallback is the engine's: since stormblock v17.0.0 a claim for an unassigned tag pins it to `boothost/default` and boots that. stormbootx keeps claiming its own tag, because claiming `default` directly would give every new machine one shared boot clone name. The console now relays the engine's 404 text, which says whether `boothost/default` is missing too, instead of a fixed "no synonym" line.
+- **docs:** README explains the default image. CLAUDE.md records the rule never to claim `boothost/default` directly.
+
 ## [v0.4.0] — 2026-09-27
 
 ### Added

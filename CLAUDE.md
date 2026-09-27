@@ -157,6 +157,11 @@ These have each cost a debugging session. Do not "simplify" them away.
   place for the answer to live and a timeout on every boot in a zone nobody
   published. Don't reintroduce it without a network that needs one image
   booting everywhere with no per-network config.
+- **An unassigned machine claims its own tag, never `boothost/default`.**
+  The default image is the engine's fallback (stormblock ≥ 17): the claim for
+  an unknown tag pins it to `boothost/default`. A client-side second claim of
+  `default` would share one boot clone name across every new machine, and
+  each claim releases the previous clone of that name.
 - **A boot path must never need the network in order to boot without it.**
   Every failure in discovery or attach falls through to the local disk. One
   provisioning outage must not become a fleet outage.

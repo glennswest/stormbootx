@@ -109,9 +109,21 @@ loaded from. It writes to three things:
 
    The reply supplies the address, port, NQN and NSID. Both `address`/`port`
    and `traddr`/`trsvcid` spellings are accepted, with port defaulting to
-   4420 and NSID to 1. A 404 is reported as "no `boothost/<tag>` synonym". Any
-   claim failure falls back to the conf's own `nqn`/`nsid` rather than
-   failing.
+   4420 and NSID to 1. Any claim failure falls back to the conf's own
+   `nqn`/`nsid` rather than failing.
+
+   **A machine nobody has assigned still boots: the default image** (#15).
+   It claims its own tag like any other machine. The engine (stormblock
+   v17.0.0 and later) sees there is no `boothost/<tag>`, creates one pointing
+   at whatever `boothost/default` names, and answers the claim from it. From
+   then on the machine is ordinary: it shows up under its tag and can be
+   moved to its own release. Changing the default later does not move
+   machines already pinned to it. stormbootx never claims `boothost/default`
+   directly. Every new machine would then share one boot clone name, and
+   each claim would release the clone an earlier machine is still running
+   from. A 404 prints the engine's own text, which says when there is no
+   `boothost/default` either. The default is set through stormipmi's
+   `/api/v1/machines/default` (stormcentral#29).
 6. **Attach** (`src/nvme.rs`). The host NQN is
    `nqn.2026-09.lo.storm:host-<tag>`, so the target knows which machine is
    connecting. The console prints the namespace geometry and the transfer
