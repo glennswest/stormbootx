@@ -323,10 +323,12 @@ fn attach_from(body: &str) -> Result<Attach, String> {
     // since stormblock#199. Read inside that object only, so a `"name"`
     // elsewhere in the reply (the volume's) is never taken for the host's.
     // The aliases array holds strings and no braces, so the first `}` ends it.
+    // The `}` stays in the slice: serde_json sorts keys, `provisional` comes
+    // last, and `field` needs a terminator after a bare `true`.
     let host_obj = body.find("\"host\"").and_then(|at| {
         let rest = body[at + 6..].trim_start().strip_prefix(':')?.trim_start();
         let rest = rest.strip_prefix('{')?;
-        Some(&rest[..rest.find('}')?])
+        Some(&rest[..=rest.find('}')?])
     });
     let host = host_obj.and_then(|h| field(h, "name"));
     let provisional = host_obj
