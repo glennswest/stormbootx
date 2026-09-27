@@ -373,6 +373,27 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
         becoming `mac-<hex>` — until then, alias its MAC to it (#199);
       - a metal check: two machines, one ISO, no tag, two clones.
 
+- [ ] #23 — **identity from DNS (P1, owner 2026-09-27). In progress
+      2026-09-27.** A machine claims `boothost/<its DNS name>`, the short
+      label (the engine names hosts `server3`, `stormblock1`; stormblock#199).
+      Order: `tag =`/`name =` in the conf → DHCP option 12 (+15 for the
+      domain) from the lease of **the interface that reached the engine** →
+      PTR of that address, asked over **TCP** of the option-6 DNS server
+      (microdns answers DNS/TCP, checked on g8 and g10; no UDP stack needed)
+      → #15's default-by-MAC → serial. Plan:
+      1. `src/dnsname.rs`, `core`-only with host tests: DHCP option walk
+         (12/15/6), hostname validation, PTR query build and answer parse
+         (compression pointers).
+      2. `Tcp4Socket::interface()` (MAC + station address);
+         `dhcp4::reply_for(mac)` reads the BOUND reply packet from a fresh
+         child's mode data (service-level in EDK2, so the platform's own
+         lease shows); a DNS/TCP PTR query in `registry.rs`' style.
+      3. `run()`: the health read comes first (it brings up the network),
+         then the name, then intent and claim. The name claim carries
+         `{mac, serial}`; a 404 moves on to the next source.
+      4. stormblock: an unknown `boothost/<name>` claimed with a MAC/serial
+         that already belongs to a host should reach that host.
+
 - [ ] #11 — per-machine boot intent. **The stormbootx half landed on
       2026-09-27** (`src/intent.rs`, `registry::boot_intent`, step 3a in
       `run()`). It reads `GET /api/v1/synonyms/boothost/<tag>/intent` before
