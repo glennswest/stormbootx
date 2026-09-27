@@ -115,6 +115,14 @@ pub const BOOTHOST_NS: &str = "boothost";
 ///
 /// Which image that is stays a fleet decision made next to the images — moving
 /// this machine is a `PUT` on its synonym, not a visit to the machine.
+///
+/// **A machine nobody has assigned claims its own tag too, never
+/// `boothost/default`** (#15). The default is the engine's fallback: a claim
+/// for a tag with no synonym pins that tag to whatever `boothost/default`
+/// names, creating `boothost/<tag>`, and from then on it is an ordinary
+/// machine that stormcentral can move. Claiming `default` directly would give
+/// every new machine the same boot clone name, so each one's claim would
+/// release the clone an earlier one is still running from.
 pub fn claim_boothost(
     server: [u8; 4],
     port: u16,
@@ -128,7 +136,16 @@ pub fn claim_boothost(
         // Worth separating from every other failure: it is not a fault, it is
         // this machine having no image assigned yet, and the console line that
         // says so is the one that tells an operator what to do about it.
-        return Err(format!("no {BOOTHOST_NS}/{service_tag} synonym on this engine"));
+        //
+        // The engine's own words are the better line when it gives them. Since
+        // stormblock v17 a 404 here means there is neither this tag's synonym
+        // *nor* a `boothost/default` to give a new machine (#15), and it says
+        // so. An older engine never looks for the default, and its text says
+        // only which synonym is missing.
+        return Err(match field(body, "error") {
+            Some(e) => format!("the engine has no image for {service_tag}: {e}"),
+            None => format!("no {BOOTHOST_NS}/{service_tag} synonym on this engine"),
+        });
     }
     if !(200..300).contains(&status) {
         return Err(format!("claim returned HTTP {status}: {}", body.trim()));
