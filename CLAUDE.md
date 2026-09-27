@@ -12,8 +12,9 @@ has no network code at all. A node booting from its own drive runs stormuefi
 alone. Legacy BIOS is **stormboot4bios** (planned, own repo; both stages in one
 loader, and #10 is its prerequisite here).
 
-Read the cross-project rules in `../CLAUDE.md` first — in particular **build on
-`dev.g8.lo`, never on the Mac**, and **nothing persists on the SSD**.
+Read the cross-project rules in `../CLAUDE.md` first — in particular **build
+with `sc-build` after pushing, never on this VM and never as root**, and
+scratch files go in `tmp/`.
 
 ## Build
 
@@ -37,12 +38,8 @@ target is `x86_64-unknown-uefi` and the code is entirely firmware-facing.
 
 `src/sha256.rs` is the one exception, and it is worth keeping. It touches only
 `core` and names no `crate::` item, so it compiles standalone as its own crate
-and the FIPS vectors can actually be run:
-
-```bash
-rustc --edition 2021 --test src/sha256.rs -o $CARGO_TARGET_DIR/sha256-test && \
-  $CARGO_TARGET_DIR/sha256-test
-```
+and the FIPS vectors can actually be run (the `rustc --test` lines in the
+`sc-build` command above).
 
 `--edition 2021` is not optional: bare `rustc` defaults to edition 2015, where
 `core` is not in scope and the file will not compile even though it is correct.
@@ -448,9 +445,9 @@ and broke the fabric later (see the `#7` correction). The rest held.
 
 ### Known follow-ups
 
-- Cosmetic: the per-NIC table reprints on every `connect_within` (the claim
-  opens one socket, the attach opens two), so the ranking prints three times a
-  boot. Rank/print once and pass the socket down.
+- Cosmetic: the per-NIC table reprints on every `connect_within` (the intent
+  read and the claim open one socket each, the attach opens two), so the
+  ranking prints four times a boot. Rank/print once and pass the socket down.
 - The Mellanox presents MTU 1500 to firmware, so the path is not jumbo
   end-to-end even though the switch ports are 9216. Transfer size is unaffected
   (MDTS drives it), but raising the card's UEFI MTU would let a 9000 path show.

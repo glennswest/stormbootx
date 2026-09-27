@@ -52,8 +52,10 @@ loaded from. It writes to three things:
 
 `src/main.rs`, `run()`:
 
-1. **Banner**: version and build stamp (`b<n>-<sha>`, set by the build
-   script), so the console always says which binary is talking.
+1. **Banner**: version and build stamp (`STORMBOOTX_BUILD`: the short commit,
+   with `-dirty` if the tree had changes, set by `build-boot-agent.sh`;
+   `unstamped build` otherwise), so the console always says which binary is
+   talking.
 2. **Identity.**
    - `tag = <id>` in `stormboot.conf` wins over everything.
    - Otherwise SMBIOS (`src/smbios.rs`, via the `_SM3_` or `_SM_` entry in the
@@ -148,8 +150,9 @@ looser version booted a stale Windows install off a local SAS disk.
 
 ## The network path
 
-`src/tcp4.rs` and `src/dhcp4.rs`. A socket is opened for the claim and for
-each NVMe queue, and each open works like this:
+`src/tcp4.rs` and `src/dhcp4.rs`. A socket is opened for the intent read,
+the claim, and each NVMe queue (admin and one I/O), and each open works like
+this:
 
 - **Every TCP4 interface is tried**, ranked by link state and then by
   descending MTU, because each NIC carries its own stack. The ranking is
@@ -162,8 +165,8 @@ each NVMe queue, and each open works like this:
   3. a DHCP client of its own over `EFI_DHCP4`, once per interface, matched
      to the TCP4 interface by MAC. The lease is stated explicitly in
      `Tcp4ConfigData`.
-- Timeout: 30 s per operation (`Tcp4Socket::connect`), for both the claim and
-  the attach.
+- Timeout: 30 s per operation (`Tcp4Socket::connect`), for the intent read,
+  the claim and the attach. The console's `connect` uses 8 s.
 
 ## The NVMe/TCP initiator
 
@@ -237,26 +240,27 @@ A stick that boots it is made with `--probe` (see *Getting it onto a stick*).
 
 ## Build
 
-On `dev.g8.lo`, never the workstation:
+Never on a workstation, and never as root. Push, then run `sc-build` from the
+checkout. It fetches the pushed commit onto the build box (`dev.g8.lo`, as the
+unprivileged `stormbuild` user), builds it in a scratch directory and deletes
+it. The default `cargo build && cargo test` does not suit a `no_std` UEFI
+crate, so name the command:
 
 ```bash
-export CARGO_TARGET_DIR=/build/cargo/stormbootx
-cargo build --release --target x86_64-unknown-uefi
+sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
+  rustc --edition 2021 --test src/intent.rs -o t/intent-test && ./t/intent-test && \
+  rustc --edition 2021 --test src/sha256.rs -o t/sha256-test && ./t/sha256-test'
 ```
 
-That builds `stormbootx.efi` (~110 KB) and `tcp4probe.efi` (~35 KB). There is
-no host target and no `cargo test`. `src/sha256.rs` and `src/intent.rs` are
-the exceptions: each depends only on `core` and runs its tests standalone:
+That builds `stormbootx.efi` and `tcp4probe.efi`, then runs the two host test
+suites. There is no host target and no `cargo test`. `src/sha256.rs` and
+`src/intent.rs` are the exceptions: each uses only `core` and names no
+`crate::` item, so each compiles as its own crate with `rustc --test`.
+`--edition 2021` is required, because bare `rustc` defaults to 2015, where
+`core` is not in scope.
 
-```bash
-rustc --edition 2021 --test src/sha256.rs -o $CARGO_TARGET_DIR/sha256-test && \
-  $CARGO_TARGET_DIR/sha256-test
-```
-
-```bash
-rustc --edition 2021 --test src/intent.rs -o $CARGO_TARGET_DIR/intent-test && \
-  $CARGO_TARGET_DIR/intent-test
-```
+`Cargo.lock` is tracked, and `uefi` is pinned at 0.39 / `uefi-raw` at 0.15.
+Bump them deliberately, in their own commit.
 
 ### Getting it onto a stick
 
@@ -276,6 +280,28 @@ El Torito `.iso` for iDRAC virtual media instead.
 
 `--help` lists the rest (`--api-port`, `--port`, `--size`, `--binary`,
 `--output`).
+
+## Ports, health and shipping
+
+stormbootx is a UEFI application, so it has no daemon, listens on no port and
+has no health or metrics endpoint. What it reports goes to the console. It
+only makes outbound connections:
+
+| To | Default | Set by |
+|---|---|---|
+| engine API (intent read, claim) | `<portal>:9090`, HTTP/1.1 | `api_port` |
+| NVMe/TCP portal (attach) | `<portal>:4420`, or what the claim returns | `port`, or the claim reply |
+
+The portal defaults to `192.168.31.202` (forge). Since stormblock v17.0.0 the
+engine API requires a token for everything except `POST
+…/boothost/<tag>/claim`. stormbootx sends none, because firmware has nowhere to
+keep one. The intent route (stormblock#148) will need the same exemption, and
+until it has one a read gets a 401, which reads as `auto`.
+
+**How it ships:** as boot media, not as a stormcos component. There is no
+golden for it. `scripts/build-boot-agent.sh` writes the `.efi` and a
+`stormboot.conf` onto a `.img` or `.iso` (below), which goes onto a USB stick
+or iDRAC virtual media.
 
 ## Firmware requirements
 
@@ -329,7 +355,9 @@ Open issues:
 | #4 | inventory registration |
 | #7 | the identity follow-ups |
 | #10 | extracting the initiator for stormboot4bios |
+| #13, #14 | a presentation; test containers per the stormcos test standard |
+| #15 | the default image: client side done, waiting on an engine that serves it |
 
 Related: [stormuefi](https://github.com/glennswest/stormuefi) (stage two) and
-[stormnetboot](https://github.com/glennswest/stormnetboot) (the boot server and
-the post-`switch_root` agent).
+[stormnetboot](https://github.com/glennswest/stormnetboot) (the earlier
+network-boot project, whose PXE chain this USB/NVMe-TCP path retired).

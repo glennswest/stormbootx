@@ -4,6 +4,8 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-09-27
+- **docs(#12):** documentation re-audited against the code. README: the build section uses `sc-build` (it still showed a direct cargo build on dev); the build stamp is the short commit plus `-dirty`, not `b<n>-<sha>`; the intent read is counted among the sockets; a new *Ports, health and shipping* section (no listener, no health or metrics endpoint, outbound to the engine API and the NVMe/TCP portal, and shipped as boot media with no golden); the stormblock v17 token rule and what it means for the intent route; open-issue table and the stormnetboot link corrected. `main.rs` and `registry.rs` module docs name the engine rather than sbregistry. A stray doc line moved in `config.rs`. CLAUDE.md now points at `sc-build` and `tmp/`.
+- **chore:** `.gitignore` covers `tmp/`, logs and key/env files.
 - **feat(claim): a machine with no `boothost/<tag>` boots the default image (#15).** The fallback is the engine's: since stormblock v17.0.0 a claim for an unassigned tag pins it to `boothost/default` and boots that. stormbootx keeps claiming its own tag, because claiming `default` directly would give every new machine one shared boot clone name. The console now relays the engine's 404 text, which says whether `boothost/default` is missing too, instead of a fixed "no synonym" line.
 - **docs:** README explains the default image. CLAUDE.md records the rule never to claim `boothost/default` directly.
 - **docs(#15):** work plan moves #15 to blocked. The client side builds and passes under sc-build, but forge runs stormblock 13.7.0 with no `boothost/default`, so the fallback can't be served until forge is on v17 or later and stormcentral#29 sets the default.
