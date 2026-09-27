@@ -57,7 +57,7 @@ and boots a pallet from that disk.
 ## How it works
 
 ```
- tag= / SMBIOS / NIC  ──►  identity (stated tag, serial, MAC)
+ name= / DHCP / PTR / NIC / SMBIOS ──►  identity (stated, DNS name, MAC, serial)
                         │
  engine :9090   ──►  GET  /api/v1/health               version: default claim safe?
                 ──►  GET  …/boothost/<tag>/intent    local → fall through
@@ -78,8 +78,10 @@ Any failure on any arrow → **fall through to the local disk**.
 
 ## What it does today (1/2): choosing and attaching
 
-- **Identity** (`smbios.rs`, `config.rs`, `tcp4::machine_mac`): `tag =` wins;
-  else SMBIOS Type 1 → 2 → 3 serial; and the lowest usable NIC MAC.
+- **Identity** (`config.rs`, `dnsname.rs`, `tcp4::machine_mac`, `smbios.rs`):
+  `name =` wins; else the **DNS name** (DHCP option 12, else PTR over
+  DNS/TCP) claims `boothost/<first label>` (#23); then the lowest usable NIC
+  MAC (#15); then the SMBIOS Type 1 → 2 → 3 serial.
   Placeholders (`Default string`, `To be filled by O.E.M.`, …) are rejected.
 - **Boot intent** (`intent.rs`): `install` / `local` / `auto`. Only an explicit
   `local` skips the claim; **any doubt reads as `auto`**.
@@ -128,6 +130,7 @@ on the console. Outbound only:
 
 | To | Default | What |
 |---|---|---|
+| DNS server | option 6, TCP 53 | the PTR of its own address (#23) |
 | engine API | `<portal>:9090` | `GET /api/v1/health`, `GET …/boothost/<tag>/intent`, `POST …/boothost/{default,<tag>}/claim` |
 | NVMe/TCP portal | `<portal>:4420` or the claim's | the attach |
 
@@ -146,7 +149,7 @@ Read from the volume it booted from. `key = value`, each key independent.
 | `port` / `api_port` | `4420` / `9090` | NVMe/TCP / engine API |
 | `nqn` / `nsid` | `…lo.g16:stormcos` / `2` | used only if the claim fails or is off |
 | `claim` | `yes` | `no` pins the stick to `nqn`/`nsid` |
-| `tag` | SMBIOS | states the identity |
+| `name` (or `tag`) | DNS name, MAC, SMBIOS | states the identity |
 | `fec` | — | recovery sticks only: write FEC, warm-reset |
 
 ---

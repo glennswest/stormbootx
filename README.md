@@ -56,8 +56,19 @@ loaded from. It writes to three things:
    with `-dirty` if the tree had changes, set by `build-boot-agent.sh`;
    `unstamped build` otherwise), so the console always says which binary is
    talking.
-2. **Identity.**
-   - `tag = <id>` in `stormboot.conf` wins over everything.
+2. **Identity.** A machine is known to the engine by its **DNS name**
+   (#23, stormblock#199); its serial and MAC are aliases.
+   - `name = <id>` (or the older `tag = <id>`) in `stormboot.conf` wins over
+     everything, and is the only name tried.
+   - Otherwise, once the engine has been reached (step 5), the **DNS name**:
+     DHCP option 12 from the lease on the interface that reached the engine
+     (option 15 adds the domain for the console), else the **PTR** of that
+     interface's address, asked of the option 6 DNS server over **DNS/TCP**
+     (`src/dnsname.rs`; microdns answers over TCP, and TCP4 is the one stack
+     this binary needs anyway). The engine knows hosts by the first label, so
+     `server3.g10.lo` claims `boothost/server3`. The console prints
+     `name : server3.g10.lo (from DHCP)`. A name that is not a valid DNS name
+     is ignored, not guessed at.
    - Otherwise SMBIOS (`src/smbios.rs`, via the `_SM3_` or `_SM_` entry in the
      EFI configuration table): the serial of Type 1 (System), then Type 2
      (Baseboard), then Type 3 (Chassis). The first one that is not a
@@ -91,8 +102,9 @@ loaded from. It writes to three things:
    ```
    GET http://<portal>:<api_port>/api/v1/synonyms/boothost/<tag>/intent   → {"intent":"…"}
 
-   (A machine claiming the default reads it under its MAC's twelve hex
-   digits, which the engine resolves as an alias.)
+   (It is read under the stated name, else the DNS name, else — for a machine
+   claiming the default — its MAC's twelve hex digits, which the engine
+   resolves as an alias, else the serial.)
    ```
 
    | intent | what stormbootx does |
@@ -111,12 +123,22 @@ loaded from. It writes to three things:
    `install` back to `local` after the install is the engine's job.
    `auto` does not yet boot an installed, current disk locally. That needs #3.
 
-   Then it claims the machine's image, one of two ways:
+   First it reads the engine's version from `GET /api/v1/health`. That is the
+   boot's first request, so it also brings the network up and tells which
+   interface to read the DNS name from. Then it claims the machine's image,
+   best name first:
 
    ```
-   POST http://<portal>:<api_port>/api/v1/synonyms/boothost/<tag>/claim      body {}
-   POST http://<portal>:<api_port>/api/v1/synonyms/boothost/default/claim    body {"mac":"…","serial":"…"}
+   POST …/api/v1/synonyms/boothost/<stated name>/claim   body {}
+   POST …/api/v1/synonyms/boothost/<DNS name>/claim      body {"mac":"…","serial":"…"}
+   POST …/api/v1/synonyms/boothost/default/claim         body {"mac":"…","serial":"…"}
+   POST …/api/v1/synonyms/boothost/<serial>/claim        body {}
    ```
+
+   A stated name is the only one tried. Otherwise a 404 moves on to the next
+   line, and any other failure falls back to the resolved target. The DNS
+   claim carries the MAC and serial so the engine can tie a name it has not
+   seen to a host it already knows (stormblock#204).
 
    The reply supplies the address, port, NQN and NSID. Both `address`/`port`
    and `traddr`/`trsvcid` spellings are accepted, with port defaulting to
@@ -151,7 +173,8 @@ loaded from. It writes to three things:
 6. **Attach** (`src/nvme.rs`). The host NQN is
    `nqn.2026-09.lo.storm:host-<name>`, so the target knows which machine is
    connecting: the engine's name for the machine from the claim reply
-   (`mac-<hex>` for one it booted as the default), else the tag. The console prints the namespace geometry and the transfer
+   (`mac-<hex>` for one it booted as the default), else the DNS name, else the
+   tag. The console prints the namespace geometry and the transfer
    size.
 7. **Publish** (`src/blockio.rs`). BlockIO is installed with the namespace's
    own block size (read from FLBAS, so 4096 on a 4K namespace). A device path
@@ -249,7 +272,7 @@ others.
 | `nsid` | `2` | namespace if the claim fails or is off |
 | `api_port` | `9090` | engine API port on the portal host |
 | `claim` | `yes` | `no` / `false` / `0` / `off` skips the claim |
-| `tag` | none (SMBIOS) | states the identity |
+| `name` (or `tag`) | none (DNS name, then MAC, then SMBIOS) | states the identity; the only name claimed |
 | `fec` | none | **recovery sticks only**: write this FEC and warm-reset |
 | `stamp` | none | parsed, not yet used; for self-update (#2) |
 
@@ -273,12 +296,13 @@ crate, so name the command:
 sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   rustc --edition 2021 --test src/intent.rs -o t/intent-test && ./t/intent-test && \
   rustc --edition 2021 --test src/sha256.rs -o t/sha256-test && ./t/sha256-test && \
-  rustc --edition 2021 --test src/universal.rs -o t/universal-test && ./t/universal-test'
+  rustc --edition 2021 --test src/universal.rs -o t/universal-test && ./t/universal-test && \
+  rustc --edition 2021 --test src/dnsname.rs -o t/dnsname-test && ./t/dnsname-test'
 ```
 
-That builds `stormbootx.efi` and `tcp4probe.efi`, then runs the three host
+That builds `stormbootx.efi` and `tcp4probe.efi`, then runs the four host
 test suites. There is no host target and no `cargo test`. `src/sha256.rs`,
-`src/intent.rs` and `src/universal.rs` are the exceptions: each uses only
+`src/intent.rs`, `src/universal.rs` and `src/dnsname.rs` are the exceptions: each uses only
 `core` and names no `crate::` item, so each compiles as its own crate with
 `rustc --test`.
 `--edition 2021` is required, because bare `rustc` defaults to 2015, where
@@ -315,6 +339,7 @@ only makes outbound connections:
 | To | Default | Set by |
 |---|---|---|
 | engine API (health, intent read, claim) | `<portal>:9090`, HTTP/1.1 | `api_port` |
+| DNS server (PTR of its own address, #23) | option 6 of its DHCP lease, TCP 53 | DHCP |
 | NVMe/TCP portal (attach) | `<portal>:4420`, or what the claim returns | `port`, or the claim reply |
 
 The portal defaults to `192.168.31.202` (forge). Since stormblock v17.0.0 the

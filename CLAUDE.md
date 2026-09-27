@@ -27,7 +27,8 @@ crate, so name the command. This builds the binary and runs both host suites:
 sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   rustc --edition 2021 --test src/intent.rs -o t/intent-test && ./t/intent-test && \
   rustc --edition 2021 --test src/sha256.rs -o t/sha256-test && ./t/sha256-test && \
-  rustc --edition 2021 --test src/universal.rs -o t/universal-test && ./t/universal-test'
+  rustc --edition 2021 --test src/universal.rs -o t/universal-test && ./t/universal-test && \
+  rustc --edition 2021 --test src/dnsname.rs -o t/dnsname-test && ./t/dnsname-test'
 ```
 
 Don't `ls target/...` afterwards. dev sets its own `CARGO_TARGET_DIR`, so the
@@ -54,7 +55,9 @@ intent reply and decides, using `core` only, and the HTTP exchange stays in
 (#15) is the third: the engine-version gate, the MAC choice and the claim
 reply's `host` object, `core` only. `tcp4probe.rs` includes it by `#[path]`
 because `tcp4.rs` uses it, so a new `crate::` use in `tcp4.rs` must be
-carried there too (#24 was that).
+carried there too (#24 was that). `src/dnsname.rs` (#23) is the fourth:
+DHCP option parsing and the PTR wire format, tested against microdns
+replies captured on 2026-09-27.
 
 `Cargo.lock` is tracked, as it should be for anything that produces a binary.
 Without it every build resolved fresh, and this is a firmware binary whose
@@ -86,6 +89,7 @@ deliberately, in its own commit, and rebuild.
 | `src/blockio.rs` | publish the namespace as a block device, then chain-load its `BOOTX64.EFI` |
 | `src/intent.rs` | the boot intent (`install`/`local`/`auto`) read before the claim; every doubt is `auto` |
 | `src/registry.rs` | read the intent; claim `boothost/<tag>`, or `boothost/default` by MAC; read the engine's version; also the old sbregistry `/v1/clones/claim` path, compiled out by `USE_REGISTRY = false` |
+| `src/dnsname.rs` | the machine's DNS name (#23): DHCP options 12/15/6, PTR query and answer over DNS/TCP |
 | `src/universal.rs` | universal boot (#15): is the engine new enough, which MAC is the machine's, what host the reply named |
 | `src/sha256.rs` | the digest, because `EFI_HASH2` is optional |
 | `src/config.rs` | the target, read from the media rather than compiled in |
@@ -153,13 +157,23 @@ These have each cost a debugging session. Do not "simplify" them away.
   64 KiB. TCP segments to the MSS and never IP-fragments, so frames are not
   the constraint; round trips are, because `read` keeps one command
   outstanding.
-- **There is no DNS in this binary, and the service tag is the selection
-  path.** The portal is a fixed appliance address named on the media or
-  compiled in; *which image* is a `boothost/<tag>` synonym claimed from the
-  engine. Discovery was removed rather than switched off — it was a second
-  place for the answer to live and a timeout on every boot in a zone nobody
-  published. Don't reintroduce it without a network that needs one image
-  booting everywhere with no per-network config.
+- **There is no DNS *discovery* in this binary.** The portal is a fixed
+  appliance address named on the media or compiled in; *which image* is a
+  `boothost/<name>` synonym claimed from the engine. Discovery was removed
+  rather than switched off — it was a second place for the answer to live
+  and a timeout on every boot in a zone nobody published. Don't reintroduce
+  it. The one DNS query here since #23 is the machine asking the PTR of **its
+  own address** for **its own name**, over TCP to the DHCP-given server,
+  and only when DHCP option 12 gave none. It never finds a portal, and a
+  network with no names boots exactly as before.
+- **A machine is its DNS name, and the name is the first label**
+  (#23, stormblock#199: hosts are `server3`, `stormblock1`). It comes from
+  the lease of **the interface that reached the engine**, not any NIC's, because
+  a management port and a storage port may hold different reservations.
+  DHCP and PTR can disagree (g10's `192.168.10.31`: reservation `gb10b`,
+  PTR `gb10.g10.lo`); DHCP wins, as the owner ordered. A 404 on the name
+  moves on to the MAC. The name claim carries `{mac, serial}` so the engine
+  can tie a new name to a host it knows (stormblock#204).
 - **A machine nothing has named claims `boothost/default` by its MAC — and
   only from an engine with stormblock#200** (#15, universal boot). There
   the engine keys the claim on the MAC and gives each machine its own
