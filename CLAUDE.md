@@ -382,6 +382,10 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       binary builds and `intent.rs`'s 7 host tests pass. **Still open on:**
       - **stormblock#148**: the engine route, the one-shot `install` → `local`
         reset, and carrying `install` in the claim reply for the initramfs.
+        **Re-checked 2026-09-27:** not on stormblock main; forge on 13.7.0.
+        Added to #148: resolve the name through `canonical()`/`host_of`,
+        because since #15 a machine booted from the default reads its intent
+        under its MAC (12 hex), and leave the GET open without a token.
         Until it lands every read is a 404 and every boot is `auto`, exactly
         as before.
       - **#3**: `auto` booting an installed, current disk locally (the owner's
