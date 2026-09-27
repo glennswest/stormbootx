@@ -290,7 +290,17 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 - [ ] #10 — extract `nvme.rs` (and the claim) into a transport-generic
       `no_std` crate. Prerequisite for stormboot4bios.
 - [ ] #11 — per-machine boot intent (`install` / `local` / `auto`) read
-      before the claim.
+      before the claim. **In progress 2026-09-27.** Plan: `src/intent.rs`, a
+      standalone module like `sha256.rs` (core only, host-testable with
+      `rustc --test`), parses the reply to `GET
+      /api/v1/synonyms/boothost/<tag>/intent`, the contract proposed on
+      **stormblock#148**, and decides. `local` falls through to the disk
+      with no claim and no clone. `install` claims as today. `auto`, and any
+      failure to read (404, no route, engine down, bad body), also claims as
+      today. `auto` stays today's behaviour until #3 can tell an installed,
+      current disk apart, which needs stormcos#30. The engine route doesn't
+      exist yet (stormblock#148), so on metal every read is a 404 and reads
+      as `auto`. Nothing regresses while it lands.
 
 ### Blocked on other repos
 
