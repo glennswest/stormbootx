@@ -307,6 +307,12 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
+- [ ] #13 — presentation at `docs/presentation.md` (Marp). **In progress
+      2026-09-27.** Drawn from the #12-audited README and the code; slide 2
+      matches `stormcentral check` (stormbootx: kind `boot`, → stormblock;
+      nothing depends on it). "Golden kind" is stated as none (media only),
+      with #21 as the open decision.
+
 - [ ] #10 — extract `nvme.rs` (and the claim) into a transport-generic
       `no_std` crate. Prerequisite for stormboot4bios.
 
