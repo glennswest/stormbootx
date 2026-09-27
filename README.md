@@ -289,7 +289,7 @@ El Torito `.iso` for iDRAC virtual media instead.
 
 ## Status
 
-v0.3.8. Running on hardware since 2026-09-05. A Dell PowerEdge R230 (C2NR0Q2)
+v0.4.0. Running on hardware since 2026-09-05. A Dell PowerEdge R230 (C2NR0Q2)
 booted the ISO over iDRAC virtual media, claimed `boothost/C2NR0Q2`, attached
 a 32 GiB 4K clone from forge over 25 GbE, and chain-loaded stormuefi, which
 started stormcos:
