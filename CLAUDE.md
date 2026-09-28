@@ -471,12 +471,18 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       binary builds and `intent.rs`'s 7 host tests pass. **Still open on:**
       - **stormblock#148**: the engine route, the one-shot `install` → `local`
         reset, and carrying `install` in the claim reply for the initramfs.
-        **Re-checked 2026-09-27:** not on stormblock main; forge on 13.7.0.
-        Added to #148: resolve the name through `canonical()`/`host_of`,
-        because since #15 a machine booted from the default reads its intent
-        under its MAC (12 hex), and leave the GET open without a token.
-        Until it lands every read is a 404 and every boot is `auto`, exactly
-        as before.
+        **2026-09-28: on stormblock main (0e3c47b), unreleased** (3 commits
+        past v19.4.0); forge on 13.7.0. GET is open and resolves names and
+        aliases through `host_of`; the reply is `{host, intent, updated_at}`
+        (+`resolved_from`); PUT is admin; `POST …/installed {volume}` resets
+        `install` → `local` (the node's OS sends it, not this binary); the
+        claim reply carries `intent`. Until forge runs it every read is a
+        404 and every boot is `auto`, exactly as before.
+      - **In progress 2026-09-28:** read the intent down the same name list
+        the claim uses (DNS name → MAC → serial/tag; a stated tag alone),
+        moving on only on a 404. A `local` set on a host the engine knows by
+        its MAC was missed whenever the DNS name was not yet a host or alias
+        (stormblock#204). Plus a host test on the engine's exact reply shape.
       - **#3**: `auto` booting an installed, current disk locally (the owner's
         "new golden **and** requested" rule). This needs stormcos#30.
       - Not yet seen on metal: nothing can serve `local` until #148 lands.
