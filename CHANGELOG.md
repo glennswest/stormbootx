@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-09-28
+- **docs(build-boot-agent):** the closing hint no longer says "move the DNS record"; portal discovery over DNS was removed on 2026-09-03, and which image boots is the boothost synonym.
 - **fix(intent): read the boot intent down the claim's name list (#11).** It was read under one name: a DNS name the engine did not yet know (stormblock#204) gave a 404, read as `auto`, and hid a `local` set on the host the engine knows by the machine's MAC. It now asks the DNS name, the MAC (when claiming the default) and the serial in the claim's order, moving on only on a 404; a stated name is still the only one asked. A host test covers the engine's own reply shape (stormblock 0e3c47b, #148). README and `intent.rs` describe the landed route.
 - **docs(#23):** work plan records 648e366's verification (sc-build: build and all four host suites) and that the issue's test now waits on server1 booting an ISO of 648e366 or later.
 - **fix(identity): the name comes through on microdns networks, and is the machine's (#26).** The reply of a lease stormbootx ran itself is kept and read for the name, since firmware may not give it back (server1 found none). `dns =` in `stormboot.conf` (`build-boot-agent.sh --dns`) names the PTR server when the reply has none. Every way the name comes up empty is printed. A reservation's NIC name (`server1a`) maps to its machine (`server1`): one lowercase letter after a digit is dropped (`dnsname::machine_label`, host-tested).

@@ -254,5 +254,6 @@ cat <<EOF
     dd if=$OUTPUT of=/dev/sdX bs=4M conv=fsync
 
   Retarget it without rebuilding — mount the ESP and edit
-  \stormboot\stormboot.conf, or move the DNS record.
+  \stormboot\stormboot.conf. Which image a machine boots is its
+  boothost synonym on the engine, not anything on the media.
 EOF
