@@ -429,6 +429,11 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       (build + host tests + optional Marp render if the build box has npx)
       was running and its result is unknown — re-run it, then close #13 with
       what it showed.
+      **2026-09-28, in progress:** the deck is re-checked against the code
+      at HEAD (binary size, four host suites, drivers from the media, the
+      shared-serial rule, `dns =`, the MAC floor, #11's route, #21 decided,
+      the server1 run) and rewritten where it drifted; then sc-build with a
+      Marp render if the build box has npx, and close.
 
 - [ ] #10 — extract `nvme.rs` (and the claim) into a transport-generic
       `no_std` crate. Prerequisite for stormboot4bios.
