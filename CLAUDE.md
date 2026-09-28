@@ -478,11 +478,14 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
         `install` → `local` (the node's OS sends it, not this binary); the
         claim reply carries `intent`. Until forge runs it every read is a
         404 and every boot is `auto`, exactly as before.
-      - **In progress 2026-09-28:** read the intent down the same name list
-        the claim uses (DNS name → MAC → serial/tag; a stated tag alone),
-        moving on only on a 404. A `local` set on a host the engine knows by
-        its MAC was missed whenever the DNS name was not yet a host or alias
-        (stormblock#204). Plus a host test on the engine's exact reply shape.
+      - **Done 2026-09-28 (sc-build passing, intent 8/8):** the intent is
+        read down the same name list the claim uses (DNS name → MAC →
+        serial/tag; a stated tag alone), moving on only on a 404. A `local`
+        set on a host the engine knows by its MAC was missed whenever the
+        DNS name was not yet a host or alias (stormblock#204).
+        `the_engines_own_reply` tests 0e3c47b's `intent_body` shape.
+        **Left for the close:** a stormblock release with #148 on forge,
+        then one metal boot with `local` set that prints `nothing claimed`.
       - **#3**: `auto` booting an installed, current disk locally (the owner's
         "new golden **and** requested" rule). This needs stormcos#30.
       - Not yet seen on metal: nothing can serve `local` until #148 lands.
