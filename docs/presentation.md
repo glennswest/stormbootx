@@ -199,8 +199,9 @@ RESULT: remote image is a local disk. Firmware can boot it.
 ```
 
 2026-09-28, Supermicro X9 blade (server1), no UEFI NIC driver in firmware:
-`drivers : 1 of 1 started` → `tcp4 : available` → a claim answered. The
-attach and the name fixes that run exposed are on main, not yet re-run (#26).
+`drivers : 1 of 1 started` → `tcp4 : available` → name `server1` from the
+PTR → `boothost/server1` claimed → NVMe/TCP attach (#26, from the golden).
+Its release disk's `BOOTX64.EFI` is not found at 4096-byte blocks (#33).
 
 ---
 
@@ -208,7 +209,7 @@ attach and the name fixes that run exposed are on main, not yet re-run (#26).
 
 | | What | Waiting on |
 |---|---|---|
-| #26 | server1 attaches and boots | the golden (stormcentral#153) |
+| #33 | the X9 blades boot the attached disk | stormblock#228 (512-byte boot volume) |
 | #11 | intents take effect | a stormblock release with #148 (on main) on forge |
 | #15 | universal boot served | forge on stormblock ≥ 19.4.0, `boothost/default` set, stormblock#202 |
 | #23 | a name the engine hasn't seen reaches its host | stormblock#204 |
@@ -227,7 +228,7 @@ attach and the name fixes that run exposed are on main, not yet re-run (#26).
 - Intents, universal boot and names are in the binary, and inert until the
   engine serves them: forge runs stormblock 13.7.0, so every intent read is
   a 404 (→ `auto`) and there is no `boothost/default`.
-- **P0:** #26 (the X9 blades boot), #15 (one ISO, any machine), #3 and #11
+- **P0:** #33 (the X9 blades boot the attached disk), #15 (one ISO, any machine), #3 and #11
   (together they end the fresh clone on every boot).
 - **Decisions open:** #19 (compare key), #20 (inventory), #22 (test approach).
 

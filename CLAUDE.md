@@ -387,37 +387,17 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       golden (`stormcentral component build stormbootx`), and server1's #26
       test boots from it.
 
-- [ ] #26 — **NIC UEFI drivers from the boot media (P0, 2026-09-27). In
-      progress.** Supermicro X9 blades (server1–8) carry SnpDxe…TcpDxe but no
-      UEFI driver for their NICs (Intel 10G `IBA XE`, ConnectX-3 `FlexBoot`,
-      both legacy-only), so there is no SNP handle and no TCP4. Plan:
-      `src/drivers.rs` loads every `\stormboot\drivers\*.efi` on the boot
-      volume (after a platform `ConnectController` pass, so native drivers
-      claim their NICs first), then connects everything and reports each
-      driver; `scripts/build-nic-drivers.sh` builds iPXE's `intelx` and
-      `hermon` `.efidrv` at a pinned commit; `build-boot-agent.sh --drivers
-      DIR` lays them on the media. Done when server1 prints `tcp4 : available`.
-      **State 2026-09-27:** the generic loader (`src/drivers.rs`,
-      `build-boot-agent.sh --drivers`) is on main and driver-agnostic.
-      **iPXE is the owner-approved INTERIM** (2026-09-27): EFI drivers only
-      (`.efidrv`, no PXE). The long-term driver is a `no_std` Rust
-      SNP crate written from the Intel datasheets, not translated from
-      iPXE (#27). Media now comes from the `stormbootx` golden (#21),
-      never from an ISO kept on dev. Close #26 on server1's
-      `tcp4 : available`, name, claim and attach.
-      **2026-09-28:** server1 on ISO 97045e0 (master): `intelx` gave
-      `tcp4 : available` and a claim; `hermon` hung the boot (now opt-in);
-      the attach failed `CreateEvent: INVALID_PARAMETER` (fixed d9851fb) and
-      the identity was the shared chassis serial (fixed 648e366). The master's
-      rebuild died on the silent iPXE `make` (#28). An ISO of 7fd80dd was
-      built onto dev and then **removed** (nothing is kept on dev; #21): the
-      next server1 test boots the `stormbootx` golden (stormcentral#153).
-      `dns = 192.168.31.252` answers the PTR `192.168.16.100 →
-      server1a.g16.lo` over TCP. forge has server1's image only as
-      `boothost/S11075924402016`, which this build no longer claims; a
-      `boothost/server1` synonym to the same volume is needed for the claim
-      by name to succeed (the master's to create). Close on server1 printing
-      `name … server1`, a claim, and an attach without `CreateEvent`.
+- [x] #26 — **NIC UEFI drivers from the boot media. Closed 2026-09-28**
+      on metal: server1 (Supermicro X9, AMI Aptio 4) booted
+      `golden-stormbootx-74a242a6f0e89f75` (a709f9f): `drivers : 1 of 1
+      started` (iPXE `intelx`, the owner-approved interim; hermon is opt-in,
+      #30), `tcp4 : available`, name `server1a.g16.lo` → `server1` from the
+      PTR, claim `boothost/server1` (the master created it on forge), and an
+      NVMe/TCP attach (nsid 77, 32 GiB at 4096-byte blocks) with no
+      `CreateEvent` failure. What stops the boot after that is #33:
+      `BOOTX64.EFI` `NOT_FOUND` on the 4096-byte namespace, fixed on the
+      engine side (stormblock#228). The Rust drivers replacing iPXE are
+      #27/#29.
 
 - [x] #13 — presentation at `docs/presentation.md` (Marp, 13 slides). Closed
       2026-09-28: re-checked against HEAD (cb326b0) and rewritten where it

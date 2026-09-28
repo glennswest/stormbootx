@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-09-28
+- **docs(#26):** closed on server1's run of `golden-stormbootx-74a242a6f0e89f75` (a709f9f): `ipxe-intelx.efi` loaded from the media, `tcp4 : available`, the name `server1` from the PTR, a claim of `boothost/server1` and an NVMe/TCP attach with no `CreateEvent` failure. The `BOOTX64.EFI` `NOT_FOUND` after the attach is #33. README, the deck and the work plan updated
 - **feat:** `stormnic-ixgbe.efi`, the Rust driver for the blades' Intel 10G, is built into the NIC drivers from a pinned commit (`STORMNIC_IXGBE_REF`, glennswest/stormnic-ixgbe) (#29). Carried as `stormnic-ixgbe.efi.off`, which is not loaded — a scaffold that binds the NIC without a network would take the blades' network away; `STORMNIC_ON_MEDIA=ixgbe` puts it on the media in place of iPXE's intelx, for the on-hardware check (stormnic-ixgbe#7). `STORMNIC-SOURCE.txt` records the commit and digest
 - **docs:** refreshed README, CLAUDE.md and the deck against the code (changes since 2026-09-18):
   - the intro and flow now start with the media's NIC drivers and the name order;

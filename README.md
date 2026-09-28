@@ -474,14 +474,17 @@ starting its bootloader.`
 
 On 2026-09-28 a Supermicro X9 blade (server1), whose firmware has no UEFI
 driver for its NICs, loaded `ipxe-intelx.efi` from the media, got
-`tcp4 : available` and reached the engine. The attach and naming fixes that
-run exposed are on main and wait on a re-run (#26).
+`tcp4 : available` and reached the engine. Booted again from the golden
+(`golden-stormbootx-74a242a6f0e89f75`, a709f9f), it named itself `server1`
+from the PTR, claimed `boothost/server1` and attached its clone over NVMe/TCP
+(#26, closed). The release disk's `BOOTX64.EFI` then read as `NOT_FOUND`
+on that firmware, a 4096-byte-block namespace (#33, stormblock#228).
 
 Open issues:
 
 | Issue | What |
 |---|---|
-| #26 | NIC drivers from the media: server1's attach, waiting on the golden (stormcentral#153) |
+| #33 | X9 blades: `BOOTX64.EFI` not found on a 4096-byte namespace (engine side, stormblock#228); SOL console on ttyS1 |
 | #15 | universal boot: client side done; forge is on stormblock 13.7.0, and there is no `boothost/default` |
 | #23 | identity from DNS: client side done; stormblock#204 and a metal test |
 | #3, #11 | skipping to the disk when nothing changed; a per-machine boot intent (`local` waits on forge running stormblock#148) |
