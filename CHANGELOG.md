@@ -3,6 +3,11 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-09-28
+- **fix(tcp4): never close an event the TCP driver can still signal (#26).** A token that timed out stayed queued, and its event was closed anyway; the connection's abort (at the latest in `Drop`) then signalled freed pool. EDK2 shrugs that off, AMI Aptio 4 did not: server1 failed the NVMe/TCP connect with `CreateEvent failed: INVALID_PARAMETER`. A timed-out token now aborts the connection (`Configure(NULL)`) before its event is closed. Events are created with notify TPL `CALLBACK` instead of `APPLICATION`, and a failing `CreateEvent` names the operation and the current TPL.
+- **fix(drivers): a hanging driver names itself (#26).** Each step (platform bind, each driver's start, the final connect) is printed before it runs, with seconds elapsed. On server1, `ipxe-hermon.efi` hung the boot silently.
+- **chore(drivers):** `build-nic-drivers.sh` builds `intelx` only by default; hermon is opt-in (`IPXE_DRIVERS="intelx hermon"`) until its hang on server1 is understood.
+
 ### 2026-09-27
 - **chore(smbios):** removed the unused `service_tag()`; `identity()` reads the Type 1 serial (then Type 2, Type 3), so the build is warning-free again (#18).
 - **docs(#26):** iPXE `.efidrv` (EFI drivers only, no PXE) is the owner-approved interim; the long-term driver is a Rust crate written from the Intel datasheets (#27).

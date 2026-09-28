@@ -62,7 +62,15 @@ pub fn load_from_media() -> Vec<Loaded> {
         return Vec::new();
     }
 
+    // Each step is announced *before* it runs, with the seconds so far. A
+    // driver that hangs in its start or in binding its NIC never returns, and
+    // on server1 a hang with the summary printed only at the end left the
+    // console silent with nothing to say which driver it was (#26).
+    let t0 = now_secs();
+    uefi::println!("drivers     : {} on the media in {DRIVERS_DIR}", names.len());
+
     // The platform's own drivers first (see the module comment).
+    uefi::println!("    binding the platform's own drivers first");
     let _ = crate::tcp4::connect_all();
 
     let volume_dp = crate::config::boot_volume()
@@ -70,10 +78,15 @@ pub fn load_from_media() -> Vec<Loaded> {
     let out: Vec<Loaded> = names
         .into_iter()
         .map(|name| {
+            uefi::println!("    [{:>3} s] starting {name}", elapsed(t0));
             let result = match volume_dp {
                 Some(dp) => load_one(dp, &name),
                 None => Err("the boot volume has no device path".into()),
             };
+            match &result {
+                Ok(()) => uefi::println!("    [{:>3} s] {name} started", elapsed(t0)),
+                Err(e) => uefi::println!("    [{:>3} s] {name} not started: {e}", elapsed(t0)),
+            }
             Loaded { name, result }
         })
         .collect();
@@ -82,9 +95,27 @@ pub fn load_from_media() -> Vec<Loaded> {
     // platform's MNP/IP4/TCP4 to the SNP handles those produce. Recursive, so
     // one pass reaches the children.
     if out.iter().any(|l| l.result.is_ok()) {
+        uefi::println!("    [{:>3} s] connecting every handle (drivers bind their NICs)", elapsed(t0));
         let _ = crate::tcp4::connect_all();
+        uefi::println!("    [{:>3} s] connected", elapsed(t0));
     }
     out
+}
+
+/// Seconds since midnight from the RTC: coarse, but a hang is measured in
+/// minutes, and it needs no timer protocol. `None` if the RTC will not say.
+fn now_secs() -> Option<u32> {
+    uefi::runtime::get_time()
+        .ok()
+        .map(|t| t.hour() as u32 * 3600 + t.minute() as u32 * 60 + t.second() as u32)
+}
+
+fn elapsed(t0: Option<u32>) -> u32 {
+    match (t0, now_secs()) {
+        // Across midnight the clock wraps; a day is added back.
+        (Some(a), Some(b)) => (b + 86_400 - a) % 86_400,
+        _ => 0,
+    }
 }
 
 /// `LoadImage` by device path, then `StartImage`.

@@ -8,7 +8,8 @@
 # EFI driver, provides that SNP; the platform's own MNP/IP4/TCP4 sit on top.
 #
 #   intelx  -> ipxe-intelx.efi   Intel 82599 / X540 / X552 10G
-#   hermon  -> ipxe-hermon.efi   Mellanox ConnectX-3 (15b3:1003)
+#   hermon  -> ipxe-hermon.efi   Mellanox ConnectX-3 (15b3:1003); opt-in,
+#                                IPXE_DRIVERS="intelx hermon" (hangs server1)
 #
 # The owner-approved INTERIM (2026-09-27): EFI drivers only, no PXE. The
 # long-term driver is a no_std Rust crate from the Intel datasheets (#27).
@@ -28,7 +29,9 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
 IPXE_REPO="https://github.com/ipxe/ipxe.git"
 IPXE_REF="629e28b56c8d61f5c9251114c4d5b390b61857d1"
-DRIVERS=(intelx hermon)
+# hermon is opt-in: on server1 (AMI Aptio 4) it hung the boot in its start or
+# its bind, and stays off the media until that is understood (#26).
+read -r -a DRIVERS <<< "${IPXE_DRIVERS:-intelx}"
 OUTDIR="${1:-/build/images/drivers}"
 
 for tool in gcc make perl git; do

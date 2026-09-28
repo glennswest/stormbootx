@@ -88,20 +88,34 @@ pub fn handle_protocol(handle: uefi_raw::Handle, guid: &Guid) -> Option<*mut cor
     (st == Status::SUCCESS && !iface.is_null()).then_some(iface)
 }
 
-fn new_event() -> Result<uefi_raw::Event, String> {
+/// A completion event for one token: no notify function, polled with
+/// `CheckEvent`.
+///
+/// The notify TPL is ignored for an event with no notify type, but it is
+/// `CALLBACK`, not `APPLICATION`, because a firmware that validates it anyway
+/// is within the letter of the spec (a notify TPL must be above
+/// `APPLICATION`) and a boot path is no place to find out (#26).
+fn new_event(what: &str) -> Result<uefi_raw::Event, String> {
     unsafe {
         let st = uefi::table::system_table_raw().ok_or("no system table")?;
         let bs = st.as_ref().boot_services.as_ref().ok_or("no boot services")?;
         let mut event: uefi_raw::Event = ptr::null_mut();
         let s = (bs.create_event)(
             EventType::empty(),
-            Tpl::APPLICATION,
+            Tpl::CALLBACK,
             None,
             ptr::null_mut(),
             &mut event,
         );
         if s != Status::SUCCESS {
-            return Err(format!("CreateEvent failed: {s:?}"));
+            // Say what state the firmware was in: a TPL left raised by a
+            // driver is the one cause of this that is not a bad argument.
+            let tpl = (bs.raise_tpl)(Tpl::HIGH_LEVEL);
+            (bs.restore_tpl)(tpl);
+            return Err(format!(
+                "CreateEvent for {what} failed: {s:?} (current TPL {})",
+                tpl.0
+            ));
         }
         Ok(event)
     }
@@ -537,6 +551,8 @@ pub struct Tcp4Socket {
     tcp: *mut Tcp4Protocol,
     /// Left over from a receive that returned more than the caller wanted.
     pending: Vec<u8>,
+    /// Set by `pump` when a token did not retire in time; `retire` reads it.
+    timed_out: core::cell::Cell<bool>,
     /// How long `pump` waits for one operation, in `POLL_INTERVAL` turns.
     turns: u32,
 }
@@ -721,6 +737,7 @@ address: nothing answered DHCP on any of them, and none was already configured."
             child,
             tcp,
             pending: Vec::new(),
+            timed_out: core::cell::Cell::new(false),
             turns: (secs as u64 * 1_000_000 / POLL_INTERVAL_US) as u32,
         };
         sock.configure(remote, port, lease)?; // Drop destroys the child.
@@ -767,7 +784,7 @@ address: nothing answered DHCP on any of them, and none was already configured."
     }
 
     fn do_connect(&mut self) -> Result<(), String> {
-        let event = new_event()?;
+        let event = new_event("connect")?;
         let mut token = Tcp4ConnectionToken {
             completion_token: Tcp4CompletionToken {
                 event,
@@ -780,7 +797,7 @@ address: nothing answered DHCP on any of them, and none was already configured."
             return Err(format!("TCP4 Connect rejected: {st:?}"));
         }
         let r = self.pump(&token.completion_token, "connect");
-        close_event(event);
+        self.retire(event);
         r
     }
 
@@ -851,6 +868,30 @@ address: nothing answered DHCP on any of them, and none was already configured."
             .then_some((snp.permanent_address.0, len, addr))
     }
 
+    /// Close a token's event, making sure the stack is done with it first.
+    ///
+    /// A token that timed out is still queued in the TCP driver, and closing
+    /// its event then leaves the driver holding a freed event: it signals it
+    /// when the connection is aborted (at the latest in `Drop`). EDK2 checks
+    /// the event's signature and shrugs; other firmware walks into freed pool,
+    /// and the next `CreateEvent` fails with no reason given (#26, AMI Aptio 4).
+    /// So an unretired token aborts the connection — `Configure(NULL)` retires
+    /// every token with `ABORTED` — before the event goes. The socket is
+    /// unusable afterwards, which a timed-out socket already was.
+    ///
+    /// Keyed on `pump`'s own record of a timeout, not on `CheckEvent`, which
+    /// clears the signal it reports: asked again after `pump` saw it, a
+    /// retired token reads as pending.
+    fn retire(&mut self, event: uefi_raw::Event) {
+        if self.timed_out.take() {
+            unsafe {
+                let _ = ((*self.tcp).configure)(self.tcp, ptr::null_mut());
+                let _ = ((*self.tcp).poll)(self.tcp);
+            }
+        }
+        close_event(event);
+    }
+
     /// Drive the stack until a token retires.
     ///
     /// `Poll` is what gives the TCP driver cycles; without it nothing ever
@@ -867,6 +908,7 @@ address: nothing answered DHCP on any of them, and none was already configured."
             }
             boot::stall(core::time::Duration::from_micros(POLL_INTERVAL_US));
         }
+        self.timed_out.set(true);
         Err(format!("{what} timed out"))
     }
 
@@ -874,7 +916,7 @@ address: nothing answered DHCP on any of them, and none was already configured."
         if data.is_empty() {
             return Ok(());
         }
-        let event = new_event()?;
+        let event = new_event("transmit")?;
         let mut tx = TxData1 {
             push: Boolean::TRUE,
             urgent: Boolean::FALSE,
@@ -900,7 +942,7 @@ address: nothing answered DHCP on any of them, and none was already configured."
             return Err(format!("TCP4 Transmit rejected: {st:?}"));
         }
         let r = self.pump(&token.completion_token, "transmit");
-        close_event(event);
+        self.retire(event);
         r
     }
 
@@ -908,7 +950,7 @@ address: nothing answered DHCP on any of them, and none was already configured."
     /// which may be less than asked for.
     fn recv_some(&mut self, want: usize) -> Result<Vec<u8>, String> {
         let mut buf = vec![0u8; want.clamp(1, 65536)];
-        let event = new_event()?;
+        let event = new_event("receive")?;
         let mut rx = RxData1 {
             urgent: Boolean::FALSE,
             data_length: buf.len() as u32,
@@ -933,7 +975,7 @@ address: nothing answered DHCP on any of them, and none was already configured."
             return Err(format!("TCP4 Receive rejected: {st:?}"));
         }
         let r = self.pump(&token.completion_token, "receive");
-        close_event(event);
+        self.retire(event);
         r?;
         let n = (rx.data_length as usize).min(buf.len());
         buf.truncate(n);

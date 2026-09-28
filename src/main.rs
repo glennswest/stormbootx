@@ -192,11 +192,8 @@ fn run() -> Result<(), String> {
     if !loaded.is_empty() {
         let ok = loaded.iter().filter(|l| l.result.is_ok()).count();
         uefi::println!("drivers     : {ok} of {} started from {}", loaded.len(), drivers::DRIVERS_DIR);
-        for l in &loaded {
-            match &l.result {
-                Ok(()) => uefi::println!("    {}  started", l.name),
-                Err(e) => uefi::println!("    {}  not started: {e}", l.name),
-            }
+        for l in loaded.iter().filter(|l| l.result.is_err()) {
+            uefi::println!("    not started: {}", l.name);
         }
     }
 
