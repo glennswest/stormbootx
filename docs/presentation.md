@@ -161,8 +161,9 @@ Read from the volume it booted from. `key = value`, each key independent.
 - **Packaged** by `scripts/build-boot-agent.sh` into a GPT `.img` (USB stick)
   or `--iso` (iDRAC virtual media). Variants: `--pin`, `--probe`
   (`tcp4probe`), `--fec`.
-- **Golden kind: none.** It is not a stormcos component; the media is
-  carried to the machine. How it should be published is open (#21).
+- **Ships as goldens** (#21, decided 2026-09-28): `stormbootx` (the `.efi`s,
+  ISO and USB image) and `nic-drivers`, written by `deploy/build-golden.sh`.
+  Registration as a stormcentral component is in progress.
 - **Updated** by rewriting the stick. Self-update (#2) is planned.
 - **Firmware needs `EFI_TCP4`** (on Dell: *UEFI Network Stack* on).
   `tcp4probe` checks a new server model first.

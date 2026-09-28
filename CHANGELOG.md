@@ -4,6 +4,9 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-09-28
+- **feat(deploy): `deploy/build-golden.sh` writes the `stormbootx` and `nic-drivers` goldens' trees (#21).** The owner decided that everything is a golden. The script compiles (`--locked`) and writes one golden into the directory it's given, and does nothing else. The `stormbootx` golden holds both `.efi`s, the ISO, the USB image and a tcp4probe ISO, with the drivers on the media. `nic-drivers` holds the iPXE driver and its source note. Each golden has `SHA256SUMS` and a `BUILD` record.
+- **chore(scripts):** `build-boot-agent.sh` and `build-nic-drivers.sh` now default to `tmp/` in the checkout instead of `/build/images`, since nothing may be left on the build box. `build-boot-agent.sh` now builds `--locked`.
+- **docs:** README (*How it ships*), CLAUDE.md and the presentation say stormbootx ships as goldens.
 - **chore:** iPXE is built from our own copy, `glennswest/ipxe` at the same pinned commit (629e28b), never from upstream (owner: "pull the drivers out, and create our own git repo")
 - **fix(build-nic-drivers):** iPXE's `make` prints a line every 20 s while it runs. Its silence once ended an sc-build with the connection closed by the build box (#28).
 - **docs(build-boot-agent):** the closing hint no longer says "move the DNS record"; portal discovery over DNS was removed on 2026-09-03, and which image boots is the boothost synonym.

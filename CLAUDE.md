@@ -67,8 +67,17 @@ should change under a build nobody asked to change it. Bump the pin
 deliberately, in its own commit, and rebuild.
 
 `./scripts/build-boot-agent.sh` is packaging only: it puts the built `.efi` and a
-`stormboot.conf` onto a GPT `.img` (or, with `--iso`, an `.iso` instead) in
-`/build/images`. Nothing in the agent creates media.
+`stormboot.conf` onto a GPT `.img` (or, with `--iso`, an `.iso` instead), by
+default in `tmp/images` in the checkout. Nothing in the agent creates media.
+
+**What ships is a golden, never a file on dev** (owner, 2026-09-28, #21).
+`deploy/build-golden.sh stormbootx|nic-drivers OUT` writes that golden's tree
+into OUT and nothing else (README, *How it ships*). Every build gets a fresh
+drive, and anything left on dev is deleted, so never write outside the job
+(no `/build/images`, no `/build/stormbuild/images`). To look at media in an
+`sc-build`, build it under `t/` and inspect it in the same job. The golden
+request, once stormbootx is a component, is `stormcentral component build
+stormbootx --url http://stormcentral.g8.lo`.
 
 ## Version locations
 

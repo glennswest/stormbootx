@@ -347,10 +347,13 @@ Bump them deliberately, in their own commit.
 
 ### Getting it onto a stick
 
-Packaging only; nothing here runs at boot. `scripts/build-boot-agent.sh`
-(on dev) puts the built `.efi` and a `stormboot.conf` onto boot media in
-`/build/images`: a GPT `.img` to `dd` onto a USB stick, or with `--iso` an
-El Torito `.iso` for iDRAC virtual media instead.
+Packaging only; nothing here runs at boot. What ships is a **golden** (see
+*How it ships* below); these scripts are what the golden build runs, and are
+also usable by hand in a build. `scripts/build-boot-agent.sh` puts the built
+`.efi` and a `stormboot.conf` onto boot media: a GPT `.img` to `dd` onto a
+USB stick, or with `--iso` an El Torito `.iso` for BMC virtual media. Output
+defaults to `tmp/images` in the checkout, which on dev is the build's own
+drive and is deleted with it. Nothing is left on the build box.
 
 ```bash
 ./scripts/build-boot-agent.sh                    # one stick for every machine
@@ -361,8 +364,8 @@ El Torito `.iso` for iDRAC virtual media instead.
 ./scripts/build-boot-agent.sh --fec default      # FEC recovery stick
 
 # NIC drivers for firmware without them (#26): iPXE as EFI drivers
-./scripts/build-nic-drivers.sh /build/images/drivers
-./scripts/build-boot-agent.sh --iso --drivers /build/images/drivers
+./scripts/build-nic-drivers.sh tmp/drivers
+./scripts/build-boot-agent.sh --iso --drivers tmp/drivers
 ```
 
 `build-nic-drivers.sh` builds iPXE's `intelx` (Intel 82599/X540/X552) and
@@ -393,10 +396,24 @@ engine API requires a token for everything except `POST
 keep one. The intent read (stormblock#148) is open in the same way; setting an
 intent needs the token.
 
-**How it ships:** as boot media, not as a stormcos component. There is no
-golden for it. `scripts/build-boot-agent.sh` writes the `.efi` and a
-`stormboot.conf` onto a `.img` or `.iso` (below), which goes onto a USB stick
-or iDRAC virtual media.
+**How it ships: as goldens** (owner, 2026-09-28, #21: everything is a
+golden). Nothing is kept on the build box, and a machine's virtual CD is
+served from the golden (minismbd#7), not from a copied file.
+`deploy/build-golden.sh <golden> OUT` writes one golden's tree into OUT and
+does nothing else, for stormcentral to run into the volume it mounts:
+
+| golden | tree |
+|---|---|
+| `stormbootx` | `bin/stormbootx.efi`, `bin/tcp4probe.efi`, `boot/stormbootx.iso` (BMC virtual media), `boot/stormbootx.img` (USB), `boot/tcp4probe.iso`, `SHA256SUMS`, `BUILD` |
+| `nic-drivers` | `bin/ipxe-intelx.efi`, `IPXE-SOURCE.txt`, `SHA256SUMS`, `BUILD` |
+
+The media carries `\stormboot\drivers` from the nic-drivers golden
+(`--drivers <its bin/>`), or builds the same pinned drivers itself when none
+is given; `BUILD` says which. Its `stormboot.conf` names forge
+(`192.168.31.202`) and `dns = 192.168.31.252`; which image a machine boots is
+its boothost on the engine, so one golden boots every machine. stormbootx is
+being registered as a stormcentral component; until it is, there is no
+golden to request.
 
 ## Firmware requirements
 
