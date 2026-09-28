@@ -20,8 +20,10 @@
 #
 # --probe builds a diagnostic stick that boots tcp4probe instead of the agent.
 #
-# Runs ON the build box (dev.g8.lo). Output goes to /build/images — never
-# /tmp, which on dev is a tmpfs sized at half of RAM.
+# Runs ON the build box (dev.g8.lo). Output defaults to tmp/images in the
+# checkout, which is on the build's own drive and deleted with it: nothing is
+# kept on a build box. What ships is a golden (deploy/build-golden.sh, #21).
+# Never /tmp, which on dev is a tmpfs sized at half of RAM.
 set -euo pipefail
 
 say() { printf '==> %s\n' "$*"; }
@@ -33,7 +35,7 @@ NQN="nqn.2026-09.lo.g16:stormcos"
 NSID="2"
 API_PORT="9090"                              # engine API on the portal host
 ESP_MIB="4"
-OUTDIR="/build/images"
+OUTDIR="$(cd "$(dirname "$0")/.." && pwd)/tmp/images"
 OUTPUT=""
 BIN=""
 PIN="no"
@@ -63,7 +65,7 @@ Options:
   --nsid N         namespace (default 2)
   --size MIB       ESP size (default 4; FAT16 needs >=4085 clusters)
   --binary PATH    prebuilt .efi (default: build it)
-  --output PATH    image path (default /build/images/stormbootx.img)
+  --output PATH    image path (default tmp/images/stormbootx.img in the checkout)
 USAGE
 }
 
@@ -118,7 +120,7 @@ STORMBOOTX_BUILD="$(git -C "$(dirname "$0")/.." rev-parse --short HEAD 2>/dev/nu
 export STORMBOOTX_BUILD
 
     say "building $WANT for x86_64-unknown-uefi"
-    ( cd "$ROOT" && cargo build --release --target x86_64-unknown-uefi --bin "$WANT" )
+    ( cd "$ROOT" && cargo build --locked --release --target x86_64-unknown-uefi --bin "$WANT" )
     BIN="${CARGO_TARGET_DIR:-$ROOT/target}/x86_64-unknown-uefi/release/$WANT.efi"
 fi
 [[ -f "$BIN" ]] || die "no $WANT.efi at $BIN"

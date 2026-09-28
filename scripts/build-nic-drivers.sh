@@ -18,8 +18,10 @@
 # naming the exact source commit. Pinned: a driver on boot media changes only
 # when someone changes IPXE_REF, in its own commit.
 #
-#   scripts/build-nic-drivers.sh [OUTDIR]     (default /build/images/drivers)
-#   scripts/build-boot-agent.sh --iso --drivers /build/images/drivers
+#   scripts/build-nic-drivers.sh [OUTDIR]     (default tmp/drivers in the checkout)
+#   scripts/build-boot-agent.sh --iso --drivers tmp/drivers
+#
+# What ships is the nic-drivers golden: deploy/build-golden.sh nic-drivers OUT.
 #
 # Runs ON the build box (dev.g8.lo); needs gcc, make, perl and git.
 set -euo pipefail
@@ -32,7 +34,7 @@ IPXE_REF="629e28b56c8d61f5c9251114c4d5b390b61857d1"
 # hermon is opt-in: on server1 (AMI Aptio 4) it hung the boot in its start or
 # its bind, and stays off the media until that is understood (#26).
 read -r -a DRIVERS <<< "${IPXE_DRIVERS:-intelx}"
-OUTDIR="${1:-/build/images/drivers}"
+OUTDIR="${1:-$(cd "$(dirname "$0")/.." && pwd)/tmp/drivers}"
 
 for tool in gcc make perl git; do
     command -v "$tool" >/dev/null || die "$tool not installed on the build host"
