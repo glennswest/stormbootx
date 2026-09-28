@@ -49,10 +49,18 @@ git -C "$WORK/ipxe" checkout -q FETCH_HEAD
 TARGETS=()
 for d in "${DRIVERS[@]}"; do TARGETS+=("bin-x86_64-efi/$d.efidrv"); done
 say "building ${TARGETS[*]}"
-make -C "$WORK/ipxe/src" -j"$(nproc)" "${TARGETS[@]}" >"$WORK/make.log" 2>&1 || {
+# make writes only to its log, and a minute of silence over sc-build's ssh
+# once ended in "Connection to dev.g8.lo closed by remote host" (#28). A line
+# every 20 s keeps the session visibly alive.
+( while sleep 20; do say "  still building (${SECONDS}s)"; done ) &
+beat=$!
+rc=0
+make -C "$WORK/ipxe/src" -j"$(nproc)" "${TARGETS[@]}" >"$WORK/make.log" 2>&1 || rc=$?
+kill "$beat" 2>/dev/null; wait "$beat" 2>/dev/null || true
+if [[ $rc -ne 0 ]]; then
     tail -40 "$WORK/make.log" >&2
     die "iPXE build failed"
-}
+fi
 
 mkdir -p "$OUTDIR"
 for d in "${DRIVERS[@]}"; do
