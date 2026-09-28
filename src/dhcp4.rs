@@ -37,6 +37,40 @@ use crate::tcp4::{handle_protocol, ServiceBinding};
 const DHCP4: Guid = guid!("8a219718-4ef5-4761-91c8-c0f04bda9e56");
 const DHCP4_SERVICE_BINDING: Guid = guid!("9d9a39d8-bd42-4a73-a4d5-8ee94be11380");
 
+/// Replies from leases this binary ran itself, by MAC: `(mac, message)`.
+///
+/// Kept because asking the firmware for them again is not reliable: on
+/// server1 (AMI Aptio 4, UEFI 2.3.1) the address came from `lease_for` and
+/// `reply_for`'s fresh child found no reply, so the machine had no DNS server
+/// to ask for its name (#26). UEFI boot services run on one thread and nothing
+/// here is reentrant, which is what makes the `Sync` below honest.
+struct OwnReplies(core::cell::UnsafeCell<Vec<(Vec<u8>, Vec<u8>)>>);
+unsafe impl Sync for OwnReplies {}
+static OWN_REPLIES: OwnReplies = OwnReplies(core::cell::UnsafeCell::new(Vec::new()));
+
+fn own_reply(mac: &[u8]) -> Option<Vec<u8>> {
+    let all = unsafe { &*OWN_REPLIES.0.get() };
+    all.iter().find(|(m, _)| m[..] == *mac).map(|(_, r)| r.clone())
+}
+
+fn keep_reply(mac: &[u8], reply: Vec<u8>) {
+    let all = unsafe { &mut *OWN_REPLIES.0.get() };
+    all.retain(|(m, _)| m[..] != *mac);
+    all.push((mac.to_vec(), reply));
+}
+
+/// The message (header onwards) a `Dhcp4ModeData.reply_packet` points at.
+/// `length` counts the message from the header on; the packet struct is
+/// packed, so the header starts 8 bytes in.
+fn packet_message(packet: *const u8) -> Option<Vec<u8>> {
+    if packet.is_null() {
+        return None;
+    }
+    let length = unsafe { core::ptr::read_unaligned(packet.add(4) as *const u32) } as usize;
+    (240..=65_536).contains(&length)
+        .then(|| unsafe { core::slice::from_raw_parts(packet.add(8), length) }.to_vec())
+}
+
 /// What a completed DHCP exchange yielded.
 #[derive(Debug, Clone, Copy)]
 pub struct Lease {
@@ -81,6 +115,9 @@ pub fn lease_for(mac: &[u8], mac_len: usize) -> Option<Lease> {
 /// configured, so destroying it releases nothing. Firmware that reports no
 /// reply, or a state other than bound, gives `None`, never a guess.
 pub fn reply_for(mac: &[u8], mac_len: usize) -> Option<Vec<u8>> {
+    if let Some(r) = (mac_len > 0 && mac_len <= mac.len()).then(|| own_reply(&mac[..mac_len])).flatten() {
+        return Some(r);
+    }
     let handles = boot::locate_handle_buffer(SearchType::ByProtocol(&DHCP4_SERVICE_BINDING)).ok()?;
     for h in handles.iter() {
         let Some(sb) = handle_protocol(h.as_ptr(), &DHCP4_SERVICE_BINDING) else { continue };
@@ -104,13 +141,7 @@ pub fn reply_for(mac: &[u8], mac_len: usize) -> Option<Vec<u8>> {
             if !ok {
                 return None;
             }
-            // `length` counts the message from the header on; the struct is
-            // packed, so the header starts 8 bytes in.
-            let packet = mode.reply_packet as *const u8;
-            let length = unsafe { core::ptr::read_unaligned(packet.add(4) as *const u32) } as usize;
-            (240..=65_536).contains(&length).then(|| {
-                unsafe { core::slice::from_raw_parts(packet.add(8), length) }.to_vec()
-            })
+            packet_message(mode.reply_packet as *const u8)
         });
         unsafe { let _ = ((*sb).destroy_child)(sb, child); };
         if reply.is_some() {
@@ -168,6 +199,10 @@ fn try_one(sb_handle: uefi_raw::Handle, mac: &[u8], mac_len: usize) -> Option<Le
     {
         unsafe { let _ = ((*sb).destroy_child)(sb, child); };
         return None;
+    }
+
+    if let Some(r) = packet_message(mode.reply_packet as *const u8) {
+        keep_reply(&mac[..mac_len], r);
     }
 
     // The child is deliberately left alive. Destroying it stops the DHCP

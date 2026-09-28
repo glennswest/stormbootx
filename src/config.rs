@@ -146,6 +146,13 @@ pub fn stated_tag() -> Option<String> {
         .or_else(|| field(&text, "tag").filter(|v| !v.is_empty()))
 }
 
+/// The DNS server stated in the config file (`dns = a.b.c.d`), for the PTR
+/// of the machine's own address when its DHCP reply names none or cannot be
+/// read (#26). Absent on ordinary media; the lease's option 6 comes first.
+pub fn stated_dns() -> Option<[u8; 4]> {
+    parse_ipv4(&field(&read_file(CONF_PATH)?, "dns")?)
+}
+
 /// Read a file from the boot volume as text.
 pub fn read_file(path: &str) -> Option<String> {
     let handle = boot_volume()?;

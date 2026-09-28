@@ -153,6 +153,18 @@ These have each cost a debugging session. Do not "simplify" them away.
   TCP4, and no setup switch fixes it. The media carries the driver
   (`\stormboot\drivers`, iPXE `.efidrv`). The platform's own drivers
   bind first, so a media driver never displaces a native one.
+- **Never close an event the TCP driver may still signal** (#26, server1,
+  2026-09-28). A token that timed out is still queued; closing its event and
+  then aborting the connection (`Drop`'s `Configure(NULL)`) signals freed
+  pool. EDK2 checks the signature and shrugs; AMI Aptio 4 did not, and the
+  next `CreateEvent` failed with `INVALID_PARAMETER`. `Tcp4Socket::retire`
+  aborts first. And `CheckEvent` *clears* what it reports, so a token's state
+  is `pump`'s record, never a second `CheckEvent`.
+- **microdns sends no DHCP option 12** (#26). It registers the reservation's
+  name in DNS instead, so on a microdns network the name comes from the PTR,
+  and the reservation names the NIC (`server1a`), not the machine (`server1`).
+- **Serials repeat within a chassis** (#26). Seven X9 blades report the
+  enclosure's serial as Type 1. Placeholders are not the only non-identity.
 - **Proxmox's OVMF does, and it is the emulator to use.** Verified 2026-09-03
   on pve.g8.lo (`pve-edk2-firmware`, Nov 2025) with `tcp4probe` on VM 2062:
   every protocol reads *absent* as found and all nine appear after a

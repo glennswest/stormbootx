@@ -339,6 +339,9 @@ fn run() -> Result<(), String> {
             //     first label. No name is not a failure; the MAC and the
             //     serial are still there.
             if stated.is_none() {
+                if iface.is_none() {
+                    uefi::println!("name        : the engine's interface is unknown, so no lease to read");
+                }
                 dns = iface.and_then(|i| network_name(&i));
                 match &dns {
                     Some((full, _, from)) => uefi::println!("name        : {full}  (from {from})"),
@@ -571,14 +574,32 @@ fn run() -> Result<(), String> {
 
 /// The machine's DNS name from the network it booted on (#23): DHCP option 12
 /// on this interface's lease (with option 15 for the domain), else the PTR of
-/// the interface's address asked of the option 6 DNS server. Returns the full
-/// name, the host label the engine knows it by, and the source.
+/// the interface's address asked of the option 6 DNS server, or of `dns =` in
+/// `stormboot.conf`. Returns the full name, the machine the engine knows it
+/// by, and the source.
+///
+/// Each way this comes up empty says so on the console: on server1 it printed
+/// only `none`, and which of four things had gone wrong took a reading of
+/// microdns's source to find (#26). microdns sends no option 12 at all; it
+/// puts the reservation's name in DNS, so the PTR is the path that matters.
+///
+/// A reservation names the NIC (`server1a`); the machine is `server1`
+/// (`dnsname::machine_label`). The full name printed is the NIC's, as DNS
+/// has it.
 fn network_name(iface: &registry::Interface) -> Option<(String, String, &'static str)> {
     let (mac, mac_len, addr) = iface;
     let reply = dhcp4::reply_for(&mac[..], *mac_len);
     let msg: &[u8] = reply.as_deref().unwrap_or(&[]);
+    let machine = |full: &str| -> Option<String> {
+        let nic = dnsname::host_label(full)?;
+        let m = dnsname::machine_label(nic);
+        if m != nic {
+            uefi::println!("name        : {nic} names this NIC; the machine is {m}");
+        }
+        Some(m.to_string())
+    };
     if let Some(name) = dnsname::dhcp_option(msg, dnsname::OPT_HOST_NAME).and_then(dnsname::text) {
-        match dnsname::host_label(name) {
+        match machine(name) {
             Some(host) => {
                 let domain = dnsname::dhcp_option(msg, dnsname::OPT_DOMAIN)
                     .and_then(dnsname::text)
@@ -587,30 +608,63 @@ fn network_name(iface: &registry::Interface) -> Option<(String, String, &'static
                     Some(d) if !name.contains('.') => format!("{name}.{d}"),
                     _ => name.to_string(),
                 };
-                return Some((full, host.to_string(), "DHCP"));
+                return Some((full, host, "DHCP"));
             }
             None => uefi::println!("name        : DHCP host name {name:?} is not a DNS name; ignored"),
         }
     }
-    let server = dnsname::dhcp_option(msg, dnsname::OPT_DNS).and_then(dnsname::first_dns)?;
-    let full = ptr_lookup(server, *addr)?;
-    let host = dnsname::host_label(&full)?.to_string();
+    let from_lease = dnsname::dhcp_option(msg, dnsname::OPT_DNS).and_then(dnsname::first_dns);
+    let server = match (from_lease, config::stated_dns()) {
+        (Some(s), _) => s,
+        (None, Some(s)) => {
+            uefi::println!(
+                "name        : {}; asking the dns = server",
+                if reply.is_none() { "no DHCP reply readable" } else { "the DHCP reply names no DNS server" }
+            );
+            s
+        }
+        (None, None) => {
+            uefi::println!(
+                "name        : {}, and {} states no dns =",
+                if reply.is_none() {
+                    "no DHCP reply readable on this interface"
+                } else {
+                    "no host name and no DNS server in the DHCP reply"
+                },
+                config::CONF_PATH
+            );
+            return None;
+        }
+    };
+    let [a, b, c, d] = *addr;
+    let [s0, s1, s2, s3] = server;
+    let full = match ptr_lookup(server, *addr) {
+        Ok(f) => f,
+        Err(e) => {
+            uefi::println!("name        : PTR of {a}.{b}.{c}.{d} at {s0}.{s1}.{s2}.{s3}: {e}");
+            return None;
+        }
+    };
+    let host = machine(&full)?;
     Some((full, host, "reverse DNS"))
 }
 
-/// One PTR query over DNS/TCP. Any failure is "no name", never an error: the
-/// machine still has its MAC and serial.
-fn ptr_lookup(server: [u8; 4], addr: [u8; 4]) -> Option<String> {
+/// One PTR query over DNS/TCP. Any failure is "no name", never a failed
+/// boot: the machine still has its MAC. The reason is returned for the
+/// console.
+fn ptr_lookup(server: [u8; 4], addr: [u8; 4]) -> Result<String, String> {
     let id = u16::from_be_bytes([addr[2] ^ 0x5b, addr[3]]);
     let mut query = [0u8; 64];
     let n = dnsname::ptr_query(addr, id, &mut query);
-    let mut sock = tcp4::Tcp4Socket::connect_within(server, 53, 5).ok()?;
-    sock.send(&query[..n]).ok()?;
-    let len = sock.read_exact(2).ok()?;
-    let msg = sock.read_exact(u16::from_be_bytes([len[0], len[1]]) as usize).ok()?;
+    let mut sock = tcp4::Tcp4Socket::connect_within(server, 53, 5)?;
+    sock.send(&query[..n])?;
+    let len = sock.read_exact(2)?;
+    let msg = sock.read_exact(u16::from_be_bytes([len[0], len[1]]) as usize)?;
     let mut out = [0u8; 256];
-    let k = dnsname::ptr_answer(&msg, id, &mut out)?;
-    core::str::from_utf8(&out[..k]).ok().map(String::from)
+    let k = dnsname::ptr_answer(&msg, id, &mut out).ok_or("no PTR record in the answer")?;
+    core::str::from_utf8(&out[..k])
+        .map(String::from)
+        .map_err(|_| "the PTR answer is not text".to_string())
 }
 
 #[entry]

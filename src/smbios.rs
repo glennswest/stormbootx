@@ -38,7 +38,33 @@ pub fn usable(raw: &str) -> Option<String> {
     ) || low.contains("to be filled")
         || low.contains("o.e.m.")
         || v.chars().all(|c| c == '0' || c == '.' || c == '-' || c == ' ');
-    if placeholder { None } else { Some(v.into()) }
+    if placeholder || SHARED.contains(&v) { None } else { Some(v.into()) }
+}
+
+/// Serials known to be carried by more than one machine, treated exactly like
+/// placeholders.
+///
+/// `S11075924402016` is the Type 1 serial of seven of the eight Supermicro X9
+/// blades (server1–8, 2026-09-28): the chassis's number, not the blade's.
+/// Claiming by it would put seven machines on one boothost (#26). The general
+/// case is `chassis_serial_shared` below; this list is for the ones that
+/// slip past it.
+const SHARED: &[&str] = &["S11075924402016"];
+
+/// SMBIOS Type 3 chassis types that hold more than one machine: multi-system
+/// chassis (0x19), blade (0x1C) and blade enclosure (0x1D).
+const MULTI_NODE_CHASSIS: &[u8] = &[0x19, 0x1C, 0x1D];
+
+/// Is the Type 1 serial the chassis's rather than this machine's?
+///
+/// On a multi-node chassis the system serial is often the enclosure's, and
+/// every node in it reports the same one. Equal to the Type 3 serial is not
+/// enough by itself — a Dell R230 reports its service tag in both — so it
+/// counts only when the chassis type says the chassis holds several machines.
+unsafe fn chassis_serial_shared(t: *const u8, system: &str) -> bool {
+    let chassis = find_type_string(t, 3, 0x06);
+    let kind = find_type_byte(t, 3, 0x05).map(|b| b & 0x7F);
+    chassis.as_deref() == Some(system) && kind.is_some_and(|k| MULTI_NODE_CHASSIS.contains(&k))
 }
 
 /// Where the machine's identity comes from, for the console line.
@@ -89,14 +115,20 @@ impl Identity {
 pub fn identity(mac: Option<&str>) -> Option<Identity> {
     let t = table();
     if let Some(t) = t {
-        if let Some(v) = unsafe { find_type_string(t, 1, 0x07) }.and_then(|v| usable(&v)) {
+        let system = unsafe { find_type_string(t, 1, 0x07) }.and_then(|v| usable(&v));
+        // A system serial that is the multi-node chassis's is no machine's
+        // own, and the chassis serial is then skipped for the same reason.
+        let shared = system.as_deref().is_some_and(|v| unsafe { chassis_serial_shared(t, v) });
+        if let Some(v) = system.filter(|_| !shared) {
             return Some(Identity::SystemSerial(v));
         }
         if let Some(v) = unsafe { find_type_string(t, 2, 0x07) }.and_then(|v| usable(&v)) {
             return Some(Identity::BoardSerial(v));
         }
-        if let Some(v) = unsafe { find_type_string(t, 3, 0x06) }.and_then(|v| usable(&v)) {
-            return Some(Identity::ChassisSerial(v));
+        if !shared {
+            if let Some(v) = unsafe { find_type_string(t, 3, 0x06) }.and_then(|v| usable(&v)) {
+                return Some(Identity::ChassisSerial(v));
+            }
         }
     }
     mac.map(|m| Identity::Mac(m.replace(':', "").to_ascii_uppercase()))
@@ -210,6 +242,31 @@ unsafe fn find_type_string(mut p: *const u8, want_type: u8, offset: usize) -> Op
 
         // Skip this structure's string table.
         let mut q = strings;
+        loop {
+            if *q == 0 && *q.add(1) == 0 {
+                q = q.add(2);
+                break;
+            }
+            q = q.add(1);
+        }
+        p = q;
+    }
+    None
+}
+
+/// One byte out of the first structure of `want_type`, by offset, within the
+/// structure's formatted length.
+unsafe fn find_type_byte(mut p: *const u8, want_type: u8, offset: usize) -> Option<u8> {
+    for _ in 0..2048 {
+        let stype = *p;
+        let len = *p.add(1) as usize;
+        if len < 4 || stype == 127 {
+            return None;
+        }
+        if stype == want_type {
+            return (offset < len).then(|| *p.add(offset));
+        }
+        let mut q = p.add(len);
         loop {
             if *q == 0 && *q.add(1) == 0 {
                 q = q.add(2);

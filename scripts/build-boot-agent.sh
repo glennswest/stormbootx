@@ -41,6 +41,7 @@ PROBE="no"
 ISO="no"
 FEC=""
 DRIVERS=""
+DNS=""
 
 usage() {
     sed -n '2,20p' "$0" | sed 's/^# \?//'
@@ -54,6 +55,8 @@ Options:
                    (default|rs|fc|off|autoneg). Absent from a normal stick.
   --drivers DIR    lay DIR's files in \stormboot\drivers; stormbootx loads each
                    *.efi as a NIC driver (#26; scripts/build-nic-drivers.sh)
+  --dns ADDR       DNS server for the PTR of the machine's own address, when
+                   its DHCP reply names none or cannot be read (#26)
   --portal ADDR    NVMe/TCP portal, with --pin (default 192.168.31.202)
   --port N         portal port (default 4420)
   --nqn NQN        subsystem NQN (default nqn.2026-09.lo.g16:stormcos)
@@ -71,6 +74,7 @@ while [[ $# -gt 0 ]]; do
         --fec)    FEC="$2"; shift 2 ;;
         --iso)    ISO="yes"; shift ;;
         --drivers) DRIVERS="$2"; shift 2 ;;
+        --dns)    DNS="$2"; shift 2 ;;
         --api-port) API_PORT="$2"; shift 2 ;;
         --portal) PORTAL="$2"; PIN="yes"; shift 2 ;;
         --port)   PORT="$2"; shift 2 ;;
@@ -172,6 +176,16 @@ if [[ -n "$FEC" ]]; then
 # RECOVERY STICK: write this FEC to every ConnectX port, then warm-reset once.
 # Remove this line (or use a normal stick) as soon as the card is back.
 fec      = $FEC
+CONF
+fi
+
+# Where the machine asks for its own name when the lease does not say (#26).
+if [[ -n "$DNS" ]]; then
+    cat >> "$WORK/stormboot.conf" <<CONF
+
+# The DNS server asked for the PTR of this machine's own address, when its
+# DHCP reply names none or firmware cannot read the reply back.
+dns      = $DNS
 CONF
 fi
 

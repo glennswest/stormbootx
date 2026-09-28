@@ -101,6 +101,25 @@ pub fn host_label(name: &str) -> Option<&str> {
     name.split('.').next()
 }
 
+/// The machine a NIC's name belongs to: `server1a` → `server1`.
+///
+/// A reservation names the **NIC**, and a machine with two ports has two:
+/// `server1a` and `server1b`, `gb10b` beside a machine called `gb10`. The
+/// machine is the name without that suffix (owner, #26). The rule is exactly
+/// that shape: a single lowercase letter after a digit, at the end of the
+/// label. A label with no digit before its last letter (`forge`, `dev`) and
+/// one that ends in a digit (`stormblock1`) is already a machine, and comes
+/// back unchanged.
+pub fn machine_label(host: &str) -> &str {
+    let b = host.as_bytes();
+    match b {
+        [.., d, l] if b.len() >= 3 && d.is_ascii_digit() && l.is_ascii_lowercase() => {
+            &host[..host.len() - 1]
+        }
+        _ => host,
+    }
+}
+
 /// A PTR query for `addr`, framed for DNS over TCP (two-byte length first).
 /// Returns the bytes written into `out`.
 pub fn ptr_query(addr: [u8; 4], id: u16, out: &mut [u8; 64]) -> usize {
@@ -312,5 +331,21 @@ mod tests {
         looped[rdata] = 0xc0;
         looped[rdata + 1] = rdata as u8;
         assert_eq!(ptr_answer(&looped, 0x5342, &mut out), None);
+    }
+
+    #[test]
+    fn a_nic_suffix_is_not_the_machine() {
+        assert_eq!(machine_label("server1a"), "server1");
+        assert_eq!(machine_label("server1b"), "server1");
+        assert_eq!(machine_label("gb10b"), "gb10");
+        assert_eq!(machine_label("server12a"), "server12");
+        // Already a machine.
+        assert_eq!(machine_label("stormblock1"), "stormblock1");
+        assert_eq!(machine_label("server1"), "server1");
+        assert_eq!(machine_label("forge"), "forge");
+        assert_eq!(machine_label("dev"), "dev");
+        // Too short to be a name plus a suffix, and not lowercase.
+        assert_eq!(machine_label("1a"), "1a");
+        assert_eq!(machine_label("server1A"), "server1A");
     }
 }

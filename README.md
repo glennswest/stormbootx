@@ -66,14 +66,27 @@ volume as a NIC driver (#26; absent on ordinary media). It writes to three thing
      (option 15 adds the domain for the console), else the **PTR** of that
      interface's address, asked of the option 6 DNS server over **DNS/TCP**
      (`src/dnsname.rs`; microdns answers over TCP, and TCP4 is the one stack
-     this binary needs anyway). The engine knows hosts by the first label, so
+     this binary needs anyway). **microdns sends no option 12**: it puts the
+     reservation's name in DNS, so on microdns networks the PTR is the path.
+     When the reply names no DNS server, or firmware cannot give the reply
+     back, `dns =` in `stormboot.conf` is asked instead; each way this comes
+     up empty is printed. The engine knows hosts by the first label, so
      `server3.g10.lo` claims `boothost/server3`. The console prints
      `name : server3.g10.lo (from DHCP)`. A name that is not a valid DNS name
      is ignored, not guessed at.
+   - **A reservation names the NIC, not the machine** (#26): a label ending
+     in a digit and one lowercase letter drops the letter, so `server1a` and
+     `server1b` are both the machine `server1` (`dnsname::machine_label`), and
+     the console says so.
    - Otherwise SMBIOS (`src/smbios.rs`, via the `_SM3_` or `_SM_` entry in the
      EFI configuration table): the serial of Type 1 (System), then Type 2
      (Baseboard), then Type 3 (Chassis). The first one that is not a
      placeholder is used.
+   - **A serial shared by several machines is rejected like a placeholder**
+     (#26): a Type 1 serial equal to the Type 3 serial on a multi-node chassis
+     (chassis type multi-system, blade or blade enclosure) is the enclosure's,
+     so Type 1 and Type 3 are skipped and Type 2 is tried. `S11075924402016`,
+     the chassis serial seven Supermicro X9 blades report, is listed outright.
    - **Placeholders are rejected**: empty, `none`, `unknown`,
      `default string`, `system serial number`, `not applicable`,
      `not specified`, `n/a`, `invalid`, anything containing `to be filled` or
@@ -286,6 +299,7 @@ others.
 | `api_port` | `9090` | engine API port on the portal host |
 | `claim` | `yes` | `no` / `false` / `0` / `off` skips the claim |
 | `name` (or `tag`) | none (DNS name, then MAC, then SMBIOS) | states the identity; the only name claimed |
+| `dns` | none | DNS server for the PTR of the machine's own address, when its DHCP reply names none or cannot be read (#26); `build-boot-agent.sh --dns` |
 | `fec` | none | **recovery sticks only**: write this FEC and warm-reset |
 | `stamp` | none | parsed, not yet used; for self-update (#2) |
 
