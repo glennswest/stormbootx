@@ -451,6 +451,16 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
         different images. Not run: no VM or metal harness here (#14/#22).
         That `EFI_DHCP4.GetModeData` on a fresh child shows the platform's
         own lease is EDK2 behaviour, read from its source, not yet observed.
+      **2026-09-28:** server1's first boot (#26, ISO 97045e0) printed `name :
+      none` and claimed the shared chassis serial. 648e366 is the fix: the
+      reply of a lease stormbootx ran is kept, microdns gives no option 12 so
+      the PTR is the path (`dns =` when the reply names no server), the NIC
+      name maps to the machine (`server1a` → `server1`), and the chassis
+      serial is rejected. sc-build of 648e366 passes (build, 7+7+6+7 host
+      tests). **Next evidence is server1 booting an ISO of ≥ 648e366**
+      (master's build, #26; its first attempt died on the iPXE step, #28),
+      which should print `name : server1a names this NIC; the machine is
+      server1` and claim `boothost/server1`. Forge still reports 13.7.0.
 
 - [ ] #11 — per-machine boot intent. **The stormbootx half landed on
       2026-09-27** (`src/intent.rs`, `registry::boot_intent`, step 3a in
