@@ -419,21 +419,11 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       by name to succeed (the master's to create). Close on server1 printing
       `name … server1`, a claim, and an attach without `CreateEvent`.
 
-- [ ] #13 — presentation at `docs/presentation.md` (Marp). **In progress
-      2026-09-27.** Drawn from the #12-audited README and the code; slide 2
-      matches `stormcentral check` (stormbootx: kind `boot`, → stormblock;
-      nothing depends on it). "Golden kind" is stated as none (media only),
-      with #21 as the open decision.
-      **State at session restart (2026-09-27):** deck written and pushed
-      (e173e48, linked from README, changelog entry). Verification sc-build
-      (build + host tests + optional Marp render if the build box has npx)
-      was running and its result is unknown — re-run it, then close #13 with
-      what it showed.
-      **2026-09-28, in progress:** the deck is re-checked against the code
-      at HEAD (binary size, four host suites, drivers from the media, the
-      shared-serial rule, `dns =`, the MAC floor, #11's route, #21 decided,
-      the server1 run) and rewritten where it drifted; then sc-build with a
-      Marp render if the build box has npx, and close.
+- [x] #13 — presentation at `docs/presentation.md` (Marp, 13 slides). Closed
+      2026-09-28: re-checked against HEAD (cb326b0) and rewritten where it
+      drifted; sc-build built the binary (152,064 bytes, as the title says),
+      passed all four host suites and rendered the deck with marp-cli.
+      Slide 2 matches `stormcentral check`. Keep it current with the code.
 
 - [ ] #10 — extract `nvme.rs` (and the claim) into a transport-generic
       `no_std` crate. Prerequisite for stormboot4bios.
