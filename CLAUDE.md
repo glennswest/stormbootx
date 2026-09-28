@@ -356,6 +356,20 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
+- [ ] **Everything is a golden (owner, 2026-09-28; #21 decided,
+      stormcentral#126). In progress.** stormbootx ships as a golden, not as
+      a file on dev: the boot media (`.efi`, ESP image, ISO) as one golden,
+      the NIC drivers as their own bin golden. The owner has asked
+      stormcentral to make stormbootx a component; its generic `binaries`
+      build is musl-only, so stormcentral needs a build path for it. This
+      repo's side: `deploy/build-golden.sh <golden> OUT` compiles and writes
+      that golden's tree into OUT and nothing else (no platform work,
+      stormcentral#128), for stormcentral to call into the output it mounts.
+      The media scripts default to `tmp/` in the checkout, never
+      `/build/images`. **Nothing is left on dev**: every build gets a fresh
+      drive that is deleted, and anything outside it is deleted too. The
+      7fd80dd ISO that was put on dev for server1 was removed (2026-09-28).
+
 - [ ] #26 — **NIC UEFI drivers from the boot media (P0, 2026-09-27). In
       progress.** Supermicro X9 blades (server1–8) carry SnpDxe…TcpDxe but no
       UEFI driver for their NICs (Intel 10G `IBA XE`, ConnectX-3 `FlexBoot`,
