@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-09-28
+- **docs(#13):** re-checked the presentation against the code at HEAD and rewrote the slides that had drifted: 152 KB, the four host suites, NIC drivers from the media, the NIC-name and shared-serial rules, `dns =`, the intent read down the name list, the engine's open intent read, shipping as goldens (#21), the server1 run, and the planned and status slides. The R230 console quote is now verbatim from that build.
 - **feat(deploy): `deploy/build-golden.sh` writes the `stormbootx` and `nic-drivers` goldens' trees (#21).** The owner decided that everything is a golden. The script compiles (`--locked`) and writes one golden into the directory it's given, and does nothing else. The `stormbootx` golden holds both `.efi`s, the ISO, the USB image and a tcp4probe ISO, with the drivers on the media. `nic-drivers` holds the iPXE driver and its source note. Each golden has `SHA256SUMS` and a `BUILD` record.
 - **chore(scripts):** `build-boot-agent.sh` and `build-nic-drivers.sh` now default to `tmp/` in the checkout instead of `/build/images`, since nothing may be left on the build box. `build-boot-agent.sh` now builds `--locked`.
 - **docs:** README (*How it ships*), CLAUDE.md and the presentation say stormbootx ships as goldens.
