@@ -384,8 +384,9 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       and its ESP carries the driver and `stormboot.conf`. **Waiting on
       stormcentral#153** (register the component and a build path that runs
       `build-golden.sh`, not the musl `binaries` build). Then request the
-      golden (`stormcentral component build stormbootx`), and server1's #26
-      test boots from it.
+      golden (`stormcentral component build stormbootx`). The media golden
+      already exists (`golden-stormbootx-74a242a6f0e89f75`, a709f9f) and
+      server1's #26 test booted it; #153 is left for `nic-drivers`.
 
 - [x] #26 — **NIC UEFI drivers from the boot media. Closed 2026-09-28**
       on metal: server1 (Supermicro X9, AMI Aptio 4) booted
