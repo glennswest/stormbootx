@@ -185,8 +185,9 @@ Read from the volume it booted from. `key = value`, each key independent.
 ## Proven on hardware
 
 2026-09-05, Dell PowerEdge R230 (C2NR0Q2), ISO over iDRAC virtual media,
-25 GbE ConnectX-4 Lx, through to stormuefi and a running stormcos
-(console of that build, trimmed):
+25 GbE ConnectX-4 Lx. The first attach, verbatim and trimmed (the build
+before chain-loading; the same day it went on through stormuefi to a
+running stormcos):
 
 ```
 service tag : C2NR0Q2

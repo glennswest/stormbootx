@@ -91,7 +91,8 @@ stormbootx --url http://stormcentral.g8.lo`.
 
 | File | Job |
 |---|---|
-| `src/smbios.rs` | the service tag, before any network exists |
+| `src/main.rs` | `run()`: the boot, step by step, and the fall-through |
+| `src/smbios.rs` | the serials (Type 1 → 2 → 3, placeholders and shared chassis serials rejected), before any network exists; the MAC as the floor |
 | `src/tcp4.rs` | a blocking socket over the firmware's own TCP stack; ranks every NIC |
 | `src/drivers.rs` | load NIC drivers from `\stormboot\drivers` on the media (#26), after the platform's own bind |
 | `src/dhcp4.rs` | lease an address when the platform has not |
@@ -401,10 +402,9 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       **iPXE is the owner-approved INTERIM** (2026-09-27): EFI drivers only
       (`.efidrv`, no PXE). The long-term driver is a `no_std` Rust
       SNP crate written from the Intel datasheets, not translated from
-      iPXE (#27). The master builds the interim ISO on dev
-      (`/build/images/stormbootx-26.iso`) and tests it on server1; this
-      session doesn't duplicate that build. Close #26 on server1's
-      `tcp4 : available` and claim.
+      iPXE (#27). Media now comes from the `stormbootx` golden (#21),
+      never from an ISO kept on dev. Close #26 on server1's
+      `tcp4 : available`, name, claim and attach.
       **2026-09-28:** server1 on ISO 97045e0 (master): `intelx` gave
       `tcp4 : available` and a claim; `hermon` hung the boot (now opt-in);
       the attach failed `CreateEvent: INVALID_PARAMETER` (fixed d9851fb) and
@@ -638,9 +638,10 @@ and broke the fabric later (see the `#7` correction). The rest held.
 
 ### Known follow-ups
 
-- Cosmetic: the per-NIC table reprints on every `connect_within` (the intent
-  read and the claim open one socket each, the attach opens two), so the
-  ranking prints four times a boot. Rank/print once and pass the socket down.
+- Cosmetic: the per-NIC table reprints on every `connect_within` (the health
+  read, the PTR query, each intent read and claim tried, and the attach's
+  two queues), so the ranking prints five or more times a boot. Rank/print
+  once and pass the socket down.
 - The Mellanox presents MTU 1500 to firmware, so the path is not jumbo
   end-to-end even though the switch ports are 9216. Transfer size is unaffected
   (MDTS drives it), but raising the card's UEFI MTU would let a 9000 path show.

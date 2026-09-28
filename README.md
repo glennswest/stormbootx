@@ -3,15 +3,17 @@
 **A UEFI boot agent that attaches a remote disk over NVMe/TCP and boots it.**
 No kernel, no initramfs, no PXE, no TFTP. It uses the firmware's own TCP stack.
 
-It runs from a USB stick or a virtual-media ISO. It reads the machine's
-identity from SMBIOS, claims that machine's image from the storage engine,
-attaches it over NVMe/TCP, publishes it as `EFI_BLOCK_IO_PROTOCOL`, and
+It runs from a USB stick or a virtual-media ISO. It loads any NIC drivers the
+media carries, works out which machine it is (a stated name, else its DNS
+name, else its MAC or SMBIOS serial), claims that machine's image from the
+storage engine, attaches it over NVMe/TCP, publishes it as `EFI_BLOCK_IO_PROTOCOL`, and
 chain-loads the `\EFI\BOOT\BOOTX64.EFI` on the attached disk. If any step
 fails, or the machine's boot intent is `local`, it falls through to the local
 disk.
 
 ```
-identity (conf or SMBIOS) → boot intent → claim boothost/<tag> → NVMe/TCP attach
+media NIC drivers → TCP4 → names (conf | DNS name, MAC, serial) → boot intent
+    → claim boothost/<name> (or default by MAC) → NVMe/TCP attach
     → publish BlockIO + device path → ConnectController
     → load \EFI\BOOT\BOOTX64.EFI from the attached ESP → StartImage
 ```
@@ -90,7 +92,7 @@ volume as a NIC driver (#26; absent on ordinary media). It writes to three thing
    - **Placeholders are rejected**: empty, `none`, `unknown`,
      `default string`, `system serial number`, `not applicable`,
      `not specified`, `n/a`, `invalid`, anything containing `to be filled` or
-     `o.e.m.`, and all-zero strings.
+     `o.e.m.`, and any string made only of `0`, `.`, `-` and spaces.
    - No usable serial is no longer a failure: once the network stack exists
      (step 4) the machine's **MAC** identifies it, the lowest usable unicast
      permanent address across every NIC (`tcp4::machine_mac`), so the answer
@@ -102,7 +104,9 @@ volume as a NIC driver (#26; absent on ordinary media). It writes to three thing
    current and next-boot FEC, read only. If `fec =` is set in the conf, it
    writes that value and warm-resets once. The next boot then finds nothing to
    change.
-4. **TCP4** (`tcp4::ensure_available`).
+4. **NIC drivers from the media, then TCP4** (`drivers::load_from_media`,
+   `tcp4::ensure_available`). Any `*.efi` in `\stormboot\drivers` is started
+   first (see *The network path*); then:
    1. It checks whether TCP4 is present.
    2. If not, it runs `ConnectController` on the NIC (SNP) handles, then on
       every handle.
@@ -167,8 +171,9 @@ volume as a NIC driver (#26; absent on ordinary media). It writes to three thing
    `nqn`/`nsid` rather than failing.
 
    **Universal boot: one medium for every machine** (#15, stormblock#200).
-   A machine whose media states no `tag =` claims `boothost/default` and says
-   which machine it is with its MAC. The engine gives it a copy-on-write
+   A machine whose media states no name, and whose DNS name the engine does
+   not know (or that has none), claims `boothost/default` and says which
+   machine it is with its MAC. The engine gives it a copy-on-write
    clone of the default release **of its own**, recorded as host
    `mac-<hex>` until it is named, and the same MAC gets the same host back on
    every boot. The console says `booting the default image as mac-<hex>`, or,
@@ -229,9 +234,9 @@ Supermicro X9 blades (legacy-only Intel 10G and ConnectX-3). No directory, no
 change.
 
 
-`src/tcp4.rs` and `src/dhcp4.rs`. A socket is opened for the intent read,
-the claim, and each NVMe queue (admin and one I/O), and each open works like
-this:
+`src/tcp4.rs` and `src/dhcp4.rs`. A socket is opened for the health read,
+the PTR query (when there is one), each intent read and each claim tried,
+and each NVMe queue (admin and one I/O), and each open works like this:
 
 - **Every TCP4 interface is tried**, ranked by link state and then by
   descending MTU, because each NIC carries its own stack. The ranking is
@@ -244,8 +249,8 @@ this:
   3. a DHCP client of its own over `EFI_DHCP4`, once per interface, matched
      to the TCP4 interface by MAC. The lease is stated explicitly in
      `Tcp4ConfigData`.
-- Timeout: 30 s per operation (`Tcp4Socket::connect`), for the intent read,
-  the claim and the attach. The console's `connect` uses 8 s.
+- Timeout: 30 s per operation (`Tcp4Socket::connect`), for the engine API and
+  the attach. The PTR query uses 5 s and the console's `connect` 8 s.
 
 ## The NVMe/TCP initiator
 
@@ -368,9 +373,11 @@ drive and is deleted with it. Nothing is left on the build box.
 ./scripts/build-boot-agent.sh --iso --drivers tmp/drivers
 ```
 
-`build-nic-drivers.sh` builds iPXE's `intelx` (Intel 82599/X540/X552) and
-`hermon` (ConnectX-3) as `bin-x86_64-efi/*.efidrv` at a pinned commit, named
-`ipxe-*.efi`, beside an `IPXE-SOURCE.txt` naming that commit. iPXE is GPL-2
+`build-nic-drivers.sh` builds iPXE's `intelx` (Intel 82599/X540/X552) as
+`bin-x86_64-efi/intelx.efidrv` from `glennswest/ipxe` at a pinned commit,
+named `ipxe-intelx.efi`, beside an `IPXE-SOURCE.txt` naming that commit.
+`hermon` (ConnectX-3) is opt-in (`IPXE_DRIVERS="intelx hermon"`): it hung
+server1's boot (#30). iPXE is GPL-2
 and ships as separate binaries on the media. It is the interim, EFI drivers
 only (no PXE), approved by the owner; the long-term replacement is a `no_std`
 Rust driver written from the Intel datasheets (#27).
@@ -387,7 +394,7 @@ only makes outbound connections:
 | To | Default | Set by |
 |---|---|---|
 | engine API (health, intent read, claim) | `<portal>:9090`, HTTP/1.1 | `api_port` |
-| DNS server (PTR of its own address, #23) | option 6 of its DHCP lease, TCP 53 | DHCP |
+| DNS server (PTR of its own address, #23) | option 6 of its DHCP lease, TCP 53 | DHCP, else `dns` |
 | NVMe/TCP portal (attach) | `<portal>:4420`, or what the claim returns | `port`, or the claim reply |
 
 The portal defaults to `192.168.31.202` (forge). Since stormblock v17.0.0 the
@@ -397,8 +404,8 @@ keep one. The intent read (stormblock#148) is open in the same way; setting an
 intent needs the token.
 
 **How it ships: as goldens** (owner, 2026-09-28, #21: everything is a
-golden). Nothing is kept on the build box, and a machine's virtual CD is
-served from the golden (minismbd#7), not from a copied file.
+golden). Nothing is kept on the build box. A machine's virtual CD is to be
+served from the golden (minismbd#7, open), not from a copied file.
 `deploy/build-golden.sh <golden> OUT` writes one golden's tree into OUT and
 does nothing else, for stormcentral to run into the volume it mounts:
 
@@ -444,35 +451,43 @@ golden to request.
 ## Status
 
 v0.4.0. Running on hardware since 2026-09-05. A Dell PowerEdge R230 (C2NR0Q2)
-booted the ISO over iDRAC virtual media, claimed `boothost/C2NR0Q2`, attached
-a 32 GiB 4K clone from forge over 25 GbE, and chain-loaded stormuefi, which
-started stormcos:
+booted the ISO over iDRAC virtual media, claimed `boothost/C2NR0Q2` and
+attached a 32 GiB 4K clone from forge over 25 GbE. The console of that first
+attach, verbatim (the build before chain-loading, ea26be1):
 
 ```
 service tag : C2NR0Q2
 tcp4        : available
 claim       : boothost/C2NR0Q2 at 192.168.31.202:9090
+    interface 0 answered (MTU 1500, link up)
   claimed a clone of this machine's image
   portal    : 192.168.31.202:4420  nsid 7
-attaching   : nqn.2026-09.lo.storm:host-C2NR0Q2
   namespace : 8388608 blocks x 4096 bytes  (32 GiB)
   transfer  : 128 KiB per command  (controller MDTS 5; path MTU 1500)
 blockio     : published on handle 0x8301ae98
-RESULT: image attached; starting its bootloader.
-boot        : starting \EFI\BOOT\BOOTX64.EFI from the attached image
+RESULT: remote image is a local disk. Firmware can boot it.
 ```
+
+The same day, with chain-loading (dc44c71), it started stormuefi, which
+booted stormcos. Today's build ends a good boot with `RESULT: image attached;
+starting its bootloader.`
+
+On 2026-09-28 a Supermicro X9 blade (server1), whose firmware has no UEFI
+driver for its NICs, loaded `ipxe-intelx.efi` from the media, got
+`tcp4 : available` and reached the engine. The attach and naming fixes that
+run exposed are on main and wait on a re-run (#26).
 
 Open issues:
 
 | Issue | What |
 |---|---|
-| #2 | self-update of the stick |
-| #3, #11 | skipping to the disk when nothing changed; a per-machine boot intent |
-| #4 | inventory registration |
-| #7 | the identity follow-ups |
-| #10 | extracting the initiator for stormboot4bios |
-| #13, #14 | a presentation; test containers per the stormcos test standard |
-| #15 | universal boot: client side done, waiting on an engine with stormblock#200 and a `boothost/default` |
+| #26 | NIC drivers from the media: server1's attach, waiting on the golden (stormcentral#153) |
+| #15 | universal boot: client side done; forge is on stormblock 13.7.0, and there is no `boothost/default` |
+| #23 | identity from DNS: client side done; stormblock#204 and a metal test |
+| #3, #11 | skipping to the disk when nothing changed; a per-machine boot intent (`local` waits on forge running stormblock#148) |
+| #7 | placeholder list shared with stormipmi |
+| #27, #29, #30 | Rust NIC drivers replacing iPXE; hermon's hang |
+| #2, #4, #10, #14 | self-update; inventory; the shared initiator; test containers |
 
 A slide deck of the above is in [`docs/presentation.md`](docs/presentation.md)
 (Marp: `npx @marp-team/marp-cli docs/presentation.md`).
