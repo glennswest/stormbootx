@@ -77,8 +77,12 @@ nic-drivers)
     "$ROOT/scripts/build-nic-drivers.sh" "$WORK/drivers"
     mkdir -p "$OUT/bin"
     cp "$WORK/drivers/"*.efi "$OUT/bin/"
-    cp "$WORK/drivers/IPXE-SOURCE.txt" "$OUT/"
-    seal "ipxe     = $(sed -n 's/^IPXE_REF="\(.*\)"/\1/p' "$ROOT/scripts/build-nic-drivers.sh")"
+    # The Rust drivers ride along as *.efi.off, not loaded unless placed on
+    # the media (#29).
+    cp "$WORK/drivers/"*.efi.off "$OUT/bin/" 2>/dev/null || true
+    cp "$WORK/drivers/IPXE-SOURCE.txt" "$WORK/drivers/STORMNIC-SOURCE.txt" "$OUT/"
+    seal "ipxe     = $(sed -n 's/^IPXE_REF="\(.*\)"/\1/p' "$ROOT/scripts/build-nic-drivers.sh")
+stormnic = $(cat "$WORK/drivers/STORMNIC-SOURCE.txt")"
     ;;
 stormbootx)
     say "building stormbootx and tcp4probe for x86_64-unknown-uefi"

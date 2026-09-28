@@ -37,6 +37,21 @@ IPXE_REF="629e28b56c8d61f5c9251114c4d5b390b61857d1"
 # hermon is opt-in: on server1 (AMI Aptio 4) it hung the boot in its start or
 # its bind, and stays off the media until that is understood (#26).
 read -r -a DRIVERS <<< "${IPXE_DRIVERS:-intelx}"
+# The Rust drivers (stormbootx#29, #27), each from a pinned commit of its own
+# repo, bumped deliberately in its own commit like IPXE_REF. Carried
+# as stormnic-ixgbe.efi.off, which stormbootx does not load (it loads only
+# \stormboot\drivers\*.efi):
+# a driver that binds the NIC but offers no network yet must not take the
+# blades' network away. STORMNIC_ON_MEDIA=ixgbe puts stormnic-ixgbe.efi on the
+# media in place of iPXE's intelx — the on-hardware check (stormnic-ixgbe#7).
+STORMNIC_IXGBE_REPO="https://github.com/glennswest/stormnic-ixgbe.git"
+STORMNIC_IXGBE_REF="06052fcf4a85f6e40ed8d2bab984c2c78a979c41"
+STORMNIC_ON_MEDIA="${STORMNIC_ON_MEDIA:-}"
+if [[ "$STORMNIC_ON_MEDIA" == ixgbe ]]; then
+    # One driver per NIC: iPXE's intelx would claim the controller first.
+    DRIVERS=("${DRIVERS[@]/intelx}")
+    read -r -a DRIVERS <<< "${DRIVERS[*]}"
+fi
 OUTDIR="${1:-$(cd "$(dirname "$0")/.." && pwd)/tmp/drivers}"
 
 for tool in gcc make perl git; do
@@ -53,6 +68,7 @@ git -C "$WORK/ipxe" checkout -q FETCH_HEAD
 
 TARGETS=()
 for d in "${DRIVERS[@]}"; do TARGETS+=("bin-x86_64-efi/$d.efidrv"); done
+[[ ${#TARGETS[@]} -gt 0 ]] || TARGETS=("bin-x86_64-efi/intelx.efidrv")  # built for the note, not shipped
 say "building ${TARGETS[*]}"
 # make writes only to its log, and a minute of silence over sc-build's ssh
 # once ended in "Connection to dev.g8.lo closed by remote host" (#28). A line
@@ -72,6 +88,28 @@ for d in "${DRIVERS[@]}"; do
     cp "$WORK/ipxe/src/bin-x86_64-efi/$d.efidrv" "$OUTDIR/ipxe-$d.efi"
     say "driver  $(du -h "$OUTDIR/ipxe-$d.efi" | cut -f1)  $OUTDIR/ipxe-$d.efi"
 done
+# stormnic-ixgbe, the Rust driver for the blades' Intel 10G (#29).
+say "stormnic-ixgbe $STORMNIC_IXGBE_REF"
+git -C "$WORK" init -q stormnic-ixgbe
+git -C "$WORK/stormnic-ixgbe" fetch -q --depth 1 "$STORMNIC_IXGBE_REPO" "$STORMNIC_IXGBE_REF"
+git -C "$WORK/stormnic-ixgbe" checkout -q FETCH_HEAD
+lock=--locked; [[ -f "$WORK/stormnic-ixgbe/Cargo.lock" ]] || { lock=""; say "  stormnic-ixgbe has no Cargo.lock: built unlocked"; }
+# shellcheck disable=SC2086
+( cd "$WORK/stormnic-ixgbe" && CARGO_TARGET_DIR="$WORK/stormnic-target" cargo build -q --release $lock --target x86_64-unknown-uefi ) \
+    || die "stormnic-ixgbe did not build"
+ixgbe="$WORK/stormnic-target/x86_64-unknown-uefi/release/stormnic-ixgbe.efi"
+[[ -f "$ixgbe" ]] || die "no stormnic-ixgbe.efi at $ixgbe"
+if [[ "$STORMNIC_ON_MEDIA" == ixgbe ]]; then
+    cp "$ixgbe" "$OUTDIR/stormnic-ixgbe.efi"
+    say "driver  $(du -h "$ixgbe" | cut -f1)  $OUTDIR/stormnic-ixgbe.efi  (on the media, in place of iPXE intelx)"
+else
+    # `.off`: stormbootx loads only names ending in .efi, and the media
+    # scripts copy the folder flat, so a plain file is carried, never loaded.
+    cp "$ixgbe" "$OUTDIR/stormnic-ixgbe.efi.off"
+    say "driver  $(du -h "$ixgbe" | cut -f1)  $OUTDIR/stormnic-ixgbe.efi.off  (carried, not loaded)"
+fi
+printf 'stormnic-ixgbe %s %s%s\n' "$STORMNIC_IXGBE_REF" "$(sha256sum "$ixgbe" | cut -d' ' -f1)" "${lock:+ locked}" > "$OUTDIR/STORMNIC-SOURCE.txt"
+
 cat > "$OUTDIR/IPXE-SOURCE.txt" <<EOF
 The ipxe-*.efi files in this directory are iPXE (https://ipxe.org), built as
 UEFI drivers (bin-x86_64-efi/<driver>.efidrv) from

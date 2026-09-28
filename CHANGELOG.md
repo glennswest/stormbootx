@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-09-28
+- **feat:** `stormnic-ixgbe.efi`, the Rust driver for the blades' Intel 10G, is built into the NIC drivers from a pinned commit (`STORMNIC_IXGBE_REF`, glennswest/stormnic-ixgbe) (#29). Carried as `stormnic-ixgbe.efi.off`, which is not loaded — a scaffold that binds the NIC without a network would take the blades' network away; `STORMNIC_ON_MEDIA=ixgbe` puts it on the media in place of iPXE's intelx, for the on-hardware check (stormnic-ixgbe#7). `STORMNIC-SOURCE.txt` records the commit and digest
 - **docs:** refreshed README, CLAUDE.md and the deck against the code (changes since 2026-09-18):
   - the intro and flow now start with the media's NIC drivers and the name order;
   - the drivers step is in the step list;
