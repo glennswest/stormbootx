@@ -378,6 +378,13 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       `/build/images`. **Nothing is left on dev**: every build gets a fresh
       drive that is deleted, and anything outside it is deleted too. The
       7fd80dd ISO that was put on dev for server1 was removed (2026-09-28).
+      **This repo's side is done (d10f734, sc-build 119 s):** both trees
+      build; the ISO's `BOOTX64.EFI` is byte-identical to `bin/stormbootx.efi`
+      and its ESP carries the driver and `stormboot.conf`. **Waiting on
+      stormcentral#153** (register the component and a build path that runs
+      `build-golden.sh`, not the musl `binaries` build). Then request the
+      golden (`stormcentral component build stormbootx`), and server1's #26
+      test boots from it.
 
 - [ ] #26 — **NIC UEFI drivers from the boot media (P0, 2026-09-27). In
       progress.** Supermicro X9 blades (server1–8) carry SnpDxe…TcpDxe but no
@@ -402,11 +409,11 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       `tcp4 : available` and a claim; `hermon` hung the boot (now opt-in);
       the attach failed `CreateEvent: INVALID_PARAMETER` (fixed d9851fb) and
       the identity was the shared chassis serial (fixed 648e366). The master's
-      rebuild died on the silent iPXE `make` (#28); rebuilt with a heartbeat
-      at 7fd80dd → `dev.g8.lo:/build/stormbuild/images/stormbootx-7fd80dd.iso`
-      (sha256 3780b39b…, `dns = 192.168.31.252`, which answers the PTR
-      `192.168.16.100 → server1a.g16.lo` over TCP). Waiting on the master's
-      boot of it. forge has server1's image only as
+      rebuild died on the silent iPXE `make` (#28). An ISO of 7fd80dd was
+      built onto dev and then **removed** (nothing is kept on dev; #21): the
+      next server1 test boots the `stormbootx` golden (stormcentral#153).
+      `dns = 192.168.31.252` answers the PTR `192.168.16.100 →
+      server1a.g16.lo` over TCP. forge has server1's image only as
       `boothost/S11075924402016`, which this build no longer claims; a
       `boothost/server1` synonym to the same volume is needed for the claim
       by name to succeed (the master's to create). Close on server1 printing
