@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-09-28
+- **chore:** iPXE is built from our own copy, `glennswest/ipxe` at the same pinned commit (629e28b), never from upstream (owner: "pull the drivers out, and create our own git repo")
 - **fix(build-nic-drivers):** iPXE's `make` prints a line every 20 s while it runs. Its silence once ended an sc-build with the connection closed by the build box (#28).
 - **docs(build-boot-agent):** the closing hint no longer says "move the DNS record"; portal discovery over DNS was removed on 2026-09-03, and which image boots is the boothost synonym.
 - **fix(intent): read the boot intent down the claim's name list (#11).** It was read under one name: a DNS name the engine did not yet know (stormblock#204) gave a 404, read as `auto`, and hid a `local` set on the host the engine knows by the machine's MAC. It now asks the DNS name, the MAC (when claiming the default) and the serial in the claim's order, moving on only on a 404; a stated name is still the only one asked. A host test covers the engine's own reply shape (stormblock 0e3c47b, #148). README and `intent.rs` describe the landed route.

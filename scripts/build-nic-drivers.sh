@@ -29,7 +29,10 @@ set -euo pipefail
 say() { printf '==> %s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
-IPXE_REPO="https://github.com/ipxe/ipxe.git"
+# Our own copy (owner, 2026-09-28: "pull the drivers out, and create our own
+# git repo"): glennswest/ipxe holds the pinned commit, so a build never reaches
+# upstream. The Rust drivers (stormnic-ixgbe, stormnic-mlx4) replace it (#27).
+IPXE_REPO="https://github.com/glennswest/ipxe.git"
 IPXE_REF="629e28b56c8d61f5c9251114c4d5b390b61857d1"
 # hermon is opt-in: on server1 (AMI Aptio 4) it hung the boot in its start or
 # its bind, and stays off the media until that is understood (#26).
