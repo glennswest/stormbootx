@@ -375,6 +375,19 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       (`/build/images/stormbootx-26.iso`) and tests it on server1; this
       session doesn't duplicate that build. Close #26 on server1's
       `tcp4 : available` and claim.
+      **2026-09-28:** server1 on ISO 97045e0 (master): `intelx` gave
+      `tcp4 : available` and a claim; `hermon` hung the boot (now opt-in);
+      the attach failed `CreateEvent: INVALID_PARAMETER` (fixed d9851fb) and
+      the identity was the shared chassis serial (fixed 648e366). The master's
+      rebuild died on the silent iPXE `make` (#28); rebuilt with a heartbeat
+      at 7fd80dd → `dev.g8.lo:/build/stormbuild/images/stormbootx-7fd80dd.iso`
+      (sha256 3780b39b…, `dns = 192.168.31.252`, which answers the PTR
+      `192.168.16.100 → server1a.g16.lo` over TCP). Waiting on the master's
+      boot of it. forge has server1's image only as
+      `boothost/S11075924402016`, which this build no longer claims; a
+      `boothost/server1` synonym to the same volume is needed for the claim
+      by name to succeed (the master's to create). Close on server1 printing
+      `name … server1`, a claim, and an attach without `CreateEvent`.
 
 - [ ] #13 — presentation at `docs/presentation.md` (Marp). **In progress
       2026-09-27.** Drawn from the #12-audited README and the code; slide 2
