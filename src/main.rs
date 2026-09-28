@@ -67,6 +67,7 @@ mod universal;
 
 use alloc::format;
 use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 
 use uefi::prelude::*;
 
@@ -350,23 +351,57 @@ fn run() -> Result<(), String> {
             }
             let dns_host = dns.as_ref().map(|(_, h, _)| h.clone());
 
-            // The name the intent is read under: the stated tag, the DNS name,
-            // the MAC as twelve hex digits (which the engine resolves as an
-            // alias to whatever the machine is called now), or the serial.
-            let intent_key = match (&stated, &dns_host, &default_mac, universal) {
-                (Some(_), ..) => tag.clone(),
-                (None, Some(h), ..) => h.clone(),
-                (None, None, Some((m, _)), true) => {
-                    String::from_utf8_lossy(&universal::provisional_name(m)[4..]).into_owned()
+            // The names the intent is read under, in the order the claim
+            // below tries them: a stated tag alone; else the DNS name, the MAC
+            // as twelve hex digits (which the engine resolves as an alias to
+            // whatever the machine is called now), then the tag when the claim
+            // would reach it. The engine resolves every one through the same
+            // host table, so the first that is not a 404 is the machine's: a
+            // DNS name the engine does not know yet (stormblock#204) must not
+            // hide a `local` set on the host it knows by MAC.
+            let mut intent_keys: Vec<String> = Vec::new();
+            if stated.is_some() {
+                intent_keys.push(tag.clone());
+            } else {
+                intent_keys.extend(dns_host.clone());
+                let by_mac = default_mac.as_ref().filter(|_| universal);
+                if let Some((m, _)) = by_mac {
+                    intent_keys.push(
+                        String::from_utf8_lossy(&universal::provisional_name(m)[4..]).into_owned(),
+                    );
                 }
-                _ => tag.clone(),
-            };
+                if by_mac.is_none() || serial.is_some() {
+                    intent_keys.push(tag.clone());
+                }
+            }
+            let mut seen: Vec<String> = Vec::new();
+            intent_keys.retain(|k| {
+                let new = !seen.iter().any(|s| s.eq_ignore_ascii_case(k));
+                seen.push(k.clone());
+                new
+            });
 
             // 3a. What has this machine been told to do? Read before the
             //     claim, because the claim mints a clone and `local` is there so
             //     that nothing is minted. Every doubt reads as `auto`, which is
             //     what every boot did before intents existed (see intent.rs).
-            let reply = registry::boot_intent(cfg.portal, cfg.api_port, &host, &intent_key);
+            //     Only a 404 moves on to the next name; any other answer is
+            //     this machine's.
+            let (intent_key, reply) = {
+                let last = intent_keys.len().saturating_sub(1);
+                let mut found = None;
+                for (i, key) in intent_keys.iter().enumerate() {
+                    let r = registry::boot_intent(cfg.portal, cfg.api_port, &host, key);
+                    let not_found = matches!(&r, Ok((s, b)) if intent::from_reply(*s, b) == intent::Reply::NotFound);
+                    if not_found && i < last {
+                        uefi::println!("intent      : none under {key}");
+                        continue;
+                    }
+                    found = Some((key.clone(), r));
+                    break;
+                }
+                found.unwrap_or_else(|| (tag.clone(), Err("no name to ask under".to_string())))
+            };
             let said = match &reply {
                 Ok((status, body)) => intent::from_reply(*status, body),
                 Err(_) => intent::Reply::Status(0),

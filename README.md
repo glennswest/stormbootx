@@ -114,11 +114,15 @@ volume as a NIC driver (#26; absent on ordinary media). It writes to three thing
    first reads the machine's **boot intent** (`src/intent.rs`):
 
    ```
-   GET http://<portal>:<api_port>/api/v1/synonyms/boothost/<tag>/intent   → {"intent":"…"}
+   GET http://<portal>:<api_port>/api/v1/synonyms/boothost/<name>/intent
+       → 200 {"host":"server1","intent":"local","updated_at":…}  or 404
 
-   (It is read under the stated name, else the DNS name, else — for a machine
-   claiming the default — its MAC's twelve hex digits, which the engine
-   resolves as an alias, else the serial.)
+   (A stated name is the only one asked. Otherwise it goes down the names the
+   claim tries, in the same order, and a 404 moves on to the next: the DNS
+   name, the MAC's twelve hex digits for a machine that claims the default,
+   then the serial. The engine resolves each through the same host table, so
+   a DNS name it does not know yet can't hide an intent set on the host it
+   knows by MAC.)
    ```
 
    | intent | what stormbootx does |
@@ -132,9 +136,12 @@ volume as a NIC driver (#26; absent on ordinary media). It writes to three thing
    with no intent or an unknown one. Only an explicit `local` skips the
    network image, so a failed read can't keep a machine off an install it was
    asked for. The console prints the intent and, when it defaulted, why. The
-   contract is the one proposed on stormblock#148, and the engine doesn't serve
-   it yet, so today every read is a 404 and every boot is `auto`. Resetting
-   `install` back to `local` after the install is the engine's job.
+   contract is stormblock#148, which is on stormblock main (0e3c47b) but not
+   yet released or on forge (13.7.0), so today every read there is a 404 and
+   every boot is `auto`. Setting it is `PUT …/intent {"intent":"local"}` with
+   the admin token. Resetting `install` back to `local` is the engine's job: the
+   node's OS reports `POST …/installed {volume}` after the flow-over, and the
+   claim reply carries `intent` for the initramfs. stormbootx never writes it.
    `auto` does not yet boot an installed, current disk locally. That needs #3.
 
    First it reads the engine's version from `GET /api/v1/health`. That is the
@@ -383,8 +390,8 @@ only makes outbound connections:
 The portal defaults to `192.168.31.202` (forge). Since stormblock v17.0.0 the
 engine API requires a token for everything except `POST
 …/boothost/<tag>/claim` and `GET /api/v1/health`. stormbootx sends none, because firmware has nowhere to
-keep one. The intent route (stormblock#148) will need the same exemption, and
-until it has one a read gets a 401, which reads as `auto`.
+keep one. The intent read (stormblock#148) is open in the same way; setting an
+intent needs the token.
 
 **How it ships:** as boot media, not as a stormcos component. There is no
 golden for it. `scripts/build-boot-agent.sh` writes the `.efi` and a

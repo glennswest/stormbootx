@@ -1,14 +1,21 @@
 //! What this machine has been told to do on this boot: install, boot local, or
 //! decide for itself.
 //!
-//! The intent is stored on the engine beside `boothost/<service tag>` and read
+//! The intent is stored on the engine with the machine's boot host and read
 //! **before** the claim, because a claim mints a clone and `local` exists so
 //! that nothing gets minted. Setting a state and then power-cycling the machine
-//! gets you that state. The contract is the one proposed on stormblock#148:
+//! gets you that state. The contract is stormblock#148 (0e3c47b):
 //!
 //! ```text
-//! GET /api/v1/synonyms/boothost/<tag>/intent  -> 200 {"intent":"auto", ...}
+//! GET /api/v1/synonyms/boothost/<name>/intent
+//!     -> 200 {"host":"server1","intent":"local","updated_at":…}   (open)
+//!     -> 404 for a name that is no host and no alias
 //! ```
+//!
+//! `run()` asks under the same names the claim tries, in the same order (DNS
+//! name, MAC, tag), and moves on only on a 404. The engine resets `install`
+//! to `local` when the node's OS reports the install done
+//! (`POST …/installed`); this binary never writes the intent.
 //!
 //! | intent    | this binary                                   |
 //! |-----------|-----------------------------------------------|
@@ -198,6 +205,23 @@ mod tests {
         for r in cases {
             assert_eq!(r.intent(), Intent::Auto, "{r:?}");
         }
+    }
+
+    #[test]
+    fn the_engines_own_reply() {
+        // stormblock 0e3c47b (#148), `intent_body`: serde_json with sorted
+        // keys, `updated_at` a number, `resolved_from` when asked by an alias
+        // (here the MAC a machine booted from the default reads under).
+        let by_alias = r#"{"host":"server1","intent":"local","resolved_from":"ac1f6b8aa79c","updated_at":1790553600}"#;
+        assert_eq!(from_reply(200, by_alias), Reply::Stated(Intent::Local));
+        let by_name = r#"{"host":"stormblock1","intent":"install","updated_at":1790553600}"#;
+        assert_eq!(from_reply(200, by_name), Reply::Stated(Intent::Install));
+        // A host named like the key is still not the key.
+        let named_intent = r#"{"host":"intent","intent":"auto","updated_at":0}"#;
+        assert_eq!(from_reply(200, named_intent), Reply::Stated(Intent::Auto));
+        // An unknown machine: the engine's SynonymError::NotFound.
+        let unknown = r#"{"error":"synonym boothost/server9 not found"}"#;
+        assert_eq!(from_reply(404, unknown), Reply::NotFound);
     }
 
     #[test]
