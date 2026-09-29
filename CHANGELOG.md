@@ -48,7 +48,7 @@
 - **fix(drivers): a hanging driver names itself (#26).** Each step (platform bind, each driver's start, the final connect) is printed before it runs, with seconds elapsed. On server1, `ipxe-hermon.efi` hung the boot silently.
 - **chore(drivers):** `build-nic-drivers.sh` builds `intelx` only by default; hermon is opt-in (`IPXE_DRIVERS="intelx hermon"`) until its hang on server1 is understood.
 
-### 2026-09-27
+#### 2026-09-27
 - **chore(smbios):** removed the unused `service_tag()`; `identity()` reads the Type 1 serial (then Type 2, Type 3), so the build is warning-free again (#18).
 - **docs(#26):** iPXE `.efidrv` (EFI drivers only, no PXE) is the owner-approved interim; the long-term driver is a Rust crate written from the Intel datasheets (#27).
 - **feat(drivers): NIC UEFI drivers from the boot media (#26).** Every `*.efi` in `\stormboot\drivers\` on the boot volume is loaded (`LoadImage` by device path) and started before TCP4 is looked for, after one `ConnectController` pass so the platform's own drivers claim their NICs first; then every handle is connected again so the new driver's SNP gets the platform's MNP/IP4/TCP4. The console prints `drivers : N of M started` and one line per file. For the Supermicro X9 blades, which have the stack but only legacy option ROMs on their Intel 10G and ConnectX-3. `scripts/build-nic-drivers.sh` builds iPXE's `intelx` and `hermon` as EFI drivers at a pinned commit (GPL-2, separate binaries, with a source note), and `build-boot-agent.sh --drivers DIR` lays them on the media. No directory, no change.
