@@ -401,15 +401,18 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       checks (stormnic-ixgbe `docs/bring-up.md`) are the master's, on
       server1/server2.
 
-- [ ] **#51 — rustnic media pins stormnic-ixgbe 0dd4267 (SNP). In
-      progress 2026-09-29.** stormnic-ixgbe#4: after bring-up and the DMA
-      check, Start installs SNP and a MAC device path on a child handle, so
-      MNP/IP4/TCP4 can bind. Plan:
-      1. `STORMNIC_IXGBE_REF` → 0dd4267, built `--locked`; label and docs.
-      2. sc-build: all three trees, both ISOs under OVMF (the ixgbe binding
-         line; OVMF has no Intel 10G); normal media unchanged.
-      3. rustnic golden; the server1 SOL boot (`SNP initialized`, `tcp4 :
-         available`, and #3's DMA lines) is the master's.
+- [x] **#51 — rustnic media pins stormnic-ixgbe 0dd4267 (SNP). Closed
+      2026-09-29.** stormnic-ixgbe#4: after bring-up and the DMA check,
+      Start installs SNP and a MAC device path on a child handle. Pinned in
+      36b22f4, built `--locked`. sc-build built all three trees, passed the
+      host suites (8/7/6/7/12) and booted both ISOs under OVMF (KVM): `media
+      : rustnic ixgbe@0dd4267 mlx4@4c2d318`, `stormnic-ixgbe 0.1.0: driver
+      binding installed (25 Intel 10G device IDs)`, the mlx4 0.2.0 binding;
+      the normal media unchanged (`ipxe-intelx.efi` only). Goldens
+      `golden-stormbootx-rustnic-6d88515819338a0e` and
+      `golden-nic-drivers-56ea4782ef2a`. Left for the master: boot server1
+      on the rustnic golden; the SOL should show #3's DMA lines, `SNP
+      initialized`, and stormbootx's `tcp4 : available` and claim.
 
 - [x] **#50 — rustnic media pins stormnic-mlx4 v0.2.0 (4c2d318, SNP).
       Closed 2026-09-29.** stormnic-mlx4#4: SNP on a child handle per
