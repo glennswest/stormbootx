@@ -95,7 +95,9 @@ stormbootx)
         compgen -G "$DRIVERS/*.efi" >/dev/null || die "no *.efi in $DRIVERS"
         from="the nic-drivers golden at $DRIVERS"
     else
-        "$ROOT/scripts/build-nic-drivers.sh" "$WORK/drivers"
+        # Only *.efi reaches the media, so the carried stormnic-ixgbe.efi.off
+        # is not built here unless STORMNIC_ON_MEDIA asks for it.
+        STORMNIC_CARRY=no "$ROOT/scripts/build-nic-drivers.sh" "$WORK/drivers"
         DRIVERS="$WORK/drivers"
         from="built here, iPXE $(sed -n 's/^IPXE_REF="\(.*\)"/\1/p' "$ROOT/scripts/build-nic-drivers.sh")"
     fi

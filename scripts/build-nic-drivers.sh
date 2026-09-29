@@ -47,6 +47,10 @@ read -r -a DRIVERS <<< "${IPXE_DRIVERS:-intelx}"
 STORMNIC_IXGBE_REPO="https://github.com/glennswest/stormnic-ixgbe.git"
 STORMNIC_IXGBE_REF="06052fcf4a85f6e40ed8d2bab984c2c78a979c41"
 STORMNIC_ON_MEDIA="${STORMNIC_ON_MEDIA:-}"
+# STORMNIC_CARRY=no skips building the carried `.off` copy when nothing will
+# use it: the stormbootx media golden copies only *.efi onto the media, and
+# stormnic-ixgbe is a private repo the golden builder cannot fetch.
+STORMNIC_CARRY="${STORMNIC_CARRY:-yes}"
 if [[ "$STORMNIC_ON_MEDIA" == ixgbe ]]; then
     # One driver per NIC: iPXE's intelx would claim the controller first.
     DRIVERS=("${DRIVERS[@]/intelx}")
@@ -89,26 +93,31 @@ for d in "${DRIVERS[@]}"; do
     say "driver  $(du -h "$OUTDIR/ipxe-$d.efi" | cut -f1)  $OUTDIR/ipxe-$d.efi"
 done
 # stormnic-ixgbe, the Rust driver for the blades' Intel 10G (#29).
-say "stormnic-ixgbe $STORMNIC_IXGBE_REF"
-git -C "$WORK" init -q stormnic-ixgbe
-git -C "$WORK/stormnic-ixgbe" fetch -q --depth 1 "$STORMNIC_IXGBE_REPO" "$STORMNIC_IXGBE_REF"
-git -C "$WORK/stormnic-ixgbe" checkout -q FETCH_HEAD
-lock=--locked; [[ -f "$WORK/stormnic-ixgbe/Cargo.lock" ]] || { lock=""; say "  stormnic-ixgbe has no Cargo.lock: built unlocked"; }
-# shellcheck disable=SC2086
-( cd "$WORK/stormnic-ixgbe" && CARGO_TARGET_DIR="$WORK/stormnic-target" cargo build -q --release $lock --target x86_64-unknown-uefi ) \
-    || die "stormnic-ixgbe did not build"
-ixgbe="$WORK/stormnic-target/x86_64-unknown-uefi/release/stormnic-ixgbe.efi"
-[[ -f "$ixgbe" ]] || die "no stormnic-ixgbe.efi at $ixgbe"
-if [[ "$STORMNIC_ON_MEDIA" == ixgbe ]]; then
-    cp "$ixgbe" "$OUTDIR/stormnic-ixgbe.efi"
-    say "driver  $(du -h "$ixgbe" | cut -f1)  $OUTDIR/stormnic-ixgbe.efi  (on the media, in place of iPXE intelx)"
+if [[ "$STORMNIC_ON_MEDIA" != ixgbe && "$STORMNIC_CARRY" == no ]]; then
+    say "stormnic-ixgbe: not built (STORMNIC_CARRY=no, and it is not on the media)"
+    rm -f "$OUTDIR/stormnic-ixgbe.efi.off" "$OUTDIR/STORMNIC-SOURCE.txt"
 else
-    # `.off`: stormbootx loads only names ending in .efi, and the media
-    # scripts copy the folder flat, so a plain file is carried, never loaded.
-    cp "$ixgbe" "$OUTDIR/stormnic-ixgbe.efi.off"
-    say "driver  $(du -h "$ixgbe" | cut -f1)  $OUTDIR/stormnic-ixgbe.efi.off  (carried, not loaded)"
+    say "stormnic-ixgbe $STORMNIC_IXGBE_REF"
+    git -C "$WORK" init -q stormnic-ixgbe
+    git -C "$WORK/stormnic-ixgbe" fetch -q --depth 1 "$STORMNIC_IXGBE_REPO" "$STORMNIC_IXGBE_REF"
+    git -C "$WORK/stormnic-ixgbe" checkout -q FETCH_HEAD
+    lock=--locked; [[ -f "$WORK/stormnic-ixgbe/Cargo.lock" ]] || { lock=""; say "  stormnic-ixgbe has no Cargo.lock: built unlocked"; }
+    # shellcheck disable=SC2086
+    ( cd "$WORK/stormnic-ixgbe" && CARGO_TARGET_DIR="$WORK/stormnic-target" cargo build -q --release $lock --target x86_64-unknown-uefi ) \
+        || die "stormnic-ixgbe did not build"
+    ixgbe="$WORK/stormnic-target/x86_64-unknown-uefi/release/stormnic-ixgbe.efi"
+    [[ -f "$ixgbe" ]] || die "no stormnic-ixgbe.efi at $ixgbe"
+    if [[ "$STORMNIC_ON_MEDIA" == ixgbe ]]; then
+        cp "$ixgbe" "$OUTDIR/stormnic-ixgbe.efi"
+        say "driver  $(du -h "$ixgbe" | cut -f1)  $OUTDIR/stormnic-ixgbe.efi  (on the media, in place of iPXE intelx)"
+    else
+        # `.off`: stormbootx loads only names ending in .efi, and the media
+        # scripts copy the folder flat, so a plain file is carried, never loaded.
+        cp "$ixgbe" "$OUTDIR/stormnic-ixgbe.efi.off"
+        say "driver  $(du -h "$ixgbe" | cut -f1)  $OUTDIR/stormnic-ixgbe.efi.off  (carried, not loaded)"
+    fi
+    printf 'stormnic-ixgbe %s %s%s\n' "$STORMNIC_IXGBE_REF" "$(sha256sum "$ixgbe" | cut -d' ' -f1)" "${lock:+ locked}" > "$OUTDIR/STORMNIC-SOURCE.txt"
 fi
-printf 'stormnic-ixgbe %s %s%s\n' "$STORMNIC_IXGBE_REF" "$(sha256sum "$ixgbe" | cut -d' ' -f1)" "${lock:+ locked}" > "$OUTDIR/STORMNIC-SOURCE.txt"
 
 cat > "$OUTDIR/IPXE-SOURCE.txt" <<EOF
 The ipxe-*.efi files in this directory are iPXE (https://ipxe.org), built as
