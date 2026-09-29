@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-09-29
+- **chore:** the rustnic media pins stormnic-ixgbe 0dd4267: SNP and a MAC device path on a child handle after bring-up and the DMA check (stormnic-ixgbe#4), so the firmware's MNP/IP4/TCP4 can bind to the Intel 10G. Built `--locked`; console label `media : rustnic ixgbe@0dd4267 mlx4@4c2d318`. The normal media is unchanged (#51).
 - **chore:** the rustnic media pins stormnic-mlx4 v0.2.0 (4c2d318): SNP on a child handle per Ethernet port with a MAC device path (stormnic-mlx4#4); `Start` keeps the ConnectX-3 (~1.5 s per NIC + up to 5 s for link, was ~20 s per port), the #3 broadcast self-test no longer runs, and ExitBootServices stops its DMA. Built `--locked`; console label `media : rustnic ixgbe@2afd319 mlx4@4c2d318`. The normal media is unchanged (#50). Goldens `golden-stormbootx-rustnic-ab4e848a4dcfcaf3` and `golden-nic-drivers-10a25ce0a5a3`.
 - **chore:** the rustnic media pins stormnic-ixgbe 2afd319 (RX/TX descriptor rings with DMA and a broadcast check frame in Start, stormnic-ixgbe#3; still no SNP), built `--locked`; its console label is `media : rustnic ixgbe@2afd319 mlx4@cef8dc5`. The normal media still carries no stormnic-ixgbe (#48). Goldens `golden-stormbootx-rustnic-7f260c307c5ee784` and `golden-nic-drivers-60d62cc3aee9`.
 - **fix:** `tests/media-ovmf.sh` failed on any console over 20 lines: `grep | head` under `pipefail` exited on grep's broken pipe before checking a line (#49).

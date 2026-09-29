@@ -47,12 +47,13 @@ read -r -a DRIVERS <<< "${IPXE_DRIVERS:-intelx}"
 # ConnectX-3 (#34). The stormbootx-rustnic media golden is built with
 # STORMNIC_ON_MEDIA="ixgbe mlx4" (#45, #34).
 STORMNIC_IXGBE_REPO="https://github.com/glennswest/stormnic-ixgbe.git"
-# 2afd319: RX/TX descriptor rings with DMA (stormnic-ixgbe#3): Start maps one
-# 33-page DMA region, sends one broadcast check frame (EtherType 0x88B5),
-# listens up to 3 s and stops the rings; still no SNP (#4). On top of
-# 9476135's spec-matched PHY and link code (#13, 25 device IDs) and 884cf18's
-# bring-up (#2); committed Cargo.lock, so it builds --locked (#47, #48).
-STORMNIC_IXGBE_REF="2afd31982df0fd8536c5817f54109b74ce746a60"
+# 0dd4267: EFI_SIMPLE_NETWORK_PROTOCOL (stormnic-ixgbe#4): after bring-up and
+# the DMA check, Start installs SNP and a device path (the PCI path plus a MAC
+# node) on a child handle, so MNP/IP4/TCP4 bind above it; SNP Initialize
+# starts the queues and ExitBootServices stops them. On top of 2afd319's
+# rings (#3), 9476135's PHY and link code (#13, 25 device IDs) and 884cf18's
+# bring-up (#2); builds --locked (#47, #48, #51).
+STORMNIC_IXGBE_REF="0dd4267939178302625858f57e12556f202fe43f"
 STORMNIC_MLX4_REPO="https://github.com/glennswest/stormnic-mlx4.git"
 # 4c2d318 (v0.2.0): EFI_SIMPLE_NETWORK_PROTOCOL on a child handle per Ethernet
 # port, with a MAC device path (stormnic-mlx4#4). Start keeps the ConnectX-3
