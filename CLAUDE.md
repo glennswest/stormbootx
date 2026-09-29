@@ -390,6 +390,27 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
+- [ ] **#46 — v0.5.1 media hangs on the R230 inside stormuefi's initramfs
+      read (P0, 2026-09-29). In progress.** C2NR0Q2 on golden 206d57c3
+      (b693698) stopped at stormuefi's `initrd … raw bytes (no filesystem)`
+      for 16+ min; 74a242a6 (a709f9f) booted the same release. That line is
+      printed in stormuefi's `handoff::load` *before* the initramfs is read,
+      so the stall is the initramfs read through our `read_blocks` over
+      NVMe/TCP, not `ExitBootServices`. Bisect by code: the only src commit
+      in a709f9f..b693698 on the boot path is 1dbb761 (#37). On the firmware
+      path, its one runtime change is `config::esp_reader()`, read after the
+      attach (exclusive opens of LoadedImage and the virtual CD's SFS).
+      `nvme.rs`, `tcp4.rs` and `read_blocks` are unchanged. `pump` times out,
+      so a lost completion fails rather than hangs: the stall looks like reads
+      that crawl. One boot per ISO, so the fabric (dsw1, see dswfecfix) is
+      not ruled out. Plan:
+      1. read `esp =` with the rest of the config, before the network, so
+         the firmware path runs a709f9f's sequence exactly;
+      2. `read_blocks` reports: a failed read's error text (was a bare
+         `DEVICE_ERROR`), a read that took over 2 s, and progress every
+         64 MiB with MiB/s, so the next R230 boot shows where the time goes;
+      3. sc-build, golden, and the master boots it on the R230.
+
 - [ ] **#37 — boot a 4096-byte ESP on firmware whose FAT can't (P0, owner
       2026-09-29). In progress.** Volumes stay 4K. server1's console (#33)
       shows Aptio 4's FAT *mounting* the attached 4K ESP (an SFS was found)
