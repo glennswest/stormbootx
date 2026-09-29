@@ -366,6 +366,28 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
+- [ ] **#37 — boot a 4096-byte ESP on firmware whose FAT can't (P0, owner
+      2026-09-29). In progress.** Volumes stay 4K. server1's console (#33)
+      shows Aptio 4's FAT *mounting* the attached 4K ESP (an SFS was found)
+      and then `LoadImage` NOT_FOUND, so the firmware's FAT misreads a
+      4096-byte-sector FAT. A 512e shim would still give that driver a BPB
+      that says 4096, so it would work only by luck. Chosen instead (the issue's option 2):
+      stormbootx reads the ESP itself. Plan:
+      1. `src/esp.rs`, core-only like `dnsname.rs`: GPT (CRC-checked) → ESP →
+         FAT12/16/32 at any sector size 512..4096, 8.3 and LFN lookup, file
+         read. Host tests on `mkfs.fat -S 4096`/`-S 512` images built in the
+         sc-build job (`tests/esp-images.sh`).
+      2. `blockio::boot_attached`: firmware first (the R230 path), and if
+         that load fails, read `\EFI\BOOT\BOOTX64.EFI` with `esp.rs` and
+         `LoadImage` it from the buffer. `esp = stormbootx` in
+         `stormboot.conf` forces the bridge (the OVMF test), `esp = firmware`
+         turns it off. stormuefi needs nothing: it reads pallets through
+         whole-disk BlockIO and parses the GPT itself.
+      3. `espprobe.efi` (third binary) runs the same bridge on a local 4K
+         virtio disk under OVMF in the sc-build job, to prove LoadImage
+         from the buffer starts an image.
+      4. Metal: server1 and a pve VM boot a 4K clone (the master runs them).
+
 - [ ] **Everything is a golden (owner, 2026-09-28; #21 decided,
       stormcentral#126). In progress.** stormbootx ships as a golden, not as
       a file on dev: the boot media (`.efi`, ESP image, ISO) as one golden,
