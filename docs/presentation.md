@@ -106,6 +106,10 @@ Any failure on any arrow → **fall through to the local disk**.
 - **Chain-load**: loads `BOOTX64.EFI` only from an ESP whose device path
   starts with that vendor node — never a local disk. It does not hand back to
   the boot manager: a disk that appears mid-boot is not in `BootOrder`.
+- **Reads the ESP itself when the firmware can't** (`esp.rs`, #37): volumes
+  stay 4K, and old firmware (AMI Aptio 4) misreads a 4096-byte-sector FAT.
+  GPT → ESP → FAT12/16/32 at 512..4096-byte sectors → `LoadImage` from the
+  buffer. `esp =` picks one reader alone.
 - **NIC drivers from the media** (`drivers.rs`, #26): every `*.efi` in
   `\stormboot\drivers` is started after the platform's own drivers bind, so
   it only takes NICs nothing else drives. Each step is printed, so a hang
@@ -159,14 +163,16 @@ Read from the volume it booted from. `key = value`, each key independent.
 | `claim` | `yes` | `no` pins the stick to `nqn`/`nsid` |
 | `name` (or `tag`) | DNS name, MAC, SMBIOS | states the identity |
 | `dns` | — | PTR server when the lease names none (#26) |
+| `esp` | `auto` | who reads the ESP: firmware then stormbootx, or one alone (#37) |
 | `fec` | — | recovery sticks only: write FEC, warm-reset |
 
 ---
 
 ## How it ships and is operated
 
-- **Built** with `sc-build` on the build box: both `.efi`s plus four host
-  test suites: `intent` 8, `sha256` 7, `universal` 6, `dnsname` 7.
+- **Built** with `sc-build` on the build box: three `.efi`s plus five host
+  test suites: `intent` 8, `sha256` 7, `universal` 6, `dnsname` 7, `esp` 12;
+  then `espprobe` boots under OVMF against a 4K disk (#37).
 - **Ships as goldens** (#21, decided 2026-09-28), written by
   `deploy/build-golden.sh`: `stormbootx` (the `.efi`s, an ISO for BMC virtual
   media, a USB `.img`, a `tcp4probe` ISO) and `nic-drivers` (iPXE `intelx`,
@@ -201,7 +207,8 @@ RESULT: remote image is a local disk. Firmware can boot it.
 2026-09-28, Supermicro X9 blade (server1), no UEFI NIC driver in firmware:
 `drivers : 1 of 1 started` → `tcp4 : available` → name `server1` from the
 PTR → `boothost/server1` claimed → NVMe/TCP attach (#26, from the golden).
-Its release disk's `BOOTX64.EFI` is not found at 4096-byte blocks (#33).
+Its release disk's `BOOTX64.EFI` is not found at 4096-byte blocks (#33):
+the reason for #37's reader, which is verified under OVMF but not yet here.
 
 ---
 
@@ -209,7 +216,7 @@ Its release disk's `BOOTX64.EFI` is not found at 4096-byte blocks (#33).
 
 | | What | Waiting on |
 |---|---|---|
-| #33 | the X9 blades boot the attached disk | stormblock#228 (512-byte boot volume) |
+| #37 | the X9 blades boot the attached 4K disk | a server1 boot of a build with `esp.rs` |
 | #11 | intents take effect | a stormblock release with #148 (on main) on forge |
 | #15 | universal boot served | forge on stormblock ≥ 19.4.0, `boothost/default` set, stormblock#202 |
 | #23 | a name the engine hasn't seen reaches its host | stormblock#204 |
@@ -228,7 +235,7 @@ Its release disk's `BOOTX64.EFI` is not found at 4096-byte blocks (#33).
 - Intents, universal boot and names are in the binary, and inert until the
   engine serves them: forge runs stormblock 13.7.0, so every intent read is
   a 404 (→ `auto`) and there is no `boothost/default`.
-- **P0:** #33 (the X9 blades boot the attached disk), #15 (one ISO, any machine), #3 and #11
+- **P0:** #37 (the X9 blades boot the attached 4K disk; on metal next), #15 (one ISO, any machine), #3 and #11
   (together they end the fresh clone on every boot).
 - **Decisions open:** #19 (compare key), #20 (inventory), #22 (test approach).
 
