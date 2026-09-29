@@ -3,14 +3,22 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
-### 2026-09-29
-- **feat(#37): boot a 4096-byte-sector ESP on firmware whose FAT can't read it.** Volumes stay 4K. When the firmware's own FAT loads no `\EFI\BOOT\BOOTX64.EFI` from the attached image (AMI Aptio 4 mounts a 4K FAT and then answers `NOT_FOUND`, #33), stormbootx reads the file itself and `LoadImage`s it from the buffer, with the path `Vendor(disk)/HD(n,GPT,…)/\EFI\BOOT\BOOTX64.EFI`. `src/esp.rs` (core-only) handles a CRC-checked GPT and FAT12/16/32 at any sector size from 512 to 4096, with 8.3 and long names. `src/espboot.rs` does the load. `esp = firmware | stormbootx` in `stormboot.conf` picks one reader alone; the default is the firmware first.
-- **feat(#37): `espprobe.efi`, a third binary.** It reports whether the firmware's FAT loads a disk's bootloader, and starts it through stormbootx's reader. `tests/esp-ovmf.sh` boots it under OVMF against a 4096-byte virtio disk with a 4096-byte-sector FAT16 ESP; it is now part of the sc-build command.
-- **test(#37):** `esp.rs` host tests (12) on `mkfs.fat`/mtools images: FAT12/16/32, 512- and 4096-byte sectors on 512- and 4096-byte disks, long names, a fragmented file, nested directories and `..`, GPT CRC failures, and at most a few reads per lookup.
-- **fix(#37):** the ESP's GPT entry is judged only after the entry array passes its CRC (#38).
-- **docs(#37):** README (step 9, `esp =`, `espprobe`, build), CLAUDE.md (build command, module map, a load-bearing fact, work plan).
+## [v0.5.0] — 2026-09-29
 
-### 2026-09-28
+### Added
+- **boot a 4096-byte-sector ESP on firmware whose FAT can't read it.** Volumes stay 4K. When the firmware's own FAT loads no `\EFI\BOOT\BOOTX64.EFI` from the attached image (AMI Aptio 4 mounts a 4K FAT and then answers `NOT_FOUND`, #33), stormbootx reads the file itself and `LoadImage`s it from the buffer, with the path `Vendor(disk)/HD(n,GPT,…)/\EFI\BOOT\BOOTX64.EFI`. `src/esp.rs` (core-only) handles a CRC-checked GPT and FAT12/16/32 at any sector size from 512 to 4096, with 8.3 and long names. `src/espboot.rs` does the load. `esp = firmware | stormbootx` in `stormboot.conf` picks one reader alone; the default is the firmware first.
+- **`espprobe.efi`, a third binary.** It reports whether the firmware's FAT loads a disk's bootloader, and starts it through stormbootx's reader. `tests/esp-ovmf.sh` boots it under OVMF against a 4096-byte virtio disk with a 4096-byte-sector FAT16 ESP; it is now part of the sc-build command.
+- `esp.rs` host tests (12) on `mkfs.fat`/mtools images: FAT12/16/32, 512- and 4096-byte sectors on 512- and 4096-byte disks, long names, a fragmented file, nested directories and `..`, GPT CRC failures, and at most a few reads per lookup.
+
+### Fixed
+- the ESP's GPT entry is judged only after the entry array passes its CRC (#38).
+
+### Documentation
+- README (step 9, `esp =`, `espprobe`, build), CLAUDE.md (build command, module map, a load-bearing fact, work plan).
+
+### Also in this release: the changes since v0.4.0, by date
+
+#### 2026-09-28
 - **docs(#26):** closed on server1's run of `golden-stormbootx-74a242a6f0e89f75` (a709f9f): `ipxe-intelx.efi` loaded from the media, `tcp4 : available`, the name `server1` from the PTR, a claim of `boothost/server1` and an NVMe/TCP attach with no `CreateEvent` failure. The `BOOTX64.EFI` `NOT_FOUND` after the attach is #33. README, the deck and the work plan updated
 - **feat:** `stormnic-ixgbe.efi`, the Rust driver for the blades' Intel 10G, is built into the NIC drivers from a pinned commit (`STORMNIC_IXGBE_REF`, glennswest/stormnic-ixgbe) (#29). Carried as `stormnic-ixgbe.efi.off`, which is not loaded — a scaffold that binds the NIC without a network would take the blades' network away; `STORMNIC_ON_MEDIA=ixgbe` puts it on the media in place of iPXE's intelx, for the on-hardware check (stormnic-ixgbe#7). `STORMNIC-SOURCE.txt` records the commit and digest
 - **docs:** refreshed README, CLAUDE.md and the deck against the code (changes since 2026-09-18):
