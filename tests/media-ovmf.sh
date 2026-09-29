@@ -42,7 +42,9 @@ timeout "$LIMIT" qemu-system-x86_64 -machine q35,accel="$accel" -m 512 \
 # The console carries CRs and escape sequences; compare on plain lines.
 tr -d '\r' < "$W/serial.log" | sed 's/\x1b\[[0-9;]*[A-Za-z]//g' > "$W/console.txt"
 say "console (first 20 lines):"
-grep -v '^\s*$' "$W/console.txt" | head -20 | sed 's/^/  | /'
+# sed reads to the end: `| head` closes the pipe early, and under pipefail the
+# writer's EPIPE failed the test once the console ran past 20 lines (#49).
+grep -v '^\s*$' "$W/console.txt" | sed -n '1,20s/^/  | /p'
 fail=0
 for want in "$@"; do
     if grep -qF -- "$want" "$W/console.txt"; then
