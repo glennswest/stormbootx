@@ -411,6 +411,17 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
          64 MiB with MiB/s, so the next R230 boot shows where the time goes;
       3. sc-build, golden, and the master boots it on the R230.
 
+      **Done (2026-09-29):** 1–2 in 7ee138d, released as v0.7.0 (b36ece9).
+      sc-build passes: build with no warnings, host suites 8/7/6/7/12, and
+      `espprobe: PASS` under OVMF; `--locked` builds at the tag. Goldens:
+      `golden-stormbootx-58415a7fcaed9ac0` (normal) and
+      `golden-stormbootx-rustnic-8999c7a5555d95a5`. **Not verified:** the
+      `blockio :` lines need an attached namespace (no TCP4 in Fedora's
+      OVMF), and the hang itself needs the R230. **Next:** the master boots
+      58415a7f on C2NR0Q2. If it boots, 1 was the cause. If it stalls, the
+      `blockio :` lines say whether reads crawl (MiB/s, slow reads), fail
+      (the NVMe/TCP error), or stopped; check dsw1's dswfecfix log too.
+
 - [ ] **#37 — boot a 4096-byte ESP on firmware whose FAT can't (P0, owner
       2026-09-29). In progress.** Volumes stay 4K. server1's console (#33)
       shows Aptio 4's FAT *mounting* the attached 4K ESP (an SFS was found)
