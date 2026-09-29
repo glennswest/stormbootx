@@ -401,6 +401,21 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       checks (stormnic-ixgbe `docs/bring-up.md`) are the master's, on
       server1/server2.
 
+- [ ] **#34 — stormnic-mlx4 on the rustnic media, carried in nic-drivers
+      (P0, 2026-09-29). In progress.** The owner asked for the pin at
+      cef8dc5 (stormnic-mlx4#2 firmware bring-up + #3 Ethernet data path,
+      committed `Cargo.lock`) for one server1 rustnic boot. stormcentral#189
+      (private fetch) is closed. Plan:
+      1. `build-nic-drivers.sh`: `STORMNIC_MLX4_REF`, built `--locked`, PE
+         subsystem checked = 11 (boot-service driver); `STORMNIC_ON_MEDIA`
+         becomes a list (`ixgbe mlx4`); a driver not on the media is carried
+         as `.efi.off`; `STORMNIC-SOURCE.txt` gets one line per driver.
+      2. `stormbootx-rustnic` carries both; label `rustnic ixgbe@… mlx4@…`.
+         The normal media stays without mlx4 (Start holds each port ~20 s).
+      3. sc-build: build the rustnic tree, boot its ISO under OVMF and see
+         `stormnic-mlx4 0.1.0: driver binding installed`; then the golden.
+      4. The master boots server1 on it (stormnic-mlx4#1/#2/#3 SOL lines).
+
 - [ ] **#46 — v0.5.1 media hangs on the R230 inside stormuefi's initramfs
       read (P0, 2026-09-29). In progress.** C2NR0Q2 on golden 206d57c3
       (b693698) stopped at stormuefi's `initrd … raw bytes (no filesystem)`
