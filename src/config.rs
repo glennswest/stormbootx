@@ -133,6 +133,28 @@ pub fn stated_fec() -> Option<crate::mlxfec::Fec> {
     crate::mlxfec::Fec::parse(&field(&text, "fec")?)
 }
 
+/// Who reads the attached image's ESP (#37): `esp =` in the config file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EspReader {
+    /// The firmware's FAT driver, then stormbootx's own reader if it can't
+    /// load the bootloader. The default, and any value not listed below.
+    Auto,
+    /// `esp = firmware`: the firmware alone, as before #37.
+    Firmware,
+    /// `esp = stormbootx`: stormbootx's reader alone. How the reader is
+    /// tested on a firmware whose own FAT reads 4K sectors fine (OVMF).
+    Stormbootx,
+}
+
+/// `esp =` from the config file, read on its own when the image is attached.
+pub fn esp_reader() -> EspReader {
+    match read_file(CONF_PATH).and_then(|t| field(&t, "esp")).as_deref() {
+        Some("firmware") => EspReader::Firmware,
+        Some("stormbootx") => EspReader::Stormbootx,
+        _ => EspReader::Auto,
+    }
+}
+
 /// The name stated in the config file, read on its own: `name =`, or its older
 /// spelling `tag =` (#23). `name` wins when a file has both.
 ///

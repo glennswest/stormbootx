@@ -17,6 +17,12 @@ path = "src/main.rs"
 name = "tcp4probe"
 path = "src/tcp4probe.rs"
 
+# Who can read a 4096-byte-sector ESP: the firmware's FAT, and stormbootx's
+# own reader (#37). Boots under OVMF in tests/esp-ovmf.sh.
+[[bin]]
+name = "espprobe"
+path = "src/espprobe.rs"
+
 [dependencies]
 uefi = { version = "0.39", features = ["alloc", "global_allocator", "panic_handler", "logger"] }
 uefi-raw = "0.15"

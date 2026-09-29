@@ -55,6 +55,8 @@ mod config;
 mod dhcp4;
 mod dnsname;
 mod drivers;
+mod esp;
+mod espboot;
 mod intent;
 mod mlxfec;
 mod nvme;
@@ -603,7 +605,11 @@ fn run() -> Result<(), String> {
     banner("");
     banner("RESULT: image attached; starting its bootloader.");
     banner("============================================================");
-    blockio::boot_attached(handle)?;
+    let reader = config::esp_reader();
+    if reader != config::EspReader::Auto {
+        uefi::println!("esp         : {reader:?} only (esp = in {})", config::CONF_PATH);
+    }
+    blockio::boot_attached(handle, reader)?;
     Err(String::from("the attached image did not boot; nothing to chain-load"))
 }
 

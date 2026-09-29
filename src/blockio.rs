@@ -4,8 +4,9 @@
 //! a device path, the firmware's own drivers take over: the partition driver
 //! reads the GPT and produces a handle per partition, and the FAT driver mounts
 //! the ESP. `boot_attached` then loads the ESP's `BOOTX64.EFI` itself, because
-//! the boot manager will not boot a disk that appeared mid-boot. Nothing above
-//! needs to know the blocks arrive over TCP.
+//! the boot manager will not boot a disk that appeared mid-boot, and reads the
+//! ESP itself when the firmware's FAT can't (#37). Nothing above needs to know
+//! the blocks arrive over TCP.
 //!
 //! The protocol's function pointers are bare `extern "efiapi"` functions with
 //! no context argument, so the namespace they act on has to be reachable from
@@ -29,6 +30,7 @@ use uefi_raw::protocol::block::{BlockIoMedia, BlockIoProtocol};
 use uefi_raw::Boolean;
 use uefi_raw::Guid;
 
+use crate::config::EspReader;
 use crate::nvme::Namespace;
 
 /// The one namespace this boot is serving. Set once before the protocol is
@@ -276,9 +278,38 @@ const DEVICE_PATH_GUID: Guid = guid!("09576e91-6d3f-11d2-8e39-00a0c969723b");
 /// hands the machine to the image's own boot chain exactly as booting the disk
 /// from the menu would.
 ///
+/// **Who reads the ESP** (#37). The firmware's own FAT driver first, as on the
+/// R230. If it can't load the file, stormbootx reads the ESP itself
+/// (`esp.rs`) and loads the bytes. A 4K image carries a 4096-byte-sector FAT,
+/// and AMI Aptio 4 mounts one and then answers `NOT_FOUND` (#33).
+/// `esp = firmware` or `esp = stormbootx` in `stormboot.conf` picks one of the
+/// two alone.
+///
 /// Only returns on failure — a started image that itself exits comes back, and
 /// that is the caller's cue to fall through to whatever else there is.
-pub fn boot_attached(disk: uefi_raw::Handle) -> Result<(), String> {
+pub fn boot_attached(disk: uefi_raw::Handle, reader: EspReader) -> Result<(), String> {
+    let why = match reader {
+        EspReader::Stormbootx => String::from("esp = stormbootx"),
+        _ => match firmware_boot(disk)? {
+            Loaded::Ran(outcome) => return Err(outcome),
+            Loaded::Not(why) if reader == EspReader::Firmware => return Err(why),
+            Loaded::Not(why) => why,
+        },
+    };
+    uefi::println!("boot        : the firmware did not load it ({why}); reading the ESP here");
+    bridge_boot(disk)
+}
+
+/// What the firmware's own attempt came to.
+enum Loaded {
+    /// The bootloader was started and came back: this, and nothing else runs.
+    Ran(String),
+    /// Nothing was started: why.
+    Not(String),
+}
+
+/// Load and start the bootloader through the firmware's filesystem drivers.
+fn firmware_boot(disk: uefi_raw::Handle) -> Result<Loaded, String> {
     // The disk we published — its device path is the single vendor node we
     // installed. An ESP belongs to *this* disk only if its own device path
     // begins with that exact node; the partition driver appends an HD() node
@@ -299,12 +330,13 @@ pub fn boot_attached(disk: uefi_raw::Handle) -> Result<(), String> {
         .and_then(|b| b.finalize())
         .map_err(|e| format!("file path build failed: {e:?}"))?;
 
-    let handles = boot::locate_handle_buffer(SearchType::ByProtocol(&SimpleFileSystem::GUID))
-        .map_err(|e| format!("no filesystems to boot: {e:?}"))?;
+    let Ok(handles) = boot::locate_handle_buffer(SearchType::ByProtocol(&SimpleFileSystem::GUID))
+    else {
+        return Ok(Loaded::Not(String::from("no filesystem on it")));
+    };
 
     let image = boot::image_handle();
-    let mut considered = 0usize;
-    let mut last = String::from("the attached image had no bootable ESP");
+    let mut last = None;
     for h in handles.iter() {
         let Some(dp) = device_path_of(h.as_ptr()) else { continue };
         // Strict: only an ESP whose first node is our disk's node. No fallback
@@ -313,12 +345,11 @@ pub fn boot_attached(disk: uefi_raw::Handle) -> Result<(), String> {
             Some(first) if first == our_first => {}
             _ => continue,
         }
-        considered += 1;
 
         let full = match dp.append_path(file_path) {
             Ok(f) => f,
             Err(e) => {
-                last = format!("append_path failed: {e:?}");
+                last = Some(format!("append_path failed: {e:?}"));
                 continue;
             }
         };
@@ -331,20 +362,67 @@ pub fn boot_attached(disk: uefi_raw::Handle) -> Result<(), String> {
         ) {
             Ok(loaded) => {
                 uefi::println!("boot        : starting \\EFI\\BOOT\\BOOTX64.EFI from the attached image");
-                match boot::start_image(loaded) {
-                    Ok(()) => last = String::from("the image's bootloader exited"),
-                    Err(e) => last = format!("the image's bootloader returned {e:?}"),
-                }
+                return Ok(Loaded::Ran(match boot::start_image(loaded) {
+                    Ok(()) => String::from("the image's bootloader exited"),
+                    Err(e) => format!("the image's bootloader returned {e:?}"),
+                }));
             }
-            Err(e) => last = format!("load of BOOTX64.EFI failed: {e:?}"),
+            Err(e) => last = Some(format!("load of BOOTX64.EFI failed: {e:?}")),
         }
     }
-    if considered == 0 {
-        return Err(String::from(
-            "the attached image published no ESP — its GPT has no EFI System Partition, or the partition driver did not bind it",
-        ));
+    Ok(Loaded::Not(last.unwrap_or_else(|| {
+        String::from("the firmware mounted no filesystem on the attached image")
+    })))
+}
+
+/// Read the ESP with `esp.rs` and start its bootloader from the buffer.
+fn bridge_boot(disk: uefi_raw::Handle) -> Result<(), String> {
+    let our_dp = device_path_of(disk).ok_or("attached disk has no device path")?;
+    // The namespace is borrowed only while reading: the bootloader started
+    // below reads the disk through `read_blocks`, which borrows it again.
+    let loader = {
+        let ns = unsafe { namespace() }.ok_or("no namespace is attached")?;
+        let block_size = ns.geometry.block_size;
+        let mut d = NsDisk { ns, bounce: alloc::vec::Vec::new() };
+        crate::espboot::read(&mut d, block_size)
+            .map_err(|e| format!("stormbootx could not read the ESP either: {e}"))?
+    };
+    uefi::println!(
+        "boot        : {} is {} bytes (partition {}, FAT{} at {}-byte sectors)",
+        crate::espboot::BOOTLOADER,
+        loader.bytes.len(),
+        loader.partition.number,
+        loader.fat_bits,
+        loader.sector
+    );
+    crate::espboot::start(our_dp, &loader)
+}
+
+/// The attached namespace as an `esp::Disk`: any byte range, read as whole
+/// blocks, straight into the caller's buffer when it is block-aligned.
+struct NsDisk<'a> {
+    ns: &'a mut Namespace,
+    bounce: alloc::vec::Vec<u8>,
+}
+
+impl crate::esp::Disk for NsDisk<'_> {
+    fn read(&mut self, offset: u64, buf: &mut [u8]) -> bool {
+        let bs = self.ns.geometry.block_size as u64;
+        let len = buf.len() as u64;
+        if offset % bs == 0 && len % bs == 0 {
+            return self.ns.read(offset / bs, buf).is_ok();
+        }
+        let first = offset / bs;
+        let blocks = (offset + len).div_ceil(bs) - first;
+        let n = (blocks * bs) as usize;
+        self.bounce.resize(n, 0);
+        if self.ns.read(first, &mut self.bounce[..n]).is_err() {
+            return false;
+        }
+        let from = (offset - first * bs) as usize;
+        buf.copy_from_slice(&self.bounce[from..from + buf.len()]);
+        true
     }
-    Err(last)
 }
 
 /// A handle's device path, read without an exclusive open (drivers hold it).
