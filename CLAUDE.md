@@ -401,6 +401,16 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       checks (stormnic-ixgbe `docs/bring-up.md`) are the master's, on
       server1/server2.
 
+- [ ] **#51 — rustnic media pins stormnic-ixgbe 0dd4267 (SNP). In
+      progress 2026-09-29.** stormnic-ixgbe#4: after bring-up and the DMA
+      check, Start installs SNP and a MAC device path on a child handle, so
+      MNP/IP4/TCP4 can bind. Plan:
+      1. `STORMNIC_IXGBE_REF` → 0dd4267, built `--locked`; label and docs.
+      2. sc-build: all three trees, both ISOs under OVMF (the ixgbe binding
+         line; OVMF has no Intel 10G); normal media unchanged.
+      3. rustnic golden; the server1 SOL boot (`SNP initialized`, `tcp4 :
+         available`, and #3's DMA lines) is the master's.
+
 - [x] **#50 — rustnic media pins stormnic-mlx4 v0.2.0 (4c2d318, SNP).
       Closed 2026-09-29.** stormnic-mlx4#4: SNP on a child handle per
       Ethernet port with a MAC device path; `Start` keeps the ConnectX-3
