@@ -54,11 +54,12 @@ STORMNIC_IXGBE_REPO="https://github.com/glennswest/stormnic-ixgbe.git"
 # bring-up (#2); committed Cargo.lock, so it builds --locked (#47, #48).
 STORMNIC_IXGBE_REF="2afd31982df0fd8536c5817f54109b74ce746a60"
 STORMNIC_MLX4_REPO="https://github.com/glennswest/stormnic-mlx4.git"
-# cef8dc5: firmware bring-up to INIT_HCA and back (stormnic-mlx4#2) and the
-# Ethernet data path check (#3), both run inside Start, which then releases
-# the NIC and returns UNSUPPORTED (no SNP yet). Up to ~20 s per Ethernet port
-# with link. Committed Cargo.lock (#9), so it builds --locked (#34).
-STORMNIC_MLX4_REF="cef8dc5ce53560f4b8bc34f75b9b80b1732ec49d"
+# 4c2d318 (v0.2.0): EFI_SIMPLE_NETWORK_PROTOCOL on a child handle per Ethernet
+# port, with a MAC device path (stormnic-mlx4#4). Start keeps the ConnectX-3
+# (~1.5 s per NIC plus up to 5 s for link); the #3 broadcast self-test no
+# longer runs (cef8dc5 is the pin that checks #1-#3); ExitBootServices stops
+# the device's DMA and releases it for the OS. Builds --locked (#34, #50).
+STORMNIC_MLX4_REF="4c2d318df76c55d95a0af4498de0004da6f8916f"
 read -r -a STORMNIC_ON_MEDIA <<< "${STORMNIC_ON_MEDIA:-}"
 for d in "${STORMNIC_ON_MEDIA[@]}"; do
     [[ "$d" == ixgbe || "$d" == mlx4 ]] || die "STORMNIC_ON_MEDIA: no Rust driver '$d' (ixgbe, mlx4)"

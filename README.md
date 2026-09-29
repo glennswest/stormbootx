@@ -459,16 +459,18 @@ with the Rust drivers instead: `stormnic-ixgbe.efi` built `--locked` from
 `STORMNIC_IXGBE_REF` in `scripts/build-nic-drivers.sh`, and no iPXE NIC
 driver, so the Rust driver is what a machine booting it tests. Since #34 it
 also carries `stormnic-mlx4.efi` for the ConnectX-3, built `--locked` from
-`STORMNIC_MLX4_REF`. Its `Start` runs the ConnectX-3 firmware bring-up and an
-Ethernet data-path check, up to about 20 s per port with link, then releases
-the NIC (no SNP yet), so the normal media does not carry it. Each Rust driver
+`STORMNIC_MLX4_REF`. Since #50 (stormnic-mlx4 v0.2.0) its `Start` brings up the
+ConnectX-3, keeps it, and installs `EFI_SIMPLE_NETWORK_PROTOCOL` on a child
+handle per Ethernet port (about 1.5 s per NIC plus up to 5 s for link), so
+MNP/IP4/TCP4 can bind above it. The normal media does not carry it until
+that is proven on server1. Each Rust driver
 is checked to be PE subsystem 11 (EFI boot-service driver) when it is built.
 The rustnic media builds its own drivers and takes no nic-drivers golden. Each ISO's `stormboot.conf` names the variant, and the console
 prints it under the banner:
 
 ```
 media       : normal
-media       : rustnic ixgbe@2afd319 mlx4@cef8dc5
+media       : rustnic ixgbe@2afd319 mlx4@4c2d318
 ```
 
 The media carries `\stormboot\drivers` from the nic-drivers golden
