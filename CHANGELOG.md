@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-09-29
+- **docs:** work plan: #37 is handed off for the metal run (server1, a pve VM) on `golden-stormbootx-206d57c3601dcd17`; nothing is left in this repo.
+
 ## [v0.5.1] — 2026-09-29
 
 ### Fixed

@@ -426,7 +426,10 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       (2fdd994). The nic-drivers golden still does, which is stormcentral#189.
       **Next:** the master boots that golden on server1 and a pve VM with a
       4K clone; expect `boot : the firmware did not load it (…); reading the
-      ESP here` on server1, then stormuefi.
+      ESP here` on server1, then stormuefi. **Handed off 2026-09-29**
+      (`stormcentral shipped`): nothing is left in this repo, and the golden
+      is current (only docs since b693698). The metal run closes it; a
+      failure there comes back as a new issue or a reopen.
 
 - [ ] **Everything is a golden (owner, 2026-09-28; #21 decided,
       stormcentral#126). In progress.** stormbootx ships as a golden, not as
