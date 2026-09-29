@@ -401,20 +401,21 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       checks (stormnic-ixgbe `docs/bring-up.md`) are the master's, on
       server1/server2.
 
-- [ ] **#34 — stormnic-mlx4 on the rustnic media, carried in nic-drivers
-      (P0, 2026-09-29). In progress.** The owner asked for the pin at
-      cef8dc5 (stormnic-mlx4#2 firmware bring-up + #3 Ethernet data path,
-      committed `Cargo.lock`) for one server1 rustnic boot. stormcentral#189
-      (private fetch) is closed. Plan:
-      1. `build-nic-drivers.sh`: `STORMNIC_MLX4_REF`, built `--locked`, PE
-         subsystem checked = 11 (boot-service driver); `STORMNIC_ON_MEDIA`
-         becomes a list (`ixgbe mlx4`); a driver not on the media is carried
-         as `.efi.off`; `STORMNIC-SOURCE.txt` gets one line per driver.
-      2. `stormbootx-rustnic` carries both; label `rustnic ixgbe@… mlx4@…`.
-         The normal media stays without mlx4 (Start holds each port ~20 s).
-      3. sc-build: build the rustnic tree, boot its ISO under OVMF and see
-         `stormnic-mlx4 0.1.0: driver binding installed`; then the golden.
-      4. The master boots server1 on it (stormnic-mlx4#1/#2/#3 SOL lines).
+- [x] **#34 — stormnic-mlx4 on the rustnic media, carried in nic-drivers.
+      Closed 2026-09-29.** Pinned at cef8dc5 (stormnic-mlx4#2 firmware
+      bring-up, #3 Ethernet data path), built `--locked`, PE subsystem
+      checked = 11 for every Rust driver (302dd25). `STORMNIC_ON_MEDIA` is a
+      list; the rustnic media uses `ixgbe mlx4`, the nic-drivers golden
+      carries both as `.efi.off`, the normal media carries neither (mlx4's
+      Start holds each port ~20 s). sc-build of 29348a5 built all three
+      trees and booted both ISOs under OVMF (KVM): `media : rustnic
+      ixgbe@9476135 mlx4@cef8dc5`, both `driver binding installed`,
+      `stormnic-mlx4.efi started`; normal media `media : normal` with
+      `ipxe-intelx.efi` only. That run also found #49 (media-ovmf.sh died on
+      a console over 20 lines), fixed. Goldens
+      `golden-stormbootx-rustnic-b4f33d9566d6127e` and
+      `golden-nic-drivers-5b867545c91e`. Left for the master: boot server1
+      on the rustnic golden for stormnic-mlx4#1/#2/#3's SOL lines.
 
 - [ ] **#46 — v0.5.1 media hangs on the R230 inside stormuefi's initramfs
       read (P0, 2026-09-29). In progress.** C2NR0Q2 on golden 206d57c3
