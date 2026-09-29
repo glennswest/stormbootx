@@ -401,6 +401,17 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       checks (stormnic-ixgbe `docs/bring-up.md`) are the master's, on
       server1/server2.
 
+- [ ] **#50 — rustnic media pins stormnic-mlx4 v0.2.0 (4c2d318, SNP).
+      In progress 2026-09-29.** stormnic-mlx4#4: SNP on a child handle per
+      Ethernet port with a MAC device path; `Start` keeps the ConnectX-3
+      (~1.5 s per NIC + up to 5 s for link, was ~20 s per port); the #3
+      broadcast self-test no longer runs; ExitBootServices stops DMA. Plan:
+      1. `STORMNIC_MLX4_REF` → 4c2d318, built `--locked`; label and docs.
+      2. sc-build: all three trees, both ISOs under OVMF (`stormnic-mlx4
+         0.2.0: driver binding installed`); normal media unchanged.
+      3. goldens (`stormbootx-rustnic`, `nic-drivers`); the server1 SOL boot
+         (`port 1 SNP: initialized`, `tcp4 : available`) is the master's.
+
 - [x] **#48 — rustnic media pins stormnic-ixgbe 2afd319. Closed
       2026-09-29.** 2afd319 is stormnic-ixgbe#3: RX/TX descriptor rings
       with DMA, a broadcast check frame in Start, still no SNP. Pinned in
