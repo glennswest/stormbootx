@@ -419,6 +419,15 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       run anywhere yet: it needs an attached namespace, and Fedora's OVMF
       has no TCP4.
 
+      **Golden:** `golden-stormbootx-206d57c3601dcd17` (v0.5.1, b693698). The
+      first request failed: `build-nic-drivers.sh` fetched the private
+      stormnic-ixgbe, and the golden builder has no GitHub credentials. The
+      media golden never carried that driver, so it no longer builds it
+      (2fdd994). The nic-drivers golden still does, which is stormcentral#189.
+      **Next:** the master boots that golden on server1 and a pve VM with a
+      4K clone; expect `boot : the firmware did not load it (…); reading the
+      ESP here` on server1, then stormuefi.
+
 - [ ] **Everything is a golden (owner, 2026-09-28; #21 decided,
       stormcentral#126). In progress.** stormbootx ships as a golden, not as
       a file on dev: the boot media (`.efi`, ESP image, ISO) as one golden,
