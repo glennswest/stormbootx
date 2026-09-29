@@ -85,7 +85,7 @@ fn probe() -> Result<(), String> {
     // the disk under test has no BlockIO until every controller is connected.
     if let Ok(all) = boot::locate_handle_buffer(SearchType::AllHandles) {
         for &h in all.iter() {
-            let _ = boot::connect_controller(h, None, None, true);
+            let _ = boot::connect_controller(h, &[], None, true);
         }
     }
     let handles = boot::locate_handle_buffer(SearchType::ByProtocol(&BlockIO::GUID))
