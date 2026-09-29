@@ -156,12 +156,10 @@ pub fn find_esp<D: Disk>(disk: &mut D, block_size: u32) -> Result<Partition, Err
         }
         state = crc32_update(state, &chunk[..n]);
         for (i, e) in chunk[..n].chunks_exact(esize as usize).enumerate() {
+            // Nothing in an entry is judged until the array passes its CRC.
             if found.is_none() && e[0..16] == ESP_TYPE {
                 let first = le64(e, 32);
                 let last = le64(e, 40);
-                if first == 0 || last < first {
-                    return Err(Error::Corrupt("the ESP's GPT entry has an empty range"));
-                }
                 let mut guid = [0u8; 16];
                 guid.copy_from_slice(&e[16..32]);
                 found = Some(Partition {
@@ -177,7 +175,11 @@ pub fn find_esp<D: Disk>(disk: &mut D, block_size: u32) -> Result<Partition, Err
     if !state != le32(&hdr, 88) {
         return Err(Error::NoGpt("the GPT entry array fails its CRC"));
     }
-    found.ok_or(Error::NoEsp)
+    let p = found.ok_or(Error::NoEsp)?;
+    if p.first_lba == 0 || p.last_lba < p.first_lba {
+        return Err(Error::Corrupt("the ESP's GPT entry has an empty range"));
+    }
+    Ok(p)
 }
 
 /// One sector of the filesystem, kept so the FAT and directories aren't read
