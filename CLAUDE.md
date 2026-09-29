@@ -435,8 +435,8 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       is current (only docs since b693698). The metal run closes it; a
       failure there comes back as a new issue or a reopen.
 
-- [ ] **#45 — two media goldens, served side by side (P0, owner
-      2026-09-29). In progress.** `stormbootx` (normal: iPXE `intelx`) and
+- [x] **#45 — two media goldens, served side by side (P0, owner
+      2026-09-29). Closed 2026-09-29.** `stormbootx` (normal: iPXE `intelx`) and
       `stormbootx-rustnic` (the Rust `stormnic-ixgbe.efi`, no iPXE NIC driver),
       both from `deploy/build-golden.sh` at one commit. Folds in #44 and #43
       (ixgbe pin → 884cf18, owner's choice on #44, built `--locked`). Plan:
@@ -461,7 +461,14 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       (KVM) and found `media : rustnic ixgbe@884cf18` / `media : normal`
       under the banner, and `stormnic-ixgbe 0.1.0: driver binding installed`
       on the rustnic boot. `stormbootx-rustnic` is registered (kind `media`,
-      no inputs). **Next:** both goldens, then hand off to the master.
+      no inputs). **Goldens (v0.6.0, fdeb0b7):**
+      `golden-stormbootx-8732577aa6bda0ce` (normal, on
+      `golden-nic-drivers-72fe4f89174d`) and
+      `golden-stormbootx-rustnic-0e449102ceb5882d`. Their `stormbootx.efi`
+      digests differ: separate build dirs, and the binary is not yet
+      reproducible across them (same dir → identical, as above). Left for
+      the master: serve both from minismbd, point BMCs (server2 on rustnic
+      for stormnic-ixgbe#2, #44). #43 and #44 are folded in.
 
 - [ ] **Everything is a golden (owner, 2026-09-28; #21 decided,
       stormcentral#126). In progress.** stormbootx ships as a golden, not as

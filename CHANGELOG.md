@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-09-29
+- **docs:** work plan: #45 closed; goldens `golden-stormbootx-8732577aa6bda0ce` and `golden-stormbootx-rustnic-0e449102ceb5882d` (v0.6.0).
+
 ## [v0.6.0] — 2026-09-29
 
 ### Added
