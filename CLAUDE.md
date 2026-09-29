@@ -35,6 +35,10 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi'
 ```
 
+`tests/media-ovmf.sh ISO 'LINE' …` boots a media ISO under OVMF and requires
+console lines (#45: `media : …`); build the goldens under `t/` in the same
+job to use it.
+
 The last line boots `espprobe` under dev's OVMF (KVM there) against a
 4096-byte disk (#37). `R=` is the one place the target dir is named, and it
 reads `CARGO_TARGET_DIR` rather than assuming `target/`.
@@ -448,6 +452,16 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
          it stays off (#34).
       Serving from minismbd and pointing BMCs is the master's (step 3 of the
       issue).
+
+      **Done and verified in sc-build (e0c79d5, 2026-09-29):** 1–3. All three
+      trees build at one commit; `bin/stormbootx.efi` is byte-identical in
+      both media; the rustnic ESP carries `stormnic-ixgbe.efi` +
+      `STORMNIC-SOURCE.txt` (884cf18, `locked`) and no iPXE; the normal ESP
+      `ipxe-intelx.efi`. `tests/media-ovmf.sh` booted each ISO under OVMF
+      (KVM) and found `media : rustnic ixgbe@884cf18` / `media : normal`
+      under the banner, and `stormnic-ixgbe 0.1.0: driver binding installed`
+      on the rustnic boot. `stormbootx-rustnic` is registered (kind `media`,
+      no inputs). **Next:** both goldens, then hand off to the master.
 
 - [ ] **Everything is a golden (owner, 2026-09-28; #21 decided,
       stormcentral#126). In progress.** stormbootx ships as a golden, not as
