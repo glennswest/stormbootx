@@ -47,11 +47,12 @@ read -r -a DRIVERS <<< "${IPXE_DRIVERS:-intelx}"
 # ConnectX-3 (#34). The stormbootx-rustnic media golden is built with
 # STORMNIC_ON_MEDIA="ixgbe mlx4" (#45, #34).
 STORMNIC_IXGBE_REPO="https://github.com/glennswest/stormnic-ixgbe.git"
-# 9476135: PHY and link code matched to its docs/spec/phy.md (stormnic-ixgbe#13:
-# SFP+ ID over I2C, NVM init, AUTOC 10G SFI, laser on SDP3; 25 device IDs),
-# on top of 884cf18's bring-up in Start (#2) and committed Cargo.lock (#11),
-# so it builds --locked (#43, #44, #47).
-STORMNIC_IXGBE_REF="9476135ae9621c8b14ebb5da9fac62ffda49ca6e"
+# 2afd319: RX/TX descriptor rings with DMA (stormnic-ixgbe#3): Start maps one
+# 33-page DMA region, sends one broadcast check frame (EtherType 0x88B5),
+# listens up to 3 s and stops the rings; still no SNP (#4). On top of
+# 9476135's spec-matched PHY and link code (#13, 25 device IDs) and 884cf18's
+# bring-up (#2); committed Cargo.lock, so it builds --locked (#47, #48).
+STORMNIC_IXGBE_REF="2afd31982df0fd8536c5817f54109b74ce746a60"
 STORMNIC_MLX4_REPO="https://github.com/glennswest/stormnic-mlx4.git"
 # cef8dc5: firmware bring-up to INIT_HCA and back (stormnic-mlx4#2) and the
 # Ethernet data path check (#3), both run inside Start, which then releases

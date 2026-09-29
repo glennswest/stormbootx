@@ -468,7 +468,7 @@ prints it under the banner:
 
 ```
 media       : normal
-media       : rustnic ixgbe@9476135 mlx4@cef8dc5
+media       : rustnic ixgbe@2afd319 mlx4@cef8dc5
 ```
 
 The media carries `\stormboot\drivers` from the nic-drivers golden
