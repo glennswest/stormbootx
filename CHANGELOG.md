@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-09-29
+- **chore:** the rustnic media pins stormnic-ixgbe 9476135 (PHY and link code matched to its spec, stormnic-ixgbe#13; 25 device IDs), built `--locked`; its console label is `media : rustnic ixgbe@9476135` (#47).
+
 ## [v0.7.0] — 2026-09-29
 
 ### Added

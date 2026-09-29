@@ -46,9 +46,11 @@ read -r -a DRIVERS <<< "${IPXE_DRIVERS:-intelx}"
 # media in place of iPXE's intelx — the on-hardware check (stormnic-ixgbe#7),
 # and what the stormbootx-rustnic media golden is built with (#45).
 STORMNIC_IXGBE_REPO="https://github.com/glennswest/stormnic-ixgbe.git"
-# 884cf18: NIC bring-up in Start (stormnic-ixgbe#2) and a committed Cargo.lock
-# (#11), so it builds --locked (#43, #44).
-STORMNIC_IXGBE_REF="884cf1803a608cc3421068727ea68d180948996e"
+# 9476135: PHY and link code matched to its docs/spec/phy.md (stormnic-ixgbe#13:
+# SFP+ ID over I2C, NVM init, AUTOC 10G SFI, laser on SDP3; 25 device IDs),
+# on top of 884cf18's bring-up in Start (#2) and committed Cargo.lock (#11),
+# so it builds --locked (#43, #44, #47).
+STORMNIC_IXGBE_REF="9476135ae9621c8b14ebb5da9fac62ffda49ca6e"
 STORMNIC_ON_MEDIA="${STORMNIC_ON_MEDIA:-}"
 # STORMNIC_CARRY=no skips building the carried `.off` copy when nothing will
 # use it: the stormbootx media golden copies only *.efi onto the media.
