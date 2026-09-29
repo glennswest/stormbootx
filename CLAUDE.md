@@ -390,6 +390,16 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
+- [ ] **#47 — rustnic media: pin stormnic-ixgbe 9476135 (2026-09-29). In
+      progress.** 9476135 is stormnic-ixgbe#13: PHY and link code matched
+      to its `docs/spec/phy.md` (SFP+ ID over I2C, NVM init, AUTOC 10G SFI,
+      laser on SDP3), plus 3 device IDs (25 in all). Plan: bump
+      `STORMNIC_IXGBE_REF`, still `--locked`; the console label becomes
+      `rustnic ixgbe@9476135`; build the rustnic ISO under OVMF in sc-build
+      (`tests/media-ovmf.sh`), then rebuild the `stormbootx-rustnic` golden.
+      Metal (server1/server2 SOL lines, stormnic-ixgbe `docs/bring-up.md`)
+      is the master's.
+
 - [ ] **#46 — v0.5.1 media hangs on the R230 inside stormuefi's initramfs
       read (P0, 2026-09-29). In progress.** C2NR0Q2 on golden 206d57c3
       (b693698) stopped at stormuefi's `initrd … raw bytes (no filesystem)`
