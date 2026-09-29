@@ -613,7 +613,19 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
         "new golden **and** requested" rule). This needs stormcos#30.
       - Not yet seen on metal: nothing can serve `local` until #148 lands.
 
-- [ ] #3 (the rest) — **blocked, re-checked 2026-09-24 (now P0).** Three
+- [ ] #3 (the rest) — **re-scoped by the owner on #19 (2026-09-29), now
+      `needs-owner`.** No golden comparison, and a new golden never installs
+      by itself. At every boot one question: was an install requested (the
+      intent record, stormblock#148, in stormblock v20.0.0)? Yes → install;
+      no → the local disk. stormcos#30's marker is no longer needed. **Open
+      question (posted on #3, 2026-09-29):** what "no request" means for a
+      machine with nothing bootable locally, and whether a 404/unknown
+      MAC/forge on 13.7.0 counts as "no". Recommended: `auto` and every
+      doubt boot local only if a local ESP carries `\EFI\BOOT\BOOTX64.EFI`
+      (checked with `esp.rs`, no network), else claim as today. No code
+      until answered. That answer also settles #31. The history below
+      predates the re-scope.
+      Previously: **blocked, re-checked 2026-09-24 (now P0).** Three
       things, none of them in this repo:
       1. ~~**stormblock#123**~~, closed 2026-09-24 in stormblock v16.2.0: the
          flow-over now lays an ESP (stormuefi) and kernel pallets, so an
