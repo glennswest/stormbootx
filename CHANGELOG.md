@@ -4,6 +4,10 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-09-29
+- **feat:** a second media golden, `stormbootx-rustnic` (#45): `deploy/build-golden.sh stormbootx-rustnic OUT` writes `bin/stormbootx.efi` and `boot/stormbootx-rustnic.iso`, which carries the Rust `stormnic-ixgbe.efi` and no iPXE NIC driver. It builds its own drivers from the commit's pins.
+- **feat:** `media = <label>` in `stormboot.conf` (`build-boot-agent.sh --media`), printed as `media : …` under the banner. The goldens write `normal` and `rustnic ixgbe@<sha>`, so the console says which variant booted (#45).
+- **chore:** `STORMNIC_IXGBE_REF` → 884cf18 (stormnic-ixgbe#2's NIC bring-up in Start; committed `Cargo.lock`, so built `--locked`) (#43, #44).
+- **refactor:** `build-nic-drivers.sh` fetches and builds no iPXE when no iPXE driver is wanted, and then writes no `IPXE-SOURCE.txt`.
 - **docs:** work plan: #37 is handed off for the metal run (server1, a pve VM) on `golden-stormbootx-206d57c3601dcd17`; nothing is left in this repo.
 
 ## [v0.5.1] — 2026-09-29

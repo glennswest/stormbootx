@@ -168,6 +168,14 @@ pub fn stated_tag() -> Option<String> {
         .or_else(|| field(&text, "tag").filter(|v| !v.is_empty()))
 }
 
+/// Which media variant this is (`media = normal`, `media = rustnic
+/// ixgbe@884cf18`), written by the golden build (#45). Two ISOs of one commit
+/// differ only in the NIC drivers they carry, so the console says which one
+/// booted. Absent on media built by hand.
+pub fn stated_media() -> Option<String> {
+    field(&read_file(CONF_PATH)?, "media").filter(|v| !v.is_empty())
+}
+
 /// The DNS server stated in the config file (`dns = a.b.c.d`), for the PTR
 /// of the machine's own address when its DHCP reply names none or cannot be
 /// read (#26). Absent on ordinary media; the lease's option 6 comes first.

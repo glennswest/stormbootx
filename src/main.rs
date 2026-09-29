@@ -123,6 +123,11 @@ fn run() -> Result<(), String> {
         ),
     }
     banner("============================================================");
+    // Two media goldens share a commit and differ in their NIC drivers (#45):
+    // the stamp above cannot tell them apart, this line does.
+    if let Some(m) = config::stated_media() {
+        uefi::println!("media       : {m}");
+    }
 
     // 1. Who am I? No network, no configuration, no BMC.
     // A stated tag wins. Discovery is a convenience for a machine nobody has

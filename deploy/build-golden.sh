@@ -1,8 +1,9 @@
 #!/bin/bash
 # Build one of stormbootx's goldens into OUT, and nothing else.
 #
-#   deploy/build-golden.sh stormbootx  OUT [--drivers DIR]
-#   deploy/build-golden.sh nic-drivers OUT
+#   deploy/build-golden.sh stormbootx         OUT [--drivers DIR]
+#   deploy/build-golden.sh stormbootx-rustnic OUT
+#   deploy/build-golden.sh nic-drivers        OUT
 #
 # Everything is a golden (owner, 2026-09-28; #21, stormcentral#126): the boot
 # media is a golden, and so are the NIC drivers it carries. This script is the
@@ -22,7 +23,19 @@
 #
 #   The media carries \stormboot\drivers: the nic-drivers golden's bin/ when
 #   --drivers names it (stormcentral mounts inputs read-only), else the same
-#   drivers built here from the same pinned iPXE commit.
+#   drivers built here from the same pinned iPXE commit. The console says
+#   `media : normal`.
+#
+# stormbootx-rustnic golden (#45): the same agent with the Rust NIC drivers
+# instead of iPXE's, so they are what a machine booting it tests:
+#   bin/stormbootx.efi
+#   boot/stormbootx-rustnic.iso   carries stormnic-ixgbe.efi (STORMNIC_IXGBE_REF)
+#                                 and no iPXE NIC driver
+#   SHA256SUMS, BUILD
+#
+#   Built here from the pins in scripts/build-nic-drivers.sh, never from a
+#   nic-drivers golden, so the drivers are the commit's. The console says
+#   `media : rustnic ixgbe@<sha>`. stormnic-mlx4 joins it once it binds.
 #
 # nic-drivers golden:
 #   bin/ipxe-intelx.efi     iPXE intelx as an EFI driver (the approved interim, #26)
@@ -34,7 +47,7 @@ say() { printf '==> %s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
 GOLDEN="${1:-}"; OUT="${2:-}"
-[[ -n "$GOLDEN" && -n "$OUT" ]] || die "usage: $0 stormbootx|nic-drivers OUT [--drivers DIR]"
+[[ -n "$GOLDEN" && -n "$OUT" ]] || die "usage: $0 stormbootx|stormbootx-rustnic|nic-drivers OUT [--drivers DIR]"
 shift 2
 DRIVERS=""
 while [[ $# -gt 0 ]]; do
@@ -111,14 +124,36 @@ stormbootx)
     # The portal and the PTR fallback are forge's network, like the compiled
     # defaults. Which image a machine boots is its boothost on the engine,
     # never the media, so one golden boots every machine.
-    agent=(--binary "$OUT/bin/stormbootx.efi" --drivers "$WORK/media-drivers" --dns 192.168.31.252)
+    agent=(--binary "$OUT/bin/stormbootx.efi" --drivers "$WORK/media-drivers" --dns 192.168.31.252 --media normal)
     "$ROOT/scripts/build-boot-agent.sh" --iso "${agent[@]}" --output "$OUT/boot/stormbootx.iso"
     "$ROOT/scripts/build-boot-agent.sh" "${agent[@]}" --output "$OUT/boot/stormbootx.img"
     "$ROOT/scripts/build-boot-agent.sh" --iso --probe --binary "$OUT/bin/tcp4probe.efi" \
         --output "$OUT/boot/tcp4probe.iso"
     seal "drivers  = $(cd "$WORK/media-drivers" && ls *.efi | tr '\n' ' ')($from)"
     ;;
+stormbootx-rustnic)
+    [[ -z "$DRIVERS" ]] || die "$GOLDEN builds its own drivers from the commit's pins; no --drivers"
+    say "building stormbootx for x86_64-unknown-uefi"
+    ( cd "$ROOT" && cargo build --locked --release --target x86_64-unknown-uefi --bin stormbootx )
+    REL="${CARGO_TARGET_DIR:-$ROOT/target}/x86_64-unknown-uefi/release"
+    mkdir -p "$OUT/bin" "$OUT/boot"
+    cp "$REL/stormbootx.efi" "$OUT/bin/"
+
+    # stormnic-ixgbe on the media in place of iPXE's intelx, and no iPXE at all.
+    STORMNIC_ON_MEDIA=ixgbe "$ROOT/scripts/build-nic-drivers.sh" "$WORK/drivers"
+    [[ -f "$WORK/drivers/stormnic-ixgbe.efi" ]] || die "no stormnic-ixgbe.efi was built"
+    ! compgen -G "$WORK/drivers/ipxe-*.efi" >/dev/null || die "an iPXE driver reached the rustnic media"
+    mkdir -p "$WORK/media-drivers"
+    cp "$WORK/drivers/"*.efi "$WORK/drivers/STORMNIC-SOURCE.txt" "$WORK/media-drivers/"
+
+    ref="$(sed -n 's/^STORMNIC_IXGBE_REF="\(.*\)"/\1/p' "$ROOT/scripts/build-nic-drivers.sh")"
+    "$ROOT/scripts/build-boot-agent.sh" --iso --binary "$OUT/bin/stormbootx.efi" \
+        --drivers "$WORK/media-drivers" --dns 192.168.31.252 --media "rustnic ixgbe@${ref:0:7}" \
+        --output "$OUT/boot/stormbootx-rustnic.iso"
+    seal "drivers  = $(cd "$WORK/media-drivers" && ls *.efi | tr '\n' ' ')(built here)
+stormnic = $(cat "$WORK/drivers/STORMNIC-SOURCE.txt")"
+    ;;
 *)
-    die "no golden $GOLDEN (stormbootx or nic-drivers)"
+    die "no golden $GOLDEN (stormbootx, stormbootx-rustnic or nic-drivers)"
     ;;
 esac

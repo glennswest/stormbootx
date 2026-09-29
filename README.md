@@ -442,15 +442,31 @@ does nothing else, for stormcentral to run into the volume it mounts:
 | golden | tree |
 |---|---|
 | `stormbootx` | `bin/stormbootx.efi`, `bin/tcp4probe.efi`, `boot/stormbootx.iso` (BMC virtual media), `boot/stormbootx.img` (USB), `boot/tcp4probe.iso`, `SHA256SUMS`, `BUILD` |
-| `nic-drivers` | `bin/ipxe-intelx.efi`, `IPXE-SOURCE.txt`, `SHA256SUMS`, `BUILD` |
+| `stormbootx-rustnic` | `bin/stormbootx.efi`, `boot/stormbootx-rustnic.iso` (BMC virtual media), `SHA256SUMS`, `BUILD` |
+| `nic-drivers` | `bin/ipxe-intelx.efi`, `bin/stormnic-ixgbe.efi.off`, `IPXE-SOURCE.txt`, `STORMNIC-SOURCE.txt`, `SHA256SUMS`, `BUILD` |
+
+**Two media, side by side (#45).** `stormbootx` is the normal media, with
+iPXE's `intelx`. `stormbootx-rustnic` is the same agent from the same commit
+with the Rust drivers instead: `stormnic-ixgbe.efi` built `--locked` from
+`STORMNIC_IXGBE_REF` in `scripts/build-nic-drivers.sh`, and no iPXE NIC
+driver, so the Rust driver is what a machine booting it tests. It builds its
+own drivers and takes no nic-drivers golden. `stormnic-mlx4` joins it once
+it binds. Each ISO's `stormboot.conf` names the variant, and the console
+prints it under the banner:
+
+```
+media       : normal
+media       : rustnic ixgbe@884cf18
+```
 
 The media carries `\stormboot\drivers` from the nic-drivers golden
 (`--drivers <its bin/>`), or builds the same pinned drivers itself when none
 is given; `BUILD` says which. Its `stormboot.conf` names forge
 (`192.168.31.202`) and `dns = 192.168.31.252`; which image a machine boots is
 its boothost on the engine, so one golden boots every machine. stormbootx is
-being registered as a stormcentral component; until it is, there is no
-golden to request.
+a stormcentral component of kind `media`, and so is `stormbootx-rustnic`:
+`stormcentral component build <name>` builds each into a drive golden whose
+bytes are its `boot/<name>.iso`.
 
 ## Firmware requirements
 

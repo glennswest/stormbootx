@@ -44,6 +44,7 @@ ISO="no"
 FEC=""
 DRIVERS=""
 DNS=""
+MEDIA=""
 
 usage() {
     sed -n '2,20p' "$0" | sed 's/^# \?//'
@@ -57,6 +58,8 @@ Options:
                    (default|rs|fc|off|autoneg). Absent from a normal stick.
   --drivers DIR    lay DIR's files in \stormboot\drivers; stormbootx loads each
                    *.efi as a NIC driver (#26; scripts/build-nic-drivers.sh)
+  --media LABEL    name this media on the console (`media : LABEL`), e.g.
+                   normal, or rustnic ixgbe@884cf18 (#45)
   --dns ADDR       DNS server for the PTR of the machine's own address, when
                    its DHCP reply names none or cannot be read (#26)
   --portal ADDR    NVMe/TCP portal, with --pin (default 192.168.31.202)
@@ -77,6 +80,7 @@ while [[ $# -gt 0 ]]; do
         --iso)    ISO="yes"; shift ;;
         --drivers) DRIVERS="$2"; shift 2 ;;
         --dns)    DNS="$2"; shift 2 ;;
+        --media)  MEDIA="$2"; shift 2 ;;
         --api-port) API_PORT="$2"; shift 2 ;;
         --portal) PORTAL="$2"; PIN="yes"; shift 2 ;;
         --port)   PORT="$2"; shift 2 ;;
@@ -191,6 +195,16 @@ dns      = $DNS
 CONF
 fi
 
+# Which variant this is (#45): two media of one commit differ only in their
+# NIC drivers, and the console says which one booted.
+if [[ -n "$MEDIA" ]]; then
+    cat >> "$WORK/stormboot.conf" <<CONF
+
+# Which media this is, printed at boot. Set by the golden build.
+media    = $MEDIA
+CONF
+fi
+
 # FAT16 with 512-byte clusters: FAT32 needs ~33 MB of filesystem before it has
 # enough clusters to be legal, which is eight times the whole image. FAT16 at
 # the default 2 KB cluster size is rejected below 8 MB for the same reason, so
@@ -237,6 +251,7 @@ EOF
 fi
 
 say "binary  $(du -h "$BIN" | cut -f1)  $BIN"
+[[ -z "$MEDIA" ]] || say "media   $MEDIA"
 say "image   $(du -h "$OUTPUT" | cut -f1)  $OUTPUT"
 if [[ -n "$DRIVERS" ]]; then
     say "drivers $(cd "$DRIVERS" && ls *.efi | tr '\n' ' ')(\\stormboot\\drivers)"
