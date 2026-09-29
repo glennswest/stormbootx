@@ -15,7 +15,7 @@ paginate: true
 
 **A UEFI boot agent that attaches a machine's image over NVMe/TCP and boots it.**
 
-v0.5.0 (2026-09-29) · `x86_64-unknown-uefi` · `no_std` · 165 KB
+v0.5.1 (2026-09-29) · `x86_64-unknown-uefi` · `no_std` · 165 KB
 
 No kernel, no initramfs, no PXE, no TFTP. It uses the firmware's own TCP stack.
 
@@ -231,7 +231,7 @@ the reason for #37's reader, which is verified under OVMF but not yet here.
 
 ## Status
 
-- **v0.5.0**, running on metal since 2026-09-05.
+- **v0.5.1**, running on metal since 2026-09-05.
 - Intents, universal boot and names are in the binary, and inert until the
   engine serves them: forge runs stormblock 13.7.0, so every intent read is
   a 404 (→ `auto`) and there is no `boothost/default`.

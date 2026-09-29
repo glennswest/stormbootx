@@ -480,7 +480,7 @@ golden to request.
 
 ## Status
 
-v0.5.0. Running on hardware since 2026-09-05. A Dell PowerEdge R230 (C2NR0Q2)
+v0.5.1. Running on hardware since 2026-09-05. A Dell PowerEdge R230 (C2NR0Q2)
 booted the ISO over iDRAC virtual media, claimed `boothost/C2NR0Q2` and
 attached a 32 GiB 4K clone from forge over 25 GbE. The console of that first
 attach, verbatim (the build before chain-loading, ea26be1):

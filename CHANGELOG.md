@@ -3,8 +3,10 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
-### 2026-09-29
-- **fix(deploy):** the `stormbootx` media golden failed to build from 12452f6 (#29) on: `build-nic-drivers.sh` fetched the private `glennswest/stormnic-ixgbe`, and the golden builder has no GitHub credentials (`could not read Username`). The media carries only `*.efi`, so the carried `stormnic-ixgbe.efi.off` was never on it. `build-golden.sh stormbootx` now passes `STORMNIC_CARRY=no`, and the ixgbe build is skipped unless `STORMNIC_ON_MEDIA=ixgbe`. `IPXE-SOURCE.txt` is still written. The `nic-drivers` golden still fetches it.
+## [v0.5.1] — 2026-09-29
+
+### Fixed
+- **deploy:** the `stormbootx` media golden failed to build from 12452f6 (#29) on: `build-nic-drivers.sh` fetched the private `glennswest/stormnic-ixgbe`, and the golden builder has no GitHub credentials (`could not read Username`). The media carries only `*.efi`, so the carried `stormnic-ixgbe.efi.off` was never on it. `build-golden.sh stormbootx` now passes `STORMNIC_CARRY=no`, and the ixgbe build is skipped unless `STORMNIC_ON_MEDIA=ixgbe`. `IPXE-SOURCE.txt` is still written. The `nic-drivers` golden still fetches it.
 
 ## [v0.5.0] — 2026-09-29
 
