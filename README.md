@@ -451,20 +451,24 @@ does nothing else, for stormcentral to run into the volume it mounts:
 |---|---|
 | `stormbootx` | `bin/stormbootx.efi`, `bin/tcp4probe.efi`, `boot/stormbootx.iso` (BMC virtual media), `boot/stormbootx.img` (USB), `boot/tcp4probe.iso`, `SHA256SUMS`, `BUILD` |
 | `stormbootx-rustnic` | `bin/stormbootx.efi`, `boot/stormbootx-rustnic.iso` (BMC virtual media), `SHA256SUMS`, `BUILD` |
-| `nic-drivers` | `bin/ipxe-intelx.efi`, `bin/stormnic-ixgbe.efi.off`, `IPXE-SOURCE.txt`, `STORMNIC-SOURCE.txt`, `SHA256SUMS`, `BUILD` |
+| `nic-drivers` | `bin/ipxe-intelx.efi`, `bin/stormnic-ixgbe.efi.off`, `bin/stormnic-mlx4.efi.off`, `IPXE-SOURCE.txt`, `STORMNIC-SOURCE.txt`, `SHA256SUMS`, `BUILD` |
 
 **Two media, side by side (#45).** `stormbootx` is the normal media, with
 iPXE's `intelx`. `stormbootx-rustnic` is the same agent from the same commit
 with the Rust drivers instead: `stormnic-ixgbe.efi` built `--locked` from
 `STORMNIC_IXGBE_REF` in `scripts/build-nic-drivers.sh`, and no iPXE NIC
-driver, so the Rust driver is what a machine booting it tests. It builds its
-own drivers and takes no nic-drivers golden. `stormnic-mlx4` joins it once
-it binds. Each ISO's `stormboot.conf` names the variant, and the console
+driver, so the Rust driver is what a machine booting it tests. Since #34 it
+also carries `stormnic-mlx4.efi` for the ConnectX-3, built `--locked` from
+`STORMNIC_MLX4_REF`. Its `Start` runs the ConnectX-3 firmware bring-up and an
+Ethernet data-path check, up to about 20 s per port with link, then releases
+the NIC (no SNP yet), so the normal media does not carry it. Each Rust driver
+is checked to be PE subsystem 11 (EFI boot-service driver) when it is built.
+The rustnic media builds its own drivers and takes no nic-drivers golden. Each ISO's `stormboot.conf` names the variant, and the console
 prints it under the banner:
 
 ```
 media       : normal
-media       : rustnic ixgbe@9476135
+media       : rustnic ixgbe@9476135 mlx4@cef8dc5
 ```
 
 The media carries `\stormboot\drivers` from the nic-drivers golden

@@ -30,15 +30,19 @@
 # instead of iPXE's, so they are what a machine booting it tests:
 #   bin/stormbootx.efi
 #   boot/stormbootx-rustnic.iso   carries stormnic-ixgbe.efi (STORMNIC_IXGBE_REF)
+#                                 and stormnic-mlx4.efi (STORMNIC_MLX4_REF, #34),
 #                                 and no iPXE NIC driver
 #   SHA256SUMS, BUILD
 #
 #   Built here from the pins in scripts/build-nic-drivers.sh, never from a
 #   nic-drivers golden, so the drivers are the commit's. The console says
-#   `media : rustnic ixgbe@<sha>`. stormnic-mlx4 joins it once it binds.
+#   `media : rustnic ixgbe@<sha> mlx4@<sha>`.
 #
 # nic-drivers golden:
 #   bin/ipxe-intelx.efi     iPXE intelx as an EFI driver (the approved interim, #26)
+#   bin/stormnic-ixgbe.efi.off, bin/stormnic-mlx4.efi.off
+#                           the Rust drivers, carried, not loaded (#29, #34)
+#   STORMNIC-SOURCE.txt     each Rust driver's commit and digest
 #   IPXE-SOURCE.txt         the GPL-2 source note
 #   SHA256SUMS, BUILD
 set -euo pipefail
@@ -139,16 +143,20 @@ stormbootx-rustnic)
     mkdir -p "$OUT/bin" "$OUT/boot"
     cp "$REL/stormbootx.efi" "$OUT/bin/"
 
-    # stormnic-ixgbe on the media in place of iPXE's intelx, and no iPXE at all.
-    STORMNIC_ON_MEDIA=ixgbe "$ROOT/scripts/build-nic-drivers.sh" "$WORK/drivers"
-    [[ -f "$WORK/drivers/stormnic-ixgbe.efi" ]] || die "no stormnic-ixgbe.efi was built"
+    # stormnic-ixgbe on the media in place of iPXE's intelx, stormnic-mlx4 for
+    # the ConnectX-3 (#34), and no iPXE at all.
+    STORMNIC_ON_MEDIA="ixgbe mlx4" "$ROOT/scripts/build-nic-drivers.sh" "$WORK/drivers"
+    for d in stormnic-ixgbe stormnic-mlx4; do
+        [[ -f "$WORK/drivers/$d.efi" ]] || die "no $d.efi was built"
+    done
     ! compgen -G "$WORK/drivers/ipxe-*.efi" >/dev/null || die "an iPXE driver reached the rustnic media"
     mkdir -p "$WORK/media-drivers"
     cp "$WORK/drivers/"*.efi "$WORK/drivers/STORMNIC-SOURCE.txt" "$WORK/media-drivers/"
 
-    ref="$(sed -n 's/^STORMNIC_IXGBE_REF="\(.*\)"/\1/p' "$ROOT/scripts/build-nic-drivers.sh")"
+    pin() { sed -n "s/^$1=\"\(.......\).*\"/\1/p" "$ROOT/scripts/build-nic-drivers.sh"; }
     "$ROOT/scripts/build-boot-agent.sh" --iso --binary "$OUT/bin/stormbootx.efi" \
-        --drivers "$WORK/media-drivers" --dns 192.168.31.252 --media "rustnic ixgbe@${ref:0:7}" \
+        --drivers "$WORK/media-drivers" --dns 192.168.31.252 \
+        --media "rustnic ixgbe@$(pin STORMNIC_IXGBE_REF) mlx4@$(pin STORMNIC_MLX4_REF)" \
         --output "$OUT/boot/stormbootx-rustnic.iso"
     seal "drivers  = $(cd "$WORK/media-drivers" && ls *.efi | tr '\n' ' ')(built here)
 stormnic = $(cat "$WORK/drivers/STORMNIC-SOURCE.txt")"
