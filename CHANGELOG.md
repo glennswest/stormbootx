@@ -4,6 +4,8 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-09-29
+- **fix:** `esp =` is read at start-up with the rest of `stormboot.conf`, not after the attach, so nothing on the media is opened once an image is attached, as before #37 (#46).
+- **feat:** `blockio :` console lines while the bootloader reads the attached image: a failed read with its NVMe/TCP error, a read over 2 s, and progress every 64 MiB with MiB/s (#46).
 - **docs:** work plan: #3 re-scoped by the owner's #19 decision (install only on request); the no-request case for machines with nothing to boot locally is waiting on the owner.
 - **docs:** work plan: #45 closed; goldens `golden-stormbootx-8732577aa6bda0ce` and `golden-stormbootx-rustnic-0e449102ceb5882d` (v0.6.0).
 

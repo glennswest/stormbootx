@@ -128,6 +128,13 @@ fn run() -> Result<(), String> {
     if let Some(m) = config::stated_media() {
         uefi::println!("media       : {m}");
     }
+    // Who reads the attached image's ESP (#37), read here with the rest of the
+    // media, not after the attach: once an image is attached, the boot opens
+    // nothing on the media again, as before #37 (#46).
+    let esp_reader = config::esp_reader();
+    if esp_reader != config::EspReader::Auto {
+        uefi::println!("esp         : {esp_reader:?} only (esp = in {})", config::CONF_PATH);
+    }
 
     // 1. Who am I? No network, no configuration, no BMC.
     // A stated tag wins. Discovery is a convenience for a machine nobody has
@@ -610,11 +617,7 @@ fn run() -> Result<(), String> {
     banner("");
     banner("RESULT: image attached; starting its bootloader.");
     banner("============================================================");
-    let reader = config::esp_reader();
-    if reader != config::EspReader::Auto {
-        uefi::println!("esp         : {reader:?} only (esp = in {})", config::CONF_PATH);
-    }
-    blockio::boot_attached(handle, reader)?;
+    blockio::boot_attached(handle, esp_reader)?;
     Err(String::from("the attached image did not boot; nothing to chain-load"))
 }
 

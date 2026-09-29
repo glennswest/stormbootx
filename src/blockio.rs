@@ -58,6 +58,69 @@ unsafe fn namespace() -> Option<&'static mut Namespace> {
     NAMESPACE.as_mut()
 }
 
+/// What the reads cost, reported on the console while the image's own
+/// bootloader runs (#46). A boot that stalls inside the bootloader's reads
+/// otherwise shows only the bootloader's last line, and that can't tell a
+/// read that crawls from one that fails or one that was never asked for.
+struct ReadLog {
+    /// TSC ticks per millisecond, measured once at publish; 0 if unmeasured.
+    ticks_per_ms: u64,
+    /// Bytes read since the last progress line.
+    bytes: u64,
+    /// Ticks spent inside reads since the last progress line.
+    ticks: u64,
+    /// Bytes read in all.
+    total: u64,
+}
+
+static mut READS: ReadLog = ReadLog { ticks_per_ms: 0, bytes: 0, ticks: 0, total: 0 };
+
+/// A progress line per this many bytes read.
+const REPORT_EVERY: u64 = 64 << 20;
+/// A single read slower than this is reported on its own.
+const SLOW_READ_MS: u64 = 2000;
+
+fn tsc() -> u64 {
+    // SAFETY: RDTSC has no preconditions on x86_64.
+    unsafe { core::arch::x86_64::_rdtsc() }
+}
+
+/// Calibrate the TSC against `Stall`. Once, at publish.
+fn calibrate_reads() {
+    let t0 = tsc();
+    boot::stall(core::time::Duration::from_millis(10));
+    let per_ms = (tsc() - t0) / 10;
+    unsafe { (*ptr::addr_of_mut!(READS)).ticks_per_ms = per_ms };
+}
+
+/// Account for one read of `len` bytes at `lba` that took `ticks`, and say
+/// so when it failed, was slow, or completes another `REPORT_EVERY`.
+fn log_read(lba: u64, len: usize, ticks: u64, failed: Option<&str>) {
+    let log = unsafe { &mut *ptr::addr_of_mut!(READS) };
+    let ms = if log.ticks_per_ms == 0 { 0 } else { ticks / log.ticks_per_ms };
+    if let Some(e) = failed {
+        uefi::println!("blockio     : read of {len} bytes at lba {lba} failed after {ms} ms: {e}");
+        return;
+    }
+    if ms > SLOW_READ_MS {
+        uefi::println!("blockio     : read of {len} bytes at lba {lba} took {ms} ms");
+    }
+    log.bytes += len as u64;
+    log.ticks += ticks;
+    log.total += len as u64;
+    if log.bytes >= REPORT_EVERY {
+        let spent = if log.ticks_per_ms == 0 { 0 } else { log.ticks / log.ticks_per_ms };
+        let mib = log.bytes >> 20;
+        uefi::println!(
+            "blockio     : {} MiB read in all; the last {mib} MiB took {spent} ms ({} MiB/s)",
+            log.total >> 20,
+            (mib * 1000).checked_div(spent).unwrap_or(0)
+        );
+        log.bytes = 0;
+        log.ticks = 0;
+    }
+}
+
 unsafe extern "efiapi" fn reset(_this: *mut BlockIoProtocol, _extended: Boolean) -> Status {
     // The connection is established once at attach time. A reset that tore it
     // down and rebuilt it would turn a transient read error into a boot that
@@ -89,7 +152,10 @@ unsafe extern "efiapi" fn read_blocks(
             return Status::DEVICE_ERROR;
         };
         let slice = core::slice::from_raw_parts_mut(buffer as *mut u8, buffer_size);
-        match ns.read(lba, slice) {
+        let t0 = tsc();
+        let r = ns.read(lba, slice);
+        log_read(lba, buffer_size, tsc().wrapping_sub(t0), r.as_ref().err().map(|e| e.as_str()));
+        match r {
             Ok(()) => Status::SUCCESS,
             Err(_) => Status::DEVICE_ERROR,
         }
@@ -184,6 +250,7 @@ pub fn publish(ns: Namespace) -> Result<uefi_raw::Handle, String> {
         MEDIA.last_block = geometry.blocks.saturating_sub(1);
         NAMESPACE = Some(ns);
     }
+    calibrate_reads();
 
     let proto = Box::leak(Box::new(BlockIoProtocol {
         revision: 0x0001_0000,

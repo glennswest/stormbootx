@@ -146,7 +146,8 @@ pub enum EspReader {
     Stormbootx,
 }
 
-/// `esp =` from the config file, read on its own when the image is attached.
+/// `esp =` from the config file, read before the network, with the rest of
+/// the media: nothing on the media is opened after the attach (#46).
 pub fn esp_reader() -> EspReader {
     match read_file(CONF_PATH).and_then(|t| field(&t, "esp")).as_deref() {
         Some("firmware") => EspReader::Firmware,

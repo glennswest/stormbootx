@@ -223,7 +223,15 @@ volume as a NIC driver (#26; absent on ordinary media). It writes to three thing
    BlockIO and parses the GPT itself. No filesystem protocol is installed, so
    a bootloader that opens further files on its own ESP (GRUB, shim) would
    not find them this way. `esp = firmware` / `esp = stormbootx` picks one
-   reader alone.
+   reader alone. It is read at start-up with the rest of `stormboot.conf`:
+   nothing on the media is opened once an image is attached (#46).
+10. **Report the bootloader's reads (#46).** While the image's bootloader
+   (stormuefi) reads through the published BlockIO, stormbootx prints a
+   `blockio :` line for a read that fails (with the NVMe/TCP error, which
+   the firmware only sees as `DEVICE_ERROR`), a single read slower than 2 s,
+   and every 64 MiB read with its MiB/s. A boot that stalls inside the
+   bootloader then shows whether reads crawl, fail, or stopped being asked
+   for.
 
 ### Why chain-load
 
