@@ -431,6 +431,24 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       is current (only docs since b693698). The metal run closes it; a
       failure there comes back as a new issue or a reopen.
 
+- [ ] **#45 — two media goldens, served side by side (P0, owner
+      2026-09-29). In progress.** `stormbootx` (normal: iPXE `intelx`) and
+      `stormbootx-rustnic` (the Rust `stormnic-ixgbe.efi`, no iPXE NIC driver),
+      both from `deploy/build-golden.sh` at one commit. Folds in #44 and #43
+      (ixgbe pin → 884cf18, owner's choice on #44, built `--locked`). Plan:
+      1. `build-nic-drivers.sh`: pin 884cf18; skip iPXE entirely when no iPXE
+         driver is wanted (no `IPXE-SOURCE.txt` then).
+      2. `media = <label>` in `stormboot.conf` (`build-boot-agent.sh --media`),
+         printed as `media : normal` / `media : rustnic ixgbe@884cf18`.
+      3. `build-golden.sh stormbootx-rustnic OUT`: `bin/stormbootx.efi`,
+         `boot/stormbootx-rustnic.iso` (the path stormcentral's media recipe
+         reads), built its own drivers (no `nic-drivers` input).
+      4. `stormcentral component add stormbootx-rustnic --kind media`, then
+         both goldens. mlx4 joins rustnic once it binds (owner); until then
+         it stays off (#34).
+      Serving from minismbd and pointing BMCs is the master's (step 3 of the
+      issue).
+
 - [ ] **Everything is a golden (owner, 2026-09-28; #21 decided,
       stormcentral#126). In progress.** stormbootx ships as a golden, not as
       a file on dev: the boot media (`.efi`, ESP image, ISO) as one golden,
