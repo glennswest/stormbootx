@@ -4,7 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-09-29
-- **chore:** the rustnic media pins stormnic-ixgbe 2afd319 (RX/TX descriptor rings with DMA and a broadcast check frame in Start, stormnic-ixgbe#3; still no SNP), built `--locked`; its console label is `media : rustnic ixgbe@2afd319 mlx4@cef8dc5`. The normal media still carries no stormnic-ixgbe (#48).
+- **chore:** the rustnic media pins stormnic-ixgbe 2afd319 (RX/TX descriptor rings with DMA and a broadcast check frame in Start, stormnic-ixgbe#3; still no SNP), built `--locked`; its console label is `media : rustnic ixgbe@2afd319 mlx4@cef8dc5`. The normal media still carries no stormnic-ixgbe (#48). Goldens `golden-stormbootx-rustnic-7f260c307c5ee784` and `golden-nic-drivers-60d62cc3aee9`.
 - **fix:** `tests/media-ovmf.sh` failed on any console over 20 lines: `grep | head` under `pipefail` exited on grep's broken pipe before checking a line (#49).
 - **feat:** the rustnic media carries `stormnic-mlx4.efi` for the ConnectX-3, pinned at cef8dc5 (stormnic-mlx4#2 firmware bring-up, #3 Ethernet data path) and built `--locked`; the nic-drivers golden carries it as `stormnic-mlx4.efi.off`. Every Rust driver is checked to be PE subsystem 11 when built, and `STORMNIC-SOURCE.txt` has a line per driver. `STORMNIC_ON_MEDIA` is now a list (`ixgbe mlx4`). Console label: `media : rustnic ixgbe@9476135 mlx4@cef8dc5`. The normal media is unchanged (#34). Goldens `golden-stormbootx-rustnic-b4f33d9566d6127e` and `golden-nic-drivers-5b867545c91e`.
 - **chore:** the rustnic media pins stormnic-ixgbe 9476135 (PHY and link code matched to its spec, stormnic-ixgbe#13; 25 device IDs), built `--locked`; its console label is `media : rustnic ixgbe@9476135` (#47). Golden `golden-stormbootx-rustnic-f82a05f6013ea469`.
