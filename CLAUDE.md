@@ -401,6 +401,14 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       checks (stormnic-ixgbe `docs/bring-up.md`) are the master's, on
       server1/server2.
 
+- [ ] **#48 — rustnic media pins stormnic-ixgbe 2afd319 (P0,
+      2026-09-29). In progress.** 2afd319 is stormnic-ixgbe#3: RX/TX
+      descriptor rings with DMA, a broadcast check frame in Start, still no
+      SNP. Plan: bump `STORMNIC_IXGBE_REF` (built `--locked`), sc-build the
+      trees and boot the rustnic ISO under OVMF, build the rustnic and
+      nic-drivers goldens; the master boots server2 for the DMA lines. The
+      normal media stays without stormnic-ixgbe (stormnic-ixgbe#4).
+
 - [x] **#34 — stormnic-mlx4 on the rustnic media, carried in nic-drivers.
       Closed 2026-09-29.** Pinned at cef8dc5 (stormnic-mlx4#2 firmware
       bring-up, #3 Ethernet data path), built `--locked`, PE subsystem
