@@ -81,8 +81,16 @@ fn probe() -> Result<(), String> {
         li.device()
     };
     let own_path = own.and_then(|h| path_of(h)).map(|p| p.to_boxed());
+    // Firmware may have connected only the boot device (OVMF's BDS does), so
+    // the disk under test has no BlockIO until every controller is connected.
+    if let Ok(all) = boot::locate_handle_buffer(SearchType::AllHandles) {
+        for &h in all.iter() {
+            let _ = boot::connect_controller(h, None, None, true);
+        }
+    }
     let handles = boot::locate_handle_buffer(SearchType::ByProtocol(&BlockIO::GUID))
         .map_err(|e| format!("no block devices: {e:?}"))?;
+    uefi::println!("block       : {} BlockIO handle(s)", handles.len());
 
     let mut started = false;
     for &h in handles.iter() {
