@@ -210,6 +210,20 @@ volume as a NIC driver (#26; absent on ordinary media). It writes to three thing
    device path **starts with that vendor node**, which means an ESP on the
    attached disk only. It is never a local disk. `LoadImage` + `StartImage`.
    Success never returns.
+9. **Read the ESP itself when the firmware can't (#37, `src/esp.rs`).**
+   Volumes stay 4096-byte, so a 4K image's ESP is a FAT with 4096-byte
+   sectors (Linux mounts nothing smaller than the device's block). AMI Aptio
+   4 mounts one and then answers `NOT_FOUND` for a file that is there. If
+   step 8 loads nothing, stormbootx reads the GPT (CRC-checked), finds the
+   ESP, reads `BOOTX64.EFI` from its FAT12/16/32 at any sector size from 512
+   to 4096, and `LoadImage`s the bytes from the buffer, with the device path
+   `Vendor(disk)/HD(n,GPT,…)/\EFI\BOOT\BOOTX64.EFI`. The console says
+   `boot : the firmware did not load it (…); reading the ESP here`.
+   stormuefi needs nothing more: it reads its pallets through whole-disk
+   BlockIO and parses the GPT itself. No filesystem protocol is installed, so
+   a bootloader that opens further files on its own ESP (GRUB, shim) would
+   not find them this way. `esp = firmware` / `esp = stormbootx` picks one
+   reader alone.
 
 ### Why chain-load
 
@@ -312,6 +326,7 @@ others.
 | `claim` | `yes` | `no` / `false` / `0` / `off` skips the claim |
 | `name` (or `tag`) | none (DNS name, then MAC, then SMBIOS) | states the identity; the only name claimed |
 | `dns` | none | DNS server for the PTR of the machine's own address, when its DHCP reply names none or cannot be read (#26); `build-boot-agent.sh --dns` |
+| `esp` | `auto` | who reads the attached ESP (#37): `auto` (firmware, then stormbootx), `firmware`, or `stormbootx` |
 | `fec` | none | **recovery sticks only**: write this FEC and warm-reset |
 | `stamp` | none | parsed, not yet used; for self-update (#2) |
 
@@ -322,6 +337,16 @@ reports which network-stack protocols are present layer by layer, runs a
 `ConnectController` pass when TCP4 is missing, and then creates and
 configures a TCP4 child. Presence alone does not prove the agent will work.
 A stick that boots it is made with `--probe` (see *Getting it onto a stick*).
+
+## `espprobe`
+
+A third binary, `src/espprobe.rs` (#37). It connects every controller, then
+for each whole disk except the one it booted from whose GPT has an ESP, it
+reports whether the firmware's FAT loads `\EFI\BOOT\BOOTX64.EFI`, reads the
+file with `esp.rs`, and starts it from the buffer with `espboot.rs`, the same
+code stormbootx falls back to. Then it powers off. `tests/esp-ovmf.sh` boots
+it under OVMF against a 4096-byte virtio disk carrying a 4096-byte-sector
+FAT16 ESP, and passes only if the payload it starts prints.
 
 ## Build
 
@@ -336,14 +361,19 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   rustc --edition 2021 --test src/intent.rs -o t/intent-test && ./t/intent-test && \
   rustc --edition 2021 --test src/sha256.rs -o t/sha256-test && ./t/sha256-test && \
   rustc --edition 2021 --test src/universal.rs -o t/universal-test && ./t/universal-test && \
-  rustc --edition 2021 --test src/dnsname.rs -o t/dnsname-test && ./t/dnsname-test'
+  rustc --edition 2021 --test src/dnsname.rs -o t/dnsname-test && ./t/dnsname-test && \
+  rustc --edition 2021 --test src/esp.rs -o t/esp-test && ./t/esp-test && \
+  R=${CARGO_TARGET_DIR:-target}/x86_64-unknown-uefi/release && \
+  tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi'
 ```
 
-That builds `stormbootx.efi` and `tcp4probe.efi`, then runs the four host
-test suites. There is no host target and no `cargo test`. `src/sha256.rs`,
-`src/intent.rs`, `src/universal.rs` and `src/dnsname.rs` are the exceptions: each uses only
+That builds `stormbootx.efi`, `tcp4probe.efi` and `espprobe.efi`, runs the
+five host test suites, then boots espprobe under OVMF (`tests/esp-ovmf.sh`).
+There is no host target and no `cargo test`. `src/sha256.rs`,
+`src/intent.rs`, `src/universal.rs`, `src/dnsname.rs` and `src/esp.rs` are the exceptions: each uses only
 `core` and names no `crate::` item, so each compiles as its own crate with
-`rustc --test`.
+`rustc --test`. `esp.rs`'s tests build their images with `mkfs.fat` and
+mtools, which must be on the `PATH`.
 `--edition 2021` is required, because bare `rustc` defaults to 2015, where
 `core` is not in scope.
 
@@ -478,13 +508,15 @@ driver for its NICs, loaded `ipxe-intelx.efi` from the media, got
 (`golden-stormbootx-74a242a6f0e89f75`, a709f9f), it named itself `server1`
 from the PTR, claimed `boothost/server1` and attached its clone over NVMe/TCP
 (#26, closed). The release disk's `BOOTX64.EFI` then read as `NOT_FOUND`
-on that firmware, a 4096-byte-block namespace (#33, stormblock#228).
+on that firmware, a 4096-byte-block namespace (#33). Volumes stay 4K (owner,
+2026-09-29), so stormbootx now reads the ESP itself when the firmware can't
+(#37).
 
 Open issues:
 
 | Issue | What |
 |---|---|
-| #33 | X9 blades: `BOOTX64.EFI` not found on a 4096-byte namespace (engine side, stormblock#228); SOL console on ttyS1 |
+| #37, #33 | X9 blades: `BOOTX64.EFI` not found on a 4096-byte namespace. stormbootx now reads the 4K ESP itself when the firmware can't; verified under OVMF, not yet on server1. #33 also has the SOL console on ttyS1 |
 | #15 | universal boot: client side done; forge is on stormblock 13.7.0, and there is no `boothost/default` |
 | #23 | identity from DNS: client side done; stormblock#204 and a metal test |
 | #3, #11 | skipping to the disk when nothing changed; a per-machine boot intent (`local` waits on forge running stormblock#148) |

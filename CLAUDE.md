@@ -21,15 +21,23 @@ scratch files go in `tmp/`.
 Push first, then `sc-build` from this checkout. It builds the pushed commit
 on dev.g8.lo as `stormbuild`. There is no checkout on dev, and no `ssh root@`.
 The plain `cargo build && cargo test` default does not suit a `no_std` UEFI
-crate, so name the command. This builds the binary and runs both host suites:
+crate, so name the command. This builds the three binaries, runs the five
+host suites and boots `espprobe` under OVMF:
 
 ```bash
 sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   rustc --edition 2021 --test src/intent.rs -o t/intent-test && ./t/intent-test && \
   rustc --edition 2021 --test src/sha256.rs -o t/sha256-test && ./t/sha256-test && \
   rustc --edition 2021 --test src/universal.rs -o t/universal-test && ./t/universal-test && \
-  rustc --edition 2021 --test src/dnsname.rs -o t/dnsname-test && ./t/dnsname-test'
+  rustc --edition 2021 --test src/dnsname.rs -o t/dnsname-test && ./t/dnsname-test && \
+  rustc --edition 2021 --test src/esp.rs -o t/esp-test && ./t/esp-test && \
+  R=${CARGO_TARGET_DIR:-target}/x86_64-unknown-uefi/release && \
+  tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi'
 ```
+
+The last line boots `espprobe` under dev's OVMF (KVM there) against a
+4096-byte disk (#37). `R=` is the one place the target dir is named, and it
+reads `CARGO_TARGET_DIR` rather than assuming `target/`.
 
 Don't `ls target/...` afterwards. dev sets its own `CARGO_TARGET_DIR`, so the
 `ls` fails, and sc-build files that as a `build-failure` issue (#16 was one).
@@ -57,7 +65,9 @@ reply's `host` object, `core` only. `tcp4probe.rs` includes it by `#[path]`
 because `tcp4.rs` uses it, so a new `crate::` use in `tcp4.rs` must be
 carried there too (#24 was that). `src/dnsname.rs` (#23) is the fourth:
 DHCP option parsing and the PTR wire format, tested against microdns
-replies captured on 2026-09-27.
+replies captured on 2026-09-27. `src/esp.rs` (#37) is the fifth: GPT and
+FAT, tested on images `mkfs.fat` and mtools build inside the test, so they
+must be on the build box's `PATH` (they are on dev).
 
 `Cargo.lock` is tracked, as it should be for anything that produces a binary.
 Without it every build resolved fresh, and this is a firmware binary whose
@@ -97,11 +107,14 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/drivers.rs` | load NIC drivers from `\stormboot\drivers` on the media (#26), after the platform's own bind |
 | `src/dhcp4.rs` | lease an address when the platform has not |
 | `src/nvme.rs` | the NVMe/TCP initiator |
-| `src/blockio.rs` | publish the namespace as a block device, then chain-load its `BOOTX64.EFI` |
+| `src/blockio.rs` | publish the namespace as a block device, then chain-load its `BOOTX64.EFI` (the firmware's FAT, then `esp.rs`) |
 | `src/intent.rs` | the boot intent (`install`/`local`/`auto`) read before the claim; every doubt is `auto` |
 | `src/registry.rs` | read the intent; claim `boothost/<tag>`, or `boothost/default` by MAC; read the engine's version; also the old sbregistry `/v1/clones/claim` path, compiled out by `USE_REGISTRY = false` |
 | `src/dnsname.rs` | the machine's DNS name (#23): DHCP options 12/15/6, PTR query and answer over DNS/TCP |
 | `src/universal.rs` | universal boot (#15): is the engine new enough, which MAC is the machine's, what host the reply named |
+| `src/esp.rs` | the attached ESP read without the firmware's FAT (#37): GPT, FAT12/16/32 at 512..4096-byte sectors |
+| `src/espboot.rs` | read `BOOTX64.EFI` through `esp.rs` and `LoadImage` it from the buffer |
+| `src/espprobe.rs` | third binary: who can read a 4K ESP; booted under OVMF by `tests/esp-ovmf.sh` |
 | `src/sha256.rs` | the digest, because `EFI_HASH2` is optional |
 | `src/config.rs` | the target, read from the media rather than compiled in |
 | `src/shell.rs` | timed, never-forced failure console before the fall-through |
@@ -182,6 +195,13 @@ These have each cost a debugging session. Do not "simplify" them away.
   menu lists `UEFI HTTPv4/v6`, which is why: HTTP boot pulls TCP4 in. So the
   network path *can* be exercised in a VM, on Proxmox rather than on Fedora's
   OVMF.
+- **A 4K image's ESP is a 4096-byte-sector FAT, and old firmware misreads
+  it** (#37, #33). Linux won't mount a FAT whose sector is smaller than the
+  device's block, and volumes stay 4096 (owner: "512 will kill our
+  performance"). AMI Aptio 4 mounts such an ESP and then answers `NOT_FOUND`
+  for `BOOTX64.EFI`. Fedora's OVMF (EDK2) loads it fine (`tests/esp-ovmf.sh`). When the firmware loads
+  nothing, `esp.rs` reads the file and `LoadImage` takes the buffer. A 512e
+  view would not have fixed Aptio: the boot sector still says 4096.
 - **The transfer size comes from MDTS, never from the MTU.** Sizing a command
   to fit one frame inverts: a 9000 path lands on 8 KiB and a 1500 path on
   64 KiB. TCP segments to the MSS and never IP-fragments, so frames are not
@@ -387,6 +407,17 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
          virtio disk under OVMF in the sc-build job, to prove LoadImage
          from the buffer starts an image.
       4. Metal: server1 and a pve VM boot a 4K clone (the master runs them).
+
+      **Done and verified in sc-build (2026-09-29):** 1–3. `esp.rs`'s 12
+      host tests pass: FAT12/16/32, 512 and 4096 sectors on 512 and 4096
+      disks, long names, a fragmented file, CRC failures. Under OVMF (KVM),
+      espprobe read the payload off a FAT16 at 4096-byte sectors on a
+      4096-byte virtio disk, and LoadImage started it from the buffer. OVMF's
+      own FAT loads that ESP too, so pve's `No bootable option` (stormblock#228)
+      is not EDK2's FAT. **Left:** 4, on metal. `blockio.rs`'s own half (the
+      firmware-first order and the NVMe namespace adapter `NsDisk`) has not
+      run anywhere yet: it needs an attached namespace, and Fedora's OVMF
+      has no TCP4.
 
 - [ ] **Everything is a golden (owner, 2026-09-28; #21 decided,
       stormcentral#126). In progress.** stormbootx ships as a golden, not as

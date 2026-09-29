@@ -21,6 +21,9 @@ extern crate alloc;
 
 #[path = "esp.rs"]
 mod esp;
+// `start` is stormbootx's; this binary starts the image itself so it can say
+// what came back.
+#[allow(dead_code)]
 #[path = "espboot.rs"]
 mod espboot;
 
