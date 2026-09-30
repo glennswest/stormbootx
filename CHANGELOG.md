@@ -3,8 +3,10 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
-### 2026-09-30
-- **fix:** the ISO media is built the way Debian's netinst is (#55): isohybrid, with an MBR partition of type `0xef` and a GPT entry over `/esp.img` beside the El Torito catalog, and the ESP at `mkfs.fat`'s default geometry (4 MiB: FAT12, 2 KiB clusters; was FAT16 at 512-byte clusters). AMI Aptio 4 (server1, X9) read the first 12 KB of the old ESP over virtual media and hung at POST A2, while Debian's ISO booted. The `.img` stick's ESP uses the same geometry. `tests/iso-layout.sh` checks the layout.
+## [v0.8.2] — 2026-09-30
+
+### Fixed
+- the ISO media is built the way Debian's netinst is (#55): isohybrid, with an MBR partition of type `0xef` and a GPT entry over `/esp.img` beside the El Torito catalog, and the ESP at `mkfs.fat`'s default geometry (4 MiB: FAT12, 2 KiB clusters; was FAT16 at 512-byte clusters). AMI Aptio 4 (server1, X9) read the first 12 KB of the old ESP over virtual media and hung at POST A2, while Debian's ISO booted. The `.img` stick's ESP uses the same geometry. `tests/iso-layout.sh` checks the layout.
 
 ## [v0.8.1] — 2026-09-30
 
