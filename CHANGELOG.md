@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-09-30
+- **docs:** work plan for #56 (the EDK2 network stack on the media): current EDK2's IPv4 drivers need `EFI_RNG` and `EFI_HASH2`, which Aptio 4 lacks. The choice of stack has gone to the owner.
+
 ## [v0.8.2] — 2026-09-30
 
 ### Fixed

@@ -391,6 +391,21 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
+- [ ] **#56 — carry the EDK2 IPv4 network stack on the media (P1,
+      2026-09-30). `needs-owner`, no code yet.** server3 (X9, Aptio 4)
+      loaded `ipxe-intelx.efi` and then reported `EFI_TCP4 is not present`.
+      Wanted: MnpDxe/ArpDxe/Ip4Dxe/Udp4Dxe/Dhcp4Dxe/TcpDxe from a pinned
+      EDK2 tag, loaded only when no TCP4 service binding exists after the NIC
+      drivers, and printed as `tcp4 : available (firmware|media)`. **Found:**
+      since the PixieFail fixes (edk2-stable202405), those drivers refuse to
+      start without `EFI_RNG_PROTOCOL` (`PseudoRandomU32` in each start, and
+      in TcpDxe's entry point), and TcpDxe also needs `EFI_HASH2`. Aptio 4
+      almost certainly has neither. Asked the owner (comment on #56): (1)
+      current EDK2 plus RngDxe and Hash2DxeCrypto (needs RDRAND and an
+      OpenSSL build), (2) pin edk2-stable202311 (CVE-2023-45236/45237), or (3)
+      stormbootx supplies RNG/Hash2 itself. Recommended: 1. dev also lacks
+      `nasm` and `libuuid-devel` (root), so EDK2 can't build there as it stands.
+
 - [ ] **#55 — X9 (AMI Aptio 4) hangs at POST A2 reading the ISO's
       esp.img (P1, 2026-09-30). Handed off.** server1's capture: the
       firmware reads the PVD, the boot catalog and the first 12 KB of
