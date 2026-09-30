@@ -285,7 +285,7 @@ common=(
     "namespace : "
     "x 4096 bytes"
     "blockio     : published on handle"
-    "MiB read in all; the last 64 MiB took"
+    "blockio     : 96 MiB read in all"
     "is there a TCP/IP stack in this firmware"
     "not:no network boot"
     "stub:GET /api/v1/health"
