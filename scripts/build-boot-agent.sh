@@ -66,7 +66,7 @@ Options:
   --port N         portal port (default 4420)
   --nqn NQN        subsystem NQN (default nqn.2026-09.lo.g16:stormcos)
   --nsid N         namespace (default 2)
-  --size MIB       ESP size (default 4; FAT16 needs >=4085 clusters)
+  --size MIB       ESP size (default 4; mkfs.fat picks FAT12/16 by size)
   --binary PATH    prebuilt .efi (default: build it)
   --output PATH    image path (default tmp/images/stormbootx.img in the checkout)
 USAGE
@@ -205,13 +205,13 @@ media    = $MEDIA
 CONF
 fi
 
-# FAT16 with 512-byte clusters: FAT32 needs ~33 MB of filesystem before it has
-# enough clusters to be legal, which is eight times the whole image. FAT16 at
-# the default 2 KB cluster size is rejected below 8 MB for the same reason, so
-# -s 1 is what makes a 4 MB ESP possible.
+# mkfs.fat's own geometry: at 4 MiB that is FAT12 with 2 KiB clusters, the
+# same as Debian's efi.img. This was FAT16 at 512-byte clusters (-F 16 -s 1)
+# until #55: AMI Aptio 4 (server1, X9) read the first 12 KB of that ESP off
+# virtual media and hung at POST A2, where Debian's netinst booted.
 ESP="$WORK/esp.img"
 truncate -s "${ESP_MIB}M" "$ESP"
-mkfs.fat -F 16 -s 1 -n STORMBOOTX "$ESP" >/dev/null
+mkfs.fat -n STORMBOOTX "$ESP" >/dev/null
 mmd   -i "$ESP" ::/EFI ::/EFI/BOOT ::/stormboot
 mcopy -i "$ESP" "$BIN" ::/EFI/BOOT/BOOTX64.EFI
 mcopy -i "$ESP" "$WORK/stormboot.conf" ::/stormboot/stormboot.conf
@@ -240,7 +240,14 @@ if [[ "$ISO" == "yes" ]]; then
         mkdir -p "$ISOROOT/stormboot/drivers"
         cp "$DRIVERS"/* "$ISOROOT/stormboot/drivers/"
     fi
-    xorriso -as mkisofs -V STORMBOOTX -e esp.img -no-emul-boot \
+    #
+    # Isohybrid, the way Debian's netinst is (#55): an MBR whose partition 2
+    # (type 0xef) and a GPT that both map the ESP boot image, beside the El
+    # Torito catalog. Pure El Torito hung Aptio 4. The MBR template is zeros:
+    # the build box has no syslinux, and this media has no BIOS boot code.
+    head -c 432 /dev/zero > "$WORK/mbr.bin"
+    xorriso -as mkisofs -V STORMBOOTX -isohybrid-mbr "$WORK/mbr.bin" \
+        -e esp.img -no-emul-boot -isohybrid-gpt-basdat \
         -o "$OUTPUT" "$ISOROOT" >/dev/null 2>&1
 else
     truncate -s "$(( ESP_MIB + 2 ))M" "$OUTPUT"

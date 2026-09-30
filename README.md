@@ -409,7 +409,11 @@ Packaging only; nothing here runs at boot. What ships is a **golden** (see
 *How it ships* below); these scripts are what the golden build runs, and are
 also usable by hand in a build. `scripts/build-boot-agent.sh` puts the built
 `.efi` and a `stormboot.conf` onto boot media: a GPT `.img` to `dd` onto a
-USB stick, or with `--iso` an El Torito `.iso` for BMC virtual media. Output
+USB stick, or with `--iso` an El Torito `.iso` for BMC virtual media. The ISO
+is isohybrid the way Debian's netinst is (an MBR `0xef` partition and a GPT
+entry over `/esp.img`), and the ESP is at `mkfs.fat`'s own geometry (4 MiB:
+FAT12, 2 KiB clusters): AMI Aptio 4 hung at POST A2 on the old pure El Torito
+FAT16 ESP (#55); `tests/iso-layout.sh ISO…` checks both. Output
 defaults to `tmp/images` in the checkout, which on dev is the build's own
 drive and is deleted with it. Nothing is left on the build box.
 

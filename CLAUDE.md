@@ -35,7 +35,8 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi'
 ```
 
-`tests/media-ovmf.sh ISO 'LINE' …` boots a media ISO under OVMF and requires
+`tests/iso-layout.sh ISO …` checks an ISO is isohybrid with a FAT12 ESP,
+the layout Aptio 4 boots (#55). `tests/media-ovmf.sh ISO 'LINE' …` boots a media ISO under OVMF and requires
 console lines (#45: `media : …`); build the goldens under `t/` in the same
 job to use it.
 
