@@ -712,6 +712,12 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
         carries `BOOTX64.EFI`, and claims otherwise. stormcos#30 is not needed.
       - Not yet seen on metal: nothing can serve `local` until #148 lands.
 
+- [ ] #3 — **owner override, 2026-09-30 (later the same day): until
+      intents work on forge v20 (stormblock#148), always claim.** `auto` and
+      every doubt claim, as before v0.8.0; only `local` stays local. The
+      local-ESP rule stays in the code, off by default:
+      `local_when_bootable = true` in `stormboot.conf` turns it on. Then
+      v0.8.1, both goldens, and the names to the master. In progress.
 - [x] #3 (the rest) — **answered 2026-09-30 (owner, via the master): built
       in 086c046, released v0.8.0 (d65157a). Closed 2026-09-30.** sc-build:
       no warnings, host suites 9/7/6/7/12 (`the_owners_rule`,
