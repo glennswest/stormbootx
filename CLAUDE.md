@@ -722,7 +722,7 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       `golden-stormbootx-rustnic-6cd745d27f0d0fbd`. **Not run:** `run()`'s
       step 3a itself (needs TCP4, which Fedora's OVMF lacks); the master's
       next metal boot shows `local : …`. Note C2NR0Q2's stale Windows SAS
-      disk has a BOOTX64.EFI, so `auto` would boot it there: set `install`,
+      disk, if GPT, likely has a BOOTX64.EFI, and `auto` would boot it there: set `install`,
       or wipe that disk. Was: `install` claims; `local` boots the
       local disk; `auto`, a 404 or any other doubt boots the local disk only if
       a local, non-removable disk other than the boot media carries an ESP with
