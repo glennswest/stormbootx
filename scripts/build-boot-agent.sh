@@ -45,6 +45,7 @@ FEC=""
 DRIVERS=""
 DNS=""
 MEDIA=""
+RNG=""
 
 usage() {
     sed -n '2,20p' "$0" | sed 's/^# \?//'
@@ -63,6 +64,9 @@ Options:
   --dns ADDR       DNS server for the PTR of the machine's own address, when
                    its DHCP reply names none or cannot be read (#26)
   --portal ADDR    NVMe/TCP portal, with --pin (default 192.168.31.202)
+  --engine ADDR    the portal and engine host, claim still on (tests/net-ovmf.sh)
+  --rng FIRST      the first entropy source tried: firmware (default), cpu or
+                   jitter (#56); the ones above it are skipped
   --port N         portal port (default 4420)
   --nqn NQN        subsystem NQN (default nqn.2026-09.lo.g16:stormcos)
   --nsid N         namespace (default 2)
@@ -83,6 +87,8 @@ while [[ $# -gt 0 ]]; do
         --media)  MEDIA="$2"; shift 2 ;;
         --api-port) API_PORT="$2"; shift 2 ;;
         --portal) PORTAL="$2"; PIN="yes"; shift 2 ;;
+        --engine) PORTAL="$2"; shift 2 ;;
+        --rng)    RNG="$2"; shift 2 ;;
         --port)   PORT="$2"; shift 2 ;;
         --nqn)    NQN="$2"; shift 2 ;;
         --nsid)   NSID="$2"; shift 2 ;;
@@ -202,6 +208,18 @@ if [[ -n "$MEDIA" ]]; then
 
 # Which media this is, printed at boot. Set by the golden build.
 media    = $MEDIA
+CONF
+fi
+
+# The first entropy source tried (#56). Absent on ordinary media: the best one
+# present is used. The OVMF test states `cpu` to take the firmware's EFI_RNG
+# out of the picture.
+if [[ -n "$RNG" ]]; then
+    [[ "$RNG" == firmware || "$RNG" == cpu || "$RNG" == jitter ]] || die "--rng: firmware, cpu or jitter"
+    cat >> "$WORK/stormboot.conf" <<CONF
+
+# The first entropy source tried; the ones above it are skipped.
+rng      = $RNG
 CONF
 fi
 

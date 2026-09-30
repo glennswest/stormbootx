@@ -35,6 +35,7 @@ pub enum Source {
     Firmware,
     Rdseed,
     Rdrand,
+    #[cfg_attr(not(target_arch = "aarch64"), allow(dead_code))]
     Rndr,
     Jitter,
 }
