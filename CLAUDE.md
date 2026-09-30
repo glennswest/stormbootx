@@ -391,20 +391,29 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
-- [ ] **#56 — carry the EDK2 IPv4 network stack on the media (P1,
-      2026-09-30). `needs-owner`, no code yet.** server3 (X9, Aptio 4)
-      loaded `ipxe-intelx.efi` and then reported `EFI_TCP4 is not present`.
-      Wanted: MnpDxe/ArpDxe/Ip4Dxe/Udp4Dxe/Dhcp4Dxe/TcpDxe from a pinned
-      EDK2 tag, loaded only when no TCP4 service binding exists after the NIC
-      drivers, and printed as `tcp4 : available (firmware|media)`. **Found:**
-      since the PixieFail fixes (edk2-stable202405), those drivers refuse to
-      start without `EFI_RNG_PROTOCOL` (`PseudoRandomU32` in each start, and
-      in TcpDxe's entry point), and TcpDxe also needs `EFI_HASH2`. Aptio 4
-      almost certainly has neither. Asked the owner (comment on #56): (1)
-      current EDK2 plus RngDxe and Hash2DxeCrypto (needs RDRAND and an
-      OpenSSL build), (2) pin edk2-stable202311 (CVE-2023-45236/45237), or (3)
-      stormbootx supplies RNG/Hash2 itself. Recommended: 1. dev also lacks
-      `nasm` and `libuuid-devel` (root), so EDK2 can't build there as it stands.
+- [ ] **#56 — stormbootx's own TCP/IP: smoltcp on SNP (P0, owner
+      2026-09-30). In progress.** server3 (X9, Aptio 4) loaded
+      `ipxe-intelx.efi` and then reported `EFI_TCP4 is not present`. The
+      EDK2-stack plan was dropped: since edk2-stable202405 its IPv4 drivers
+      refuse to start without `EFI_RNG` (and TcpDxe without `EFI_HASH2`). The
+      owner's decision replaces it: **no firmware TCP4 on any machine**.
+      `src/net.rs` runs smoltcp 0.14 directly on each NIC's SNP (opened
+      exclusively, so a firmware MNP lets go). DHCP comes from smoltcp's
+      dhcpv4 socket, and the raw reply is kept for `dnsname.rs`. ARP, and TCP
+      for NVMe/TCP and the engine API, run on the same stack. The ISN and
+      ephemeral ports are seeded from RDRAND; without RDRAND the console says
+      so and the seed comes from the TSC and the RTC. Console: `tcp4 :
+      smoltcp over SNP (<nic>)`. Plan:
+      1. `net.rs`: the SNP device, a TSC clock, the seed, per-NIC interface
+         and DHCP, and `TcpSocket` with the old `Tcp4Socket` API; move
+         `handle_protocol`/`connect_all`/`machine_mac` there;
+      2. main/registry/nvme/shell/blockio/drivers onto `net`. tcp4.rs and
+         dhcp4.rs stay for tcp4probe only (the firmware-TCP4 diagnostic);
+      3. Cargo.lock from dev (no cargo on this VM);
+      4. `tests/net-ovmf.sh`: the ISO under OVMF (Fedora's has no TCP4) with a
+         user-mode NIC and a stub engine on the host. It must show `tcp4 :
+         smoltcp`, a lease, and an HTTP answer from the stub;
+      5. docs, release, both goldens, and the golden name to the master.
 
 - [ ] **#55 — X9 (AMI Aptio 4) hangs at POST A2 reading the ISO's
       esp.img (P1, 2026-09-30). Handed off.** server1's capture: the
