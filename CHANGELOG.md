@@ -3,16 +3,23 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
-### 2026-09-30
-- **feat:** `auto`, and every doubt (a 404, an unreachable engine, an unknown intent), boots the local disk when one can boot: a whole, non-removable disk other than the boot media whose GPT has an ESP carrying `\EFI\BOOT\BOOTX64.EFI`, read with `esp.rs` and no network. A machine with nothing to boot claims as before; `install` always claims and `local` always falls through (#3, the owner's answer; also answers #31). Console: `local : …`. `intent::decide` holds the rule, with host tests.
+## [v0.8.0] — 2026-09-30
 
-### 2026-09-29
-- **chore:** the rustnic media pins stormnic-ixgbe 0dd4267: SNP and a MAC device path on a child handle after bring-up and the DMA check (stormnic-ixgbe#4), so the firmware's MNP/IP4/TCP4 can bind to the Intel 10G. Built `--locked`; console label `media : rustnic ixgbe@0dd4267 mlx4@4c2d318`. The normal media is unchanged (#51). Goldens `golden-stormbootx-rustnic-6d88515819338a0e` and `golden-nic-drivers-56ea4782ef2a`.
-- **chore:** the rustnic media pins stormnic-mlx4 v0.2.0 (4c2d318): SNP on a child handle per Ethernet port with a MAC device path (stormnic-mlx4#4); `Start` keeps the ConnectX-3 (~1.5 s per NIC + up to 5 s for link, was ~20 s per port), the #3 broadcast self-test no longer runs, and ExitBootServices stops its DMA. Built `--locked`; console label `media : rustnic ixgbe@2afd319 mlx4@4c2d318`. The normal media is unchanged (#50). Goldens `golden-stormbootx-rustnic-ab4e848a4dcfcaf3` and `golden-nic-drivers-10a25ce0a5a3`.
-- **chore:** the rustnic media pins stormnic-ixgbe 2afd319 (RX/TX descriptor rings with DMA and a broadcast check frame in Start, stormnic-ixgbe#3; still no SNP), built `--locked`; its console label is `media : rustnic ixgbe@2afd319 mlx4@cef8dc5`. The normal media still carries no stormnic-ixgbe (#48). Goldens `golden-stormbootx-rustnic-7f260c307c5ee784` and `golden-nic-drivers-60d62cc3aee9`.
-- **fix:** `tests/media-ovmf.sh` failed on any console over 20 lines: `grep | head` under `pipefail` exited on grep's broken pipe before checking a line (#49).
-- **feat:** the rustnic media carries `stormnic-mlx4.efi` for the ConnectX-3, pinned at cef8dc5 (stormnic-mlx4#2 firmware bring-up, #3 Ethernet data path) and built `--locked`; the nic-drivers golden carries it as `stormnic-mlx4.efi.off`. Every Rust driver is checked to be PE subsystem 11 when built, and `STORMNIC-SOURCE.txt` has a line per driver. `STORMNIC_ON_MEDIA` is now a list (`ixgbe mlx4`). Console label: `media : rustnic ixgbe@9476135 mlx4@cef8dc5`. The normal media is unchanged (#34). Goldens `golden-stormbootx-rustnic-b4f33d9566d6127e` and `golden-nic-drivers-5b867545c91e`.
-- **chore:** the rustnic media pins stormnic-ixgbe 9476135 (PHY and link code matched to its spec, stormnic-ixgbe#13; 25 device IDs), built `--locked`; its console label is `media : rustnic ixgbe@9476135` (#47). Golden `golden-stormbootx-rustnic-f82a05f6013ea469`.
+### Added
+- `auto`, and every doubt (a 404, an unreachable engine, an unknown intent), boots the local disk when one can boot: a whole, non-removable disk other than the boot media whose GPT has an ESP carrying `\EFI\BOOT\BOOTX64.EFI`, read with `esp.rs` and no network. A machine with nothing to boot claims as before; `install` always claims and `local` always falls through (#3, the owner's answer; also answers #31). Console: `local : …`. `intent::decide` holds the rule, with host tests.
+- the rustnic media carries `stormnic-mlx4.efi` for the ConnectX-3, pinned at cef8dc5 (stormnic-mlx4#2 firmware bring-up, #3 Ethernet data path) and built `--locked`; the nic-drivers golden carries it as `stormnic-mlx4.efi.off`. Every Rust driver is checked to be PE subsystem 11 when built, and `STORMNIC-SOURCE.txt` has a line per driver. `STORMNIC_ON_MEDIA` is now a list (`ixgbe mlx4`). Console label: `media : rustnic ixgbe@9476135 mlx4@cef8dc5`. The normal media is unchanged (#34). Goldens `golden-stormbootx-rustnic-b4f33d9566d6127e` and `golden-nic-drivers-5b867545c91e`.
+
+### Fixed
+- `tests/media-ovmf.sh` failed on any console over 20 lines: `grep | head` under `pipefail` exited on grep's broken pipe before checking a line (#49).
+
+### Changed
+- the rustnic media pins stormnic-ixgbe 0dd4267: SNP and a MAC device path on a child handle after bring-up and the DMA check (stormnic-ixgbe#4), so the firmware's MNP/IP4/TCP4 can bind to the Intel 10G. Built `--locked`; console label `media : rustnic ixgbe@0dd4267 mlx4@4c2d318`. The normal media is unchanged (#51). Goldens `golden-stormbootx-rustnic-6d88515819338a0e` and `golden-nic-drivers-56ea4782ef2a`.
+- the rustnic media pins stormnic-mlx4 v0.2.0 (4c2d318): SNP on a child handle per Ethernet port with a MAC device path (stormnic-mlx4#4); `Start` keeps the ConnectX-3 (~1.5 s per NIC + up to 5 s for link, was ~20 s per port), the #3 broadcast self-test no longer runs, and ExitBootServices stops its DMA. Built `--locked`; console label `media : rustnic ixgbe@2afd319 mlx4@4c2d318`. The normal media is unchanged (#50). Goldens `golden-stormbootx-rustnic-ab4e848a4dcfcaf3` and `golden-nic-drivers-10a25ce0a5a3`.
+- the rustnic media pins stormnic-ixgbe 2afd319 (RX/TX descriptor rings with DMA and a broadcast check frame in Start, stormnic-ixgbe#3; still no SNP), built `--locked`; its console label is `media : rustnic ixgbe@2afd319 mlx4@cef8dc5`. The normal media still carries no stormnic-ixgbe (#48). Goldens `golden-stormbootx-rustnic-7f260c307c5ee784` and `golden-nic-drivers-60d62cc3aee9`.
+- the rustnic media pins stormnic-ixgbe 9476135 (PHY and link code matched to its spec, stormnic-ixgbe#13; 25 device IDs), built `--locked`; its console label is `media : rustnic ixgbe@9476135` (#47). Golden `golden-stormbootx-rustnic-f82a05f6013ea469`.
+
+### Documentation
+- Work plan: #3 answered by the owner and built; README's intent table and `auto`.
 
 ## [v0.7.0] — 2026-09-29
 
