@@ -3,6 +3,14 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-09-30 (#56)
+- **BREAKING:** stormbootx carries its own TCP/IP and never uses the firmware's `EFI_TCP4`, `EFI_DHCP4` or `EFI_IP4_CONFIG2` (owner's decision on #56). `src/net.rs` runs smoltcp 0.14 on every NIC's `EFI_SIMPLE_NETWORK`, which it opens exclusively. That gives DHCP on every NIC at once (options 12/15/6 kept for the name, #23), ARP, and TCP for the engine API and NVMe/TCP. A machine needs only a NIC driver: server3 (X9) had one and no `EFI_TCP4`. The console prints `tcp4 : smoltcp over SNP (nic 0 <mac>, …)`, and the NIC table once. The platform's IP4 policy is no longer rewritten to DHCP in NVRAM. On the fall-through the NICs are given back to the firmware.
+- **feat:** `src/entropy.rs` supplies the TCP ISN seed, the DHCP xid and the local ports. It uses the firmware's `EFI_RNG_PROTOCOL` (read only; none is ever installed), then RDSEED/RDRAND (RNDR on aarch64), then cycle-counter jitter hashed with SHA-256 over the firmware time, the MAC and the SMBIOS UUID. The console prints `rng : firmware | rdrand | rndr | jitter`. It never refuses to boot for lack of entropy. `rng = cpu | jitter` in `stormboot.conf` (`build-boot-agent.sh --rng`) skips the sources above it.
+- **feat:** `build-boot-agent.sh --engine ADDR` names the portal and engine host with the claim left on.
+- **feat:** the console's `state`/`dhcp` show stormbootx's own leases.
+- **test:** `tests/net-ovmf.sh` boots stormbootx under OVMF with no firmware network stack, against a stub engine and a stub NVMe/TCP target (4096-byte blocks, a 96 MiB `BOOTX64.EFI` read through BlockIO and started). It boots as shipped, then with the firmware RNG and RDRAND/RDSEED masked, which must print `rng : jitter`.
+- **docs:** README, CLAUDE.md and the deck: no firmware TCP4 requirement; the network path and entropy chain.
+
 ### 2026-09-30
 - **docs:** work plan for #56 (the EDK2 network stack on the media): current EDK2's IPv4 drivers need `EFI_RNG` and `EFI_HASH2`, which Aptio 4 lacks. The choice of stack has gone to the owner.
 

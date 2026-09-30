@@ -1,5 +1,9 @@
 //! A blocking socket over the firmware's own TCP stack.
 //!
+//! **Not used by stormbootx since 0.9 (#56)**: it carries its own TCP/IP in
+//! `net.rs` (smoltcp on SNP). This module is compiled only into `tcp4probe`,
+//! the diagnostic that reports what the firmware's own stack does.
+//!
 //! EFI networking is entirely asynchronous: every operation takes a token
 //! carrying an event that completes later, and nothing progresses unless the
 //! caller keeps invoking `Poll` to give the driver cycles. Forgetting that is

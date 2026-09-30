@@ -1,7 +1,9 @@
 # stormbootx
 
 **A UEFI boot agent that attaches a remote disk over NVMe/TCP and boots it.**
-No kernel, no initramfs, no PXE, no TFTP. It uses the firmware's own TCP stack.
+No kernel, no initramfs, no PXE, no TFTP. It carries its own TCP/IP stack
+(smoltcp, on the NIC driver's `EFI_SIMPLE_NETWORK`) and needs nothing above
+the NIC driver from the firmware.
 
 It runs from a USB stick or a virtual-media ISO. It loads any NIC drivers the
 media carries, works out which machine it is (a stated name, else its DNS
@@ -12,7 +14,7 @@ fails, or the machine's boot intent is `local`, it falls through to the local
 disk.
 
 ```
-media NIC drivers → TCP4 → names (conf | DNS name, MAC, serial) → boot intent
+media NIC drivers → smoltcp on SNP (DHCP) → names (conf | DNS name, MAC, serial) → boot intent
     → claim boothost/<name> (or default by MAC) → NVMe/TCP attach
     → publish BlockIO + device path → ConnectController
     → load \EFI\BOOT\BOOTX64.EFI from the attached ESP → StartImage
@@ -43,13 +45,17 @@ here.
 
 At boot it **reads** only `\stormboot\stormboot.conf` from the volume it was
 loaded from, and **loads** any `*.efi` in `\stormboot\drivers\` on that
-volume as a NIC driver (#26; absent on ordinary media). It writes to three things:
+volume as a NIC driver (#26; absent on ordinary media). It writes to two things:
 
 | What | When |
 |---|---|
 | the attached clone on the engine | the booted OS writes to its disk, and the BlockIO handle is read-write |
-| the platform's IP4 policy (`EFI_IP4_CONFIG2`) | any interface set to `STATIC` is switched to `DHCP` when a socket is opened; on EDK2-based firmware this setting is kept in NVRAM |
 | the ConnectX NV FEC setting | only with `fec =` on a recovery stick, or `fec MODE` typed at the failure console; followed by a warm reset |
+
+Nothing is written to the platform's network configuration any more (#56;
+until 0.9 a `STATIC` IP4 policy was switched to `DHCP` in NVRAM). The NICs are
+taken from the firmware's own stack for the boot (SNP opened exclusively) and
+given back on the fall-through.
 
 ## What it does, step by step
 
@@ -67,8 +73,8 @@ volume as a NIC driver (#26; absent on ordinary media). It writes to three thing
      DHCP option 12 from the lease on the interface that reached the engine
      (option 15 adds the domain for the console), else the **PTR** of that
      interface's address, asked of the option 6 DNS server over **DNS/TCP**
-     (`src/dnsname.rs`; microdns answers over TCP, and TCP4 is the one stack
-     this binary needs anyway). **microdns sends no option 12**: it puts the
+     (`src/dnsname.rs`; microdns answers over TCP, and TCP is the one
+     transport this binary carries). **microdns sends no option 12**: it puts the
      reservation's name in DNS, so on microdns networks the PTR is the path.
      When the reply names no DNS server, or firmware cannot give the reply
      back, `dns =` in `stormboot.conf` is asked instead; each way this comes
@@ -95,7 +101,7 @@ volume as a NIC driver (#26; absent on ordinary media). It writes to three thing
      `o.e.m.`, and any string made only of `0`, `.`, `-` and spaces.
    - No usable serial is no longer a failure: once the network stack exists
      (step 4) the machine's **MAC** identifies it, the lowest usable unicast
-     permanent address across every NIC (`tcp4::machine_mac`), so the answer
+     permanent address across every NIC (`net::machine_mac`), so the answer
      does not depend on driver bind order. Only no serial *and* no MAC falls
      through.
    - The console prints the source, plus the SMBIOS model when there is one,
@@ -104,15 +110,13 @@ volume as a NIC driver (#26; absent on ordinary media). It writes to three thing
    current and next-boot FEC, read only. If `fec =` is set in the conf, it
    writes that value and warm-resets once. The next boot then finds nothing to
    change.
-4. **NIC drivers from the media, then TCP4** (`drivers::load_from_media`,
-   `tcp4::ensure_available`). Any `*.efi` in `\stormboot\drivers` is started
-   first (see *The network path*); then:
-   1. It checks whether TCP4 is present.
-   2. If not, it runs `ConnectController` on the NIC (SNP) handles, then on
-      every handle.
-   3. Then it waits up to 5 s, retrying every 250 ms.
-   4. The console says which of those worked. If none did, the boot falls
-      through with advice on the firmware setting.
+4. **NIC drivers from the media, then the network** (`drivers::load_from_media`,
+   `net::up`, #56). Any `*.efi` in `\stormboot\drivers` is started first (see
+   *The network path*). Then every `EFI_SIMPLE_NETWORK` handle is opened and
+   smoltcp starts DHCP on all of them. With no SNP at all it connects every
+   handle and waits up to 5 s. Then it falls through, saying the NIC needs a
+   UEFI driver. The console prints `tcp4 : smoltcp over SNP (nic 0 <mac>, …)`
+   and `rng : firmware | rdrand | rndr | jitter`.
 5. **Where and which.** `config::resolve` gives the portal from the conf,
    falling back to compiled defaults. Unless the conf says `claim = no`, it
    first reads the machine's **boot intent** (`src/intent.rs`):
@@ -258,35 +262,59 @@ looser version booted a stale Windows install off a local SAS disk.
 
 ## The network path
 
-**NIC drivers from the media (#26, `src/drivers.rs`).** Before TCP4 is looked
-for, every `*.efi` in `\stormboot\drivers\` on the boot volume is loaded
+**NIC drivers from the media (#26, `src/drivers.rs`).** Before the network
+is brought up, every `*.efi` in `\stormboot\drivers\` on the boot volume is loaded
 (`LoadImage` by device path) and started, then every handle is connected. One
 `ConnectController` pass runs first, so the platform's own drivers claim every
 NIC they will take and a media driver only gets the ones nothing else wanted.
 The console prints `drivers : N of M started from \stormboot\drivers` and one
 line per file; a driver that fails is reported and skipped. This is for
-firmware that has the TCP/IP stack but no UEFI driver for its NICs, like the
+firmware that has no UEFI driver for its NICs, like the
 Supermicro X9 blades (legacy-only Intel 10G and ConnectX-3). No directory, no
 change.
 
 
-`src/tcp4.rs` and `src/dhcp4.rs`. A socket is opened for the health read,
-the PTR query (when there is one), each intent read and each claim tried,
-and each NVMe queue (admin and one I/O), and each open works like this:
+**stormbootx's own TCP/IP (#56, `src/net.rs`).** The firmware's `EFI_TCP4` is
+not used on any machine. It is optional, off in setup on some machines, and
+missing on server3 (X9) even with a NIC driver loaded. And EDK2's own stack
+can't be carried instead, because since edk2-stable202405 its IPv4 drivers
+refuse to start without `EFI_RNG`, and TcpDxe without `EFI_HASH2`, which old
+firmware lacks. [smoltcp](https://github.com/smoltcp-rs/smoltcp) 0.14 runs on
+each NIC's SNP instead:
 
-- **Every TCP4 interface is tried**, ranked by link state and then by
-  descending MTU, because each NIC carries its own stack. The ranking is
-  printed.
-- Any interface set to `STATIC` is switched to `DHCP` first (see the table
-  above).
-- **Three phases, cheapest first:**
-  1. an interface that already has an address;
-  2. waiting for the platform's DHCP, up to the socket budget;
-  3. a DHCP client of its own over `EFI_DHCP4`, once per interface, matched
-     to the TCP4 interface by MAC. The lease is stated explicitly in
-     `Tcp4ConfigData`.
-- Timeout: 30 s per operation (`Tcp4Socket::connect`), for the engine API and
-  the attach. The PTR query uses 5 s and the console's `connect` 8 s.
+- **Each SNP is opened `EXCLUSIVE`**, so a firmware MNP bound to it lets go and
+  can't take frames meant for smoltcp. A NIC the firmware won't release is
+  used shared, and the console says so. On the fall-through every NIC is given
+  back (closed and reconnected), so a later boot option finds the firmware's
+  own stack again.
+- **DHCP** is smoltcp's dhcpv4 socket, on every NIC at once, re-sent every 2 s
+  (a 25G link takes seconds to train). It asks for options 1/3/6/12/15, and
+  keeps the reply for the name (#23). ARP and TCP are smoltcp's.
+- **A connection** goes out on the NIC that reached a target last, else on
+  the best-ranked NIC with a lease: link up first, then the larger MTU (the
+  storage port is the jumbo one). Each try gets 5 s while another leased NIC
+  is left. A reset is an answer (nothing listens there), not a wrong wire.
+  The NIC table prints once, at bring-up.
+- **Timeouts** are per operation without progress: 30 s for the engine API and
+  the attach (`TcpSocket::connect`), 5 s for the PTR query, 8 s for the
+  console's `connect`. Nagle and delayed ACKs are off, with a 256 KiB receive
+  window (window scaling), so a 128 KiB read is one round trip.
+- **Time** is the TSC, calibrated against `Stall` at bring-up.
+- **Randomness** (`src/entropy.rs`) seeds smoltcp's TCP ISN and DHCP xid, and
+  picks each connection's local port. It uses the first source present: the
+  firmware's `EFI_RNG_PROTOCOL` (read, never installed, so the next stage
+  never finds a weak RNG left behind), then RDSEED/RDRAND (RNDR on aarch64),
+  then cycle-counter jitter across short stalls, hashed with SHA-256 together
+  with the firmware time, the MAC and the SMBIOS UUID. It never refuses to
+  boot for lack of entropy. `rng = cpu` or `rng = jitter` in `stormboot.conf`
+  skips the sources above it.
+
+Under OVMF with no firmware network stack, `tests/net-ovmf.sh` leases from
+QEMU's slirp, reads a stub engine, and attaches a stub NVMe/TCP target at
+4096-byte blocks. The firmware's FAT reads a 96 MiB `BOOTX64.EFI` through the
+published BlockIO (about 120 MiB/s, KVM) and starts it. It runs once as
+shipped, and once with the firmware RNG and RDRAND/RDSEED masked, which must
+print `rng : jitter`.
 
 ## The NVMe/TCP initiator
 
@@ -355,10 +383,12 @@ others.
 
 ## `tcp4probe`
 
-A second binary, `src/tcp4probe.rs`, to run first on a new server model. It
-reports which network-stack protocols are present layer by layer, runs a
-`ConnectController` pass when TCP4 is missing, and then creates and
-configures a TCP4 child. Presence alone does not prove the agent will work.
+A second binary, `src/tcp4probe.rs`. It reports which of the firmware's
+network-stack protocols are present layer by layer, runs a `ConnectController`
+pass when TCP4 is missing, and then creates and configures a TCP4 child. Since
+#56 stormbootx needs only the SNP line of that report. The rest describes the
+firmware, not a requirement. `src/tcp4.rs` and `src/dhcp4.rs` (the firmware
+TCP4 client stormbootx used until 0.9) are compiled only into it now.
 A stick that boots it is made with `--probe` (see *Getting it onto a stick*).
 
 ## `espprobe`
@@ -387,11 +417,14 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   rustc --edition 2021 --test src/dnsname.rs -o t/dnsname-test && ./t/dnsname-test && \
   rustc --edition 2021 --test src/esp.rs -o t/esp-test && ./t/esp-test && \
   R=${CARGO_TARGET_DIR:-target}/x86_64-unknown-uefi/release && \
-  tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi'
+  tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi && \
+  tests/net-ovmf.sh $R/stormbootx.efi $R/tcp4probe.efi'
 ```
 
-That builds `stormbootx.efi`, `tcp4probe.efi` and `espprobe.efi`, runs the
-five host test suites, then boots espprobe under OVMF (`tests/esp-ovmf.sh`).
+That builds `stormbootx.efi`, `tcp4probe.efi` and `espprobe.efi`, and runs the
+five host test suites. Then it boots espprobe under OVMF (`tests/esp-ovmf.sh`),
+and stormbootx itself against the stub engine and NVMe/TCP target
+(`tests/net-ovmf.sh`).
 There is no host target and no `cargo test`. `src/sha256.rs`,
 `src/intent.rs`, `src/universal.rs`, `src/dnsname.rs` and `src/esp.rs` are the exceptions: each uses only
 `core` and names no `crate::` item, so each compiles as its own crate with
@@ -478,13 +511,13 @@ with the Rust drivers instead: `stormnic-ixgbe.efi` built `--locked` from
 `STORMNIC_IXGBE_REF` in `scripts/build-nic-drivers.sh`, and no iPXE NIC
 driver, so the Rust driver is what a machine booting it tests. Since #51
 (stormnic-ixgbe 0dd4267) it installs `EFI_SIMPLE_NETWORK_PROTOCOL` on a child
-handle after its bring-up and DMA check, so MNP/IP4/TCP4 can bind to the
+handle after its bring-up and DMA check, so the network stack can bind to the
 Intel 10G. Since #34 it
 also carries `stormnic-mlx4.efi` for the ConnectX-3, built `--locked` from
 `STORMNIC_MLX4_REF`. Since #50 (stormnic-mlx4 v0.2.0) its `Start` brings up the
 ConnectX-3, keeps it, and installs `EFI_SIMPLE_NETWORK_PROTOCOL` on a child
 handle per Ethernet port (about 1.5 s per NIC plus up to 5 s for link), so
-MNP/IP4/TCP4 can bind above it. The normal media does not carry it until
+the network stack can bind above it. The normal media does not carry it until
 that is proven on server1. Each Rust driver
 is checked to be PE subsystem 11 (EFI boot-service driver) when it is built.
 The rustnic media builds its own drivers and takes no nic-drivers golden. Each ISO's `stormboot.conf` names the variant, and the console
@@ -506,18 +539,14 @@ bytes are its `boot/<name>.iso`.
 
 ## Firmware requirements
 
-- **`EFI_TCP4`**, which having a NIC does not imply. On Dell, set Integrated
-  NIC to **Enabled with PXE**, or enable **UEFI Network Stack** under Network
-  Settings. `GlobalSlotDriverDisable` must be off, or add-in cards have no
-  UEFI driver.
-- **A UEFI driver for the NIC**, or one on the media (#26). On the
-  Supermicro X9 blades the stack is there (Advanced → PCIe/PCI/PnP →
-  **Network stack = Enabled**), but their NICs carry legacy option ROMs only,
-  so the media has to bring `--drivers`.
-- `EFI_DHCP4` is optional. It is only used when the platform produced no
-  address.
-- For emulation, use **Proxmox's OVMF**, which has the stack. Fedora's OVMF
-  has no upper network stack at all.
+- **A UEFI driver for the NIC** (`EFI_SIMPLE_NETWORK`), the firmware's or one
+  on the media (#26), and nothing above it. The firmware's
+  MNP/IP4/DHCP4/TCP4 are not used (#56). A firmware driver is usually loaded
+  only when the NIC is in UEFI/PXE mode in setup (Dell: Integrated NIC
+  **Enabled with PXE**; `GlobalSlotDriverDisable` off, or add-in cards have
+  no UEFI driver). The Supermicro X9 blades' NICs carry legacy option ROMs
+  only, so the media brings `--drivers`.
+- Any OVMF will do for emulation, Fedora's included (`tests/net-ovmf.sh`).
 
 ## In the code, not active
 
@@ -532,7 +561,7 @@ bytes are its `boot/<name>.iso`.
 
 ## Status
 
-v0.5.1. Running on hardware since 2026-09-05. A Dell PowerEdge R230 (C2NR0Q2)
+v0.9.0. Running on hardware since 2026-09-05. A Dell PowerEdge R230 (C2NR0Q2)
 booted the ISO over iDRAC virtual media, claimed `boothost/C2NR0Q2` and
 attached a 32 GiB 4K clone from forge over 25 GbE. The console of that first
 attach, verbatim (the build before chain-loading, ea26be1):

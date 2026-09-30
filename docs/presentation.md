@@ -15,9 +15,10 @@ paginate: true
 
 **A UEFI boot agent that attaches a machine's image over NVMe/TCP and boots it.**
 
-v0.5.1 (2026-09-29) · `x86_64-unknown-uefi` · `no_std` · 165 KB
+v0.9.0 (2026-09-30) · `x86_64-unknown-uefi` · `no_std` · 231 KB
 
-No kernel, no initramfs, no PXE, no TFTP. It uses the firmware's own TCP stack.
+No kernel, no initramfs, no PXE, no TFTP. It carries its own TCP/IP (smoltcp
+on the NIC driver's SNP), so it needs no network stack from the firmware.
 
 ---
 
@@ -80,7 +81,7 @@ Any failure on any arrow → **fall through to the local disk**.
 
 ## What it does today (1/2): choosing and attaching
 
-- **Identity** (`config.rs`, `dnsname.rs`, `tcp4::machine_mac`, `smbios.rs`):
+- **Identity** (`config.rs`, `dnsname.rs`, `net::machine_mac`, `smbios.rs`):
   `name =` wins and is the only name. Else the **DNS name** (DHCP option 12,
   else the PTR over DNS/TCP; a NIC's `server1a` is machine `server1`) claims
   `boothost/server1` (#23); a 404 moves on to the default by the lowest usable
@@ -89,7 +90,7 @@ Any failure on any arrow → **fall through to the local disk**.
 - **Boot intent** (`intent.rs`): `install` / `local` / `auto`, read under the
   same names in the same order. Only an explicit `local` skips the claim;
   **any doubt reads as `auto`**.
-- **Claim** (`registry.rs`, `universal.rs`): plain HTTP/1.1 over TCP4. No
+- **Claim** (`registry.rs`, `universal.rs`): plain HTTP/1.1 over its own TCP. No
   `tag =` → `boothost/default` by MAC, a clone per machine (`mac-<hex>`),
   only from an engine after v19.3.0 (stormblock#200); else by serial.
 - **Attach** (`nvme.rs`): host NQN `nqn.2026-09.lo.storm:host-<name>`;
@@ -114,9 +115,11 @@ Any failure on any arrow → **fall through to the local disk**.
   `\stormboot\drivers` is started after the platform's own drivers bind, so
   it only takes NICs nothing else drives. Each step is printed, so a hang
   names itself.
-- **Network** (`tcp4.rs`, `dhcp4.rs`): every NIC tried, ranked link-up then
-  largest MTU; waits up to 5 s for a late network stack; runs its own DHCP
-  when the platform didn't.
+- **Network** (`net.rs`, `entropy.rs`, #56): its own TCP/IP, smoltcp on each
+  NIC's SNP (opened exclusively), with no firmware TCP4 anywhere. DHCP on
+  every NIC at once; a connection goes out on the NIC that worked last, else
+  link-up, then the largest MTU. The ISN and ports are seeded from the
+  firmware RNG, then RDRAND, then jitter.
 - **NIC FEC report** (`mlxfec.rs`): prints each ConnectX port's FEC, read-only.
 
 ---
@@ -172,7 +175,9 @@ Read from the volume it booted from. `key = value`, each key independent.
 
 - **Built** with `sc-build` on the build box: three `.efi`s plus five host
   test suites: `intent` 8, `sha256` 7, `universal` 6, `dnsname` 7, `esp` 12;
-  then `espprobe` boots under OVMF against a 4K disk (#37).
+  then `espprobe` boots under OVMF against a 4K disk (#37), and stormbootx
+  boots against a stub engine and NVMe/TCP target with no firmware network
+  stack (`net-ovmf.sh`, #56).
 - **Ships as goldens** (#21, decided 2026-09-28), written by
   `deploy/build-golden.sh`: `stormbootx` (the `.efi`s, an ISO for BMC virtual
   media, a USB `.img`, a `tcp4probe` ISO) and `nic-drivers` (iPXE `intelx`,
@@ -181,10 +186,9 @@ Read from the volume it booted from. `key = value`, each key independent.
 - **Packaging** is `scripts/build-boot-agent.sh`; hand-built variants:
   `--pin`, `--probe`, `--fec` (a recovery stick).
 - **Updated** by booting a newer golden's media. Self-update (#2) is planned.
-- **Firmware needs `EFI_TCP4`** (on Dell: *UEFI Network Stack* on).
-  `tcp4probe` checks a new server model first.
-- **…and a UEFI driver for its NIC**, or one on the media in
-  `\stormboot\drivers` (#26: the Supermicro X9 blades have legacy-only NICs).
+- **Firmware needs only a UEFI driver for its NIC** (SNP), or one on the
+  media in `\stormboot\drivers` (#26: the Supermicro X9 blades have
+  legacy-only NICs). No `EFI_TCP4` since #56.
 
 ---
 

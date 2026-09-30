@@ -1,5 +1,9 @@
 //! Getting an address ourselves, instead of hoping firmware already did.
 //!
+//! **Not used by stormbootx since 0.9 (#56)**: it carries its own TCP/IP in
+//! `net.rs` (smoltcp on SNP). This module is compiled only into `tcp4probe`,
+//! the diagnostic that reports what the firmware's own stack does.
+//!
 //! `EFI_TCP4.Configure` with `use_default_address` needs the platform's IP4
 //! driver to *already hold* an address, which means somebody else's DHCP client
 //! ran first. On a server that is not a given: the policy may be `STATIC`, the

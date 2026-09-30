@@ -27,7 +27,7 @@
 //!   reports a version strictly after 19.3.0, and anything unreadable is "no".
 //! - **Which MAC is the machine's** (`better_mac`). The owner's words are "the
 //!   first NIC's MAC". Handle order is not stable enough to mean that: SNP
-//!   handles appear as drivers bind, and `tcp4::ensure_available` may bind
+//!   handles appear as drivers bind, and `net::up` may bind
 //!   some of them on demand. The lowest valid unicast MAC across every NIC is
 //!   the same answer on every boot of the same hardware.
 //!

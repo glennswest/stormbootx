@@ -36,7 +36,7 @@
 //! that name (stormblock#199/#200), which is what survives a NIC swap.
 //!
 //! Deliberately not used: EFI_HTTP (a driver stack firmware may not carry, when
-//! one HTTP request over the TCP4 we already need is a hundred lines), and PXE
+//! one HTTP request over the TCP we already carry is a hundred lines), and PXE
 //! or TFTP anywhere at all.
 //!
 //! **Nothing in here is fatal.** Every failure — no service tag, no TCP stack,

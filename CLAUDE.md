@@ -2,8 +2,9 @@
 
 A UEFI application that attaches a remote image over NVMe/TCP, publishes it
 as `EFI_BLOCK_IO_PROTOCOL` so the firmware's partition and FAT drivers see its
-GPT and ESP, and chain-loads the image's `\EFI\BOOT\BOOTX64.EFI`. ~150 KB,
-`no_std`, one required firmware protocol (`EFI_TCP4`).
+GPT and ESP, and chain-loads the image's `\EFI\BOOT\BOOTX64.EFI`. ~230 KB,
+`no_std`. It carries its own TCP/IP (smoltcp on SNP, #56), so the one thing it
+needs from the firmware's network side is a NIC driver's `EFI_SIMPLE_NETWORK`.
 
 **It is stage one of two, not a duplicate of stormuefi.** stormbootx answers
 *which image* and attaches it; the `BOOTX64.EFI` it starts on a stormcos image
@@ -22,7 +23,7 @@ Push first, then `sc-build` from this checkout. It builds the pushed commit
 on dev.g8.lo as `stormbuild`. There is no checkout on dev, and no `ssh root@`.
 The plain `cargo build && cargo test` default does not suit a `no_std` UEFI
 crate, so name the command. This builds the three binaries, runs the five
-host suites and boots `espprobe` under OVMF:
+host suites and boots `espprobe` and stormbootx under OVMF:
 
 ```bash
 sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
@@ -32,8 +33,14 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   rustc --edition 2021 --test src/dnsname.rs -o t/dnsname-test && ./t/dnsname-test && \
   rustc --edition 2021 --test src/esp.rs -o t/esp-test && ./t/esp-test && \
   R=${CARGO_TARGET_DIR:-target}/x86_64-unknown-uefi/release && \
-  tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi'
+  tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi && \
+  tests/net-ovmf.sh $R/stormbootx.efi $R/tcp4probe.efi'
 ```
+
+`tests/net-ovmf.sh` (#56) boots stormbootx under OVMF with no firmware
+network stack, against a stub engine and a stub NVMe/TCP target (4096-byte
+blocks, a 96 MiB `BOOTX64.EFI`). It runs twice: as shipped, and with the
+firmware RNG and RDRAND/RDSEED masked (`rng : jitter`).
 
 `tests/iso-layout.sh ISO …` checks an ISO is isohybrid with a FAT12 ESP,
 the layout Aptio 4 boots (#55). `tests/media-ovmf.sh ISO 'LINE' …` boots a media ISO under OVMF and requires
@@ -108,9 +115,11 @@ stormbootx --url http://stormcentral.g8.lo`.
 |---|---|
 | `src/main.rs` | `run()`: the boot, step by step, and the fall-through |
 | `src/smbios.rs` | the serials (Type 1 → 2 → 3, placeholders and shared chassis serials rejected), before any network exists; the MAC as the floor |
-| `src/tcp4.rs` | a blocking socket over the firmware's own TCP stack; ranks every NIC |
+| `src/net.rs` | the TCP/IP stack (#56): smoltcp on every NIC's SNP (opened exclusively), DHCP, `TcpSocket`, the TSC clock; `release` gives the NICs back on the fall-through |
+| `src/entropy.rs` | randomness for the ISN, DHCP xid and ports: firmware `EFI_RNG`, then RDSEED/RDRAND (RNDR on aarch64), then jitter through SHA-256; never fails |
+| `src/tcp4.rs` | tcp4probe only since #56: a blocking socket over the firmware's TCP4 |
 | `src/drivers.rs` | load NIC drivers from `\stormboot\drivers` on the media (#26), after the platform's own bind |
-| `src/dhcp4.rs` | lease an address when the platform has not |
+| `src/dhcp4.rs` | tcp4probe only since #56: DHCP through the firmware's `EFI_DHCP4` |
 | `src/nvme.rs` | the NVMe/TCP initiator |
 | `src/blockio.rs` | publish the namespace as a block device, then chain-load its `BOOTX64.EFI` (the firmware's FAT, then `esp.rs`) |
 | `src/intent.rs` | the boot intent (`install`/`local`/`auto`) read before the claim; every doubt is `auto` |
@@ -144,9 +153,22 @@ These have each cost a debugging session. Do not "simplify" them away.
   also skips a bare BlockIO in `PartitionDxe`, so the handle carries a vendor
   device-path node, and the ESP is matched **strictly** by it — a loose match
   once booted a stale Windows install off a local SAS disk.
+- **stormbootx's TCP/IP is its own (#56, owner 2026-09-30).** smoltcp on SNP,
+  on every machine, and the firmware's TCP4 is never asked for: server3 (X9)
+  had a NIC driver loaded and still no `EFI_TCP4`. EDK2's own stack is not
+  an alternative: since edk2-stable202405 Ip4/Udp4/Dhcp4/TcpDxe refuse to
+  start without `EFI_RNG` (`PseudoRandomU32` in their start), and TcpDxe
+  without `EFI_HASH2`. SNP is opened `EXCLUSIVE` so a firmware MNP can't
+  steal frames; `net::release` gives the NICs back on the fall-through.
+  Never install an `EFI_RNG`: the Linux EFI stub seeds its RNG from it.
+  Several facts below are about the firmware stack; they remain true of
+  firmware and of `tcp4probe`, and each is kept where it still applies to
+  `net.rs` (multiple NICs, the late-driver wait, never trusting one link
+  sample).
 - **Fedora's OVMF has no upper network stack.** SNP present, MNP/IP4/TCP4
-  absent, and `ConnectController` over every handle does not change it. The
-  obvious emulator cannot test the network path.
+  absent, and `ConnectController` over every handle does not change it. Since
+  #56 that makes it exactly the emulator to test with: `tests/net-ovmf.sh`
+  runs stormbootx's whole network path on it.
 - **A server has more than one network stack, and the first is not yours.**
   Each NIC carries its own `EFI_TCP4` service binding, so `handles.first()` is a
   coin flip between the 1 GbE management port and the 25 GbE storage port. The
@@ -394,26 +416,25 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 - [ ] **#56 — stormbootx's own TCP/IP: smoltcp on SNP (P0, owner
       2026-09-30). In progress.** server3 (X9, Aptio 4) loaded
       `ipxe-intelx.efi` and then reported `EFI_TCP4 is not present`. The
-      EDK2-stack plan was dropped: since edk2-stable202405 its IPv4 drivers
-      refuse to start without `EFI_RNG` (and TcpDxe without `EFI_HASH2`). The
-      owner's decision replaces it: **no firmware TCP4 on any machine**.
-      `src/net.rs` runs smoltcp 0.14 directly on each NIC's SNP (opened
-      exclusively, so a firmware MNP lets go). DHCP comes from smoltcp's
-      dhcpv4 socket, and the raw reply is kept for `dnsname.rs`. ARP, and TCP
-      for NVMe/TCP and the engine API, run on the same stack. The ISN and
-      ephemeral ports are seeded from RDRAND; without RDRAND the console says
-      so and the seed comes from the TSC and the RTC. Console: `tcp4 :
-      smoltcp over SNP (<nic>)`. Plan:
-      1. `net.rs`: the SNP device, a TSC clock, the seed, per-NIC interface
-         and DHCP, and `TcpSocket` with the old `Tcp4Socket` API; move
-         `handle_protocol`/`connect_all`/`machine_mac` there;
-      2. main/registry/nvme/shell/blockio/drivers onto `net`. tcp4.rs and
-         dhcp4.rs stay for tcp4probe only (the firmware-TCP4 diagnostic);
-      3. Cargo.lock from dev (no cargo on this VM);
-      4. `tests/net-ovmf.sh`: the ISO under OVMF (Fedora's has no TCP4) with a
-         user-mode NIC and a stub engine on the host. It must show `tcp4 :
-         smoltcp`, a lease, and an HTTP answer from the stub;
-      5. docs, release, both goldens, and the golden name to the master.
+      EDK2-stack plan was dropped because since edk2-stable202405 its IPv4
+      drivers refuse to start without `EFI_RNG` (and TcpDxe without
+      `EFI_HASH2`). The owner's decision replaces it: **no firmware TCP4 on
+      any machine**. `src/net.rs` runs smoltcp 0.14 directly on each NIC's SNP,
+      opened exclusively. `src/entropy.rs` supplies randomness from the
+      firmware `EFI_RNG`, then RDSEED/RDRAND/RNDR, then jitter, and never
+      fails (owner's addition).
+      **Done and verified in sc-build (5f10680, 2026-09-30):** build with no
+      warnings (stormbootx.efi 231 KB), host suites 9/7/6/7/12, espprobe PASS,
+      and `tests/net-ovmf.sh` PASS on both boots. Under Fedora's OVMF (no
+      MNP/IP4/TCP4, plus the IPv4/IPv6 fw_cfg switches off) each boot leased
+      10.0.2.15 from slirp, read the stub engine's 120 KB health reply, did the
+      PTR over DNS/TCP, made both claims, attached the stub NVMe/TCP target at
+      4096-byte blocks and read the 96 MiB `BOOTX64.EFI` through BlockIO
+      (118–121 MiB/s), then started it. Boot 1 printed `rng : firmware`, and
+      boot 2 (`rng = cpu`, CPU `-rdrand,-rdseed`) printed `rng : jitter`.
+      **Left:** release, goldens, then the master boots it on server3.
+      Not seen yet: a multi-NIC machine, iPXE's or stormnic's SNP under
+      smoltcp, a 25G link, and `release` handing NICs back to firmware.
 
 - [ ] **#55 — X9 (AMI Aptio 4) hangs at POST A2 reading the ISO's
       esp.img (P1, 2026-09-30). Handed off.** server1's capture: the
@@ -914,10 +935,6 @@ and broke the fabric later (see the `#7` correction). The rest held.
 
 ### Known follow-ups
 
-- Cosmetic: the per-NIC table reprints on every `connect_within` (the health
-  read, the PTR query, each intent read and claim tried, and the attach's
-  two queues), so the ranking prints five or more times a boot. Rank/print
-  once and pass the socket down.
 - The Mellanox presents MTU 1500 to firmware, so the path is not jumbo
   end-to-end even though the switch ports are 9216. Transfer size is unaffected
   (MDTS drives it), but raising the card's UEFI MTU would let a 9000 path show.

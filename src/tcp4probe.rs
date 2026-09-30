@@ -31,7 +31,8 @@ extern crate alloc;
 // The whole socket module comes along; this binary only needs the handle
 // survey and one connect, so most of it is dead here by design. `dhcp4` comes
 // with it because `tcp4` falls back to running DHCP itself, and the probe
-// should exercise the same path the agent will. `universal` comes because
+// used to be the agent's path (until #56 it was; stormbootx now carries its
+// own TCP/IP in net.rs and uses neither). `universal` comes because
 // `tcp4::machine_mac` picks the MAC with it.
 #[path = "tcp4.rs"]
 #[allow(dead_code)]
