@@ -712,7 +712,20 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
         "new golden **and** requested" rule). This needs stormcos#30.
       - Not yet seen on metal: nothing can serve `local` until #148 lands.
 
-- [ ] #3 (the rest) — **re-scoped by the owner on #19 (2026-09-29), now
+- [ ] #3 (the rest) — **answered 2026-09-30 (owner, via the master): build
+      the recommendation. In progress.** `install` claims; `local` boots the
+      local disk; `auto`, a 404 or any other doubt boots the local disk only if
+      a local, non-removable disk other than the boot media carries an ESP with
+      `\EFI\BOOT\BOOTX64.EFI` (read with `esp.rs`, no network), else claims
+      as today. Unreachable engine: local, as now. Also answers #31. Plan:
+      1. `intent::decide(intent, local_bootable) -> Action` (core-only, host
+         tests);
+      2. `blockio::local_bootloader()`: every whole, present, non-removable
+         disk except the one this image was loaded from, `espboot::find` on
+         it (GPT → ESP → FAT → the file, not read);
+      3. step 3a in `run()` probes only when the intent is `auto`;
+      4. docs (README, intent.rs, main.rs), CHANGELOG, sc-build, golden.
+      Earlier: **re-scoped by the owner on #19 (2026-09-29), then
       `needs-owner`.** No golden comparison, and a new golden never installs
       by itself. At every boot one question: was an install requested (the
       intent record, stormblock#148, in stormblock v20.0.0)? Yes → install;
