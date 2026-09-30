@@ -432,7 +432,12 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       4096-byte blocks and read the 96 MiB `BOOTX64.EFI` through BlockIO
       (118–121 MiB/s), then started it. Boot 1 printed `rng : firmware`, and
       boot 2 (`rng = cpu`, CPU `-rdrand,-rdseed`) printed `rng : jitter`.
-      **Left:** release, goldens, then the master boots it on server3.
+      **Released v0.9.0 (0d063b6)**, sc-build at the tag passing the same
+      suite. Goldens: `golden-stormbootx-5fef07c934c75c04` (normal, iPXE
+      intelx) and `golden-stormbootx-rustnic-9da8489f09aa7e99`. **Handed
+      off:** the master puts the normal golden on forge's minismbd share and
+      boots server3. It should print `tcp4 : smoltcp over SNP (…)`, `rng :
+      rdrand` (or `firmware`) and a lease, then claim.
       Not seen yet: a multi-NIC machine, iPXE's or stormnic's SNP under
       smoltcp, a 25G link, and `release` handing NICs back to firmware.
 
