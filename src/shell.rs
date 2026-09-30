@@ -21,14 +21,9 @@ use alloc::vec::Vec;
 
 use uefi::boot::{self, SearchType};
 use uefi::proto::console::text::Key;
-use uefi::{Guid, guid};
 use uefi_raw::protocol::network::snp::{NetworkMode, SimpleNetworkProtocol};
 
-use crate::tcp4::{self, handle_protocol};
-
-const SNP: Guid = guid!("a19832b9-ac25-11d3-9a2d-0090273fc14d");
-const IP4_CONFIG2: Guid = guid!("5b446ed1-e30b-4faa-871a-3654eca36080");
-const TCP4_SERVICE_BINDING: Guid = guid!("00720665-67eb-4a99-baf7-d3c33a1c7cc9");
+use crate::net::{self, handle_protocol, SNP};
 
 /// Offer the console for `secs`, and say whether it was taken.
 pub fn offer(secs: u32) -> bool {
@@ -109,8 +104,8 @@ pub fn run() {
 
 fn help() {
     uefi::println!("  nics              every network interface the firmware knows");
-    uefi::println!("  state             what address each interface has, and its policy");
-    uefi::println!("  dhcp [n]          run DHCP on interface n, or on all of them");
+    uefi::println!("  state             what address each interface leased (stormbootx's own stack)");
+    uefi::println!("  dhcp [secs]       wait up to secs (default 10) for every interface's lease");
     uefi::println!("  connect IP PORT   open a TCP connection, the way the attach does");
     uefi::println!("  pci [all]         devices on the bus, driver or no driver");
     uefi::println!("  fec [MODE]        read the ConnectX FEC; with MODE, write it");
@@ -156,14 +151,10 @@ fn fec(args: &[&str]) {
 /// looks identical to having two NICs unless something counts both.
 fn nics() {
     let snp = boot::locate_handle_buffer(SearchType::ByProtocol(&SNP));
-    let tcp = boot::locate_handle_buffer(SearchType::ByProtocol(&TCP4_SERVICE_BINDING));
     let n_snp = snp.as_ref().map(|h| h.len()).unwrap_or(0);
-    let n_tcp = tcp.as_ref().map(|h| h.len()).unwrap_or(0);
 
-    uefi::println!("  {n_snp} NIC(s) with a driver, {n_tcp} with a TCP4 stack");
-    if n_snp > n_tcp {
-        uefi::println!("  {} carry no TCP4 — their upper stack never bound", n_snp - n_tcp);
-    }
+    // The firmware's TCP4 is not needed (#56): an SNP is all the stack needs.
+    uefi::println!("  {n_snp} NIC(s) with a driver (EFI_SIMPLE_NETWORK)");
 
     let Ok(handles) = snp else {
         uefi::println!("  no EFI_SIMPLE_NETWORK at all");
@@ -196,57 +187,20 @@ fn nics() {
     }
 }
 
-/// What address each interface actually holds, straight from the platform.
+/// What each NIC leased on stormbootx's own stack (#56).
 fn state() {
-    let Ok(handles) = boot::locate_handle_buffer(SearchType::ByProtocol(&IP4_CONFIG2)) else {
-        uefi::println!("  no EFI_IP4_CONFIG2 — the platform holds no IPv4 configuration");
-        return;
-    };
-    for (i, h) in handles.iter().enumerate() {
-        match tcp4::interface_address(h.as_ptr()) {
-            Some((addr, mask, policy)) => {
-                let [a, b, c, d] = addr;
-                let [m0, m1, m2, m3] = mask;
-                let unset = addr == [0, 0, 0, 0];
-                uefi::println!(
-                    "  if {i}: {a}.{b}.{c}.{d}/{m0}.{m1}.{m2}.{m3}  policy {}{}",
-                    if policy == 1 { "dhcp" } else { "static" },
-                    if unset { "   (no address — nothing answered)" } else { "" }
-                );
-            }
-            None => uefi::println!("  if {i}: could not read its configuration"),
-        }
-    }
+    net::show(0);
 }
 
+/// Wait for the leases still outstanding, then show them all.
 fn dhcp(args: &[&str]) {
-    let only: Option<usize> = args.first().and_then(|s| s.parse().ok());
-    let Ok(handles) = boot::locate_handle_buffer(SearchType::ByProtocol(&SNP)) else {
-        uefi::println!("  no interfaces");
+    let secs: u32 = args.first().and_then(|s| s.parse().ok()).unwrap_or(10);
+    if let Err(e) = net::up(crate::config::stated_rng()) {
+        uefi::println!("  {e}");
         return;
-    };
-    for (i, h) in handles.iter().enumerate() {
-        if only.is_some_and(|n| n != i) {
-            continue;
-        }
-        let Some(p) = handle_protocol(h.as_ptr(), &SNP) else { continue };
-        let snp = p as *mut SimpleNetworkProtocol;
-        let mode: *mut NetworkMode = unsafe { (*snp).mode };
-        if mode.is_null() {
-            continue;
-        }
-        let m = unsafe { &*mode };
-        let len = (m.hw_address_size as usize).min(32);
-        uefi::println!("  nic {i}: asking...");
-        match crate::dhcp4::lease_for(&m.permanent_address.0, len) {
-            Some(l) => {
-                let [a, b, c, d] = l.address;
-                let [g0, g1, g2, g3] = l.router;
-                uefi::println!("  nic {i}: leased {a}.{b}.{c}.{d} gw {g0}.{g1}.{g2}.{g3}");
-            }
-            None => uefi::println!("  nic {i}: no lease"),
-        }
     }
+    uefi::println!("  waiting up to {secs} s for leases...");
+    net::show(secs);
 }
 
 /// Every device on the PCI bus, whether or not firmware has a driver for it.
@@ -378,7 +332,7 @@ fn connect(args: &[&str]) {
     };
     let [a, b, c, d] = addr;
     uefi::println!("  connecting to {a}.{b}.{c}.{d}:{port} ...");
-    match tcp4::Tcp4Socket::connect_within(addr, port, 8) {
+    match net::TcpSocket::connect_within(addr, port, 8) {
         Ok(_) => uefi::println!("  OPEN — the path works and the port is listening"),
         Err(e) => uefi::println!("  FAILED — {e}"),
     }

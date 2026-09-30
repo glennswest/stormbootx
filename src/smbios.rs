@@ -154,6 +154,17 @@ pub fn model() -> Option<String> {
     }
 }
 
+/// The system UUID (Type 1, offset 8, 16 bytes), raw. Mixed into the
+/// jitter entropy (#56); never an identity here.
+pub fn uuid() -> Option<[u8; 16]> {
+    let t = table()?;
+    let mut u = [0u8; 16];
+    for (i, b) in u.iter_mut().enumerate() {
+        *b = unsafe { find_type_byte(t, 1, 8 + i) }?;
+    }
+    (u != [0u8; 16] && u != [0xffu8; 16]).then_some(u)
+}
+
 /// The SMBIOS structure table, from the EFI configuration table.
 fn table() -> Option<*const u8> {
     let st = uefi::table::system_table_raw()?;

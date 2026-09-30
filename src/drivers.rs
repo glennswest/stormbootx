@@ -71,7 +71,7 @@ pub fn load_from_media() -> Vec<Loaded> {
 
     // The platform's own drivers first (see the module comment).
     uefi::println!("    binding the platform's own drivers first");
-    let _ = crate::tcp4::connect_all();
+    let _ = crate::net::connect_all();
 
     let volume_dp = crate::config::boot_volume()
         .and_then(|h| crate::blockio::device_path_of(h.as_ptr()));
@@ -96,7 +96,7 @@ pub fn load_from_media() -> Vec<Loaded> {
     // one pass reaches the children.
     if out.iter().any(|l| l.result.is_ok()) {
         uefi::println!("    [{:>3} s] connecting every handle (drivers bind their NICs)", elapsed(t0));
-        let _ = crate::tcp4::connect_all();
+        let _ = crate::net::connect_all();
         uefi::println!("    [{:>3} s] connected", elapsed(t0));
     }
     out

@@ -21,7 +21,7 @@ use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-use crate::tcp4::Tcp4Socket;
+use crate::net::TcpSocket;
 
 /// Everything needed to attach, as the claim reply reports it.
 ///
@@ -70,7 +70,7 @@ fn field(body: &str, key: &str) -> Option<String> {
 }
 
 /// The wire a request went out on: NIC MAC, its length, and the local address
-/// (`Tcp4Socket::interface`).
+/// (`TcpSocket::interface`).
 pub type Interface = ([u8; 32], usize, [u8; 4]);
 
 fn request(
@@ -92,7 +92,7 @@ fn request_on(
     path: &str,
     body: Option<&str>,
 ) -> Result<(String, Option<Interface>), String> {
-    let mut sock = Tcp4Socket::connect(server, port)?;
+    let mut sock = TcpSocket::connect(server, port)?;
     let iface = sock.interface();
 
     let mut req = format!("{method} {path} HTTP/1.1\r\nHost: {host}\r\n");

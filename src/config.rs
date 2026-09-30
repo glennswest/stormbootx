@@ -190,6 +190,15 @@ pub fn stated_media() -> Option<String> {
     field(&read_file(CONF_PATH)?, "media").filter(|v| !v.is_empty())
 }
 
+/// The first entropy source to try (`rng = firmware | cpu | jitter`, #56).
+/// Absent or unrecognised is `firmware`: the best source present.
+pub fn stated_rng() -> crate::entropy::Start {
+    read_file(CONF_PATH)
+        .and_then(|t| field(&t, "rng"))
+        .and_then(|v| crate::entropy::Start::parse(&v))
+        .unwrap_or(crate::entropy::Start::Firmware)
+}
+
 /// The DNS server stated in the config file (`dns = a.b.c.d`), for the PTR
 /// of the machine's own address when its DHCP reply names none or cannot be
 /// read (#26). Absent on ordinary media; the lease's option 6 comes first.

@@ -221,7 +221,7 @@ pub fn local_disks() -> usize {
     handles
         .iter()
         .filter(|h| {
-            let Some(p) = crate::tcp4::handle_protocol(h.as_ptr(), &BlockIoProtocol::GUID) else {
+            let Some(p) = crate::net::handle_protocol(h.as_ptr(), &BlockIoProtocol::GUID) else {
                 return false;
             };
             let proto = p as *const BlockIoProtocol;
@@ -587,7 +587,7 @@ impl crate::esp::Disk for NsDisk<'_> {
 
 /// A handle's device path, read without an exclusive open (drivers hold it).
 pub(crate) fn device_path_of(handle: uefi_raw::Handle) -> Option<&'static DevicePath> {
-    let p = crate::tcp4::handle_protocol(handle, &DEVICE_PATH_GUID)?;
+    let p = crate::net::handle_protocol(handle, &DEVICE_PATH_GUID)?;
     Some(unsafe { DevicePath::from_ffi_ptr(p as *const _) })
 }
 

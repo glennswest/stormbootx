@@ -54,19 +54,19 @@ extern crate alloc;
 
 mod blockio;
 mod config;
-mod dhcp4;
 mod dnsname;
 mod drivers;
+mod entropy;
 mod esp;
 mod espboot;
 mod intent;
 mod mlxfec;
+mod net;
 mod nvme;
 mod registry;
 mod shell;
 mod sha256;
 mod smbios;
-mod tcp4;
 mod universal;
 
 use alloc::format;
@@ -221,27 +221,28 @@ fn run() -> Result<(), String> {
         }
     }
 
-    // 2. Is there a usable TCP stack? Presence of SNP is not enough — the
-    //    layered IP4/TCP4 drivers are a separate build option in firmware, and
-    //    even when they are built in nothing may have bound them yet.
-    match tcp4::ensure_available() {
-        tcp4::Presence::Present => uefi::println!("tcp4        : available"),
-        tcp4::Presence::BoundOnDemand => {
-            uefi::println!("tcp4        : available (bound on demand from the NIC handle)")
-        }
-        tcp4::Presence::BoundAfterFullPass => {
-            uefi::println!("tcp4        : available (bound after a full ConnectController pass)")
-        }
-        tcp4::Presence::BoundAfterWait(ms) => uefi::println!(
-            "tcp4        : available (appeared after {ms} ms — the platform was not ready)"
-        ),
-        tcp4::Presence::Absent => return Err(tcp4::NO_TCP4_ADVICE.into()),
+    // 2. The network: stormbootx's own TCP/IP (smoltcp) on every NIC's SNP
+    //    (#56). The firmware's TCP4 is never used: it is optional, off in
+    //    setup on some machines, and missing on server3 even with a NIC
+    //    driver loaded. All this needs is a NIC driver, the firmware's or one
+    //    from the media (step 1c).
+    let up = net::up(config::stated_rng())?;
+    uefi::println!("tcp4        : smoltcp over SNP ({})", up.nics);
+    if up.waited_ms > 0 {
+        uefi::println!("              (the first SNP appeared after {} ms; the platform was not ready)", up.waited_ms);
     }
+    if up.shared > 0 {
+        uefi::println!(
+            "              {} NIC(s) shared with the firmware's own stack (it would not let go)",
+            up.shared
+        );
+    }
+    uefi::println!("rng         : {}  ({})", up.rng.name(), up.rng.detail());
 
     // 2a. The machine's MAC: its identity to the engine when the media names
     //     none (#15). Read now because the NICs a platform left unbound only
-    //     exist after `ensure_available`.
-    let mac = tcp4::machine_mac();
+    //     exist after `net::up`.
+    let mac = net::machine_mac();
     let mac_colon = mac.map(|(m, _)| String::from_utf8_lossy(&universal::mac_colon(&m)).into_owned());
     match (&mac_colon, mac) {
         (Some(c), Some((_, n))) => uefi::println!("mac         : {c}  (lowest of {n} NIC(s))"),
@@ -668,7 +669,7 @@ fn run() -> Result<(), String> {
 /// has it.
 fn network_name(iface: &registry::Interface) -> Option<(String, String, &'static str)> {
     let (mac, mac_len, addr) = iface;
-    let reply = dhcp4::reply_for(&mac[..], *mac_len);
+    let reply = net::dhcp_reply(&mac[..], *mac_len);
     let msg: &[u8] = reply.as_deref().unwrap_or(&[]);
     let machine = |full: &str| -> Option<String> {
         let nic = dnsname::host_label(full)?;
@@ -736,7 +737,7 @@ fn ptr_lookup(server: [u8; 4], addr: [u8; 4]) -> Result<String, String> {
     let id = u16::from_be_bytes([addr[2] ^ 0x5b, addr[3]]);
     let mut query = [0u8; 64];
     let n = dnsname::ptr_query(addr, id, &mut query);
-    let mut sock = tcp4::Tcp4Socket::connect_within(server, 53, 5)?;
+    let mut sock = net::TcpSocket::connect_within(server, 53, 5)?;
     sock.send(&query[..n])?;
     let len = sock.read_exact(2)?;
     let msg = sock.read_exact(u16::from_be_bytes([len[0], len[1]]) as usize)?;
@@ -789,6 +790,9 @@ fn fall_through(err: &str) -> Status {
     if shell::offer(5) {
         shell::run();
     }
+    // Give the NICs back, so a later boot option (PXE, HTTP boot) finds the
+    // firmware's own network stack bound again (#56).
+    net::release();
 
     if disks > 0 {
         // Short. This runs on every reboot while a portal is down, and a boot

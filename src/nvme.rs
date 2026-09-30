@@ -24,7 +24,7 @@ use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
 
-use crate::tcp4::Tcp4Socket;
+use crate::net::TcpSocket;
 
 // PDU types.
 const PDU_ICREQ: u8 = 0x00;
@@ -182,14 +182,14 @@ impl Cqe {
 
 /// One NVMe/TCP queue: a TCP connection that has completed ICReq and Connect.
 pub struct Queue {
-    sock: Tcp4Socket,
+    sock: TcpSocket,
     cid: u16,
     maxh2cdata: u32,
 }
 
 impl Queue {
     fn open(addr: [u8; 4], port: u16) -> Result<Self, String> {
-        let sock = Tcp4Socket::connect(addr, port)?;
+        let sock = TcpSocket::connect(addr, port)?;
         let mut q = Queue {
             sock,
             cid: 0,
