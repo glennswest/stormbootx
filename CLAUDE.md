@@ -708,8 +708,8 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
         `the_engines_own_reply` tests 0e3c47b's `intent_body` shape.
         **Left for the close:** a stormblock release with #148 on forge,
         then one metal boot with `local` set that prints `nothing claimed`.
-      - **#3**: `auto` booting an installed, current disk locally (the owner's
-        "new golden **and** requested" rule). This needs stormcos#30.
+      - ~~**#3**~~: done in v0.8.0. `auto` boots a local disk whose ESP
+        carries `BOOTX64.EFI`, and claims otherwise. stormcos#30 is not needed.
       - Not yet seen on metal: nothing can serve `local` until #148 lands.
 
 - [x] #3 (the rest) — **answered 2026-09-30 (owner, via the master): built
