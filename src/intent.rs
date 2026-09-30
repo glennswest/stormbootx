@@ -21,14 +21,20 @@
 //! |-----------|----------------------------------------------------------|
 //! | `install` | claims and boots the image                               |
 //! | `local`   | falls through to the disk; no claim, no clone            |
-//! | `auto`    | the local disk if one carries a bootloader, else claims  |
+//! | `auto`    | claims; with `local_when_bootable`, a bootable disk first |
 //!
 //! **Any doubt reads as `auto`.** A 404, an engine without the route, an
 //! unreachable engine, a body with no intent or one this binary does not know:
 //! each is reported and then treated as `auto`.
 //!
-//! **`auto` boots the local disk when there is one to boot** (#3, the owner's
-//! answer of 2026-09-30). A machine boots local unless an install was
+//! **`auto` claims by default.** The owner's override of 2026-09-30: until
+//! intents work on forge (stormblock#148), every boot claims, because a stale
+//! OS on a local disk would otherwise win. `local_when_bootable = true` in
+//! `stormboot.conf` turns on the rule below; `run()` then passes whether a
+//! disk can boot, and otherwise always passes `false`.
+//!
+//! **With it on, `auto` boots the local disk when there is one to boot** (#3,
+//! the owner's first answer of 2026-09-30). A machine boots local unless an install was
 //! requested; but a bare machine, or one the engine does not know yet, has
 //! nobody who could have requested one, so "nothing to boot locally" claims
 //! as before. "Something to boot" is a local, non-removable disk other than

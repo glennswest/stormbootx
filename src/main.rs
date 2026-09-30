@@ -16,9 +16,9 @@
 //! images rather than on the media or in DHCP: a `boothost/<service tag>`
 //! synonym on the storage engine. An intent beside it (`install`, `local` or
 //! `auto`, see `intent.rs`) is read first: `local` falls through to the disk
-//! without claiming anything, and so does `auto` (or any doubt) when a local
-//! disk carries an ESP with a bootloader (#3). Only `install`, or a machine
-//! with nothing of its own to boot, claims. One request returns a copy-on-write clone of
+//! without claiming anything. `auto` and every doubt claim; with
+//! `local_when_bootable = true` on the media they fall through instead when a
+//! local disk carries an ESP with a bootloader (#3, off by default). One request returns a copy-on-write clone of
 //! the golden that machine is assigned *and* the address, NQN and NSID that
 //! reach it. Moving a box to a new version is a PUT on its name.
 //!
@@ -136,6 +136,13 @@ fn run() -> Result<(), String> {
     let esp_reader = config::esp_reader();
     if esp_reader != config::EspReader::Auto {
         uefi::println!("esp         : {esp_reader:?} only (esp = in {})", config::CONF_PATH);
+    }
+    // Whether `auto` may boot a bootable local disk (#3). Off unless the media
+    // says so: until intents work on forge, every boot claims (owner,
+    // 2026-09-30).
+    let local_when_bootable = config::local_when_bootable();
+    if local_when_bootable {
+        uefi::println!("local       : auto boots a bootable local disk (local_when_bootable in {})", config::CONF_PATH);
     }
 
     // 1. Who am I? No network, no configuration, no BMC.
@@ -400,7 +407,8 @@ fn run() -> Result<(), String> {
             // 3a. What has this machine been told to do? Read before the
             //     claim, because the claim mints a clone and `local` is there so
             //     that nothing is minted. Every doubt reads as `auto`, which
-            //     boots a bootable local disk and claims otherwise (intent.rs).
+            //     claims (or, with `local_when_bootable`, boots a bootable
+            //     local disk; see intent.rs).
             //     Only a 404 moves on to the next name; any other answer is
             //     this machine's.
             let (intent_key, reply) = {
@@ -443,10 +451,13 @@ fn run() -> Result<(), String> {
                     uefi::println!("intent      : auto  (the reply stated no intent)")
                 }
             }
-            // `auto`, and every doubt, boots the local disk when one can boot
-            // (#3, owner 2026-09-30). Only `auto` looks: `install` claims over
+            // With `local_when_bootable = true` only, `auto` and every doubt
+            // boot the local disk when one can boot (#3). Off by default: the
+            // owner's override of 2026-09-30 is that every boot claims until
+            // intents work on forge. Only `auto` looks: `install` claims over
             // whatever is there, and `local` does not care.
-            let local_bootable = chosen.asks_the_disk()
+            let local_bootable = local_when_bootable
+                && chosen.asks_the_disk()
                 && match blockio::local_bootloader() {
                     Ok(found) => {
                         uefi::println!("local       : {found}");

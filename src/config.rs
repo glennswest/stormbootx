@@ -156,6 +156,19 @@ pub fn esp_reader() -> EspReader {
     }
 }
 
+/// `local_when_bootable = true` in the config file: `auto` and every doubt
+/// boot a local disk whose ESP carries `BOOTX64.EFI` instead of claiming
+/// (#3). **Off by default** (owner, 2026-09-30): until boot intents work on
+/// forge (stormblock#148) every boot claims, because a stale OS on a local
+/// disk (the Dell's old Windows) would otherwise win. Read at start-up with
+/// the rest of the media, like `esp =` (#46).
+pub fn local_when_bootable() -> bool {
+    matches!(
+        read_file(CONF_PATH).and_then(|t| field(&t, "local_when_bootable")).as_deref(),
+        Some("true" | "yes" | "1")
+    )
+}
+
 /// The name stated in the config file, read on its own: `name =`, or its older
 /// spelling `tag =` (#23). `name` wins when a file has both.
 ///

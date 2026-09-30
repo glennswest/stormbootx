@@ -8,8 +8,8 @@ media carries, works out which machine it is (a stated name, else its DNS
 name, else its MAC or SMBIOS serial), claims that machine's image from the
 storage engine, attaches it over NVMe/TCP, publishes it as `EFI_BLOCK_IO_PROTOCOL`, and
 chain-loads the `\EFI\BOOT\BOOTX64.EFI` on the attached disk. If any step
-fails, or the machine's boot intent is `local`, or it is `auto` and a local
-disk can boot on its own (#3), it falls through to the local disk.
+fails, or the machine's boot intent is `local`, it falls through to the local
+disk.
 
 ```
 media NIC drivers → TCP4 → names (conf | DNS name, MAC, serial) → boot intent
@@ -133,13 +133,18 @@ volume as a NIC driver (#26; absent on ordinary media). It writes to three thing
    |---|---|
    | `install` | claims and boots the image, as below |
    | `local` | falls through to the local disk at once: no claim, no clone |
-   | `auto` | the local disk if one can boot (below); otherwise claims and boots |
+   | `auto` | claims and boots; with `local_when_bootable = true`, a bootable local disk first (below) |
 
    Set a state on the engine and power-cycle the machine to get it. **Any
    doubt reads as `auto`**: a 404, a non-2xx, an unreachable engine, or a body
    with no intent or an unknown one.
 
-   **`auto` boots what the machine has** (#3, owner 2026-09-30). A local disk
+   **`auto` claims, as every doubt does** (owner, 2026-09-30): until intents
+   work on forge (stormblock#148), every boot claims and boots or installs
+   from the network. The rule below is in the code and **off by default**;
+   `local_when_bootable = true` in `stormboot.conf` turns it on.
+
+   **With it on, `auto` boots what the machine has** (#3). A local disk
    "can boot" when it is a whole, present, non-removable disk other than the
    media stormbootx was loaded from, and its GPT has an ESP carrying
    `\EFI\BOOT\BOOTX64.EFI`. `esp.rs` reads that, with no network and no
@@ -343,6 +348,7 @@ others.
 | `claim` | `yes` | `no` / `false` / `0` / `off` skips the claim |
 | `name` (or `tag`) | none (DNS name, then MAC, then SMBIOS) | states the identity; the only name claimed |
 | `dns` | none | DNS server for the PTR of the machine's own address, when its DHCP reply names none or cannot be read (#26); `build-boot-agent.sh --dns` |
+| `local_when_bootable` | `false` | `true`: `auto` and every doubt boot a local disk whose ESP carries `BOOTX64.EFI` instead of claiming (#3). Off until intents work on forge |
 | `esp` | `auto` | who reads the attached ESP (#37): `auto` (firmware, then stormbootx), `firmware`, or `stormbootx` |
 | `fec` | none | **recovery sticks only**: write this FEC and warm-reset |
 | `stamp` | none | parsed, not yet used; for self-update (#2) |
