@@ -184,7 +184,7 @@ impl Clock {
 }
 
 /// A local port from the dynamic range, 49152..=65535.
-fn port(rng: &mut Entropy) -> u16 {
+fn local_port(rng: &mut Entropy) -> u16 {
     49152 + (rng.next_u64() % 16384) as u16
 }
 
@@ -638,7 +638,7 @@ impl Net {
 /// reconnect, so a boot option after this one finds the firmware's own stack.
 /// Called on the fall-through. The stack is gone afterwards.
 pub fn release() {
-    let Some(n) = unsafe { (*NET.0.get()).take() } else { return };
+    let Some(n) = (unsafe { (*NET.0.get()).take() }) else { return };
     let Some(bs) = bs() else { return };
     for nic in n.nics.iter().filter(|c| c.exclusive) {
         unsafe {
@@ -789,7 +789,7 @@ impl TcpSocket {
                     tried.iter_mut().for_each(|t| *t = false);
                 }
                 if let Some(&i) = order.iter().find(|&&i| !tried[i] && n.nics[i].lease.is_some()) {
-                    let local = port(&mut n.rng);
+                    let local = local_port(&mut n.rng);
                     let nic = &mut n.nics[i];
                     let mut s = tcp::Socket::new(
                         tcp::SocketBuffer::new(vec![0u8; RX_BUFFER]),

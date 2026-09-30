@@ -171,11 +171,11 @@ mod cpu {
     /// bit 30 RDRAND).
     pub fn sources() -> alloc::vec::Vec<Source> {
         let mut v = alloc::vec::Vec::new();
-        let max = unsafe { core::arch::x86_64::__cpuid(0) }.eax;
-        if max >= 7 && unsafe { core::arch::x86_64::__cpuid_count(7, 0) }.ebx & (1 << 18) != 0 {
+        let max = core::arch::x86_64::__cpuid(0).eax;
+        if max >= 7 && core::arch::x86_64::__cpuid_count(7, 0).ebx & (1 << 18) != 0 {
             v.push(Source::Rdseed);
         }
-        if unsafe { core::arch::x86_64::__cpuid(1) }.ecx & (1 << 30) != 0 {
+        if core::arch::x86_64::__cpuid(1).ecx & (1 << 30) != 0 {
             v.push(Source::Rdrand);
         }
         v
