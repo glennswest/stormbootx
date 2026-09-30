@@ -3,8 +3,10 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
-### 2026-09-30
-- **fix:** `auto` and every doubt claim again, as before v0.8.0 (owner's override on #3: until boot intents work on forge v20, every boot claims). The v0.8.0 local-ESP rule is off by default; `local_when_bootable = true` in `stormboot.conf` turns it on.
+## [v0.8.1] — 2026-09-30
+
+### Fixed
+- `auto` and every doubt claim again, as before v0.8.0 (owner's override on #3: until boot intents work on forge v20, every boot claims). The v0.8.0 local-ESP rule is off by default; `local_when_bootable = true` in `stormboot.conf` turns it on.
 
 ## [v0.8.0] — 2026-09-30
 
