@@ -96,11 +96,12 @@ timeout 600 qemu-system-x86_64 -machine q35,accel=$ACCEL -m 512 -display none -n
 
 # The console, without OVMF's escape sequences.
 sed -e 's/\x1b\[[0-9;?]*[A-Za-z]//g' -e 's/\r//g' "$W/serial.log" | grep -v '^\s*$' > "$W/console.txt" || true
-grep -E 'espprobe|disk  |stormbootx:|firmware  :|started   :|TCP/IP stack' "$W/console.txt" || true
+grep -E 'espprobe|disk  |stormbootx:|local     :|firmware  :|started   :|TCP/IP stack' "$W/console.txt" || true
 
 ok=yes
 grep -q 'x 4096 bytes' "$W/console.txt" || { say "no 4096-byte disk was seen"; ok=no; }
 grep -q 'FAT16 at 4096-byte sectors' "$W/console.txt" || { say "esp.rs did not read the 4K FAT"; ok=no; }
+grep -q 'local     : ESP partition' "$W/console.txt" || { say "espboot::find (what auto asks, #3) found no bootloader"; ok=no; }
 grep -q 'loaded from the buffer' "$W/console.txt" || { say "LoadImage from the buffer failed"; ok=no; }
 grep -q 'is there a TCP/IP stack in this firmware' "$W/console.txt" || { say "the payload never printed"; ok=no; }
 grep -q 'espprobe: PASS' "$W/console.txt" || { say "espprobe did not pass"; ok=no; }

@@ -17,25 +17,25 @@
 //! to `local` when the node's OS reports the install done
 //! (`POST …/installed`); this binary never writes the intent.
 //!
-//! | intent    | this binary                                   |
-//! |-----------|-----------------------------------------------|
-//! | `install` | claims and boots the image                    |
-//! | `local`   | falls through to the disk; no claim, no clone |
-//! | `auto`    | today's behaviour: claims and boots           |
+//! | intent    | this binary                                              |
+//! |-----------|----------------------------------------------------------|
+//! | `install` | claims and boots the image                               |
+//! | `local`   | falls through to the disk; no claim, no clone            |
+//! | `auto`    | the local disk if one carries a bootloader, else claims  |
 //!
 //! **Any doubt reads as `auto`.** A 404, an engine without the route, an
 //! unreachable engine, a body with no intent or one this binary does not know:
-//! each is reported and then treated as `auto`, which is what every boot did
-//! before intents existed. Only an explicit `local` skips the network image.
-//! Reading it the other way round would let a failure keep a machine off an
-//! install it was asked for, or keep an uninstalled one off the only image it
-//! can boot.
+//! each is reported and then treated as `auto`.
 //!
-//! `auto` means what it meant before intents existed. The owner's rule is that
-//! an installed node boots local unless there is a new golden **and** an
-//! install was requested (#11, 2026-09-24). Applying that needs #3 to tell an
-//! installed, current disk apart, and #3 waits on stormcos#30. Until then
-//! `auto` keeps claiming.
+//! **`auto` boots the local disk when there is one to boot** (#3, the owner's
+//! answer of 2026-09-30). A machine boots local unless an install was
+//! requested; but a bare machine, or one the engine does not know yet, has
+//! nobody who could have requested one, so "nothing to boot locally" claims
+//! as before. "Something to boot" is a local, non-removable disk other than
+//! the boot media whose GPT has an ESP carrying `\EFI\BOOT\BOOTX64.EFI`,
+//! found by `blockio::local_bootloader` with no network. That is `decide`.
+//! Only `install` claims over a bootable disk, and only `local` skips the
+//! claim on a machine with nothing to boot.
 //!
 //! This module has the same constraints as `sha256.rs`, for the same reason: it
 //! uses only `core` and names no `crate::` item, so its tests run on the host:
@@ -54,8 +54,29 @@ pub enum Intent {
     Install,
     /// Boot what is on the disk. No claim, so no clone.
     Local,
-    /// Decide for itself; today, that means claim and boot.
+    /// Decide for itself: the local disk if it has a bootloader, else claim.
     Auto,
+}
+
+/// What this boot does, given the intent and whether a local disk carries a
+/// bootloader.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Action {
+    /// Claim an image from the engine and boot it.
+    Claim,
+    /// Fall through to the local disk; nothing is claimed.
+    Local,
+}
+
+/// The owner's rule (#3, 2026-09-30): an install is taken only when asked
+/// for, and a machine with nothing of its own to boot claims.
+pub fn decide(intent: Intent, local_bootable: bool) -> Action {
+    match intent {
+        Intent::Install => Action::Claim,
+        Intent::Local => Action::Local,
+        Intent::Auto if local_bootable => Action::Local,
+        Intent::Auto => Action::Claim,
+    }
 }
 
 impl Intent {
@@ -67,9 +88,10 @@ impl Intent {
         }
     }
 
-    /// Does this boot claim an image from the engine?
-    pub fn claims(self) -> bool {
-        !matches!(self, Intent::Local)
+    /// Whether `decide` needs to know about the local disk at all. Only
+    /// `auto` does, so `install` and `local` never touch a local disk.
+    pub fn asks_the_disk(self) -> bool {
+        matches!(self, Intent::Auto)
     }
 
     fn from_word(w: &str) -> Option<Intent> {
@@ -168,10 +190,28 @@ mod tests {
     }
 
     #[test]
-    fn only_local_skips_the_claim() {
-        assert!(Intent::Install.claims());
-        assert!(Intent::Auto.claims());
-        assert!(!Intent::Local.claims());
+    fn the_owners_rule() {
+        // #3, 2026-09-30: install claims, local stays, auto boots a local
+        // bootloader when there is one and claims when there is not.
+        assert_eq!(decide(Intent::Install, true), Action::Claim);
+        assert_eq!(decide(Intent::Install, false), Action::Claim);
+        assert_eq!(decide(Intent::Local, true), Action::Local);
+        assert_eq!(decide(Intent::Local, false), Action::Local);
+        assert_eq!(decide(Intent::Auto, true), Action::Local);
+        assert_eq!(decide(Intent::Auto, false), Action::Claim);
+        assert!(Intent::Auto.asks_the_disk());
+        assert!(!Intent::Install.asks_the_disk());
+        assert!(!Intent::Local.asks_the_disk());
+    }
+
+    #[test]
+    fn doubt_boots_a_bootable_disk_and_claims_on_a_bare_one() {
+        // A 404 (forge before #148, an unknown MAC), an engine error, a
+        // reply with no intent: each is `auto`, so it follows the disk.
+        for r in [from_reply(404, ""), from_reply(503, ""), from_reply(200, "{}")] {
+            assert_eq!(decide(r.intent(), true), Action::Local, "{r:?}");
+            assert_eq!(decide(r.intent(), false), Action::Claim, "{r:?}");
+        }
     }
 
     #[test]

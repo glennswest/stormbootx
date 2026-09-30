@@ -19,7 +19,9 @@ use alloc::format;
 use alloc::string::String;
 use core::ptr;
 
-use uefi::boot::{self, LoadImageSource, SearchType};
+use uefi::boot::{self, LoadImageSource, OpenProtocolAttributes, OpenProtocolParams, SearchType};
+use uefi::proto::loaded_image::LoadedImage;
+use uefi::proto::media::block::BlockIO;
 use uefi::proto::BootPolicy;
 use uefi::proto::device_path::DevicePath;
 use uefi::proto::device_path::build::{self, DevicePathBuilder};
@@ -237,6 +239,97 @@ pub fn local_disks() -> usize {
             }
         })
         .count()
+}
+
+/// A local disk that can boot on its own, for `auto` (#3): the first whole,
+/// present, non-removable disk other than the media this image was loaded
+/// from whose GPT has an ESP carrying `\EFI\BOOT\BOOTX64.EFI`. Read with
+/// `esp.rs`, so it needs no network and no firmware FAT (Aptio 4's misreads a
+/// 4K ESP, #37). The file is found, not read.
+///
+/// `Ok` names the disk found; `Err` says why none was, per disk, so the
+/// console shows why a machine claimed rather than booting what it has.
+/// Called before anything is attached, so every BlockIO here is the machine's.
+///
+/// Any bootloader counts, not only stormuefi: the owner's rule is "a local
+/// ESP with BOOTX64.EFI" (#3, 2026-09-30). A disk with another OS on it
+/// boots that OS under `auto`; `install` is how it gets replaced.
+pub fn local_bootloader() -> Result<String, String> {
+    let handles = boot::locate_handle_buffer(SearchType::ByProtocol(&BlockIO::GUID))
+        .map_err(|e| format!("no block devices ({e:?})"))?;
+    // The stick or virtual CD this runs off carries a BOOTX64.EFI too (this
+    // binary). Removable media is skipped anyway; this also covers media that
+    // says it is fixed. GetProtocol, never exclusive: nothing is closed here
+    // that the firmware holds.
+    let own = open_get::<LoadedImage>(boot::image_handle())
+        .and_then(|li| li.device())
+        .and_then(path_of);
+    let mut why = String::new();
+    let mut n = 0;
+    for &h in handles.iter() {
+        let Some(bio) = open_get::<BlockIO>(h) else { continue };
+        let media = bio.media();
+        if !media.is_media_present() || media.is_logical_partition() || media.is_removable_media() {
+            continue;
+        }
+        let dp = path_of(h);
+        if let (Some(dp), Some(own)) = (dp, own) {
+            if is_prefix(dp, own) {
+                continue;
+            }
+        }
+        n += 1;
+        let block = media.block_size();
+        let size = (media.last_block() + 1).saturating_mul(block as u64);
+        let mut disk = crate::espboot::BlockDisk {
+            bio: &bio,
+            media_id: media.media_id(),
+            block: block as u64,
+            bounce: alloc::vec::Vec::new(),
+        };
+        match crate::espboot::find(&mut disk, block) {
+            Ok((p, fat, bytes)) => {
+                return Ok(format!(
+                    "disk {n} ({} GiB, {block}-byte blocks): ESP partition {}, FAT{fat}, {} ({bytes} bytes)",
+                    size >> 30,
+                    p.number,
+                    crate::espboot::BOOTLOADER
+                ));
+            }
+            Err(e) => {
+                why.push_str(&format!("\n    disk {n} ({} GiB): {e}", size >> 30));
+            }
+        }
+    }
+    if n == 0 {
+        Err(String::from("no local disk"))
+    } else {
+        Err(format!("no local disk carries {}:{why}", crate::espboot::BOOTLOADER))
+    }
+}
+
+/// `OpenProtocol` with `GET_PROTOCOL`: a look, not a claim.
+fn open_get<P: uefi::proto::ProtocolPointer + ?Sized>(h: Handle) -> Option<boot::ScopedProtocol<P>> {
+    unsafe {
+        boot::open_protocol::<P>(
+            OpenProtocolParams { handle: h, agent: boot::image_handle(), controller: None },
+            OpenProtocolAttributes::GetProtocol,
+        )
+    }
+    .ok()
+}
+
+fn path_of(h: Handle) -> Option<&'static DevicePath> {
+    let p = open_get::<DevicePath>(h)?;
+    let r: &DevicePath = &p;
+    // The path lives as long as the handle does; closing a GetProtocol open
+    // does not free it.
+    Some(unsafe { &*(r as *const DevicePath) })
+}
+
+/// Whether every node of `a` starts `b`.
+fn is_prefix(a: &DevicePath, b: &DevicePath) -> bool {
+    a.node_iter().count() <= b.node_iter().count() && a.node_iter().zip(b.node_iter()).all(|(x, y)| x == y)
 }
 
 /// Install BlockIO on a new handle backed by `ns`.

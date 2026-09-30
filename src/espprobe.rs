@@ -41,29 +41,6 @@ use uefi::proto::media::fs::SimpleFileSystem;
 use uefi::proto::BootPolicy;
 use uefi::{cstr16, Identify};
 
-/// A firmware BlockIO as an `esp::Disk`.
-struct BlockDisk<'a> {
-    bio: &'a BlockIO,
-    media_id: u32,
-    block: u64,
-    bounce: Vec<u8>,
-}
-
-impl esp::Disk for BlockDisk<'_> {
-    fn read(&mut self, offset: u64, buf: &mut [u8]) -> bool {
-        let bs = self.block;
-        let first = offset / bs;
-        let blocks = (offset + buf.len() as u64).div_ceil(bs) - first;
-        self.bounce.resize((blocks * bs) as usize, 0);
-        if self.bio.read_blocks(self.media_id, first, &mut self.bounce).is_err() {
-            return false;
-        }
-        let from = (offset - first * bs) as usize;
-        buf.copy_from_slice(&self.bounce[from..from + buf.len()]);
-        true
-    }
-}
-
 #[entry]
 fn main() -> Status {
     uefi::helpers::init().unwrap();
@@ -115,7 +92,17 @@ fn probe() -> Result<(), String> {
         }
         let block = media.block_size();
         uefi::println!("disk        : {} blocks x {block} bytes", media.last_block() + 1);
-        let mut disk = BlockDisk { bio: &bio, media_id: media.media_id(), block: block as u64, bounce: Vec::new() };
+        let mut disk = espboot::BlockDisk { bio: &bio, media_id: media.media_id(), block: block as u64, bounce: Vec::new() };
+        // What `auto` asks of a local disk (#3): found without reading it.
+        let found = espboot::find(&mut disk, block);
+        match &found {
+            Ok((p, fat, bytes)) => uefi::println!(
+                "  local     : ESP partition {}, FAT{fat}, {} ({bytes} bytes)",
+                p.number,
+                espboot::BOOTLOADER
+            ),
+            Err(e) => uefi::println!("  local     : nothing to boot: {e}"),
+        }
         let loader = match espboot::read(&mut disk, block) {
             Ok(l) => l,
             Err(e) => {
@@ -123,6 +110,11 @@ fn probe() -> Result<(), String> {
                 continue;
             }
         };
+        // `find` and `read` must agree, or `auto` would claim over a disk that
+        // boots (or fall through to one that doesn't).
+        if !found.as_ref().is_ok_and(|(p, _, bytes)| p.number == loader.partition.number && *bytes as usize == loader.bytes.len()) {
+            return Err(String::from("espboot::find disagrees with espboot::read"));
+        }
         uefi::println!(
             "  stormbootx: read {} ({} bytes; partition {}, FAT{} at {}-byte sectors)",
             espboot::BOOTLOADER,

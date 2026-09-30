@@ -8,8 +8,8 @@ media carries, works out which machine it is (a stated name, else its DNS
 name, else its MAC or SMBIOS serial), claims that machine's image from the
 storage engine, attaches it over NVMe/TCP, publishes it as `EFI_BLOCK_IO_PROTOCOL`, and
 chain-loads the `\EFI\BOOT\BOOTX64.EFI` on the attached disk. If any step
-fails, or the machine's boot intent is `local`, it falls through to the local
-disk.
+fails, or the machine's boot intent is `local`, or it is `auto` and a local
+disk can boot on its own (#3), it falls through to the local disk.
 
 ```
 media NIC drivers → TCP4 → names (conf | DNS name, MAC, serial) → boot intent
@@ -133,20 +133,29 @@ volume as a NIC driver (#26; absent on ordinary media). It writes to three thing
    |---|---|
    | `install` | claims and boots the image, as below |
    | `local` | falls through to the local disk at once: no claim, no clone |
-   | `auto` | claims and boots, as every boot did before intents existed |
+   | `auto` | the local disk if one can boot (below); otherwise claims and boots |
 
    Set a state on the engine and power-cycle the machine to get it. **Any
    doubt reads as `auto`**: a 404, a non-2xx, an unreachable engine, or a body
-   with no intent or an unknown one. Only an explicit `local` skips the
-   network image, so a failed read can't keep a machine off an install it was
-   asked for. The console prints the intent and, when it defaulted, why. The
+   with no intent or an unknown one.
+
+   **`auto` boots what the machine has** (#3, owner 2026-09-30). A local disk
+   "can boot" when it is a whole, present, non-removable disk other than the
+   media stormbootx was loaded from, and its GPT has an ESP carrying
+   `\EFI\BOOT\BOOTX64.EFI`. `esp.rs` reads that, with no network and no
+   firmware FAT, and the file is found, not read. The console prints
+   `local : disk N (…): ESP partition P, FATn, …` and falls through, or
+   `local : nothing to boot (…); claiming` with the reason for each disk.
+   So a bare machine, or one the engine does not know yet, still claims and
+   installs, and an installed one boots itself until someone sets `install`.
+   Any bootloader counts, not only stormuefi: a disk with another OS on it
+   boots that OS under `auto`. The console prints the intent and, when it defaulted, why. The
    contract is stormblock#148, which is on stormblock main (0e3c47b) but not
    yet released or on forge (13.7.0), so today every read there is a 404 and
    every boot is `auto`. Setting it is `PUT …/intent {"intent":"local"}` with
    the admin token. Resetting `install` back to `local` is the engine's job: the
    node's OS reports `POST …/installed {volume}` after the flow-over, and the
    claim reply carries `intent` for the initramfs. stormbootx never writes it.
-   `auto` does not yet boot an installed, current disk locally. That needs #3.
 
    First it reads the engine's version from `GET /api/v1/health`. That is the
    boot's first request, so it also brings the network up and tells which
@@ -552,7 +561,7 @@ Open issues:
 | #37, #33 | X9 blades: `BOOTX64.EFI` not found on a 4096-byte namespace. stormbootx now reads the 4K ESP itself when the firmware can't; verified under OVMF, not yet on server1. #33 also has the SOL console on ttyS1 |
 | #15 | universal boot: client side done; forge is on stormblock 13.7.0, and there is no `boothost/default` |
 | #23 | identity from DNS: client side done; stormblock#204 and a metal test |
-| #3, #11 | skipping to the disk when nothing changed; a per-machine boot intent (`local` waits on forge running stormblock#148) |
+| #11 | a per-machine boot intent (`install`/`local` wait on forge running stormblock#148; `auto` already boots a bootable local disk, #3) |
 | #7 | placeholder list shared with stormipmi |
 | #27, #29, #30 | Rust NIC drivers replacing iPXE; hermon's hang |
 | #2, #4, #10, #14 | self-update; inventory; the shared initiator; test containers |

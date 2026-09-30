@@ -15,8 +15,10 @@
 //! *Which* image a machine boots is a fleet decision, and it lives next to the
 //! images rather than on the media or in DHCP: a `boothost/<service tag>`
 //! synonym on the storage engine. An intent beside it (`install`, `local` or
-//! `auto`, see `intent.rs`) is read first, and `local` falls through to the
-//! disk without claiming anything. One request returns a copy-on-write clone of
+//! `auto`, see `intent.rs`) is read first: `local` falls through to the disk
+//! without claiming anything, and so does `auto` (or any doubt) when a local
+//! disk carries an ESP with a bootloader (#3). Only `install`, or a machine
+//! with nothing of its own to boot, claims. One request returns a copy-on-write clone of
 //! the golden that machine is assigned *and* the address, NQN and NSID that
 //! reach it. Moving a box to a new version is a PUT on its name.
 //!
@@ -397,8 +399,8 @@ fn run() -> Result<(), String> {
 
             // 3a. What has this machine been told to do? Read before the
             //     claim, because the claim mints a clone and `local` is there so
-            //     that nothing is minted. Every doubt reads as `auto`, which is
-            //     what every boot did before intents existed (see intent.rs).
+            //     that nothing is minted. Every doubt reads as `auto`, which
+            //     boots a bootable local disk and claims otherwise (intent.rs).
             //     Only a 404 moves on to the next name; any other answer is
             //     this machine's.
             let (intent_key, reply) = {
@@ -441,11 +443,29 @@ fn run() -> Result<(), String> {
                     uefi::println!("intent      : auto  (the reply stated no intent)")
                 }
             }
-            if !chosen.claims() {
-                return Err(format!(
-                    "boot intent for {intent_key} is `{}`: nothing claimed",
-                    chosen.name()
-                ));
+            // `auto`, and every doubt, boots the local disk when one can boot
+            // (#3, owner 2026-09-30). Only `auto` looks: `install` claims over
+            // whatever is there, and `local` does not care.
+            let local_bootable = chosen.asks_the_disk()
+                && match blockio::local_bootloader() {
+                    Ok(found) => {
+                        uefi::println!("local       : {found}");
+                        true
+                    }
+                    Err(why) => {
+                        uefi::println!("local       : nothing to boot ({why}); claiming");
+                        false
+                    }
+                };
+            if intent::decide(chosen, local_bootable) == intent::Action::Local {
+                return Err(if local_bootable {
+                    format!(
+                        "boot intent for {intent_key} is `{}` and a local disk can boot: nothing claimed",
+                        chosen.name()
+                    )
+                } else {
+                    format!("boot intent for {intent_key} is `{}`: nothing claimed", chosen.name())
+                });
             }
 
             // 3c. Claim, best name first. A 404 means "not under this name",

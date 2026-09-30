@@ -3,8 +3,9 @@
 //! `esp.rs` finds and reads `\EFI\BOOT\BOOTX64.EFI` through any `esp::Disk`,
 //! and this hands the bytes to `LoadImage` from a buffer with a device path
 //! that names where they came from: the disk, the ESP's `HD()` node, and the
-//! file. Shared by `blockio.rs` (the attached namespace) and `espprobe`
-//! (a local disk under OVMF), so the test and the boot run the same code.
+//! file. Shared by `blockio.rs` (the attached namespace, and the local disks
+//! `auto` looks at, #3) and `espprobe` (a local disk under OVMF), so the test
+//! and the boot run the same code.
 
 use alloc::format;
 use alloc::string::String;
@@ -15,12 +16,36 @@ use uefi::boot::{self, LoadImageSource};
 use uefi::proto::device_path::build::{self, DevicePathBuilder};
 use uefi::proto::device_path::media::{PartitionFormat, PartitionSignature};
 use uefi::proto::device_path::DevicePath;
+use uefi::proto::media::block::BlockIO;
 use uefi::{cstr16, Guid, Handle};
 
 use crate::esp;
 
 /// The path every bootable ESP carries.
 pub const BOOTLOADER: &str = "\\EFI\\BOOT\\BOOTX64.EFI";
+
+/// A firmware BlockIO as an `esp::Disk`.
+pub struct BlockDisk<'a> {
+    pub bio: &'a BlockIO,
+    pub media_id: u32,
+    pub block: u64,
+    pub bounce: Vec<u8>,
+}
+
+impl esp::Disk for BlockDisk<'_> {
+    fn read(&mut self, offset: u64, buf: &mut [u8]) -> bool {
+        let bs = self.block;
+        let first = offset / bs;
+        let blocks = (offset + buf.len() as u64).div_ceil(bs) - first;
+        self.bounce.resize((blocks * bs) as usize, 0);
+        if self.bio.read_blocks(self.media_id, first, &mut self.bounce).is_err() {
+            return false;
+        }
+        let from = (offset - first * bs) as usize;
+        buf.copy_from_slice(&self.bounce[from..from + buf.len()]);
+        true
+    }
+}
 
 /// A bootloader read off an ESP, and where from.
 pub struct Bootloader {
@@ -42,6 +67,23 @@ pub fn read<D: esp::Disk>(disk: &mut D, block_size: u32) -> Result<Bootloader, S
     let mut bytes = vec![0u8; entry.size as usize];
     fat.read_file(disk, &entry, &mut bytes).map_err(why)?;
     Ok(Bootloader { bytes, partition, fat_bits: fat.kind(), sector: fat.sector_size() })
+}
+
+/// Whether a disk's first ESP carries `BOOTLOADER`, without reading it: the
+/// ESP, its FAT width and the file's size. A zero-byte file is not a
+/// bootloader.
+pub fn find<D: esp::Disk>(disk: &mut D, block_size: u32) -> Result<(esp::Partition, u8, u32), String> {
+    let why = |e: esp::Error| String::from(e.describe());
+    let partition = esp::find_esp(disk, block_size).map_err(why)?;
+    let bs = block_size as u64;
+    let mut fat = alloc::boxed::Box::new(
+        esp::Fat::mount(disk, partition.first_lba * bs, partition.blocks() * bs).map_err(why)?,
+    );
+    let entry = fat.lookup(disk, BOOTLOADER).map_err(why)?;
+    if entry.dir || entry.size == 0 {
+        return Err(format!("{BOOTLOADER} is empty or a directory"));
+    }
+    Ok((partition, fat.kind(), entry.size))
 }
 
 /// `LoadImage` the bytes. `disk` is the device path of the whole disk they

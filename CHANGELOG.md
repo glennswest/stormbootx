@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-09-30
+- **feat:** `auto`, and every doubt (a 404, an unreachable engine, an unknown intent), boots the local disk when one can boot: a whole, non-removable disk other than the boot media whose GPT has an ESP carrying `\EFI\BOOT\BOOTX64.EFI`, read with `esp.rs` and no network. A machine with nothing to boot claims as before; `install` always claims and `local` always falls through (#3, the owner's answer; also answers #31). Console: `local : …`. `intent::decide` holds the rule, with host tests.
+
 ### 2026-09-29
 - **chore:** the rustnic media pins stormnic-ixgbe 0dd4267: SNP and a MAC device path on a child handle after bring-up and the DMA check (stormnic-ixgbe#4), so the firmware's MNP/IP4/TCP4 can bind to the Intel 10G. Built `--locked`; console label `media : rustnic ixgbe@0dd4267 mlx4@4c2d318`. The normal media is unchanged (#51). Goldens `golden-stormbootx-rustnic-6d88515819338a0e` and `golden-nic-drivers-56ea4782ef2a`.
 - **chore:** the rustnic media pins stormnic-mlx4 v0.2.0 (4c2d318): SNP on a child handle per Ethernet port with a MAC device path (stormnic-mlx4#4); `Start` keeps the ConnectX-3 (~1.5 s per NIC + up to 5 s for link, was ~20 s per port), the #3 broadcast self-test no longer runs, and ExitBootServices stops its DMA. Built `--locked`; console label `media : rustnic ixgbe@2afd319 mlx4@4c2d318`. The normal media is unchanged (#50). Goldens `golden-stormbootx-rustnic-ab4e848a4dcfcaf3` and `golden-nic-drivers-10a25ce0a5a3`.
