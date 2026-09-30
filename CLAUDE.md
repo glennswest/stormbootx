@@ -392,7 +392,7 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 ### Open, no external blocker
 
 - [ ] **#55 — X9 (AMI Aptio 4) hangs at POST A2 reading the ISO's
-      esp.img (P1, 2026-09-30). In progress.** server1's capture: the
+      esp.img (P1, 2026-09-30). Handed off.** server1's capture: the
       firmware reads the PVD, the boot catalog and the first 12 KB of
       `/esp.img` (FAT16, 1 sector/cluster, pure El Torito, no partition
       table), then nothing. Debian's netinst boots on the same path: isohybrid
@@ -403,6 +403,16 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       the MBR template is 432 zero bytes, since this media has no BIOS boot
       code). `tests/iso-layout.sh` checks both in sc-build; then goldens, and
       the master boots one on server1.
+
+      **Done (2026-09-30):** 978563d, released v0.8.2 (7975b25). sc-build:
+      host suites 9/7/6/7/12, espprobe PASS, `iso-layout: PASS` on all three
+      ISOs (MBR `0xef` + GPT over `/esp.img`, FAT12, 2 KiB clusters), and
+      normal, rustnic and tcp4probe ISOs each booted under OVMF (KVM).
+      Goldens `golden-stormbootx-8b33e595281b0079` and
+      `golden-stormbootx-rustnic-d741218c58e4ec82`. **Not verified:** Aptio
+      4 itself. That is the master's boot on server1 (which reads the ESP
+      past 12 KB, then DHCP). A hang there again would rule out the ESP
+      geometry and the partition table, and leave what the ESP carries.
 
 - [x] **#47 — rustnic media pins stormnic-ixgbe 9476135. Closed
       2026-09-29.** 9476135 is stormnic-ixgbe#13: PHY and link code matched
