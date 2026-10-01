@@ -60,7 +60,7 @@ Options:
   --drivers DIR    lay DIR's files in \stormboot\drivers; stormbootx loads each
                    *.efi as a NIC driver (#26; scripts/build-nic-drivers.sh)
   --media LABEL    name this media on the console (`media : LABEL`), e.g.
-                   normal, or rustnic ixgbe@0dd4267 mlx4@4c2d318 (#45, #34)
+                   normal, or rustnic ixgbe@8ea722a mlx4@4c2d318 (#45, #34)
   --dns ADDR       DNS server for the PTR of the machine's own address, when
                    its DHCP reply names none or cannot be read (#26)
   --portal ADDR    NVMe/TCP portal, with --pin (default 192.168.31.202)

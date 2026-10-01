@@ -47,13 +47,15 @@ read -r -a DRIVERS <<< "${IPXE_DRIVERS:-intelx}"
 # ConnectX-3 (#34). The stormbootx-rustnic media golden is built with
 # STORMNIC_ON_MEDIA="ixgbe mlx4" (#45, #34).
 STORMNIC_IXGBE_REPO="https://github.com/glennswest/stormnic-ixgbe.git"
-# 0dd4267: EFI_SIMPLE_NETWORK_PROTOCOL (stormnic-ixgbe#4): after bring-up and
-# the DMA check, Start installs SNP and a device path (the PCI path plus a MAC
-# node) on a child handle, so MNP/IP4/TCP4 bind above it; SNP Initialize
-# starts the queues and ExitBootServices stops them. On top of 2afd319's
-# rings (#3), 9476135's PHY and link code (#13, 25 device IDs) and 884cf18's
-# bring-up (#2); builds --locked (#47, #48, #51).
-STORMNIC_IXGBE_REF="0dd4267939178302625858f57e12556f202fe43f"
+# 8ea722a: Start on AMI Aptio 4 (stormnic-ixgbe#19). PciIo attribute
+# Get/Supported failures are no longer fatal; Enable asks only for supported
+# bits, then each bit alone; if Memory Space or Bus Master Enable is still
+# clear, both are set by a config write to the command register (as iPXE
+# does). server3 (X9SRD-F) refused the attributes with UNSUPPORTED (#63).
+# On top of 0dd4267's SNP on a child handle (#4), 2afd319's rings (#3),
+# 9476135's PHY and link code (#13, 25 device IDs) and 884cf18's bring-up
+# (#2); builds --locked (#47, #48, #51, #63).
+STORMNIC_IXGBE_REF="8ea722a525e22c4e2bfe8b5c23447ba3e535ca19"
 STORMNIC_MLX4_REPO="https://github.com/glennswest/stormnic-mlx4.git"
 # 4c2d318 (v0.2.0): EFI_SIMPLE_NETWORK_PROTOCOL on a child handle per Ethernet
 # port, with a MAC device path (stormnic-mlx4#4). Start keeps the ConnectX-3

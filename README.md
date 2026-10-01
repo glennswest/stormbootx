@@ -533,7 +533,9 @@ with the Rust drivers instead: `stormnic-ixgbe.efi` built `--locked` from
 driver, so the Rust driver is what a machine booting it tests. Since #51
 (stormnic-ixgbe 0dd4267) it installs `EFI_SIMPLE_NETWORK_PROTOCOL` on a child
 handle after its bring-up and DMA check, so the network stack can bind to the
-Intel 10G. Since #34 it
+Intel 10G. Since #63 (stormnic-ixgbe 8ea722a) its `Start` enables memory
+decode and bus mastering on AMI Aptio 4, which refuses the PCI I/O attribute
+calls (stormnic-ixgbe#19). Since #34 it
 also carries `stormnic-mlx4.efi` for the ConnectX-3, built `--locked` from
 `STORMNIC_MLX4_REF`. Since #50 (stormnic-mlx4 v0.2.0) its `Start` brings up the
 ConnectX-3, keeps it, and installs `EFI_SIMPLE_NETWORK_PROTOCOL` on a child
@@ -546,7 +548,7 @@ prints it under the banner:
 
 ```
 media       : normal
-media       : rustnic ixgbe@0dd4267 mlx4@4c2d318
+media       : rustnic ixgbe@8ea722a mlx4@4c2d318
 ```
 
 The media carries `\stormboot\drivers` from the nic-drivers golden
