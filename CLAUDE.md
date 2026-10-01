@@ -424,6 +424,28 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
+- [ ] **#77 — set the hardware clock from NTP before Linux starts (P1,
+      owner 2026-10-01). In progress.** The X9 blades have no RTC battery,
+      and neither BIOS nor BMC sets the clock. Plan:
+      1. `src/sntp.rs`, core-only (host tests): the 48-byte request, the
+         reply check (mode 4, stratum 1..15, LI ≠ 3, origin echoes our
+         transmit stamp), NTP era → Unix, Unix ↔ civil UTC, the `ntp =`
+         value (`host[:port]`, `off`), the `StormBootClock` value.
+      2. `dnsname.rs`: an A query and answer, for an `ntp =` name
+         (default `pool.ntp.org`).
+      3. `net.rs`: smoltcp `socket-udp`; one bounded UDP exchange on the
+         NIC that reached the engine (else the best leased one); DHCP asks
+         for option 42.
+      4. `src/clock.rs`: option 42, else `ntp =`; two tries of 1 s each;
+         `GetTime` vs NTP, `SetTime` (UTC, timezone unspecified: Linux reads
+         the CMOS as UTC) when they differ by more than a second; one
+         `clock :` line; `StormBootClock` = `synced:<server>` / `unsynced`
+         (volatile, #76's GUID). Run once, after the claim, or on the
+         fall-through (local intent, failures) before `net::release`.
+      5. `tests/net-ovmf.sh`: a stub SNTP server on the build box; boot 1
+         must step the clock and tcp4probe must read the variable and the
+         new `GetTime`.
+
 - [x] **#76 — hand the claimed name and host NQN down to Linux (P0,
       stormblock#249). Closed 2026-10-01.** server8 claimed
       `boothost/server8` here, then its initramfs claimed the X9 chassis
