@@ -413,6 +413,18 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
+- [ ] **#60 — `startup.nsh` on the media, so an EFI Shell fallback boots
+      stormbootx unattended (P0, owner 2026-09-30). In progress.** X9 blades
+      with no UEFI CD boot option drop to Aptio 4's built-in EFI Shell (EDK
+      shell 2.31). Plan: `media/startup.nsh` at the root of the ESP (and the
+      ISO9660 tree and the `.img`), looping fs0..fs7 for the volume that has
+      `\EFI\BOOT\BOOTX64.EFI` **and** `\stormboot\stormboot.conf`: a
+      local disk's ESP (stormuefi on an installed stormcos disk, a stale
+      Windows) has the first and never the second. `tests/shell-ovmf.sh`
+      boots an ISO's startup.nsh under OVMF with the old EDK shell
+      (`Shell_Full.efi`, edk2-stable201811, sha256-pinned) and OVMF's own
+      shell, behind a decoy ESP; then release and golden for the master.
+
 - [ ] **#56 — stormbootx's own TCP/IP: smoltcp on SNP (P0, owner
       2026-09-30). In progress.** server3 (X9, Aptio 4) loaded
       `ipxe-intelx.efi` and then reported `EFI_TCP4 is not present`. The
