@@ -233,6 +233,11 @@ mkfs.fat -n STORMBOOTX "$ESP" >/dev/null
 mmd   -i "$ESP" ::/EFI ::/EFI/BOOT ::/stormboot
 mcopy -i "$ESP" "$BIN" ::/EFI/BOOT/BOOTX64.EFI
 mcopy -i "$ESP" "$WORK/stormboot.conf" ::/stormboot/stormboot.conf
+# An EFI Shell fallback starts the agent by itself (#60): a machine with no
+# boot option for this media drops to the firmware's shell, which runs
+# \startup.nsh. CRLF, as the old EDK shell's scripts are.
+sed 's/$/\r/' "$ROOT/media/startup.nsh" > "$WORK/startup.nsh"
+mcopy -i "$ESP" "$WORK/startup.nsh" ::/startup.nsh
 # NIC drivers for firmware that has none of its own (#26). Loaded from the
 # volume that booted, so on an ISO it is the ESP boot image that must carry
 # them; the loose ISO9660 copy below is for reading, not for booting.
@@ -254,6 +259,7 @@ if [[ "$ISO" == "yes" ]]; then
     cp "$ESP" "$ISOROOT/esp.img"
     cp "$BIN" "$ISOROOT/EFI/BOOT/BOOTX64.EFI"
     cp "$WORK/stormboot.conf" "$ISOROOT/stormboot/stormboot.conf"
+    cp "$WORK/startup.nsh" "$ISOROOT/startup.nsh"
     if [[ -n "$DRIVERS" ]]; then
         mkdir -p "$ISOROOT/stormboot/drivers"
         cp "$DRIVERS"/* "$ISOROOT/stormboot/drivers/"
