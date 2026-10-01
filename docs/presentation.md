@@ -177,7 +177,8 @@ Read from the volume it booted from. `key = value`, each key independent.
   test suites: `intent` 8, `sha256` 7, `universal` 6, `dnsname` 7, `esp` 12;
   then `espprobe` boots under OVMF against a 4K disk (#37), and stormbootx
   boots against a stub engine and NVMe/TCP target with no firmware network
-  stack (`net-ovmf.sh`, #56).
+  stack (`net-ovmf.sh`, #56), and an ISO's `startup.nsh` starts it from
+  the old EDK shell and OVMF's Shell 2.x (`shell-ovmf.sh`, #60).
 - **Ships as goldens** (#21, decided 2026-09-28), written by
   `deploy/build-golden.sh`: `stormbootx` (the `.efi`s, an ISO for BMC virtual
   media, a USB `.img`, a `tcp4probe` ISO) and `nic-drivers` (iPXE `intelx`,
@@ -185,6 +186,9 @@ Read from the volume it booted from. `key = value`, each key independent.
   is stormcentral#153; until then there is no golden to request.
 - **Packaging** is `scripts/build-boot-agent.sh`; hand-built variants:
   `--pin`, `--probe`, `--fec` (a recovery stick).
+- **No boot option?** The media's `\startup.nsh` (#60) finds the volume
+  with `BOOTX64.EFI` and `stormboot.conf` on `fs0`..`fs7` and starts it from
+  the firmware's EFI Shell.
 - **Updated** by booting a newer golden's media. Self-update (#2) is planned.
 - **Firmware needs only a UEFI driver for its NIC** (SNP), or one on the
   media in `\stormboot\drivers` (#26: the Supermicro X9 blades have
