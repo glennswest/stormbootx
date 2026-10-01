@@ -446,13 +446,19 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       hot-patch, and server1 and server2 get v0.10.0. A shell that stops at
       `Shell>` without running the script will be reported on #60.
 
-- [ ] **#65 — rustnic media pins stormnic-ixgbe 563ea8d (P0, owner
-      2026-10-01). In progress.** stormnic-ixgbe#21: on server3 the 82599
-      reset's EEMNGCTL.CFG_DONE0 wait timed out (`EEMNGCTL 0x80000196`) and
-      Start failed. 563ea8d logs it and continues. Plan: pin the full sha,
-      build `--locked`, label `ixgbe@563ea8d`, sc-build with the rustnic
-      media under OVMF, then the `stormbootx-rustnic` golden for the
-      master's server3 boot.
+- [x] **#65 — rustnic media pins stormnic-ixgbe 563ea8d (P0, owner
+      2026-10-01). Closed 2026-10-01.** stormnic-ixgbe#21: on server3 the
+      82599 reset's EEMNGCTL.CFG_DONE0 wait timed out (`EEMNGCTL
+      0x80000196`) and Start failed. 563ea8d logs it and continues. Pinned
+      in 329edfd, built `--locked`. sc-build: suites 9/7/6/7/12, espprobe
+      and net-ovmf PASS, rustnic and nic-drivers trees built, and the
+      rustnic ISO under OVMF (KVM) printed `media : rustnic ixgbe@563ea8d
+      mlx4@cf37f8b` and both drivers' bindings. Goldens
+      `golden-stormbootx-rustnic-416b7237c78a29a3` (supersedes #64's) and
+      `golden-nic-drivers-4bd5817b92cc`. Left for the master: boot server3
+      on it; pass is `EEMNGCTL CFG_DONE0 not set after 1 s …; continuing`,
+      then link setup, the DMA check and `Start: bound, SNP on a child
+      handle`.
 
 - [x] **#64 — rustnic media pins stormnic-mlx4 v0.2.1 (P0, owner
       2026-10-01). Closed 2026-10-01.** stormnic-mlx4#15: Aptio 4's PCI I/O
