@@ -446,6 +446,14 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       hot-patch, and server1 and server2 get v0.10.0. A shell that stops at
       `Shell>` without running the script will be reported on #60.
 
+- [ ] **#64 — rustnic media pins stormnic-mlx4 v0.2.1 (P0, owner
+      2026-10-01). In progress.** stormnic-mlx4#15: Aptio 4's PCI I/O
+      numbers BARs, not BAR registers, so the hard-coded UAR `BarIndex` 2
+      was refused and every doorbell failed UNSUPPORTED on server3. v0.2.1
+      (cf37f8b) finds the BarIndex through `GetBarAttributes`. Plan: bump
+      `STORMNIC_MLX4_REF`, sc-build (rustnic tree + ISO under OVMF), the
+      `stormbootx-rustnic` and `nic-drivers` goldens; the master boots server3.
+
 - [x] **#63 — rustnic media pins stormnic-ixgbe 8ea722a (P0, owner
       2026-10-01). Closed 2026-10-01.** stormnic-ixgbe#19: on server3
       (X9SRD-F, Aptio 4, 8086:1557) Start failed `could not enable memory
