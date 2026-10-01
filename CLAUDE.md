@@ -439,7 +439,12 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       at the tag started from the old shell. Goldens
       `golden-stormbootx-916fd02a32c20f2f` and
       `golden-stormbootx-rustnic-2ba951f3cfd6b9eb`. The metal check (a blade
-      that falls to the shell) is the master's.
+      that falls to the shell) is the master's. **2026-09-30:** v0.10.0 is
+      on forge's minismbd share as `stormbootx-v0.10.0.iso`. The master's
+      hot-patch (v0.9.0 plus a simpler startup.nsh) already booted server5
+      unattended from the shell fallback; server6–8 are going through on the
+      hot-patch, and server1 and server2 get v0.10.0. A shell that stops at
+      `Shell>` without running the script will be reported on #60.
 
 - [ ] **#56 — stormbootx's own TCP/IP: smoltcp on SNP (P0, owner
       2026-09-30). In progress.** server3 (X9, Aptio 4) loaded
