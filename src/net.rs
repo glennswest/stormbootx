@@ -21,6 +21,8 @@
 //!   again.
 //! - **DHCP** comes from smoltcp's dhcpv4 socket, on every NIC at once. The raw
 //!   reply is kept for `dnsname.rs` (options 12/15/6, #23).
+//! - **UDP** is used once per boot, for the SNTP request that sets the clock
+//!   and the DNS lookup of its server (#77): `udp_exchange`.
 //! - **ARP** and **TCP** are smoltcp's. A connection goes out on the NIC that
 //!   reached the target last time, else the best-ranked NIC with a lease: link
 //!   up first, then the larger MTU (the storage port is the jumbo one).
@@ -47,7 +49,7 @@ use core::ptr;
 use crate::entropy::{self, Entropy};
 use smoltcp::iface::{Config, Interface, SocketHandle, SocketSet};
 use smoltcp::phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken};
-use smoltcp::socket::{dhcpv4, tcp};
+use smoltcp::socket::{dhcpv4, tcp, udp};
 use smoltcp::time::{Duration, Instant};
 use smoltcp::wire::{EthernetAddress, HardwareAddress, IpAddress, IpCidr, Ipv4Address};
 use uefi::boot::{self, SearchType};
@@ -407,8 +409,9 @@ impl Nic {
     }
 }
 
-/// DHCP asks for these: mask, router, DNS, host name, domain (#23).
-static DHCP_PARAMS: [u8; 5] = [1, 3, 6, 12, 15];
+/// DHCP asks for these: mask, router, DNS, host name, domain (#23), NTP
+/// servers (#77).
+static DHCP_PARAMS: [u8; 6] = [1, 3, 6, 12, 15, 42];
 
 struct Net {
     nics: Vec<Nic>,
@@ -661,6 +664,86 @@ pub fn dhcp_reply(mac: &[u8], mac_len: usize) -> Option<Vec<u8>> {
     let n = net().ok()?;
     let nic = n.nics.iter().find(|c| mac_len > 0 && c.mac[..mac_len] == mac[..mac_len])?;
     nic.lease.as_ref()?.reply.clone()
+}
+
+/// The NIC a request goes out on when it is not a TCP connection: the one
+/// that reached a target last, else the best-ranked NIC with a lease.
+fn leased_nic(n: &Net) -> Option<usize> {
+    n.preferred
+        .filter(|&i| n.nics[i].lease.is_some())
+        .or_else(|| n.order().into_iter().find(|&i| n.nics[i].lease.is_some()))
+}
+
+/// Whether any NIC holds a lease. Nothing waits for one here: the clock
+/// (#77) is set on a network that is already up, or not at all.
+pub fn leased() -> bool {
+    net().is_ok_and(|n| n.nics.iter().any(|c| c.lease.is_some()))
+}
+
+/// The DHCP reply of the NIC `udp_exchange` would use, for its options
+/// (42, 6; #77).
+pub fn leased_reply() -> Option<Vec<u8>> {
+    let n = net().ok()?;
+    let i = leased_nic(n)?;
+    n.nics[i].lease.as_ref()?.reply.clone()
+}
+
+/// 64 random bits from the stack's generator: an SNTP nonce, a DNS id.
+pub fn random_u64() -> Option<u64> {
+    Some(net().ok()?.rng.next_u64())
+}
+
+/// Send one UDP datagram to `server:port` and wait up to `ms` for a reply from
+/// that address and port that `accept` takes. Returns the reply and the
+/// microseconds from the send to its arrival (half of it is the SNTP path
+/// delay, #77).
+///
+/// One datagram, no retransmission: the caller decides whether to try again.
+/// The first send to an address whose MAC is not known yet waits on ARP, and
+/// smoltcp holds the datagram meanwhile.
+pub fn udp_exchange(
+    server: [u8; 4],
+    port: u16,
+    request: &[u8],
+    ms: u64,
+    mut accept: impl FnMut(&[u8]) -> bool,
+) -> Result<(Vec<u8>, u64), String> {
+    let n = net()?;
+    let i = leased_nic(n).ok_or("no NIC holds a lease")?;
+    let local = local_port(&mut n.rng);
+    let mut s = udp::Socket::new(
+        udp::PacketBuffer::new(vec![udp::PacketMetadata::EMPTY; 4], vec![0u8; 4096]),
+        udp::PacketBuffer::new(vec![udp::PacketMetadata::EMPTY; 2], vec![0u8; 1024]),
+    );
+    s.bind(local).map_err(|e| format!("bind: {e:?}"))?;
+    let dest = (IpAddress::Ipv4(Ipv4Address::from(server)), port);
+    s.send_slice(request, dest).map_err(|e| format!("send: {e:?}"))?;
+    let h = n.nics[i].sockets.add(s);
+    let sent = n.clock.now();
+    let deadline = sent + Duration::from_millis(ms);
+    let mut buf = vec![0u8; 2048];
+    let result = loop {
+        n.poll_all();
+        let now = n.clock.now();
+        let sock = n.nics[i].sockets.get_mut::<udp::Socket>(h);
+        let mut got = None;
+        while let Ok((k, meta)) = sock.recv_slice(&mut buf) {
+            let from_server = meta.endpoint.addr == IpAddress::Ipv4(Ipv4Address::from(server))
+                && meta.endpoint.port == port;
+            if from_server && accept(&buf[..k]) {
+                got = Some(buf[..k].to_vec());
+                break;
+            }
+        }
+        if let Some(reply) = got {
+            break Ok((reply, (now - sent).total_micros()));
+        }
+        if now >= deadline {
+            break Err(format!("no answer from {}:{port} within {ms} ms", ip_text(server)));
+        }
+    };
+    n.nics[i].sockets.remove(h);
+    result
 }
 
 /// Wait up to `secs` for leases, then print what every NIC holds. The shell's

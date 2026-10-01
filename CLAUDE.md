@@ -22,7 +22,7 @@ scratch files go in `tmp/`.
 Push first, then `sc-build` from this checkout. It builds the pushed commit
 on dev.g8.lo as `stormbuild`. There is no checkout on dev, and no `ssh root@`.
 The plain `cargo build && cargo test` default does not suit a `no_std` UEFI
-crate, so name the command. This builds the three binaries, runs the five
+crate, so name the command. This builds the three binaries, runs the six
 host suites, boots `espprobe` and stormbootx under OVMF, and boots an ISO's
 `startup.nsh` from two EFI Shells:
 
@@ -33,6 +33,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   rustc --edition 2021 --test src/universal.rs -o t/universal-test && ./t/universal-test && \
   rustc --edition 2021 --test src/dnsname.rs -o t/dnsname-test && ./t/dnsname-test && \
   rustc --edition 2021 --test src/esp.rs -o t/esp-test && ./t/esp-test && \
+  rustc --edition 2021 --test src/sntp.rs -o t/sntp-test && ./t/sntp-test && \
   R=${CARGO_TARGET_DIR:-target}/x86_64-unknown-uefi/release && \
   tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi && \
   tests/net-ovmf.sh $R/stormbootx.efi $R/tcp4probe.efi && \
@@ -42,8 +43,9 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
 ```
 
 `tests/net-ovmf.sh` (#56) boots stormbootx under OVMF with no firmware
-network stack, against a stub engine and a stub NVMe/TCP target (4096-byte
-blocks, a 96 MiB `BOOTX64.EFI`). It runs twice: as shipped, and with the
+network stack, against a stub engine, a stub NVMe/TCP target (4096-byte
+blocks, a 96 MiB `BOOTX64.EFI`) and a stub SNTP server (#77: boot 1 must set
+the RTC to 2031, boot 2's unsynchronised answer must set nothing). It runs twice: as shipped, and with the
 firmware RNG and RDRAND/RDSEED masked (`rng : jitter`).
 
 `tests/shell-ovmf.sh ISO old|ovmf 'LINE' …` (#60) boots an ISO from an
@@ -89,7 +91,8 @@ carried there too (#24 was that). `src/dnsname.rs` (#23) is the fourth:
 DHCP option parsing and the PTR wire format, tested against microdns
 replies captured on 2026-09-27. `src/esp.rs` (#37) is the fifth: GPT and
 FAT, tested on images `mkfs.fat` and mtools build inside the test, so they
-must be on the build box's `PATH` (they are on dev).
+must be on the build box's `PATH` (they are on dev). `src/sntp.rs` (#77) is
+the sixth: the SNTP packet, the reply checks and the UTC calendar.
 
 `Cargo.lock` is tracked, as it should be for anything that produces a binary.
 Without it every build resolved fresh, and this is a firmware binary whose
@@ -131,7 +134,9 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/drivers.rs` | load NIC drivers from `\stormboot\drivers` on the media (#26), after the platform's own bind |
 | `src/dhcp4.rs` | tcp4probe only since #56: DHCP through the firmware's `EFI_DHCP4` |
 | `src/nvme.rs` | the NVMe/TCP initiator |
-| `src/handoff.rs` | `StormBootTag`/`StormBootHostNqn`, volatile EFI variables naming the machine to Linux's initramfs (#76, stormblock#249) |
+| `src/handoff.rs` | `StormBootTag`/`StormBootHostNqn`, volatile EFI variables naming the machine to Linux's initramfs (#76, stormblock#249); `StormBootClock` (#77) |
+| `src/clock.rs` | the RTC set from NTP before Linux (#77): option 42 / `ntp =` / `pool.ntp.org`, one bounded SNTP exchange, `SetTime` in UTC |
+| `src/sntp.rs` | SNTP request and reply checks, NTP era → Unix, the UTC calendar (core-only, host-tested) |
 | `src/blockio.rs` | publish the namespace as a block device, then chain-load its `BOOTX64.EFI` (the firmware's FAT, then `esp.rs`) |
 | `src/intent.rs` | the boot intent (`install`/`local`/`auto`) read before the claim; every doubt is `auto` |
 | `src/registry.rs` | read the intent; claim `boothost/<tag>`, or `boothost/default` by MAC; read the engine's version; also the old sbregistry `/v1/clones/claim` path, compiled out by `USE_REGISTRY = false` |

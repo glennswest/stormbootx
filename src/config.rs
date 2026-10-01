@@ -206,6 +206,13 @@ pub fn stated_dns() -> Option<[u8; 4]> {
     parse_ipv4(&field(&read_file(CONF_PATH)?, "dns")?)
 }
 
+/// `ntp =` from the config file (#77): `host[:port]` or `off`, as text for
+/// `sntp::setting`. Absent on ordinary media: the lease's option 42 comes
+/// first, then `pool.ntp.org`.
+pub fn stated_ntp() -> Option<String> {
+    field(&read_file(CONF_PATH)?, "ntp")
+}
+
 /// Read a file from the boot volume as text.
 pub fn read_file(path: &str) -> Option<String> {
     let handle = boot_volume()?;

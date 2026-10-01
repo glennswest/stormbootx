@@ -27,8 +27,9 @@ path = "src/espprobe.rs"
 uefi = { version = "0.39", features = ["alloc", "global_allocator", "panic_handler", "logger"] }
 uefi-raw = "0.15"
 # stormbootx's own TCP/IP, on the NIC driver's SNP (#56): DHCP, ARP and TCP,
-# and nothing else. The firmware's EFI_TCP4 is not used.
-smoltcp = { version = "0.14", default-features = false, features = ["alloc", "medium-ethernet", "proto-ipv4", "socket-tcp", "socket-dhcpv4"] }
+# and UDP for one SNTP exchange and its DNS lookup (#77). The firmware's
+# EFI_TCP4 is not used.
+smoltcp = { version = "0.14", default-features = false, features = ["alloc", "medium-ethernet", "proto-ipv4", "socket-tcp", "socket-udp", "socket-dhcpv4"] }
 
 [profile.release]
 opt-level = "z"

@@ -19,6 +19,13 @@
 #     BlockIO, so the boot moves 96 MiB over smoltcp (and prints blockio's
 #     MiB/s line), then starts the payload.
 #
+#   - an SNTP server (#77) on UDP, named on the media with `ntp =`. On the
+#     first boot it answers 2031-05-04 03:02:01 UTC, so stormbootx must set
+#     the RTC there and hand `StormBootClock = synced:10.0.2.2` down, and the
+#     payload must read the RTC back in 2031. On the second it answers as an
+#     unsynchronised server (LI 3), which must not set anything:
+#     `StormBootClock = unsynced`.
+#
 # Two boots:
 #   1. as shipped: `rng : firmware` or `rdrand`;
 #   2. the entropy fallback: `rng = cpu` on the media masks the firmware's
@@ -59,8 +66,10 @@ command -v python3 >/dev/null || die "python3 is not installed"
 W=$(mktemp -d "${TMPDIR:-/tmp}/net-ovmf.XXXXXX")
 STUB_PID=""
 NVME_PID=""
+NTP_PID=""
 cleanup() {
     [[ -n "$STUB_PID" ]] && kill "$STUB_PID" 2>/dev/null
+    [[ -n "$NTP_PID" ]] && kill "$NTP_PID" 2>/dev/null
     [[ -n "$NVME_PID" ]] && kill "$NVME_PID" 2>/dev/null
     rm -rf "$W"
 }
@@ -243,21 +252,50 @@ for _ in $(seq 100); do [[ -s "$W/nvme.port" ]] && break; sleep 0.1; done
 NVME_PORT=$(cat "$W/nvme.port" 2>/dev/null) || die "the NVMe/TCP stub did not start"
 say "NVMe/TCP stub on 127.0.0.1:$NVME_PORT, $(( $(stat -c %s "$W/disk4k.img") / 1048576 )) MiB at 4096-byte blocks"
 
+# The SNTP stub (#77): a fixed time, or with ntp.bad present an
+# unsynchronised answer (LI 3) that must not set the clock.
+cat > "$W/ntp.py" <<'PY'
+import os, socket, struct, sys
+W = os.path.dirname(sys.argv[1])
+log = open(sys.argv[1], "a", buffering=1)
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.bind(("127.0.0.1", 0))
+open(sys.argv[2], "w").write(str(s.getsockname()[1]))
+T = 1935630121 + 2208988800  # 2031-05-04 03:02:01 UTC
+while True:
+    q, peer = s.recvfrom(512)
+    if len(q) < 48:
+        continue
+    bad = os.path.exists(W + "/ntp.bad")
+    log.write("NTP request from %s:%d%s\n" % (peer[0], peer[1], " (answered LI 3)" if bad else ""))
+    first = (0xC0 if bad else 0) | (4 << 3) | 4
+    r = struct.pack("!BBbb", first, 2, 0, -20) + b"\0" * 8 + b"STUB"
+    r += struct.pack("!II", T, 0) + q[40:48] + struct.pack("!IIII", T, 0, T, 0x80000000)
+    s.sendto(r, peer)
+PY
+python3 "$W/ntp.py" "$W/ntp.log" "$W/ntp.port" &
+NTP_PID=$!
+for _ in $(seq 50); do [[ -s "$W/ntp.port" ]] && break; sleep 0.1; done
+NTP_PORT=$(cat "$W/ntp.port" 2>/dev/null) || die "the SNTP stub did not start"
+say "SNTP stub on 127.0.0.1:$NTP_PORT (udp)"
+
 accel=tcg
 [[ -w /dev/kvm ]] && accel=kvm
 
-# boot NAME CPU RNG CLAIM EXPECTED...   (CLAIM: 404 or ok)
+# boot NAME CPU RNG CLAIM NTP EXPECTED...   (CLAIM: 404 or ok; NTP: good or bad)
 boot() {
-    local name=$1 cpu=$2 rng=$3 claim=$4; shift 4
-    rm -f "$W/claim.ok"
+    local name=$1 cpu=$2 rng=$3 claim=$4 ntp=$5; shift 5
+    rm -f "$W/claim.ok" "$W/ntp.bad"
     [[ $claim == ok ]] && : > "$W/claim.ok"
+    [[ $ntp == bad ]] && : > "$W/ntp.bad"
     local iso="$W/$name.iso" log="$W/$name.serial" txt="$W/$name.txt"
     local args=(--iso --binary "$EFI" --engine 10.0.2.2 --api-port "$PORT" --port "$NVME_PORT"
-                --nsid 1 --output "$iso")
+                --nsid 1 --ntp "10.0.2.2:$NTP_PORT" --output "$iso")
     [[ -n "$rng" ]] && args+=(--rng "$rng")
     "$ROOT/scripts/build-boot-agent.sh" "${args[@]}" >/dev/null
     cp "$OVMF_VARS" "$W/$name.vars"
     : > "$W/stub.log"
+    : > "$W/ntp.log"
     say "[$name] booting under OVMF ($accel, cpu $cpu, rng ${rng:-as shipped}, up to ${LIMIT}s)"
     qemu-system-x86_64 -machine q35,accel="$accel" -cpu "$cpu" -m 1024 \
         -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
@@ -279,11 +317,11 @@ boot() {
     say "[$name] console:"
     grep -v '^\s*$' "$txt" | sed -n '1,90s/^/  | /p'
     say "[$name] stub log:"
-    sed 's/^/  > /' "$W/stub.log"
+    sed 's/^/  > /' "$W/stub.log" "$W/ntp.log"
     local fail=0 want
     for want in "$@"; do
         if [[ "$want" == stub:* ]]; then
-            grep -qF -- "${want#stub:}" "$W/stub.log" && say "[$name] stub saw: ${want#stub:}" \
+            grep -qF -- "${want#stub:}" "$W/stub.log" "$W/ntp.log" && say "[$name] stub saw: ${want#stub:}" \
                 || { say "[$name] stub missing: ${want#stub:}"; fail=1; }
         elif [[ "$want" == not:* ]]; then
             grep -qF -- "${want#not:}" "$txt" && { say "[$name] unexpected: ${want#not:}"; fail=1; } \
@@ -310,14 +348,24 @@ common=(
     "stub:GET /api/v1/health"
     "stub:POST /api/v1/synonyms/boothost/"
     "not:EFI_TCP4 is not present"
+    "stub:NTP request from "
 )
 host_cpu=max
 [[ $accel == kvm ]] && host_cpu=host
-boot shipped "$host_cpu" "" 404 "${common[@]}" "rng         : " \
+boot shipped "$host_cpu" "" 404 good "${common[@]}" "rng         : " \
     "handoff     : StormBootHostNqn = nqn.2026-09.lo.storm:host-" \
-    "handed down : StormBootHostNqn = nqn.2026-09.lo.storm:host-"
+    "handed down : StormBootHostNqn = nqn.2026-09.lo.storm:host-" \
+    "clock       : was " \
+    ", set to 2031-05-04 03:02:0" \
+    " UTC from 10.0.2.2:$NTP_PORT (step +" \
+    "handoff     : StormBootClock = synced:10.0.2.2" \
+    "handed down : StormBootClock = synced:10.0.2.2  (attributes 0x6)" \
+    "rtc         : 2031-05-04 03:0"
 grep -q "rng         : jitter" "$W/shipped.txt" && say "note: the shipped boot fell back to jitter"
-boot jitter "$host_cpu,-rdrand,-rdseed" cpu ok "${common[@]}" "rng         : jitter" \
+boot jitter "$host_cpu,-rdrand,-rdseed" cpu ok bad "${common[@]}" "rng         : jitter" \
+    "clock       : NTP unreachable at 10.0.2.2:$NTP_PORT (the server says it is not synchronised (LI 3)); left at " \
+    "handed down : StormBootClock = unsynced  (attributes 0x6)" \
+    "not:rtc         : 2031" \
     "booting stubhost's image" \
     "handoff     : StormBootTag = stubhost" \
     "handed down : StormBootTag = stubhost  (attributes 0x6)" \

@@ -13,6 +13,11 @@
 //!    needs anyway; microdns answers DNS over TCP (checked on g8 and g10,
 //!    2026-09-27), and EFI_UDP4 would be another optional stack to refuse.
 //!
+//! Since #77 there is one more query: the A record of an NTP server named by
+//! name (`pool.ntp.org`), for `clock.rs`. That one goes over **UDP**, which
+//! smoltcp now carries for SNTP anyway; the PTR stays on TCP, where it was
+//! proven against microdns.
+//!
 //! The engine keys a host on the **first label**, so `server3.g10.lo` claims
 //! `boothost/server3`. The full name is printed.
 //!
@@ -35,6 +40,8 @@ const OPTIONS_AT: usize = 236 + 4;
 pub const OPT_DNS: u8 = 6;
 pub const OPT_HOST_NAME: u8 = 12;
 pub const OPT_DOMAIN: u8 = 15;
+/// NTP servers (#77): a list of addresses, like option 6.
+pub const OPT_NTP: u8 = 42;
 
 /// One option's data from a whole BOOTP/DHCP message (header onwards).
 ///
@@ -63,7 +70,7 @@ pub fn dhcp_option(msg: &[u8], code: u8) -> Option<&[u8]> {
     None
 }
 
-/// The first address in option 6.
+/// The first address in option 6 (or in option 42, which has the same shape).
 pub fn first_dns(opt: &[u8]) -> Option<[u8; 4]> {
     let a: [u8; 4] = opt.get(..4)?.try_into().ok()?;
     (a != [0; 4] && a != [255; 4]).then_some(a)
@@ -185,6 +192,55 @@ pub fn ptr_answer(msg: &[u8], id: u16, out: &mut [u8; 256]) -> Option<usize> {
             return read_name(msg, rdata, out);
         }
         at = rdata + rdlen;
+    }
+    None
+}
+
+/// An A query for `name`, unframed (for UDP, #77). Returns the bytes written
+/// into `out`, or `None` for a name that is not a valid DNS name.
+pub fn a_query(name: &str, id: u16, out: &mut [u8; 300]) -> Option<usize> {
+    let name = name.trim_end_matches('.');
+    if !valid_name(name) {
+        return None;
+    }
+    out[..2].copy_from_slice(&id.to_be_bytes());
+    // flags = RD, one question, no other records.
+    out[2..12].copy_from_slice(&[0x01, 0x00, 0, 1, 0, 0, 0, 0, 0, 0]);
+    let mut n = 12;
+    for label in name.split('.') {
+        out[n] = label.len() as u8;
+        out[n + 1..n + 1 + label.len()].copy_from_slice(label.as_bytes());
+        n += 1 + label.len();
+    }
+    out[n..n + 5].copy_from_slice(&[0, 0, 1, 0, 1]); // root, A, IN
+    Some(n + 5)
+}
+
+/// The address in the first A answer of a reply to query `id`, past any
+/// CNAMEs (`pool.ntp.org` answers with several A records; the first is
+/// taken). `None` for another id, an error rcode or no A record.
+pub fn a_answer(msg: &[u8], id: u16) -> Option<[u8; 4]> {
+    if msg.len() < 12 || msg[..2] != id.to_be_bytes() || msg[2] & 0x80 == 0 || msg[3] & 0x0f != 0 {
+        return None;
+    }
+    let qd = u16::from_be_bytes([msg[4], msg[5]]);
+    let an = u16::from_be_bytes([msg[6], msg[7]]);
+    let mut at = 12;
+    for _ in 0..qd {
+        at = skip_name(msg, at)? + 4;
+    }
+    for _ in 0..an {
+        at = skip_name(msg, at)?;
+        let rr = msg.get(at..at + 10)?;
+        let kind = u16::from_be_bytes([rr[0], rr[1]]);
+        let class = u16::from_be_bytes([rr[2], rr[3]]);
+        let rdlen = u16::from_be_bytes([rr[8], rr[9]]) as usize;
+        let rdata = msg.get(at + 10..at + 10 + rdlen)?;
+        if kind == 1 && class == 1 && rdlen == 4 {
+            let a: [u8; 4] = rdata.try_into().ok()?;
+            return (a != [0; 4]).then_some(a);
+        }
+        at += 10 + rdlen;
     }
     None
 }
@@ -347,5 +403,28 @@ mod tests {
         // Too short to be a name plus a suffix, and not lowercase.
         assert_eq!(machine_label("1a"), "1a");
         assert_eq!(machine_label("server1A"), "server1A");
+    }
+
+    #[test]
+    fn a_query_and_answer() {
+        let mut q = [0u8; 300];
+        let n = a_query("pool.ntp.org", 0x1234, &mut q).unwrap();
+        assert_eq!(&q[..n], &hex("12340100000100000000000004706f6f6c036e7470036f72670000010001")[..]);
+        assert_eq!(a_query("bad name", 1, &mut q), None);
+        // A CNAME, then two A records, the shape a resolver gives for the pool.
+        let r = hex(concat!(
+            "123481800001000300000000",
+            "04706f6f6c036e7470036f72670000010001",
+            "c00c0005000100000e10000704706f6f6cc00c",
+            "c02a00010001000000960004a29fc801",
+            "c02a00010001000000960004c0a80101",
+        ));
+        assert_eq!(a_answer(&r, 0x1234), Some([162, 159, 200, 1]));
+        assert_eq!(a_answer(&r, 0x1235), None);
+        assert_eq!(a_answer(&r[..60], 0x1234), None);
+        // NXDOMAIN.
+        let mut nx = r.clone();
+        nx[3] = 0x83;
+        assert_eq!(a_answer(&nx, 0x1234), None);
     }
 }

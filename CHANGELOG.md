@@ -3,6 +3,11 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-10-01
+- **feat:** set the hardware clock from NTP before Linux starts (#77). After the claim (or on the fall-through, before the NICs are released) stormbootx sends one SNTP request over smoltcp UDP to DHCP option 42's server, else `ntp =` in `stormboot.conf` (`host[:port]`, `off`), else `pool.ntp.org` (looked up with one A query over UDP). Two tries of 1 s; a reply is believed only from a synchronised server that echoes the random transmit timestamp. If the RTC is more than a second off, UEFI `SetTime` writes UTC (time zone and daylight as the firmware had them). One `clock :` console line. The outcome goes to Linux in the volatile `StormBootClock` variable (`synced:<server>` / `unsynced`, #76's vendor GUID) for stormcos#213. `src/sntp.rs` (core-only, host-tested), `src/clock.rs`, `dnsname::{a_query, a_answer}`, `net::udp_exchange`; smoltcp gains `socket-udp`; DHCP asks for option 42. `build-boot-agent.sh --ntp`.
+- **test:** `tests/net-ovmf.sh` runs a stub SNTP server: boot 1 must set the RTC to 2031 and tcp4probe must read it back with `StormBootClock = synced:10.0.2.2`; boot 2's LI-3 answer must set nothing (`unsynced`). tcp4probe prints `StormBootClock` and the RTC.
+- **docs:** README (*What it touches at boot*, step 5a, the network path, `ntp =`, tcp4probe) and CLAUDE.md (module map, sc-build command, work plan).
+
 ## [v0.11.0] — 2026-10-01
 
 ### Added

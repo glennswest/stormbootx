@@ -4,7 +4,7 @@
 //! to itself it guesses the name from SMBIOS, and on the X9 MicroCloud
 //! blades that serial is the chassis's, shared by all eight: server8 booted
 //! its own image from stormbootx and then laid its disk from server1's. So
-//! stormbootx says what it claimed on, in two **volatile** EFI variables the
+//! stormbootx says what it claimed on, in **volatile** EFI variables the
 //! initramfs reads ahead of `rd.stormblock.tag=` and SMBIOS (stormblock
 //! `docs/boot-hooks.md`, "Whose image"):
 //!
@@ -12,6 +12,7 @@
 //! |---|---|
 //! | `StormBootTag` | the name claimed on: the reply's host, else the name claimed |
 //! | `StormBootHostNqn` | the host NQN the namespace was attached as |
+//! | `StormBootClock` | `synced:<NTP server address>` or `unsynced` (#77, `clock.rs`) |
 //!
 //! Vendor GUID `ab361f54-0166-44a4-a088-1ac22e98ab76`, attributes
 //! `BOOTSERVICE_ACCESS | RUNTIME_ACCESS` and never `NON_VOLATILE`: they die
@@ -40,6 +41,13 @@ pub fn set_host_nqn(nqn: &str) {
     set(cstr16!("StormBootHostNqn"), "StormBootHostNqn", nqn);
 }
 
+/// `StormBootClock` (#77): whether the RTC was checked against NTP and is
+/// right (`synced:<server>`), or not (`unsynced`), so Linux (stormcos#213)
+/// knows whether to trust the clock it starts with.
+pub fn set_clock(value: &str) {
+    set(cstr16!("StormBootClock"), "StormBootClock", value);
+}
+
 fn set(var: &CStr16, label: &str, value: &str) {
     if !handoff_value_ok(value) {
         uefi::println!("handoff     : {label} not set: {value:?} is not [A-Za-z0-9._:-], Linux would ignore it");
@@ -48,6 +56,6 @@ fn set(var: &CStr16, label: &str, value: &str) {
     let attrs = VariableAttributes::BOOTSERVICE_ACCESS | VariableAttributes::RUNTIME_ACCESS;
     match uefi::runtime::set_variable(var, &VENDOR, attrs, value.as_bytes()) {
         Ok(()) => uefi::println!("handoff     : {label} = {value}"),
-        Err(e) => uefi::println!("handoff     : {label} not set ({:?}); Linux falls back to SMBIOS", e.status()),
+        Err(e) => uefi::println!("handoff     : {label} not set ({:?})", e.status()),
     }
 }

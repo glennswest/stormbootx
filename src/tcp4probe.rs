@@ -78,8 +78,8 @@ fn survey() {
     }
 }
 
-/// What a loader before this one handed down to Linux (stormbootx #76): the
-/// two volatile variables, as an image started after it reads them. Silent
+/// What a loader before this one handed down to Linux (stormbootx #76, #77):
+/// the volatile variables, as an image started after it reads them. Silent
 /// when there are none, which is every boot not chain-loaded by stormbootx.
 fn handed_down() {
     use uefi::runtime::{VariableVendor, get_variable};
@@ -87,6 +87,7 @@ fn handed_down() {
     for (name, label) in [
         (uefi::cstr16!("StormBootTag"), "StormBootTag"),
         (uefi::cstr16!("StormBootHostNqn"), "StormBootHostNqn"),
+        (uefi::cstr16!("StormBootClock"), "StormBootClock"),
     ] {
         let mut buf = [0u8; 256];
         if let Ok((value, attrs)) = get_variable(name, &vendor, &mut buf) {
@@ -116,6 +117,20 @@ fn main() -> Status {
     }
     uefi::println!("============================================================");
     handed_down();
+    // What the RTC reads, as the next stage will read it (#77: stormbootx may
+    // have set it from NTP).
+    match uefi::runtime::get_time() {
+        Ok(t) => uefi::println!(
+            "rtc         : {:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+            t.year(),
+            t.month(),
+            t.day(),
+            t.hour(),
+            t.minute(),
+            t.second()
+        ),
+        Err(e) => uefi::println!("rtc         : GetTime failed ({:?})", e.status()),
+    }
     uefi::println!("as found:");
     survey();
 

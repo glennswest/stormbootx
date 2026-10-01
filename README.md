@@ -45,13 +45,14 @@ here.
 
 At boot it **reads** only `\stormboot\stormboot.conf` from the volume it was
 loaded from, and **loads** any `*.efi` in `\stormboot\drivers\` on that
-volume as a NIC driver (#26; absent on ordinary media). It writes to two things:
+volume as a NIC driver (#26; absent on ordinary media). It writes to these:
 
 | What | When |
 |---|---|
 | the attached clone on the engine | the booted OS writes to its disk, and the BlockIO handle is read-write |
 | the ConnectX NV FEC setting | only with `fec =` on a recovery stick, or `fec MODE` typed at the failure console; followed by a warm reset |
-| two **volatile** EFI variables, `StormBootTag` and `StormBootHostNqn` | every boot that names the machine or attaches an image (#76); gone at the next reset, never in NVRAM |
+| the hardware clock (RTC), through UEFI `SetTime` | a boot whose NTP server answers while the RTC is more than a second off (#77); UTC, time zone and daylight left as the firmware had them |
+| **volatile** EFI variables, `StormBootTag`, `StormBootHostNqn` and `StormBootClock` | every boot that names the machine, attaches an image or asks NTP (#76, #77); gone at the next reset, never in NVRAM |
 
 Nothing is written to the platform's network configuration any more (#56;
 until 0.9 a `STATIC` IP4 policy was switched to `DHCP` in NVRAM). The NICs are
@@ -215,6 +216,28 @@ given back on the fall-through.
    mint a serial host, so that only finds one that already exists. A stated
    `tag =` is always claimed as that tag. The default is set through
    stormipmi's `/api/v1/machines/default` (stormcentral#29).
+5a. **Set the hardware clock from NTP (#77, `src/clock.rs`, `src/sntp.rs`).**
+   The X9 blades have no RTC battery, and neither their BIOS nor their BMC
+   sets the clock. Once the claim is decided the network is up and leased, so
+   stormbootx sends one SNTP request (RFC 4330, UDP 123) to the server in
+   DHCP option 42 of the lease on the NIC that reached the engine, else to
+   `ntp =` in `stormboot.conf` (`host[:port]`), else to `pool.ntp.org`. A
+   name is looked up with one A query over UDP to the lease's DNS server (or
+   `dns =`). Two tries of a second each, for the lookup and for the request;
+   a reply is believed only from a synchronised server (mode 4, LI ≠ 3,
+   stratum 1..15) that echoes the request's random transmit timestamp. When
+   NTP and `GetTime` differ by more than a second, `SetTime` writes UTC
+   (Linux reads the RTC as UTC), keeping the firmware's time zone and
+   daylight fields so EDK2 writes no NV variable. One line says what happened:
+   `clock : was 2026-01-01 00:00:05, set to 2026-10-01 21:14:03 UTC from
+   162.159.200.1 (step +23663638 s)`, `clock : … UTC from …; the RTC agrees
+   (within 1 s)`, or `clock : NTP unreachable at … (…); left at …`. It never
+   stops the boot. A boot that falls through instead (a `local` intent, a
+   failed attach) does it on the way out, before the NICs are released.
+   `ntp = off` leaves the clock alone. The outcome goes to Linux as
+   `StormBootClock` (step 6a): `synced:<server address>` when the RTC is
+   known to be right, else `unsynced`, so stormcos#213 can trust it or step
+   the clock itself.
 6. **Attach** (`src/nvme.rs`). The host NQN is
    `nqn.2026-09.lo.storm:host-<name>`, so the target knows which machine is
    connecting: the engine's name for the machine from the claim reply
@@ -236,6 +259,8 @@ given back on the fall-through.
      never a serial or a MAC guess. Set as soon as the claim is decided, so a
      failed attach that falls through still names the machine.
    - `StormBootHostNqn`: the host NQN of step 6, once the attach worked.
+   - `StormBootClock` (#77): `synced:<NTP server address>` or `unsynced`,
+     from step 5a (or the fall-through).
    A value outside `[A-Za-z0-9._:-]` (Linux ignores those) is not set. Each
    is printed as `handoff : …`; a failure to set is printed and not fatal.
    Linux reads them from `/sys/firmware/efi/efivars/<Name>-<guid>` (four
@@ -311,7 +336,10 @@ each NIC's SNP instead:
   own stack again.
 - **DHCP** is smoltcp's dhcpv4 socket, on every NIC at once, re-sent every 2 s
   (a 25G link takes seconds to train). It asks for options 1/3/6/12/15, and
-  keeps the reply for the name (#23). ARP and TCP are smoltcp's.
+  keeps the reply for the name (#23). It asks for option 42 too, for the
+  NTP server (#77). ARP and TCP are smoltcp's.
+- **UDP** carries one SNTP exchange and, for a server named by name, one A
+  query per boot (#77), on the NIC that reached the engine.
 - **A connection** goes out on the NIC that reached a target last, else on
   the best-ranked NIC with a lease: link up first, then the larger MTU (the
   storage port is the jumbo one). Each try gets 5 s while another leased NIC
@@ -336,7 +364,10 @@ QEMU's slirp, reads a stub engine, and attaches a stub NVMe/TCP target at
 4096-byte blocks. The firmware's FAT reads a 96 MiB `BOOTX64.EFI` through the
 published BlockIO (about 120 MiB/s, KVM) and starts it. It runs once as
 shipped, and once with the firmware RNG and RDRAND/RDSEED masked, which must
-print `rng : jitter`.
+print `rng : jitter`. A stub SNTP server answers both (#77): on the first boot
+with a time in 2031, which stormbootx must set and the payload must read back
+from the RTC; on the second as an unsynchronised server, which must set
+nothing and hand down `StormBootClock = unsynced`.
 
 ## The NVMe/TCP initiator
 
@@ -398,6 +429,7 @@ others.
 | `claim` | `yes` | `no` / `false` / `0` / `off` skips the claim |
 | `name` (or `tag`) | none (DNS name, then MAC, then SMBIOS) | states the identity; the only name claimed |
 | `dns` | none | DNS server for the PTR of the machine's own address, when its DHCP reply names none or cannot be read (#26); `build-boot-agent.sh --dns` |
+| `ntp` | none (DHCP option 42, then `pool.ntp.org`) | NTP server for the hardware clock when the lease names none: `host[:port]`, or `off` to leave the clock alone (#77); `build-boot-agent.sh --ntp` |
 | `local_when_bootable` | `false` | `true`: `auto` and every doubt boot a local disk whose ESP carries `BOOTX64.EFI` instead of claiming (#3). Off until intents work on forge |
 | `esp` | `auto` | who reads the attached ESP (#37): `auto` (firmware, then stormbootx), `firmware`, or `stormbootx` |
 | `fec` | none | **recovery sticks only**: write this FEC and warm-reset |
@@ -411,8 +443,9 @@ pass when TCP4 is missing, and then creates and configures a TCP4 child. Since
 #56 stormbootx needs only the SNP line of that report. The rest describes the
 firmware, not a requirement. `src/tcp4.rs` and `src/dhcp4.rs` (the firmware
 TCP4 client stormbootx used until 0.9) are compiled only into it now.
-When a loader before it set them, it prints the `StormBootTag` and
-`StormBootHostNqn` variables and their attributes (`handed down : …`, #76);
+When a loader before it set them, it prints the `StormBootTag`,
+`StormBootHostNqn` and `StormBootClock` variables and their attributes
+(`handed down : …`, #76, #77), then what the RTC reads (`rtc : …`);
 `tests/net-ovmf.sh` starts it as the attached image's `BOOTX64.EFI` and
 checks them.
 A stick that boots it is made with `--probe` (see *Getting it onto a stick*).
@@ -442,6 +475,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   rustc --edition 2021 --test src/universal.rs -o t/universal-test && ./t/universal-test && \
   rustc --edition 2021 --test src/dnsname.rs -o t/dnsname-test && ./t/dnsname-test && \
   rustc --edition 2021 --test src/esp.rs -o t/esp-test && ./t/esp-test && \
+  rustc --edition 2021 --test src/sntp.rs -o t/sntp-test && ./t/sntp-test && \
   R=${CARGO_TARGET_DIR:-target}/x86_64-unknown-uefi/release && \
   tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi && \
   tests/net-ovmf.sh $R/stormbootx.efi $R/tcp4probe.efi && \

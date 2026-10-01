@@ -44,6 +44,7 @@ ISO="no"
 FEC=""
 DRIVERS=""
 DNS=""
+NTP=""
 MEDIA=""
 RNG=""
 
@@ -63,6 +64,8 @@ Options:
                    normal, or rustnic ixgbe@563ea8d mlx4@cf37f8b (#45, #34)
   --dns ADDR       DNS server for the PTR of the machine's own address, when
                    its DHCP reply names none or cannot be read (#26)
+  --ntp SERVER     NTP server (host[:port], or off) when the lease names none
+                   in option 42; default pool.ntp.org (#77)
   --portal ADDR    NVMe/TCP portal, with --pin (default 192.168.31.202)
   --engine ADDR    the portal and engine host, claim still on (tests/net-ovmf.sh)
   --rng FIRST      the first entropy source tried: firmware (default), cpu or
@@ -84,6 +87,7 @@ while [[ $# -gt 0 ]]; do
         --iso)    ISO="yes"; shift ;;
         --drivers) DRIVERS="$2"; shift 2 ;;
         --dns)    DNS="$2"; shift 2 ;;
+        --ntp)    NTP="$2"; shift 2 ;;
         --media)  MEDIA="$2"; shift 2 ;;
         --api-port) API_PORT="$2"; shift 2 ;;
         --portal) PORTAL="$2"; PIN="yes"; shift 2 ;;
@@ -198,6 +202,16 @@ if [[ -n "$DNS" ]]; then
 # The DNS server asked for the PTR of this machine's own address, when its
 # DHCP reply names none or firmware cannot read the reply back.
 dns      = $DNS
+CONF
+fi
+
+# The NTP server the clock is set from (#77), when the lease has no option 42.
+if [[ -n "$NTP" ]]; then
+    cat >> "$WORK/stormboot.conf" <<CONF
+
+# The NTP server the hardware clock is set from (host[:port], or off), when
+# the DHCP lease names none in option 42. Default pool.ntp.org.
+ntp      = $NTP
 CONF
 fi
 

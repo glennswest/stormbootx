@@ -4,8 +4,8 @@
 //! forge), with no kernel, no initramfs and no local media beyond the binary
 //! itself. The sequence is:
 //!
-//!   identity (conf or SMBIOS, then MAC)  ->  boot intent  ->  claim  ->  attach nvme-tcp://
-//!     ->  publish EFI_BLOCK_IO_PROTOCOL  ->  chain-load its BOOTX64.EFI
+//!   identity (conf or SMBIOS, then MAC)  ->  boot intent  ->  claim  ->  clock (NTP, #77)
+//!     ->  attach nvme-tcp://  ->  publish EFI_BLOCK_IO_PROTOCOL  ->  chain-load its BOOTX64.EFI
 //!
 //! The claim is `boothost/<tag>` for a tag the media states, and otherwise
 //! `boothost/default` carrying the machine's MAC (#15, `universal.rs`): one
@@ -53,6 +53,7 @@
 extern crate alloc;
 
 mod blockio;
+mod clock;
 mod config;
 mod dnsname;
 mod drivers;
@@ -68,6 +69,7 @@ mod registry;
 mod shell;
 mod sha256;
 mod smbios;
+mod sntp;
 mod universal;
 
 use alloc::format;
@@ -599,6 +601,11 @@ fn run() -> Result<(), String> {
         }
     };
 
+    // The hardware clock (#77): the network is up and leased, so ask NTP once
+    // and correct the RTC before Linux reads it. Bounded, never fatal. A boot
+    // that falls through instead does this in `fall_through`.
+    clock::sync();
+
     // Hand the name down to Linux (#76, stormblock#249): the initramfs claims
     // again, and on a chassis whose blades share one SMBIOS serial its own
     // guess is another machine's image. Set now, so a failed attach that
@@ -824,6 +831,9 @@ fn fall_through(err: &str) -> Status {
     if shell::offer(5) {
         shell::run();
     }
+    // The local disk's OS needs the right time too (#77). Once per boot: a
+    // claim that got this far has already done it. Nothing waits for a lease.
+    clock::sync();
     // Give the NICs back, so a later boot option (PXE, HTTP boot) finds the
     // firmware's own network stack bound again (#56).
     net::release();
