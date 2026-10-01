@@ -424,18 +424,24 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
-- [ ] **#76 — hand the claimed name and host NQN down to Linux (P0,
-      stormblock#249). In progress.** server8 claimed `boothost/server8`
-      here, then its initramfs claimed the X9 chassis serial and laid
-      server1's image. stormblock 4c02258 reads two volatile EFI variables
-      first. `src/handoff.rs` sets `StormBootTag` (reply host, else name
-      claimed; with no claim only a stated tag or DNS name) once the claim
-      is decided, and `StormBootHostNqn` after the attach. Attributes 0x6,
-      never NV; `universal::handoff_value_ok` gates `[A-Za-z0-9._:-]`.
-      Verify: `tests/net-ovmf.sh` boot 2 claims `stubhost` and tcp4probe (the
-      payload) reads both back at 0x6. Then release, golden; the metal check
-      (`xxd …/efivars/StormBootTag-…`, initramfs `Machine name from the
-      firmware: server8`) is the master's.
+- [x] **#76 — hand the claimed name and host NQN down to Linux (P0,
+      stormblock#249). Closed 2026-10-01.** server8 claimed
+      `boothost/server8` here, then its initramfs claimed the X9 chassis
+      serial and laid server1's image. stormblock 4c02258 reads two volatile
+      EFI variables first. `src/handoff.rs` sets `StormBootTag` (reply host,
+      else name claimed; with no claim only a stated tag or DNS name) once
+      the claim is decided, and `StormBootHostNqn` after the attach.
+      Attributes 0x6, never NV; `universal::handoff_value_ok` gates
+      `[A-Za-z0-9._:-]`. Done in 1f81c9e, released **v0.11.0** (b68ff90).
+      sc-build: no warnings, suites 9/7/7/7/12, espprobe, both shells, and
+      `tests/net-ovmf.sh`: boot 1 (claim 404) set only the NQN; boot 2 claimed
+      `default` → `stubhost`, and tcp4probe, started as the attached image's
+      `BOOTX64.EFI`, read `StormBootTag = stubhost` and `StormBootHostNqn =
+      nqn.2026-09.lo.storm:host-stubhost`, both at attributes 0x6. Goldens
+      `golden-stormbootx-e315b41c96aa8fd2` and
+      `golden-stormbootx-rustnic-2780838739e86be8`. Left for the master:
+      server8 on it (`xxd …/efivars/StormBootTag-ab361f54-…` shows `06 00 00
+      00 server8`; initramfs `Machine name from the firmware: server8`).
 
 - [x] **#60 — `startup.nsh` on the media, so an EFI Shell fallback boots
       stormbootx unattended (P0, owner 2026-09-30). Closed 2026-09-30.**
