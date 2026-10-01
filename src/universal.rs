@@ -31,6 +31,10 @@
 //!   some of them on demand. The lowest valid unicast MAC across every NIC is
 //!   the same answer on every boot of the same hardware.
 //!
+//! And one check on the way out (`handoff_value_ok`): which names may be
+//! handed down to Linux in the `StormBootTag`/`StormBootHostNqn` EFI
+//! variables (#76, stormblock#249).
+//!
 //! Same constraints as `intent.rs` and `sha256.rs`: `core` only and no
 //! `crate::` item, so the tests run on the host:
 //!
@@ -128,6 +132,18 @@ pub fn claimed_host(body: &str) -> Option<(&str, bool)> {
     Some((name, provisional))
 }
 
+/// Whether `name` may be handed to Linux as `StormBootTag` or
+/// `StormBootHostNqn` (#76, stormblock#249): non-empty ASCII from
+/// `[A-Za-z0-9._:-]` and no longer than an NQN may be (223 bytes). The
+/// initramfs ignores anything else, so a value it would ignore is not set.
+pub fn handoff_value_ok(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 223
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b':' | b'-'))
+}
+
 /// What follows `"key":` in a flat object, untrimmed at the end.
 fn value<'a>(obj: &'a str, key: &str) -> Option<&'a str> {
     let mut from = 0;
@@ -206,6 +222,17 @@ mod tests {
         let pretty = "{\n  \"host\": {\n    \"name\": \"C2NR0Q2\",\n    \"provisional\": false\n  }\n}";
         assert_eq!(claimed_host(pretty), Some(("C2NR0Q2", false)));
         assert_eq!(claimed_host(r#"{"attach":{"nqn":"x"},"volume":{"name":"v"}}"#), None);
+    }
+
+    #[test]
+    fn only_names_linux_reads_are_handed_down() {
+        for ok in ["server8", "C2NR0Q2", "mac-ac1f6b8aa79c", "nqn.2026-09.lo.storm:host-server8", "a_b"] {
+            assert!(handoff_value_ok(ok), "{ok:?}");
+        }
+        for bad in ["", "server 8", "server8\0", "sérver", "a/b", "a\nb"] {
+            assert!(!handoff_value_ok(bad), "{bad:?}");
+        }
+        assert!(!handoff_value_ok(&"a".repeat(224)));
     }
 
     #[test]

@@ -131,6 +131,7 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/drivers.rs` | load NIC drivers from `\stormboot\drivers` on the media (#26), after the platform's own bind |
 | `src/dhcp4.rs` | tcp4probe only since #56: DHCP through the firmware's `EFI_DHCP4` |
 | `src/nvme.rs` | the NVMe/TCP initiator |
+| `src/handoff.rs` | `StormBootTag`/`StormBootHostNqn`, volatile EFI variables naming the machine to Linux's initramfs (#76, stormblock#249) |
 | `src/blockio.rs` | publish the namespace as a block device, then chain-load its `BOOTX64.EFI` (the firmware's FAT, then `esp.rs`) |
 | `src/intent.rs` | the boot intent (`install`/`local`/`auto`) read before the claim; every doubt is `auto` |
 | `src/registry.rs` | read the intent; claim `boothost/<tag>`, or `boothost/default` by MAC; read the engine's version; also the old sbregistry `/v1/clones/claim` path, compiled out by `USE_REGISTRY = false` |
@@ -422,6 +423,19 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       stormblock, stormipmi and stormuefi source.
 
 ### Open, no external blocker
+
+- [ ] **#76 — hand the claimed name and host NQN down to Linux (P0,
+      stormblock#249). In progress.** server8 claimed `boothost/server8`
+      here, then its initramfs claimed the X9 chassis serial and laid
+      server1's image. stormblock 4c02258 reads two volatile EFI variables
+      first. `src/handoff.rs` sets `StormBootTag` (reply host, else name
+      claimed; with no claim only a stated tag or DNS name) once the claim
+      is decided, and `StormBootHostNqn` after the attach. Attributes 0x6,
+      never NV; `universal::handoff_value_ok` gates `[A-Za-z0-9._:-]`.
+      Verify: `tests/net-ovmf.sh` boot 2 claims `stubhost` and tcp4probe (the
+      payload) reads both back at 0x6. Then release, golden; the metal check
+      (`xxd …/efivars/StormBootTag-…`, initramfs `Machine name from the
+      firmware: server8`) is the master's.
 
 - [x] **#60 — `startup.nsh` on the media, so an EFI Shell fallback boots
       stormbootx unattended (P0, owner 2026-09-30). Closed 2026-09-30.**

@@ -78,6 +78,27 @@ fn survey() {
     }
 }
 
+/// What a loader before this one handed down to Linux (stormbootx #76): the
+/// two volatile variables, as an image started after it reads them. Silent
+/// when there are none, which is every boot not chain-loaded by stormbootx.
+fn handed_down() {
+    use uefi::runtime::{VariableVendor, get_variable};
+    let vendor = VariableVendor(guid!("ab361f54-0166-44a4-a088-1ac22e98ab76"));
+    for (name, label) in [
+        (uefi::cstr16!("StormBootTag"), "StormBootTag"),
+        (uefi::cstr16!("StormBootHostNqn"), "StormBootHostNqn"),
+    ] {
+        let mut buf = [0u8; 256];
+        if let Ok((value, attrs)) = get_variable(name, &vendor, &mut buf) {
+            uefi::println!(
+                "handed down : {label} = {}  (attributes {:#x})",
+                core::str::from_utf8(value).unwrap_or("<not UTF-8>"),
+                attrs.bits()
+            );
+        }
+    }
+}
+
 #[entry]
 fn main() -> Status {
     uefi::helpers::init().unwrap();
@@ -94,6 +115,7 @@ fn main() -> Status {
         ),
     }
     uefi::println!("============================================================");
+    handed_down();
     uefi::println!("as found:");
     survey();
 

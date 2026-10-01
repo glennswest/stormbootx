@@ -59,6 +59,7 @@ mod drivers;
 mod entropy;
 mod esp;
 mod espboot;
+mod handoff;
 mod intent;
 mod mlxfec;
 mod net;
@@ -299,11 +300,14 @@ fn run() -> Result<(), String> {
     // label the engine knows it by, and where it came from. Set in step 3b.
     let mut dns: Option<(String, String, &'static str)> = None;
 
-    let attach = if USE_REGISTRY {
+    // The name the claim was made on, as the engine knows it (#76): the
+    // reply's host when it named one, else the name claimed. `None` when
+    // nothing was claimed.
+    let (attach, claimed_name) = if USE_REGISTRY {
         // Reuse a clone this machine already holds, so a reboot reattaches the
         // same volume rather than minting another.
         uefi::println!("registry    : {REGISTRY_HOST}");
-        match registry::existing(REGISTRY_IP, REGISTRY_PORT, REGISTRY_HOST, &tag)? {
+        let a = match registry::existing(REGISTRY_IP, REGISTRY_PORT, REGISTRY_HOST, &tag)? {
             Some(a) => {
                 uefi::println!("  reattaching the clone already bound to {tag}");
                 a
@@ -312,7 +316,8 @@ fn run() -> Result<(), String> {
                 uefi::println!("  no clone for {tag}; claiming from golden {GOLDEN}");
                 registry::claim(REGISTRY_IP, REGISTRY_PORT, REGISTRY_HOST, GOLDEN, &tag)?
             }
-        }
+        };
+        (a, Some(tag.clone()))
     } else {
         // Where to attach: the config file, else the compiled floor. Nothing
         // on the network is asked for this — the portal is an appliance
@@ -470,6 +475,10 @@ fn run() -> Result<(), String> {
                     }
                 };
             if intent::decide(chosen, local_bootable) == intent::Action::Local {
+                // The local disk's Linux gets the name only when stormbootx
+                // named the machine anyway (a stated tag, a DNS name), never
+                // a serial or MAC guess (#76).
+                handoff::set_tag(stated.as_deref().or(dns_host.as_deref()));
                 return Err(if local_bootable {
                     format!(
                         "boot intent for {intent_key} is `{}` and a local disk can boot: nothing claimed",
@@ -488,20 +497,20 @@ fn run() -> Result<(), String> {
                 let (m, s) = if hints { (mac_colon.as_deref(), serial.as_deref()) } else { (None, None) };
                 registry::claim_boothost(cfg.portal, cfg.api_port, &host, name, m, s)
             };
-            let claimed_ok = |a: registry::Attach| {
+            let claimed_ok = |a: registry::Attach, name: &str| {
                 match &a.host {
                     Some(h) => uefi::println!("  claimed a clone of {h}'s image"),
                     None => uefi::println!("  claimed a clone of this machine's image"),
                 }
-                Some(a)
+                Some((a, name.to_string()))
             };
-            let give_up = |e: &str| -> Option<registry::Attach> {
+            let give_up = |e: &str| -> Option<(registry::Attach, String)> {
                 uefi::println!("  {e}");
                 uefi::println!("  falling back to the resolved target");
                 None
             };
             let by_tag = || match claim_as(&tag, false) {
-                Ok(a) => claimed_ok(a),
+                Ok(a) => claimed_ok(a, &tag),
                 Err((_, e)) => give_up(&e),
             };
 
@@ -511,7 +520,7 @@ fn run() -> Result<(), String> {
             } else {
                 let by_name = match &dns_host {
                     Some(h) => match claim_as(h, true) {
-                        Ok(a) => Ok(claimed_ok(a)),
+                        Ok(a) => Ok(claimed_ok(a, h)),
                         Err((404, e)) => {
                             uefi::println!("  {e}");
                             Err(())
@@ -549,7 +558,7 @@ fn run() -> Result<(), String> {
                                             "  booting the default image as {provisional}"
                                         ),
                                     }
-                                    Some(a)
+                                    Some((a, provisional.to_string()))
                                 }
                                 // No default to give: a machine the engine
                                 // already knows by its serial can still boot
@@ -571,15 +580,36 @@ fn run() -> Result<(), String> {
             None
         };
 
-        claimed.unwrap_or(registry::Attach {
-            address: cfg.portal,
-            port: cfg.port,
-            nqn: cfg.nqn,
-            nsid: cfg.nsid,
-            host: None,
-            provisional: false,
-        })
+        match claimed {
+            Some((a, name)) => {
+                let name = a.host.clone().unwrap_or(name);
+                (a, Some(name))
+            }
+            None => (
+                registry::Attach {
+                    address: cfg.portal,
+                    port: cfg.port,
+                    nqn: cfg.nqn,
+                    nsid: cfg.nsid,
+                    host: None,
+                    provisional: false,
+                },
+                None,
+            ),
+        }
     };
+
+    // Hand the name down to Linux (#76, stormblock#249): the initramfs claims
+    // again, and on a chassis whose blades share one SMBIOS serial its own
+    // guess is another machine's image. Set now, so a failed attach that
+    // falls through to the local disk still names the machine. Nothing
+    // claimed: only a name stormbootx was given or found (stated, DNS).
+    handoff::set_tag(
+        claimed_name
+            .as_deref()
+            .or(stated.as_deref())
+            .or(dns.as_ref().map(|(_, h, _)| h.as_str())),
+    );
 
     let [a, b, c, d] = attach.address;
     uefi::println!(
@@ -637,6 +667,10 @@ fn run() -> Result<(), String> {
         "  transfer  : {} KiB per command  ({source}; {path})",
         ns.max_transfer / 1024
     );
+
+    // The host NQN the namespace is attached as, for the initramfs to attach
+    // as too (#76). Only once an attach has worked under it.
+    handoff::set_host_nqn(&hostnqn);
 
     // 5. Publish it as an ordinary disk, then boot it.
     let handle = blockio::publish(ns)?;

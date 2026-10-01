@@ -51,6 +51,7 @@ volume as a NIC driver (#26; absent on ordinary media). It writes to two things:
 |---|---|
 | the attached clone on the engine | the booted OS writes to its disk, and the BlockIO handle is read-write |
 | the ConnectX NV FEC setting | only with `fec =` on a recovery stick, or `fec MODE` typed at the failure console; followed by a warm reset |
+| two **volatile** EFI variables, `StormBootTag` and `StormBootHostNqn` | every boot that names the machine or attaches an image (#76); gone at the next reset, never in NVRAM |
 
 Nothing is written to the platform's network configuration any more (#56;
 until 0.9 a `STATIC` IP4 policy was switched to `DHCP` in NVRAM). The NICs are
@@ -220,6 +221,27 @@ given back on the fall-through.
    (`mac-<hex>` for one it booted as the default), else the DNS name, else the
    tag. The console prints the namespace geometry and the transfer
    size.
+6a. **Hand the name down to Linux (#76, `src/handoff.rs`).** The initramfs
+   claims `boothost/<name>` again, and its own guess is the SMBIOS serial,
+   which on the X9 MicroCloud blades is the chassis's: server8 booted its own
+   image and then laid its disk from server1's (stormblock#249). So before
+   the loader starts, stormbootx sets two volatile EFI variables under vendor
+   GUID `ab361f54-0166-44a4-a088-1ac22e98ab76`, attributes
+   `BOOTSERVICE_ACCESS | RUNTIME_ACCESS` (0x6, never `NON_VOLATILE`), ASCII
+   with no NUL:
+   - `StormBootTag`: the name claimed on: the claim reply's host when it
+     named one, else the name claimed (`server8`, `C2NR0Q2`, `mac-<hex>`).
+     With nothing claimed (the engine down, a `local` intent), only a name
+     stormbootx was given or found: the stated `tag =`, else the DNS name;
+     never a serial or a MAC guess. Set as soon as the claim is decided, so a
+     failed attach that falls through still names the machine.
+   - `StormBootHostNqn`: the host NQN of step 6, once the attach worked.
+   A value outside `[A-Za-z0-9._:-]` (Linux ignores those) is not set. Each
+   is printed as `handoff : …`; a failure to set is printed and not fatal.
+   Linux reads them from `/sys/firmware/efi/efivars/<Name>-<guid>` (four
+   attribute bytes, `06 00 00 00`, then the value) ahead of
+   `rd.stormblock.tag=` and SMBIOS (stormblock `docs/boot-hooks.md`,
+   "Whose image").
 7. **Publish** (`src/blockio.rs`). BlockIO is installed with the namespace's
    own block size (read from FLBAS, so 4096 on a 4K namespace). A device path
    of one hardware vendor node (`6d7a1f2e-9c34-4b8a-b1d0-5e2f7a0c9b41`) goes
@@ -389,6 +411,10 @@ pass when TCP4 is missing, and then creates and configures a TCP4 child. Since
 #56 stormbootx needs only the SNP line of that report. The rest describes the
 firmware, not a requirement. `src/tcp4.rs` and `src/dhcp4.rs` (the firmware
 TCP4 client stormbootx used until 0.9) are compiled only into it now.
+When a loader before it set them, it prints the `StormBootTag` and
+`StormBootHostNqn` variables and their attributes (`handed down : …`, #76);
+`tests/net-ovmf.sh` starts it as the attached image's `BOOTX64.EFI` and
+checks them.
 A stick that boots it is made with `--probe` (see *Getting it onto a stick*).
 
 ## `espprobe`

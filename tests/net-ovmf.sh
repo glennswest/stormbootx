@@ -9,8 +9,10 @@
 # build box (slirp maps the guest's 10.0.2.2 to the host's loopback):
 #
 #   - an engine: /api/v1/health answers with a ~120 KB body, so the reply
-#     spans many segments and windows; claims get 404, so the boot falls back
-#     to the target on the media;
+#     spans many segments and windows. On the first boot claims get 404, so
+#     the boot falls back to the target on the media; on the second the
+#     default claim answers with the NVMe stub and host `stubhost`, so the
+#     claimed name is handed down (#76);
 #   - an NVMe/TCP target (the subset nvme.rs speaks) serving a GPT disk at
 #     4096-byte blocks whose ESP carries tcp4probe.efi, padded to 96 MiB, as
 #     BOOTX64.EFI. The firmware's FAT reads all of it through stormbootx's
@@ -21,7 +23,10 @@
 #   1. as shipped: `rng : firmware` or `rdrand`;
 #   2. the entropy fallback: `rng = cpu` on the media masks the firmware's
 #      EFI_RNG, and the CPU is started without RDRAND and RDSEED, so the
-#      boot must say `rng : jitter` and still lease, connect and fetch.
+#      boot must say `rng : jitter` and still lease, connect and fetch. This
+#      boot's claim succeeds, and the payload (tcp4probe) must read back
+#      `StormBootTag = stubhost` and the host NQN at attributes 0x6, the
+#      volatile `BOOTSERVICE_ACCESS | RUNTIME_ACCESS` Linux reads (#76).
 #
 # Each boot must show the stack, a lease from slirp, the engine's version from
 # the stub, the attach, a blockio progress line and the payload's banner; the
@@ -63,8 +68,9 @@ trap cleanup EXIT
 
 # The stub engine. Port 0: the kernel picks one, and the stub writes it down.
 cat > "$W/stub.py" <<'PY'
-import http.server, json, sys
+import http.server, json, os, sys
 log = open(sys.argv[1], "a", buffering=1)
+W = os.path.dirname(sys.argv[1])
 class H(http.server.BaseHTTPRequestHandler):
     def reply(self, code, body):
         data = json.dumps(body).encode()
@@ -84,6 +90,17 @@ class H(http.server.BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(n).decode(errors="replace")
         log.write("POST %s %s\n" % (self.path, body))
+        # claim.ok present: the default claim names this machine `stubhost`
+        # and attaches the NVMe stub, the shape stormblock's claim reply has.
+        if self.path.endswith("/default/claim") and os.path.exists(W + "/claim.ok"):
+            port = int(open(W + "/nvme.port").read())
+            self.reply(200, {
+                "attach": {"addresses": [{"traddr": "10.0.2.2", "trsvcid": str(port)}],
+                           "nqn": "nqn.2026-09.lo.stub:release", "nsid": 1},
+                "host": {"aliases": [], "claimed_as": "default", "mac": "52:54:00:12:34:56",
+                         "name": "stubhost", "new": False, "provisional": False},
+            })
+            return
         self.reply(404, {"error": "stub: no such host"})
     def log_message(self, *a):
         pass
@@ -229,9 +246,11 @@ say "NVMe/TCP stub on 127.0.0.1:$NVME_PORT, $(( $(stat -c %s "$W/disk4k.img") / 
 accel=tcg
 [[ -w /dev/kvm ]] && accel=kvm
 
-# boot NAME CPU RNG EXPECTED...
+# boot NAME CPU RNG CLAIM EXPECTED...   (CLAIM: 404 or ok)
 boot() {
-    local name=$1 cpu=$2 rng=$3; shift 3
+    local name=$1 cpu=$2 rng=$3 claim=$4; shift 4
+    rm -f "$W/claim.ok"
+    [[ $claim == ok ]] && : > "$W/claim.ok"
     local iso="$W/$name.iso" log="$W/$name.serial" txt="$W/$name.txt"
     local args=(--iso --binary "$EFI" --engine 10.0.2.2 --api-port "$PORT" --port "$NVME_PORT"
                 --nsid 1 --output "$iso")
@@ -294,7 +313,13 @@ common=(
 )
 host_cpu=max
 [[ $accel == kvm ]] && host_cpu=host
-boot shipped "$host_cpu" "" "${common[@]}" "rng         : "
+boot shipped "$host_cpu" "" 404 "${common[@]}" "rng         : " \
+    "handoff     : StormBootHostNqn = nqn.2026-09.lo.storm:host-" \
+    "handed down : StormBootHostNqn = nqn.2026-09.lo.storm:host-"
 grep -q "rng         : jitter" "$W/shipped.txt" && say "note: the shipped boot fell back to jitter"
-boot jitter "$host_cpu,-rdrand,-rdseed" cpu "${common[@]}" "rng         : jitter"
+boot jitter "$host_cpu,-rdrand,-rdseed" cpu ok "${common[@]}" "rng         : jitter" \
+    "booting stubhost's image" \
+    "handoff     : StormBootTag = stubhost" \
+    "handed down : StormBootTag = stubhost  (attributes 0x6)" \
+    "handed down : StormBootHostNqn = nqn.2026-09.lo.storm:host-stubhost  (attributes 0x6)"
 say "PASS"
