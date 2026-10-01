@@ -10,9 +10,10 @@
 #       the last tag that has it, and checked against its pinned digest
 # ovmf  the build box's own UEFI Shell 2.x (Shell.efi beside OVMF)
 #
-# The shell is the first boot option (bootindex 0; `-boot strict=on` would
-# leave OVMF connecting nothing else, the CD included): it is BOOTX64.EFI on
-# a disk of its own, which is also the decoy, a FAT with \EFI\BOOT\
+# The shell is the first boot option (bootindex 0). The CD is the second
+# only because OVMF connects nothing the boot order leaves out; the shell
+# never returns to the boot manager. The shell is BOOTX64.EFI on a disk of
+# its own, which is also the decoy, a FAT with \EFI\BOOT\
 # BOOTX64.EFI and no \stormboot\stormboot.conf. LAYOUT says where it sorts:
 # `cd-first` (default) maps the CD as fs0, as on a blade with no local FAT;
 # `cd-last` puts the decoy first. Each EXPECTED is a fixed string the serial
@@ -87,7 +88,7 @@ timeout "$LIMIT" qemu-system-x86_64 -machine q35,accel="$accel" -m 512 \
     -drive if=pflash,format=raw,file="$W/vars.fd" \
     -device virtio-scsi-pci,id=scsi,addr="$CD_ADDR" \
     -drive if=none,id=cd,media=cdrom,format=raw,readonly=on,file="$ISO" \
-    -device scsi-cd,drive=cd,bus=scsi.0 \
+    -device scsi-cd,drive=cd,bus=scsi.0,bootindex=1 \
     -drive if=none,id=sh,format=raw,file="$W/shell.img" \
     -device virtio-blk-pci,drive=sh,addr="$SH_ADDR",bootindex=0 \
     -net none \
