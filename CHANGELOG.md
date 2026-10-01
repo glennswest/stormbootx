@@ -3,11 +3,18 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
-### 2026-10-01
-- **feat:** hand the claimed name and host NQN down to Linux in two volatile EFI variables, `StormBootTag` and `StormBootHostNqn` (vendor `ab361f54-0166-44a4-a088-1ac22e98ab76`, attributes `BOOTSERVICE_ACCESS | RUNTIME_ACCESS`), so the initramfs claims as the machine stormbootx claimed as rather than as a chassis serial eight blades share (#76, stormblock#249). The tag is the claim reply's host, else the name claimed; with no claim, only a stated tag or the DNS name. `src/handoff.rs`; `universal::handoff_value_ok` (host-tested) keeps out anything Linux would ignore. tcp4probe prints what was handed down, and `tests/net-ovmf.sh`'s second boot now claims successfully and checks the payload reads both at attributes 0x6.
-- **chore:** the rustnic media pins stormnic-ixgbe 563ea8d (stormnic-ixgbe#21): the 82599 MAC reset's EEMNGCTL.CFG_DONE0 wait is logged and `Start` continues, where on server3 it timed out (`EEMNGCTL 0x80000196`) and failed Start. Built `--locked`; console label `media : rustnic ixgbe@563ea8d mlx4@cf37f8b`. The normal media is unchanged (#65). Goldens `golden-stormbootx-rustnic-416b7237c78a29a3` and `golden-nic-drivers-4bd5817b92cc`.
-- **chore:** the rustnic media pins stormnic-mlx4 v0.2.1 (cf37f8b, stormnic-mlx4#15): the UAR's PCI I/O BarIndex comes from `GetBarAttributes`, so doorbells work on AMI Aptio 4, which numbers BARs rather than BAR registers; VPI ports are driven as Ethernet. Built `--locked`; console label `media : rustnic ixgbe@8ea722a mlx4@cf37f8b`. The normal media is unchanged (#64). Goldens `golden-stormbootx-rustnic-bde9ae3a566c4d7d` and `golden-nic-drivers-8cb3943d42f9`.
-- **chore:** the rustnic media pins stormnic-ixgbe 8ea722a (stormnic-ixgbe#19): `Start` no longer fails on AMI Aptio 4, which refuses the PCI I/O attribute calls; it enables memory decode and bus mastering through the command register instead. Built `--locked`; console label `media : rustnic ixgbe@8ea722a mlx4@4c2d318`. The normal media is unchanged (#63). Goldens `golden-stormbootx-rustnic-f32f6e50a16edd5e` and `golden-nic-drivers-fcb89ab03ecb`.
+## [v0.11.0] — 2026-10-01
+
+### Added
+- hand the claimed name and host NQN down to Linux in two volatile EFI variables, `StormBootTag` and `StormBootHostNqn` (vendor `ab361f54-0166-44a4-a088-1ac22e98ab76`, attributes `BOOTSERVICE_ACCESS | RUNTIME_ACCESS`), so the initramfs claims as the machine stormbootx claimed as rather than as a chassis serial eight blades share (#76, stormblock#249). The tag is the claim reply's host, else the name claimed; with no claim, only a stated tag or the DNS name. `src/handoff.rs`; `universal::handoff_value_ok` (host-tested) keeps out anything Linux would ignore. tcp4probe prints what was handed down, and `tests/net-ovmf.sh`'s second boot now claims successfully and checks the payload reads both at attributes 0x6.
+
+### Changed
+- the rustnic media pins stormnic-ixgbe 563ea8d (stormnic-ixgbe#21): the 82599 MAC reset's EEMNGCTL.CFG_DONE0 wait is logged and `Start` continues, where on server3 it timed out (`EEMNGCTL 0x80000196`) and failed Start. Built `--locked`; console label `media : rustnic ixgbe@563ea8d mlx4@cf37f8b`. The normal media is unchanged (#65). Goldens `golden-stormbootx-rustnic-416b7237c78a29a3` and `golden-nic-drivers-4bd5817b92cc`.
+- the rustnic media pins stormnic-mlx4 v0.2.1 (cf37f8b, stormnic-mlx4#15): the UAR's PCI I/O BarIndex comes from `GetBarAttributes`, so doorbells work on AMI Aptio 4, which numbers BARs rather than BAR registers; VPI ports are driven as Ethernet. Built `--locked`; console label `media : rustnic ixgbe@8ea722a mlx4@cf37f8b`. The normal media is unchanged (#64). Goldens `golden-stormbootx-rustnic-bde9ae3a566c4d7d` and `golden-nic-drivers-8cb3943d42f9`.
+- the rustnic media pins stormnic-ixgbe 8ea722a (stormnic-ixgbe#19): `Start` no longer fails on AMI Aptio 4, which refuses the PCI I/O attribute calls; it enables memory decode and bus mastering through the command register instead. Built `--locked`; console label `media : rustnic ixgbe@8ea722a mlx4@4c2d318`. The normal media is unchanged (#63). Goldens `golden-stormbootx-rustnic-f32f6e50a16edd5e` and `golden-nic-drivers-fcb89ab03ecb`.
+
+### Documentation
+- README (*What it touches at boot*, step 6a, `tcp4probe`) and CLAUDE.md (module map, work plan) describe the handoff variables (#76).
 
 ## [v0.10.0] — 2026-09-30
 
