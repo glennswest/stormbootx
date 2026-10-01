@@ -429,27 +429,30 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
-- [ ] **#77 — set the hardware clock from NTP before Linux starts (P1,
-      owner 2026-10-01). In progress.** The X9 blades have no RTC battery,
-      and neither BIOS nor BMC sets the clock. Plan:
-      1. `src/sntp.rs`, core-only (host tests): the 48-byte request, the
-         reply check (mode 4, stratum 1..15, LI ≠ 3, origin echoes our
-         transmit stamp), NTP era → Unix, Unix ↔ civil UTC, the `ntp =`
-         value (`host[:port]`, `off`), the `StormBootClock` value.
-      2. `dnsname.rs`: an A query and answer, for an `ntp =` name
-         (default `pool.ntp.org`).
-      3. `net.rs`: smoltcp `socket-udp`; one bounded UDP exchange on the
-         NIC that reached the engine (else the best leased one); DHCP asks
-         for option 42.
-      4. `src/clock.rs`: option 42, else `ntp =`; two tries of 1 s each;
-         `GetTime` vs NTP, `SetTime` (UTC, timezone unspecified: Linux reads
-         the CMOS as UTC) when they differ by more than a second; one
-         `clock :` line; `StormBootClock` = `synced:<server>` / `unsynced`
-         (volatile, #76's GUID). Run once, after the claim, or on the
-         fall-through (local intent, failures) before `net::release`.
-      5. `tests/net-ovmf.sh`: a stub SNTP server on the build box; boot 1
-         must step the clock and tcp4probe must read the variable and the
-         new `GetTime`.
+- [x] **#77 — set the hardware clock from NTP before Linux starts (P1,
+      owner 2026-10-01). Closed 2026-10-01.** The X9 blades have no RTC
+      battery, and neither BIOS nor BMC sets the clock. After the claim (or
+      on the fall-through, before `net::release`) `clock::sync` sends one
+      SNTP request over smoltcp UDP: DHCP option 42 of the NIC that reached
+      the engine, else `ntp =` (`host[:port]`, `off`), else `pool.ntp.org`
+      (one UDP A query to option 6 / `dns =`). Two tries of 1 s. If the RTC
+      is out by more than 1 s, `SetTime` writes UTC (the firmware's time zone
+      and daylight kept, so EDK2 writes no NV variable). `StormBootClock` =
+      `synced:<addr>` / `unsynced`, volatile, #76's GUID, for stormcos#213.
+      `src/sntp.rs` (core-only, 8 host tests), `src/clock.rs`,
+      `dnsname::{a_query, a_answer}`, `net::udp_exchange`. Done in c35822f,
+      released **v0.12.0** (35ce03b). sc-build: no warnings, suites
+      9/7/7/8/12/8, espprobe, both shells, and `tests/net-ovmf.sh` with a stub
+      SNTP server. Boot 1 printed `clock : was 2026-10-01 21:22:21, set to
+      2031-05-04 03:02:01 UTC from 10.0.2.2:… (step +144740380 s)`, and
+      tcp4probe, started as the attached image's `BOOTX64.EFI`, read `rtc :
+      2031-05-04 03:02:02` and `StormBootClock = synced:10.0.2.2` (0x6). Boot
+      2's LI-3 answer set nothing (`unsynced`, RTC still 2026). The tag passed
+      the same `--locked`. Goldens `golden-stormbootx-dcc29fd07763a23f` and
+      `golden-stormbootx-rustnic-757a90efc807d0f1`. **Not run:** option 42
+      and the `pool.ntp.org` lookup (host tests only; the stub is named by
+      address), and metal. Left for the master: a battery-less X9 blade booted
+      on it, after a power cut, should print a `clock : was …, set to …` line.
 
 - [x] **#76 — hand the claimed name and host NQN down to Linux (P0,
       stormblock#249). Closed 2026-10-01.** server8 claimed
