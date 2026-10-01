@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-01
+- **chore:** the rustnic media pins stormnic-ixgbe 563ea8d (stormnic-ixgbe#21): the 82599 MAC reset's EEMNGCTL.CFG_DONE0 wait is logged and `Start` continues, where on server3 it timed out (`EEMNGCTL 0x80000196`) and failed Start. Built `--locked`; console label `media : rustnic ixgbe@563ea8d mlx4@cf37f8b`. The normal media is unchanged (#65).
 - **chore:** the rustnic media pins stormnic-mlx4 v0.2.1 (cf37f8b, stormnic-mlx4#15): the UAR's PCI I/O BarIndex comes from `GetBarAttributes`, so doorbells work on AMI Aptio 4, which numbers BARs rather than BAR registers; VPI ports are driven as Ethernet. Built `--locked`; console label `media : rustnic ixgbe@8ea722a mlx4@cf37f8b`. The normal media is unchanged (#64). Goldens `golden-stormbootx-rustnic-bde9ae3a566c4d7d` and `golden-nic-drivers-8cb3943d42f9`.
 - **chore:** the rustnic media pins stormnic-ixgbe 8ea722a (stormnic-ixgbe#19): `Start` no longer fails on AMI Aptio 4, which refuses the PCI I/O attribute calls; it enables memory decode and bus mastering through the command register instead. Built `--locked`; console label `media : rustnic ixgbe@8ea722a mlx4@4c2d318`. The normal media is unchanged (#63). Goldens `golden-stormbootx-rustnic-f32f6e50a16edd5e` and `golden-nic-drivers-fcb89ab03ecb`.
 

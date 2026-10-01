@@ -47,6 +47,10 @@ read -r -a DRIVERS <<< "${IPXE_DRIVERS:-intelx}"
 # ConnectX-3 (#34). The stormbootx-rustnic media golden is built with
 # STORMNIC_ON_MEDIA="ixgbe mlx4" (#45, #34).
 STORMNIC_IXGBE_REPO="https://github.com/glennswest/stormnic-ixgbe.git"
+# 563ea8d: the 82599 MAC reset's EEMNGCTL.CFG_DONE0 wait is logged, not fatal
+# (stormnic-ixgbe#21). On server3 (X9SRD-F, 8086:1557) CFG_DONE0 never set
+# (EEMNGCTL 0x80000196) and Start failed; EEC.AUTO_RD and EE_PRES already
+# confirm the NVM load, so Start continues (#65).
 # 8ea722a: Start on AMI Aptio 4 (stormnic-ixgbe#19). PciIo attribute
 # Get/Supported failures are no longer fatal; Enable asks only for supported
 # bits, then each bit alone; if Memory Space or Bus Master Enable is still
@@ -54,8 +58,8 @@ STORMNIC_IXGBE_REPO="https://github.com/glennswest/stormnic-ixgbe.git"
 # does). server3 (X9SRD-F) refused the attributes with UNSUPPORTED (#63).
 # On top of 0dd4267's SNP on a child handle (#4), 2afd319's rings (#3),
 # 9476135's PHY and link code (#13, 25 device IDs) and 884cf18's bring-up
-# (#2); builds --locked (#47, #48, #51, #63).
-STORMNIC_IXGBE_REF="8ea722a525e22c4e2bfe8b5c23447ba3e535ca19"
+# (#2); builds --locked (#47, #48, #51, #63, #65).
+STORMNIC_IXGBE_REF="563ea8d2fc9991b63de51b702ffd6afc4f476e95"
 STORMNIC_MLX4_REPO="https://github.com/glennswest/stormnic-mlx4.git"
 # cf37f8b (v0.2.1): the UAR's PCI I/O BarIndex is found through
 # GetBarAttributes (stormnic-mlx4#15). AMI Aptio 4 numbers BARs, not BAR
