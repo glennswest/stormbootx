@@ -540,7 +540,9 @@ also carries `stormnic-mlx4.efi` for the ConnectX-3, built `--locked` from
 `STORMNIC_MLX4_REF`. Since #50 (stormnic-mlx4 v0.2.0) its `Start` brings up the
 ConnectX-3, keeps it, and installs `EFI_SIMPLE_NETWORK_PROTOCOL` on a child
 handle per Ethernet port (about 1.5 s per NIC plus up to 5 s for link), so
-the network stack can bind above it. The normal media does not carry it until
+the network stack can bind above it. Since #64 (stormnic-mlx4 v0.2.1) it finds
+the UAR's PCI I/O BAR index through `GetBarAttributes`, because AMI Aptio 4
+numbers BARs rather than BAR registers (stormnic-mlx4#15). The normal media does not carry it until
 that is proven on server1. Each Rust driver
 is checked to be PE subsystem 11 (EFI boot-service driver) when it is built.
 The rustnic media builds its own drivers and takes no nic-drivers golden. Each ISO's `stormboot.conf` names the variant, and the console
@@ -548,7 +550,7 @@ prints it under the banner:
 
 ```
 media       : normal
-media       : rustnic ixgbe@8ea722a mlx4@4c2d318
+media       : rustnic ixgbe@8ea722a mlx4@cf37f8b
 ```
 
 The media carries `\stormboot\drivers` from the nic-drivers golden

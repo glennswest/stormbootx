@@ -57,12 +57,15 @@ STORMNIC_IXGBE_REPO="https://github.com/glennswest/stormnic-ixgbe.git"
 # (#2); builds --locked (#47, #48, #51, #63).
 STORMNIC_IXGBE_REF="8ea722a525e22c4e2bfe8b5c23447ba3e535ca19"
 STORMNIC_MLX4_REPO="https://github.com/glennswest/stormnic-mlx4.git"
-# 4c2d318 (v0.2.0): EFI_SIMPLE_NETWORK_PROTOCOL on a child handle per Ethernet
-# port, with a MAC device path (stormnic-mlx4#4). Start keeps the ConnectX-3
-# (~1.5 s per NIC plus up to 5 s for link); the #3 broadcast self-test no
-# longer runs (cef8dc5 is the pin that checks #1-#3); ExitBootServices stops
-# the device's DMA and releases it for the OS. Builds --locked (#34, #50).
-STORMNIC_MLX4_REF="4c2d318df76c55d95a0af4498de0004da6f8916f"
+# cf37f8b (v0.2.1): the UAR's PCI I/O BarIndex is found through
+# GetBarAttributes (stormnic-mlx4#15). AMI Aptio 4 numbers BARs, not BAR
+# registers, so the hard-coded BarIndex 2 was refused and every doorbell write
+# failed UNSUPPORTED (server3); VPI ports are driven as Ethernet. On top of
+# 4c2d318's (v0.2.0) SNP on a child handle per Ethernet port with a MAC device
+# path (#4): Start keeps the ConnectX-3 (~1.5 s per NIC plus up to 5 s for
+# link), no #3 broadcast self-test (cef8dc5 is the pin that checks #1-#3), and
+# ExitBootServices stops the device's DMA. Builds --locked (#34, #50, #64).
+STORMNIC_MLX4_REF="cf37f8b7609c85d7c2e38a08f98529774aa8b0b7"
 read -r -a STORMNIC_ON_MEDIA <<< "${STORMNIC_ON_MEDIA:-}"
 for d in "${STORMNIC_ON_MEDIA[@]}"; do
     [[ "$d" == ixgbe || "$d" == mlx4 ]] || die "STORMNIC_ON_MEDIA: no Rust driver '$d' (ixgbe, mlx4)"
