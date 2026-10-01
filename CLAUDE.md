@@ -446,13 +446,19 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       hot-patch, and server1 and server2 get v0.10.0. A shell that stops at
       `Shell>` without running the script will be reported on #60.
 
-- [ ] **#63 — rustnic media pins stormnic-ixgbe 8ea722a (P0, owner
-      2026-10-01). In progress.** stormnic-ixgbe#19: on server3 (X9SRD-F,
-      Aptio 4, 8086:1557) Start failed `could not enable memory decode and
-      bus mastering: UNSUPPORTED`. 8ea722a tolerates PciIo attribute refusals
-      and sets MSE/BME in the command register directly. Plan: bump
-      `STORMNIC_IXGBE_REF`, sc-build (rustnic tree + ISO under OVMF), the
-      `stormbootx-rustnic` golden, hand server3's boot to the master.
+- [x] **#63 — rustnic media pins stormnic-ixgbe 8ea722a (P0, owner
+      2026-10-01). Closed 2026-10-01.** stormnic-ixgbe#19: on server3
+      (X9SRD-F, Aptio 4, 8086:1557) Start failed `could not enable memory
+      decode and bus mastering: UNSUPPORTED`. 8ea722a tolerates PciIo
+      attribute refusals and sets MSE/BME in the command register directly.
+      Pinned in c6bc382, built `--locked`. sc-build: suites 9/7/6/7/12,
+      espprobe and net-ovmf PASS, the rustnic and nic-drivers
+      trees built, and the rustnic ISO under OVMF (KVM) printed `media :
+      rustnic ixgbe@8ea722a mlx4@4c2d318` and `stormnic-ixgbe 0.1.0: driver
+      binding installed`. Goldens `golden-stormbootx-rustnic-f32f6e50a16edd5e`
+      and `golden-nic-drivers-fcb89ab03ecb`. Left for the master: boot
+      server3 on the rustnic golden for the `PCI attributes Get …; command
+      0x…` line, then bring-up and `Start: bound, SNP on a child handle`.
 
 - [ ] **#56 — stormbootx's own TCP/IP: smoltcp on SNP (P0, owner
       2026-09-30). In progress.** server3 (X9, Aptio 4) loaded

@@ -4,7 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-01
-- **chore:** the rustnic media pins stormnic-ixgbe 8ea722a (stormnic-ixgbe#19): `Start` no longer fails on AMI Aptio 4, which refuses the PCI I/O attribute calls; it enables memory decode and bus mastering through the command register instead. Built `--locked`; console label `media : rustnic ixgbe@8ea722a mlx4@4c2d318`. The normal media is unchanged (#63).
+- **chore:** the rustnic media pins stormnic-ixgbe 8ea722a (stormnic-ixgbe#19): `Start` no longer fails on AMI Aptio 4, which refuses the PCI I/O attribute calls; it enables memory decode and bus mastering through the command register instead. Built `--locked`; console label `media : rustnic ixgbe@8ea722a mlx4@4c2d318`. The normal media is unchanged (#63). Goldens `golden-stormbootx-rustnic-f32f6e50a16edd5e` and `golden-nic-drivers-fcb89ab03ecb`.
 
 ## [v0.10.0] — 2026-09-30
 
