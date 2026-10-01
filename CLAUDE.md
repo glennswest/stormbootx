@@ -1006,7 +1006,7 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ## Status
 
-v0.11.0. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
+v0.12.0. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
 (and the same day, the full chain: chain-load into stormuefi and a running
 stormcos kernel), on a
 Dell PowerEdge R230 (service tag C2NR0Q2) booting the agent over iDRAC virtual
