@@ -446,6 +446,14 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       hot-patch, and server1 and server2 get v0.10.0. A shell that stops at
       `Shell>` without running the script will be reported on #60.
 
+- [ ] **#63 — rustnic media pins stormnic-ixgbe 8ea722a (P0, owner
+      2026-10-01). In progress.** stormnic-ixgbe#19: on server3 (X9SRD-F,
+      Aptio 4, 8086:1557) Start failed `could not enable memory decode and
+      bus mastering: UNSUPPORTED`. 8ea722a tolerates PciIo attribute refusals
+      and sets MSE/BME in the command register directly. Plan: bump
+      `STORMNIC_IXGBE_REF`, sc-build (rustnic tree + ISO under OVMF), the
+      `stormbootx-rustnic` golden, hand server3's boot to the master.
+
 - [ ] **#56 — stormbootx's own TCP/IP: smoltcp on SNP (P0, owner
       2026-09-30). In progress.** server3 (X9, Aptio 4) loaded
       `ipxe-intelx.efi` and then reported `EFI_TCP4 is not present`. The
