@@ -423,17 +423,23 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
-- [ ] **#60 — `startup.nsh` on the media, so an EFI Shell fallback boots
-      stormbootx unattended (P0, owner 2026-09-30). In progress.** X9 blades
-      with no UEFI CD boot option drop to Aptio 4's built-in EFI Shell (EDK
-      shell 2.31). Plan: `media/startup.nsh` at the root of the ESP (and the
-      ISO9660 tree and the `.img`), looping fs0..fs7 for the volume that has
-      `\EFI\BOOT\BOOTX64.EFI` **and** `\stormboot\stormboot.conf`: a
-      local disk's ESP (stormuefi on an installed stormcos disk, a stale
-      Windows) has the first and never the second. `tests/shell-ovmf.sh`
-      boots an ISO's startup.nsh under OVMF with the old EDK shell
-      (`Shell_Full.efi`, edk2-stable201811, sha256-pinned) and OVMF's own
-      shell, behind a decoy ESP; then release and golden for the master.
+- [x] **#60 — `startup.nsh` on the media, so an EFI Shell fallback boots
+      stormbootx unattended (P0, owner 2026-09-30). Closed 2026-09-30.**
+      X9 blades with no UEFI CD boot option drop to Aptio 4's built-in EFI
+      Shell (EDK shell, EFI 1.10 mode). `media/startup.nsh` (CRLF on the
+      media) sits at the root of the ESP, the ISO9660 tree and the `.img`. It
+      loops fs0..fs7 for the volume with `\EFI\BOOT\BOOTX64.EFI` **and**
+      `\stormboot\stormboot.conf`, because a local ESP (stormuefi on an
+      installed disk, a stale Windows) has the first and never the second.
+      `tests/shell-ovmf.sh` boots it under OVMF behind a decoy ESP, in the
+      sc-build command. Verified in sc-build: the old EDK shell (`Shell_Full.efi`,
+      edk2-stable201811, "Current running mode 1.1.2") and OVMF's Shell 2.2
+      each skipped the decoy and started stormbootx from fs1 (and from fs0
+      with the CD first). Released **v0.10.0** (2889359); both golden ISOs
+      at the tag started from the old shell. Goldens
+      `golden-stormbootx-916fd02a32c20f2f` and
+      `golden-stormbootx-rustnic-2ba951f3cfd6b9eb`. The metal check (a blade
+      that falls to the shell) is the master's.
 
 - [ ] **#56 — stormbootx's own TCP/IP: smoltcp on SNP (P0, owner
       2026-09-30). In progress.** server3 (X9, Aptio 4) loaded
