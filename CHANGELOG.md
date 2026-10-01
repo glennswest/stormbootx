@@ -3,6 +3,10 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-09-30
+- **feat:** every medium carries `\startup.nsh` (`media/startup.nsh`, #60): a machine with no boot option for the media drops to the firmware's EFI Shell, which now finds the stormbootx volume on `fs0`..`fs7` (`\EFI\BOOT\BOOTX64.EFI` and `\stormboot\stormboot.conf`, so a local disk's ESP is never started) and starts it unattended.
+- **test:** `tests/shell-ovmf.sh ISO old|ovmf 'LINE' …` boots an ISO from an EFI Shell under OVMF, behind a decoy ESP: the old EDK shell (`Shell_Full.efi`, edk2-stable201811, digest-pinned; the shell AMI Aptio 4 carries) and OVMF's own Shell 2.x.
+
 ## [v0.9.0] — 2026-09-30
 
 ### Breaking

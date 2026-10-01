@@ -23,7 +23,8 @@ Push first, then `sc-build` from this checkout. It builds the pushed commit
 on dev.g8.lo as `stormbuild`. There is no checkout on dev, and no `ssh root@`.
 The plain `cargo build && cargo test` default does not suit a `no_std` UEFI
 crate, so name the command. This builds the three binaries, runs the five
-host suites and boots `espprobe` and stormbootx under OVMF:
+host suites, boots `espprobe` and stormbootx under OVMF, and boots an ISO's
+`startup.nsh` from two EFI Shells:
 
 ```bash
 sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
@@ -34,13 +35,22 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   rustc --edition 2021 --test src/esp.rs -o t/esp-test && ./t/esp-test && \
   R=${CARGO_TARGET_DIR:-target}/x86_64-unknown-uefi/release && \
   tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi && \
-  tests/net-ovmf.sh $R/stormbootx.efi $R/tcp4probe.efi'
+  tests/net-ovmf.sh $R/stormbootx.efi $R/tcp4probe.efi && \
+  scripts/build-boot-agent.sh --iso --binary $R/stormbootx.efi --media shelltest --output $PWD/t/s.iso && \
+  LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso old "media       : shelltest" && \
+  LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso ovmf "media       : shelltest"'
 ```
 
 `tests/net-ovmf.sh` (#56) boots stormbootx under OVMF with no firmware
 network stack, against a stub engine and a stub NVMe/TCP target (4096-byte
 blocks, a 96 MiB `BOOTX64.EFI`). It runs twice: as shipped, and with the
 firmware RNG and RDRAND/RDSEED masked (`rng : jitter`).
+
+`tests/shell-ovmf.sh ISO old|ovmf 'LINE' …` (#60) boots an ISO from an
+EFI Shell with no boot option for it, and requires its `startup.nsh` to
+start stormbootx: `old` is the EDK shell Aptio 4 carries, `ovmf` the build
+box's Shell 2.x. OVMF connects only devices in the boot order, so the test's
+CD carries a bootindex after the shell's; without it the CD is never mapped.
 
 `tests/iso-layout.sh ISO …` checks an ISO is isohybrid with a FAT12 ESP,
 the layout Aptio 4 boots (#55). `tests/media-ovmf.sh ISO 'LINE' …` boots a media ISO under OVMF and requires

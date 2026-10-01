@@ -418,13 +418,18 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   rustc --edition 2021 --test src/esp.rs -o t/esp-test && ./t/esp-test && \
   R=${CARGO_TARGET_DIR:-target}/x86_64-unknown-uefi/release && \
   tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi && \
-  tests/net-ovmf.sh $R/stormbootx.efi $R/tcp4probe.efi'
+  tests/net-ovmf.sh $R/stormbootx.efi $R/tcp4probe.efi && \
+  scripts/build-boot-agent.sh --iso --binary $R/stormbootx.efi --media shelltest --output $PWD/t/s.iso && \
+  LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso old "media       : shelltest" && \
+  LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso ovmf "media       : shelltest"'
 ```
 
 That builds `stormbootx.efi`, `tcp4probe.efi` and `espprobe.efi`, and runs the
 five host test suites. Then it boots espprobe under OVMF (`tests/esp-ovmf.sh`),
 and stormbootx itself against the stub engine and NVMe/TCP target
-(`tests/net-ovmf.sh`).
+(`tests/net-ovmf.sh`). Last, it builds an ISO and boots its `startup.nsh`
+from an EFI Shell (`tests/shell-ovmf.sh`, #60), once with the old EDK shell
+and once with OVMF's own.
 There is no host target and no `cargo test`. `src/sha256.rs`,
 `src/intent.rs`, `src/universal.rs`, `src/dnsname.rs` and `src/esp.rs` are the exceptions: each uses only
 `core` and names no `crate::` item, so each compiles as its own crate with
@@ -446,7 +451,23 @@ USB stick, or with `--iso` an El Torito `.iso` for BMC virtual media. The ISO
 is isohybrid the way Debian's netinst is (an MBR `0xef` partition and a GPT
 entry over `/esp.img`), and the ESP is at `mkfs.fat`'s own geometry (4 MiB:
 FAT12, 2 KiB clusters): AMI Aptio 4 hung at POST A2 on the old pure El Torito
-FAT16 ESP (#55); `tests/iso-layout.sh ISO…` checks both. Output
+FAT16 ESP (#55); `tests/iso-layout.sh ISO…` checks both.
+
+Every medium carries `\startup.nsh` (`media/startup.nsh`, #60) at the root
+of its ESP, and of the ISO9660 tree. A machine with no boot option for the
+media (an X9 blade that has never booted the virtual CD in UEFI) drops to the
+firmware's EFI Shell, which runs it. It looks through `fs0`..`fs7` for the
+volume carrying both `\EFI\BOOT\BOOTX64.EFI` and
+`\stormboot\stormboot.conf`, and starts that `BOOTX64.EFI`. The second file
+is the mark: a local disk's ESP has a `BOOTX64.EFI` too (stormuefi on an
+installed disk, a stale Windows), never a `stormboot.conf`. The script uses
+only what the EDK shell 2.31 (EFI 1.10 mode, what AMI Aptio 4 carries) and
+Shell 2.x both take. `tests/shell-ovmf.sh ISO old|ovmf 'LINE' …` boots an
+ISO this way under OVMF, with a decoy ESP mapped before the CD. `old` is
+EdkShellBinPkg's `Shell_Full.efi` from edk2-stable201811, fetched and checked
+against its pinned SHA-256.
+
+Output
 defaults to `tmp/images` in the checkout, which on dev is the build's own
 drive and is deleted with it. Nothing is left on the build box.
 
