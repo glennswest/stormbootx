@@ -149,7 +149,7 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/nvme.rs` | the NVMe/TCP initiator |
 | `src/handoff.rs` | `StormBootTag`/`StormBootHostNqn`, volatile EFI variables naming the machine to Linux's initramfs (#76, stormblock#249); `StormBootClock` (#77); `StormBootUpdate` (#83) |
 | `src/selfupdate.rs` | the boot medium updates itself (#83): trial count and revert at start; fetch, Ed25519 check, `*.new`/`*.prev` swap and restart after `net::up`; `mark_good` after the attach; `StormBootMinSerial` (NV) |
-| `src/manifest.rs` | the self-update's signed manifest, `\stormboot\state`, trial and serial decisions, HTTP framing, `update =` (core-only, host-tested) |
+| `src/manifest.rs` | the self-update's signed manifest, `RELEASE_KEYS` (stormcentral's, #86), `\stormboot\state`, trial and serial decisions, HTTP framing, `update =` (core-only, host-tested) |
 | `src/clock.rs` | the RTC set from NTP before Linux (#77): option 42 / `ntp =` / `pool.ntp.org`, one bounded SNTP exchange, `SetTime` in UTC |
 | `src/sntp.rs` | SNTP request and reply checks, NTP era → Unix, the UTC calendar (core-only, host-tested) |
 | `src/blockio.rs` | publish the namespace as a block device, then chain-load its `BOOTX64.EFI` (the firmware's FAT, then `esp.rs`) |

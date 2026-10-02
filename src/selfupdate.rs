@@ -63,11 +63,6 @@ pub const STATE_PATH: &str = r"\stormboot\state";
 /// The bootloader, which is this binary.
 const BOOT_PATH: &str = r"\EFI\BOOT\BOOTX64.EFI";
 
-/// stormcentral's release keys, current and next (stormcentral#279). Empty
-/// until stormcentral has made its key: then nothing verifies, and nothing
-/// updates.
-const RELEASE_KEYS: &[[u8; 32]] = &[];
-
 /// The serial on trial in this boot, 0 for none.
 static TRIAL: AtomicU64 = AtomicU64::new(0);
 
@@ -78,7 +73,7 @@ fn test_key() -> Option<[u8; 32]> {
 }
 
 fn keys() -> Vec<[u8; 32]> {
-    let mut k = RELEASE_KEYS.to_vec();
+    let mut k = manifest::RELEASE_KEYS.to_vec();
     k.extend(test_key());
     k
 }
@@ -304,7 +299,7 @@ fn try_update(mac: Option<&str>) -> Result<(), String> {
     }
     let keys = keys();
     if keys.is_empty() {
-        return Err("no release key compiled in yet (stormcentral#279); not checked".to_string());
+        return Err("no release key compiled in; not checked".to_string());
     }
     if test_key().is_some() {
         uefi::println!("update      : a TEST key is compiled in (STORMBOOTX_UPDATE_TEST_KEY)");

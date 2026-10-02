@@ -77,6 +77,22 @@ pub const TRIAL_STARTS: u32 = 2;
 /// The bootloader every manifest must carry.
 pub const BOOTLOADER: &str = "EFI/BOOT/BOOTX64.EFI";
 
+/// stormcentral's release keys, current and next: the Ed25519 public halves
+/// a manifest's signature must verify against (stormcentral#279, #86). The
+/// private half never leaves the stormcentral VM; stormcentral serves these
+/// open at `/api/v1/stormbootx/keys`. A new key is added here as the next
+/// one a release before it signs anything, and the old one dropped a release
+/// after.
+pub const RELEASE_KEYS: &[[u8; 32]] = &[
+    // 4fe28c027b8cf1e8a0a2b6195f10ef8faef0cc49df212638e205eee10a171bce
+    [
+        0x4f, 0xe2, 0x8c, 0x02, 0x7b, 0x8c, 0xf1, 0xe8,
+        0xa0, 0xa2, 0xb6, 0x19, 0x5f, 0x10, 0xef, 0x8f,
+        0xae, 0xf0, 0xcc, 0x49, 0xdf, 0x21, 0x26, 0x38,
+        0xe2, 0x05, 0xee, 0xe1, 0x0a, 0x17, 0x1b, 0xce,
+    ],
+];
+
 /// One file the manifest names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Entry<'a> {
@@ -749,5 +765,14 @@ mod tests {
         assert_eq!(setting("http://:80/x"), None);
         assert_eq!(setting("http://a b/x"), None);
         assert_eq!(setting("yes"), None);
+    }
+
+    #[test]
+    fn the_release_key_is_stormcentrals() {
+        // As posted on #86 and served at /api/v1/stormbootx/keys.
+        assert_eq!(
+            RELEASE_KEYS,
+            &[hex32("4fe28c027b8cf1e8a0a2b6195f10ef8faef0cc49df212638e205eee10a171bce").unwrap()]
+        );
     }
 }

@@ -205,7 +205,7 @@ Read from the volume it booted from. `key = value`, each key independent.
 - **No boot option?** The media's `\startup.nsh` (#60) finds the volume
   with `BOOTX64.EFI` and `stormboot.conf` on `fs0`..`fs7` and starts it from
   the firmware's EFI Shell.
-- **Updated** by itself (#83): a writable medium with `update =` fetches the current release from stormcentral, checks its Ed25519-signed manifest and every file's SHA-256, swaps the files (old kept as `*.prev`) and restarts; the new set must reach an attach within two starts or the old one comes back. Live once stormcentral#279 signs releases and its key is compiled in.
+- **Updated** by itself (#83): a writable medium with `update =` fetches the current release from stormcentral, checks its Ed25519-signed manifest and every file's SHA-256, swaps the files (old kept as `*.prev`) and restarts; the new set must reach an attach within two starts or the old one comes back. stormcentral's key is compiled in (#86); live once stormcentral promotes a golden.
 - **Firmware needs only a UEFI driver for its NIC** (SNP), or one on the
   media in `\stormboot\drivers` (#26: the Supermicro X9 blades have
   legacy-only NICs). No `EFI_TCP4` since #56.
@@ -249,7 +249,7 @@ smoltcp, through stormuefi to a running stormcos (#56, #68).
 | stormblock#204 | a DNS name the engine hasn't seen reaches its host (#23 is closed) | stormblock |
 | #27 | NIC drivers in Rust, replacing iPXE | the rustnic media proven on metal; decision #81 |
 | #4 | report inventory before any OS | decision #20 |
-| #83 | self-update the media (in the binary, OVMF-tested) | stormcentral#279: signing, serving, the release key |
+| #83 | self-update the media (in the binary, OVMF-tested, key compiled in) | stormcentral promoting a golden |
 | #10 | NVMe/TCP initiator as a shared crate | stormboot4bios |
 | #14 | test containers | decision #22 |
 

@@ -343,12 +343,14 @@ stormcentral#279.
   `stormboot/state` or `stormboot/local.conf`), and `BOOTX64.EFI` must be
   there. A media golden's `media.files` is exactly its `file` lines.
 - **Authentic.** The signature is checked against the Ed25519 public keys
-  compiled in (`RELEASE_KEYS`, current and next) before a byte of the
-  manifest is believed, then each fetched file's size and SHA-256. Plain
+  compiled in (`manifest::RELEASE_KEYS`, current and next) before a byte of
+  the manifest is believed, then each fetched file's size and SHA-256. Plain
   HTTP is enough: whoever answers can only serve what was signed. The
-  private key never leaves the stormcentral VM. **Until stormcentral#279 makes
-  its key, `RELEASE_KEYS` is empty and every medium says `no release key
-  compiled in yet` and updates nothing.** A test build may add one key at
+  private key never leaves the stormcentral VM. Since v0.14.0 (#86) that is
+  stormcentral's key, `4fe28c02…0a171bce`, the one it serves open at
+  `http://stormcentral.g8.lo/api/v1/stormbootx/keys`; a host test holds the
+  bytes to that hex. A new key goes in as the next one a release before
+  stormcentral signs with it. A test build may add one key at
   build time (`STORMBOOTX_UPDATE_TEST_KEY`, hex); no golden build sets it,
   and a binary that has one says so on every check.
 - **Never backwards.** The serial must be above every serial the medium has
@@ -759,8 +761,6 @@ bytes are its `boot/<name>.iso`.
 - `config::render` / `config::write_file` and the `stamp` key: the first
   self-update plan (#2), superseded by #83, which writes through its own
   `selfupdate.rs`.
-- The self-update's release keys: `RELEASE_KEYS` is empty until
-  stormcentral#279 publishes its public key, so no medium updates yet.
 - The FEC self-heal (automatic write on "all ports down") was switched off in
   0.3.6. It was triggered by a single link sample. The reasoning is in
   `main.rs` step 2b.
@@ -816,7 +816,7 @@ Open issues:
 | #36, #52 | the golden media's pinned fallback (nsid 2); the third, firmware-drivers-only media golden |
 | #7 | placeholder list shared with stormipmi |
 | #27, #30, #69–#75, #80, #81 | Rust NIC drivers replacing iPXE (and whether the X9 blades move to the rustnic media); hermon's hang |
-| #83 | self-update: in the binary and tested under OVMF; no medium updates until stormcentral#279 signs and serves releases and its key is compiled in |
+| #83 | self-update: in the binary, tested under OVMF, stormcentral's key compiled in (#86); no medium updates until stormcentral promotes a golden (`stormcentral stormbootx promote`) |
 | #4, #10, #14 | inventory; the shared initiator; test containers |
 
 A slide deck of the above is in [`docs/presentation.md`](docs/presentation.md)
