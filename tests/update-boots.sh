@@ -102,10 +102,10 @@ uboot() {
     kill "$qemu" 2>/dev/null; wait "$qemu" 2>/dev/null || true
     tr -d '\r' < "$log" | sed 's/\x1b\[[0-9;]*[A-Za-z]//g' > "$txt"
     say "[$name] console:"
-    grep -E "^(stormbootx |update|attaching|blockio     : published|RESULT|no network boot|handed down : StormBootUpdate|media|  portal)" "$txt" \
+    { grep -E "^(stormbootx |update|attaching|blockio     : published|RESULT|no network boot|handed down : StormBootUpdate|media|  portal)" "$txt" || true; } \
         | sed 's/^/  | /'
     say "[$name] stub log:"
-    grep boothelpers "$W/stub.log" | sed 's/^/  > /'
+    { grep boothelpers "$W/stub.log" || echo "(no boothelper requests)"; } | sed 's/^/  > /'
     local fail=0 want
     for want in "$@"; do
         if [[ "$want" == stub:* ]]; then
