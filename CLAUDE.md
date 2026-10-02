@@ -876,15 +876,23 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       medium updates yet (proposed after stormcentral#279). Not run: a real
       stick on metal, canary lines, a driver retired, a medium short of room.
 
-- [ ] **#86 — compile stormcentral's release key into `RELEASE_KEYS` (P1,
-      2026-10-02). In progress.** stormcentral#279 made the key (stormcentral
-      7b42262); public half `4fe28c02…0a171bce`, posted on #86 and served
-      open at `/api/v1/stormbootx/keys` (checked to match, 2026-10-02). No
-      next key yet. Plan: the key as `RELEASE_KEYS[0]`, a host test that the
-      bytes are the hex stormcentral publishes, docs; sc-build including
-      `tests/update-ovmf.sh` (a test key is still added on top of it, so the
-      six boots are unchanged); release; goldens. Nothing is promoted yet
-      (`…/boothelpers/*/current` 404), so no real manifest can be checked.
+- [x] **#86 — compile stormcentral's release key into `RELEASE_KEYS` (P1,
+      2026-10-02). Closed 2026-10-02.** stormcentral#279 made the key
+      (stormcentral 7b42262); public half `4fe28c02…0a171bce`, as posted on
+      #86 and served open at `/api/v1/stormbootx/keys` (checked to match).
+      `manifest::RELEASE_KEYS` (moved from `selfupdate.rs` so the host test
+      `the_release_key_is_stormcentrals` holds it to that hex). e973cfb, the
+      test's key count 559197b (#87), released **v0.14.0** (7e9810f).
+      sc-build at the tag with `--locked`: no warnings, suites
+      9/7/7/8/12/8/11, espprobe, net-ovmf, both shells, and update-ovmf's six
+      boots, the bad-signature one checking against `2 compiled-in key(s)`
+      (release + test). Goldens `golden-stormbootx-fe6117d741ddab41` and
+      `golden-stormbootx-rustnic-75128a00457dab51`. **Not run:** a manifest
+      signed by stormcentral's own key: nothing is promoted yet
+      (`…/boothelpers/*/current` 404). The first `stormcentral stormbootx
+      promote` and a writable stick on the v0.14.0 medium are the master's;
+      pass is `update : -> v… (golden-…, serial 1)`. Only media at v0.14.0 or
+      later can take an update: older sticks must be rewritten once.
 
 ### Blocked on other repos
 
