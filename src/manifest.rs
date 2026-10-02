@@ -116,11 +116,6 @@ impl<'a> Manifest<'a> {
             || mac.is_some_and(|m| self.canaries().iter().any(|c| c.eq_ignore_ascii_case(m)))
     }
 
-    /// The bytes every file together.
-    pub fn total(&self) -> u64 {
-        self.files().iter().map(|f| f.size).sum()
-    }
-
     /// The entry for `path`, compared as FAT compares names.
     pub fn file(&self, path: &str) -> Option<&Entry<'a>> {
         self.files().iter().find(|f| f.path.eq_ignore_ascii_case(path))
@@ -581,7 +576,6 @@ mod tests {
         assert_eq!(m.files()[0].sha256, [0xaa; 32]);
         assert_eq!(m.files()[1].sha256, [0xbb; 32]);
         assert_eq!(m.file("efi/boot/bootx64.efi").unwrap().size, 241664);
-        assert_eq!(m.total(), 241664 + 812 + 160000 + 410);
         assert!(m.for_machine(None), "no canaries: every machine");
     }
 

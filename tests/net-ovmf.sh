@@ -42,6 +42,11 @@
 # PAYLOAD is any EFI application that prints; the sc-build command uses
 # tcp4probe.efi and looks for its banner.
 #
+# With UPDATE_KEY set (an Ed25519 PEM whose public half STORMBOOTX.EFI was
+# built with, as STORMBOOTX_UPDATE_TEST_KEY), the two boots above are
+# replaced by the self-update's boots off a writable disk (#83,
+# tests/update-boots.sh; tests/update-ovmf.sh sets it all up).
+#
 # Needs qemu-system-x86_64, OVMF, python3, mtools, mkfs.fat, xorriso. KVM when
 # /dev/kvm is writable, TCG otherwise. Unprivileged; everything is under $TMPDIR
 # and deleted on exit.
@@ -91,6 +96,22 @@ class H(http.server.BaseHTTPRequestHandler):
         self.wfile.write(data)
     def do_GET(self):
         log.write("GET %s\n" % self.path)
+        # The self-update's boothelper (#83): whatever is published in serve/.
+        pre = "/api/v1/boothelpers/stormbootx-test/"
+        if self.path.startswith(pre):
+            rel = self.path[len(pre):]
+            f = os.path.join(W, "serve", rel)
+            if ".." in rel or not os.path.isfile(f):
+                self.reply(404, {"error": "stub: no release"})
+                return
+            data = open(f, "rb").read()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(data)
+            return
         if self.path == "/api/v1/health":
             self.reply(200, {"version": "19.4.0", "status": "ok", "pad": "x" * 120000})
         else:
@@ -334,6 +355,13 @@ boot() {
     done
     [[ $fail -eq 0 ]] || die "[$name] expected lines missing"
 }
+
+if [[ -n "${UPDATE_KEY:-}" ]]; then
+    # shellcheck source=tests/update-boots.sh
+    source "$ROOT/tests/update-boots.sh"
+    say "PASS"
+    exit 0
+fi
 
 common=(
     "tcp4        : smoltcp over SNP (nic 0 "

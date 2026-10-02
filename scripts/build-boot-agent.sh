@@ -47,6 +47,8 @@ DNS=""
 NTP=""
 MEDIA=""
 RNG=""
+UPDATE=""
+TREE=""
 
 usage() {
     sed -n '2,20p' "$0" | sed 's/^# \?//'
@@ -70,6 +72,10 @@ Options:
   --engine ADDR    the portal and engine host, claim still on (tests/net-ovmf.sh)
   --rng FIRST      the first entropy source tried: firmware (default), cpu or
                    jitter (#56); the ones above it are skipped
+  --update URL     where the medium updates itself from (#83):
+                   http://host[:port]/path to a stormcentral boothelper, or off
+  --tree DIR       also lay the ESP's files out in DIR (the golden's media/
+                   tree, which stormcentral serves to a self-update)
   --port N         portal port (default 4420)
   --nqn NQN        subsystem NQN (default nqn.2026-09.lo.g16:stormcos)
   --nsid N         namespace (default 2)
@@ -93,6 +99,8 @@ while [[ $# -gt 0 ]]; do
         --portal) PORTAL="$2"; PIN="yes"; shift 2 ;;
         --engine) PORTAL="$2"; shift 2 ;;
         --rng)    RNG="$2"; shift 2 ;;
+        --update) UPDATE="$2"; shift 2 ;;
+        --tree)   TREE="$2"; shift 2 ;;
         --port)   PORT="$2"; shift 2 ;;
         --nqn)    NQN="$2"; shift 2 ;;
         --nsid)   NSID="$2"; shift 2 ;;
@@ -237,6 +245,19 @@ rng      = $RNG
 CONF
 fi
 
+# Where the medium updates itself from (#83). The golden build names its own
+# boothelper on stormcentral; a medium built by hand has none and never checks.
+if [[ -n "$UPDATE" ]]; then
+    cat >> "$WORK/stormboot.conf" <<CONF
+
+# Self-update (#83): the current release of this medium's golden, a signed
+# manifest stormbootx verifies before writing anything. "off" pins this
+# medium. Machine-local settings go in \stormboot\local.conf, which is read
+# first and never updated.
+update   = $UPDATE
+CONF
+fi
+
 # mkfs.fat's own geometry: at 4 MiB that is FAT12 with 2 KiB clusters, the
 # same as Debian's efi.img. This was FAT16 at 512-byte clusters (-F 16 -s 1)
 # until #55: AMI Aptio 4 (server1, X9) read the first 12 KB of that ESP off
@@ -258,6 +279,19 @@ mcopy -i "$ESP" "$WORK/startup.nsh" ::/startup.nsh
 if [[ -n "$DRIVERS" ]]; then
     mmd -i "$ESP" ::/stormboot/drivers
     mcopy -i "$ESP" "$DRIVERS"/* ::/stormboot/drivers/
+fi
+
+# The same files as a tree (#83): what a self-update compares and fetches.
+if [[ -n "$TREE" ]]; then
+    rm -rf "$TREE"
+    mkdir -p "$TREE/EFI/BOOT" "$TREE/stormboot"
+    cp "$BIN" "$TREE/EFI/BOOT/BOOTX64.EFI"
+    cp "$WORK/stormboot.conf" "$TREE/stormboot/stormboot.conf"
+    cp "$WORK/startup.nsh" "$TREE/startup.nsh"
+    if [[ -n "$DRIVERS" ]]; then
+        mkdir -p "$TREE/stormboot/drivers"
+        cp "$DRIVERS"/* "$TREE/stormboot/drivers/"
+    fi
 fi
 
 mkdir -p "$(dirname "$OUTPUT")"

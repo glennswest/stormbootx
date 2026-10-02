@@ -19,6 +19,11 @@
 #   boot/stormbootx.iso     El Torito UEFI ISO, for BMC virtual media
 #   boot/stormbootx.img     GPT disk image, for a USB stick
 #   boot/tcp4probe.iso      a diagnostic ISO that boots tcp4probe
+#   media/                  the medium's files as a tree (#83): EFI/BOOT/BOOTX64.EFI,
+#                           stormboot/stormboot.conf, stormboot/drivers/*, startup.nsh
+#   media.files             one `<sha256> <size> <path>` line per media/ file: the
+#                           `file` lines of the self-update manifest stormcentral
+#                           signs when it promotes this golden (stormcentral#279)
 #   SHA256SUMS, BUILD       digests of every file above; commit and inputs
 #
 #   The media carries \stormboot\drivers: the nic-drivers golden's bin/ when
@@ -32,6 +37,7 @@
 #   boot/stormbootx-rustnic.iso   carries stormnic-ixgbe.efi (STORMNIC_IXGBE_REF)
 #                                 and stormnic-mlx4.efi (STORMNIC_MLX4_REF, #34),
 #                                 and no iPXE NIC driver
+#   media/, media.files           as above (#83)
 #   SHA256SUMS, BUILD
 #
 #   Built here from the pins in scripts/build-nic-drivers.sh, never from a
@@ -89,6 +95,18 @@ seal() {
     cat "$OUT/SHA256SUMS"
 }
 
+# Where a medium of this golden updates itself from (#83): stormcentral's
+# open boothelper route for the golden, which serves the current promoted,
+# signed release (stormcentral#279).
+update_url() { echo "http://stormcentral.g8.lo/api/v1/boothelpers/$1"; }
+
+# media.files: the self-update manifest's file lines, from the media/ tree.
+media_files() {
+    ( cd "$OUT/media" && find . -type f | sed 's|^\./||' | LC_ALL=C sort | while read -r f; do
+        printf '%s %s %s\n' "$(sha256sum < "$f" | cut -d' ' -f1)" "$(stat -c %s "$f")" "$f"
+    done ) > "$OUT/media.files"
+}
+
 case "$GOLDEN" in
 nic-drivers)
     "$ROOT/scripts/build-nic-drivers.sh" "$WORK/drivers"
@@ -128,9 +146,11 @@ stormbootx)
     # The portal and the PTR fallback are forge's network, like the compiled
     # defaults. Which image a machine boots is its boothost on the engine,
     # never the media, so one golden boots every machine.
-    agent=(--binary "$OUT/bin/stormbootx.efi" --drivers "$WORK/media-drivers" --dns 192.168.31.252 --media normal)
+    agent=(--binary "$OUT/bin/stormbootx.efi" --drivers "$WORK/media-drivers" --dns 192.168.31.252 --media normal
+           --update "$(update_url stormbootx)")
     "$ROOT/scripts/build-boot-agent.sh" --iso "${agent[@]}" --output "$OUT/boot/stormbootx.iso"
-    "$ROOT/scripts/build-boot-agent.sh" "${agent[@]}" --output "$OUT/boot/stormbootx.img"
+    "$ROOT/scripts/build-boot-agent.sh" "${agent[@]}" --tree "$OUT/media" --output "$OUT/boot/stormbootx.img"
+    media_files
     "$ROOT/scripts/build-boot-agent.sh" --iso --probe --binary "$OUT/bin/tcp4probe.efi" \
         --output "$OUT/boot/tcp4probe.iso"
     seal "drivers  = $(cd "$WORK/media-drivers" && ls *.efi | tr '\n' ' ')($from)"
@@ -157,7 +177,9 @@ stormbootx-rustnic)
     "$ROOT/scripts/build-boot-agent.sh" --iso --binary "$OUT/bin/stormbootx.efi" \
         --drivers "$WORK/media-drivers" --dns 192.168.31.252 \
         --media "rustnic ixgbe@$(pin STORMNIC_IXGBE_REF) mlx4@$(pin STORMNIC_MLX4_REF)" \
+        --update "$(update_url stormbootx-rustnic)" --tree "$OUT/media" \
         --output "$OUT/boot/stormbootx-rustnic.iso"
+    media_files
     seal "drivers  = $(cd "$WORK/media-drivers" && ls *.efi | tr '\n' ' ')(built here)
 stormnic = $(cat "$WORK/drivers/STORMNIC-SOURCE.txt")"
     ;;
