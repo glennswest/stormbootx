@@ -824,15 +824,39 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       `no_std` crate. Prerequisite for stormboot4bios.
 
 - [ ] **#83 — self-update of the boot media (USB stick / local ESP) from
-      the current golden (P2, owner 2026-10-02). Waiting on the owner
-      (`needs-owner`, 2026-10-02).** Nothing serves it yet: stormcentral's
-      `/api/v1/boothelpers` needs a token and stormbootx carries none, and the
-      media goldens are ISO images, not file trees. Asked on #83: where the
-      manifest and files come from (recommended: an open stormcentral
-      endpoint serving the golden's `bin/` tree), and whether the manifest is
-      signed in the first version (recommended: Ed25519, key compiled in),
-      since a sha256 alone trusts anyone on the LAN. No code until answered.
-      Supersedes #2's plan.
+      the current golden (P2, owner 2026-10-02). In progress.** Answered
+      2026-10-02 (owner, on the master's recommendation): stormcentral serves
+      an open `GET /api/v1/boothelpers/<golden>/current` (signed manifest),
+      `…/current.sig` and `…/files/<path>` (stormcentral#279); Ed25519 in the
+      first version, keys compiled in (current + next), serial never goes
+      down, A/B with a trial boot. Plan:
+      1. `src/manifest.rs`, core-only + host tests: the manifest text format
+         (`stormbootx-manifest 1`, `version`, `commit`, `golden`, `serial`,
+         `canary <mac>`, `file <sha256> <size> <path>`), path rules, the
+         `\stormboot\state` file, the start/accept decisions, HTTP response
+         split + chunked decode, `update =` URL parse.
+      2. `src/selfupdate.rs`: `ed25519-compact` (no_std, verify only);
+         `TRUSTED_KEYS` empty until stormcentral#279 publishes its key, plus a
+         build-time `STORMBOOTX_UPDATE_TEST_KEY` for the OVMF test only.
+         Start: count the trial, revert to `*.prev` and chain-load after 2
+         starts that never attached. After `net::up`: fetch, verify the
+         signature first, then serial (> state and NV `StormBootMinSerial`,
+         never a serial that failed here), canaries, per-file sha256 + size,
+         free space; write `*.new`, swap (old → `*.prev`), reset. Mark good
+         after the NVMe attach (or a `local` intent): state + NV min serial.
+         `StormBootUpdate` (volatile) to Linux. Read-only media skips;
+         `update = off|false` pins. `\stormboot\local.conf` (never updated)
+         is read before `stormboot.conf`, and an update carries `name`/`tag`
+         there.
+      3. `build-boot-agent.sh --update URL --tree DIR`; `build-golden.sh`
+         writes each media golden's file tree (`media/`) and `media.files`
+         (sha256 size path), and the conf's `update =` URL.
+      4. `tests/update-ovmf.sh`: a test key, a test-key build, and boots off
+         a writable GPT disk against a stub: bad signature refused; update
+         applied, trial passed; current; a release that can't attach fails
+         its trial twice and is reverted.
+      5. docs, CHANGELOG, sc-build, release, goldens; post the manifest
+         contract on stormcentral#279.
 
 ### Blocked on other repos
 
