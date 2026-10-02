@@ -6,6 +6,7 @@
 ### 2026-10-02
 - **feat:** stormcentral's release key is compiled in (#86, stormcentral#279): `RELEASE_KEYS` holds `4fe28c02…0a171bce`, the Ed25519 public key stormcentral serves at `/api/v1/stormbootx/keys`, so a writable medium with `update =` now checks and takes a release stormcentral promotes. The keys moved to `manifest.rs`, where a host test holds them to the published hex (11 manifest tests).
 - **docs:** README *Self-update*, open-issue table and *Not wired*; deck; CLAUDE.md module map.
+- **test:** `tests/update-boots.sh`'s bad-signature boot expects 2 compiled-in keys (the release key and the test key); the build-failure #87 was that line.
 
 ## [v0.13.0] — 2026-10-02
 

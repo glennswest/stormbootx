@@ -130,9 +130,10 @@ cp "$EFI" "$W/A.efi"
 attached=("blockio     : published on handle" "is there a TCP/IP stack in this firmware")
 
 release 5 "$W/other.pem"
+# Two keys: stormcentral's release key (#86) and the test key.
 uboot badsig "${attached[@]}" \
     "update      : a TEST key is compiled in" \
-    "update      : the manifest at $URL does not verify against the 1 compiled-in key(s); nothing taken" \
+    "update      : the manifest at $URL does not verify against the 2 compiled-in key(s); nothing taken" \
     "stub:GET /api/v1/boothelpers/stormbootx-test/current.sig" \
     "not:-> v0.13.0-test"
 same /EFI/BOOT/BOOTX64.EFI "$W/A.efi"
