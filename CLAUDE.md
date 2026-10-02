@@ -22,9 +22,9 @@ scratch files go in `tmp/`.
 Push first, then `sc-build` from this checkout. It builds the pushed commit
 on dev.g8.lo as `stormbuild`. There is no checkout on dev, and no `ssh root@`.
 The plain `cargo build && cargo test` default does not suit a `no_std` UEFI
-crate, so name the command. This builds the three binaries, runs the six
-host suites, boots `espprobe` and stormbootx under OVMF, and boots an ISO's
-`startup.nsh` from two EFI Shells:
+crate, so name the command. This builds the three binaries, runs the seven
+host suites, boots `espprobe` and stormbootx under OVMF, boots an ISO's
+`startup.nsh` from two EFI Shells, and runs the self-update's boots:
 
 ```bash
 sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
@@ -34,19 +34,30 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   rustc --edition 2021 --test src/dnsname.rs -o t/dnsname-test && ./t/dnsname-test && \
   rustc --edition 2021 --test src/esp.rs -o t/esp-test && ./t/esp-test && \
   rustc --edition 2021 --test src/sntp.rs -o t/sntp-test && ./t/sntp-test && \
+  rustc --edition 2021 --test src/manifest.rs -o t/manifest-test && ./t/manifest-test && \
   R=${CARGO_TARGET_DIR:-target}/x86_64-unknown-uefi/release && \
   tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi && \
   tests/net-ovmf.sh $R/stormbootx.efi $R/tcp4probe.efi && \
   scripts/build-boot-agent.sh --iso --binary $R/stormbootx.efi --media shelltest --output $PWD/t/s.iso && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso old "media       : shelltest" && \
-  LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso ovmf "media       : shelltest"'
+  LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso ovmf "media       : shelltest" && \
+  tests/update-ovmf.sh $R/tcp4probe.efi'
 ```
+
+`tests/update-ovmf.sh` (#83) must stay last: it rebuilds `stormbootx.efi`
+with an Ed25519 test key compiled in (`STORMBOOTX_UPDATE_TEST_KEY`) and boots
+a writable GPT medium six times through `tests/update-boots.sh`, sourced by
+`net-ovmf.sh` for its stubs: bad signature refused; serial 5 written,
+restarted, trial passed on the attach; serial 5 `current`; serial 6 (a dead
+NVMe port in its conf) fails two trial starts and the third puts serial 5
+back. mtools checks the disk after each boot.
 
 `tests/net-ovmf.sh` (#56) boots stormbootx under OVMF with no firmware
 network stack, against a stub engine, a stub NVMe/TCP target (4096-byte
 blocks, a 96 MiB `BOOTX64.EFI`) and a stub SNTP server (#77: boot 1 must set
 the RTC to 2031, boot 2's unsynchronised answer must set nothing). It runs twice: as shipped, and with the
-firmware RNG and RDRAND/RDSEED masked (`rng : jitter`).
+firmware RNG and RDRAND/RDSEED masked (`rng : jitter`). The shipped boot's
+ISO names an `update =`, which must be skipped as read-only (#83).
 
 `tests/shell-ovmf.sh ISO old|ovmf 'LINE' …` (#60) boots an ISO from an
 EFI Shell with no boot option for it, and requires its `startup.nsh` to
@@ -93,6 +104,8 @@ replies captured on 2026-09-27. `src/esp.rs` (#37) is the fifth: GPT and
 FAT, tested on images `mkfs.fat` and mtools build inside the test, so they
 must be on the build box's `PATH` (they are on dev). `src/sntp.rs` (#77) is
 the sixth: the SNTP packet, the reply checks and the UTC calendar.
+`src/manifest.rs` (#83) is the seventh: the self-update's manifest, state
+file, start/serial decisions and HTTP framing.
 
 `Cargo.lock` is tracked, as it should be for anything that produces a binary.
 Without it every build resolved fresh, and this is a firmware binary whose
@@ -134,7 +147,9 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/drivers.rs` | load NIC drivers from `\stormboot\drivers` on the media (#26), after the platform's own bind |
 | `src/dhcp4.rs` | tcp4probe only since #56: DHCP through the firmware's `EFI_DHCP4` |
 | `src/nvme.rs` | the NVMe/TCP initiator |
-| `src/handoff.rs` | `StormBootTag`/`StormBootHostNqn`, volatile EFI variables naming the machine to Linux's initramfs (#76, stormblock#249); `StormBootClock` (#77) |
+| `src/handoff.rs` | `StormBootTag`/`StormBootHostNqn`, volatile EFI variables naming the machine to Linux's initramfs (#76, stormblock#249); `StormBootClock` (#77); `StormBootUpdate` (#83) |
+| `src/selfupdate.rs` | the boot medium updates itself (#83): trial count and revert at start; fetch, Ed25519 check, `*.new`/`*.prev` swap and restart after `net::up`; `mark_good` after the attach; `StormBootMinSerial` (NV) |
+| `src/manifest.rs` | the self-update's signed manifest, `\stormboot\state`, trial and serial decisions, HTTP framing, `update =` (core-only, host-tested) |
 | `src/clock.rs` | the RTC set from NTP before Linux (#77): option 42 / `ntp =` / `pool.ntp.org`, one bounded SNTP exchange, `SetTime` in UTC |
 | `src/sntp.rs` | SNTP request and reply checks, NTP era → Unix, the UTC calendar (core-only, host-tested) |
 | `src/blockio.rs` | publish the namespace as a block device, then chain-load its `BOOTX64.EFI` (the firmware's FAT, then `esp.rs`) |
@@ -146,7 +161,7 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/espboot.rs` | read `BOOTX64.EFI` through `esp.rs` and `LoadImage` it from the buffer |
 | `src/espprobe.rs` | third binary: who can read a 4K ESP; booted under OVMF by `tests/esp-ovmf.sh` |
 | `src/sha256.rs` | the digest, because `EFI_HASH2` is optional |
-| `src/config.rs` | the target, read from the media rather than compiled in |
+| `src/config.rs` | the target, read from the media rather than compiled in; `local.conf` read before `stormboot.conf` (#83) |
 | `src/shell.rs` | timed, never-forced failure console before the fall-through |
 | `src/mlxfec.rs` | ConnectX FEC NV read; write only on a `fec =` recovery stick |
 | `src/tcp4probe.rs` | second binary: does this machine's firmware carry TCP4? |
@@ -305,6 +320,23 @@ These have each cost a debugging session. Do not "simplify" them away.
   the change is visible, reversible and applies to every host at once. A
   boot-time NV write is invisible, per-machine, survives reinstall, and can
   only be undone from the thing it just broke the network on.
+
+- **The self-update believes the signature and nothing else** (#83). The
+  manifest is fetched over plain HTTP from a name DHCP's DNS resolves, so
+  everything about where it came from is forgeable; the Ed25519 check against
+  the compiled-in `RELEASE_KEYS` comes before the manifest is parsed, and
+  each file's size and SHA-256 before it is written. Never add a path that
+  writes the medium on a hash alone, and never compile a test key into a
+  golden: `STORMBOOTX_UPDATE_TEST_KEY` is for `tests/update-ovmf.sh` only.
+- **A serial never goes down on a medium, and a failed one is never retried
+  there.** A stick that falls back after a trial would otherwise take the same
+  release again on its next boot and loop. The fix for a bad release is a
+  new serial.
+- **The trial is counted at start, before anything that could hang.** A new
+  set that hangs in the NIC driver or the network never reaches the code that
+  would notice; counting first means the third power cycle puts the old set
+  back. The swap renames the bootloader last, and the state is written
+  before the swap, so an interrupted swap is put back by the same count.
 
 ## Asking the machine before booting it
 

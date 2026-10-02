@@ -43,16 +43,19 @@ here.
 
 ## What it touches at boot
 
-At boot it **reads** only `\stormboot\stormboot.conf` from the volume it was
-loaded from, and **loads** any `*.efi` in `\stormboot\drivers\` on that
-volume as a NIC driver (#26; absent on ordinary media). It writes to these:
+At boot it **reads** `\stormboot\local.conf` and `\stormboot\stormboot.conf`
+from the volume it was loaded from (and `\stormboot\state`, the self-update's
+record), and **loads** any `*.efi` in `\stormboot\drivers\` on that volume
+as a NIC driver (#26; absent on ordinary media). It writes to these:
 
 | What | When |
 |---|---|
 | the attached clone on the engine | the booted OS writes to its disk, and the BlockIO handle is read-write |
 | the ConnectX NV FEC setting | only with `fec =` on a recovery stick, or `fec MODE` typed at the failure console; followed by a warm reset |
 | the hardware clock (RTC), through UEFI `SetTime` | a boot whose NTP server answers while the RTC is more than a second off (#77); UTC, time zone and daylight left as the firmware had them |
-| **volatile** EFI variables, `StormBootTag`, `StormBootHostNqn` and `StormBootClock` | every boot that names the machine, attaches an image or asks NTP (#76, #77); gone at the next reset, never in NVRAM |
+| **volatile** EFI variables, `StormBootTag`, `StormBootHostNqn`, `StormBootClock` and `StormBootUpdate` | every boot that names the machine, attaches an image, asks NTP or has a self-update state (#76, #77, #83); gone at the next reset |
+| its own boot medium: `\EFI\BOOT\BOOTX64.EFI`, `\startup.nsh`, `\stormboot\stormboot.conf`, `\stormboot\drivers\*` (with `*.new`/`*.prev` copies), `\stormboot\state`, and `\stormboot\local.conf` only to keep a `name =` | a writable medium (USB stick, local ESP) with `update =`, when a newer signed release verifies, and the starts of its trial (#83, *Self-update*) |
+| one **non-volatile** EFI variable, `StormBootMinSerial` | when a self-updated medium passes its trial (#83): the highest release serial this machine has run, so an older signed release can't be replayed onto it |
 
 Nothing is written to the platform's network configuration any more (#56;
 until 0.9 a `STATIC` IP4 policy was switched to `DHCP` in NVRAM). The NICs are
@@ -63,6 +66,9 @@ given back on the fall-through.
 
 `src/main.rs`, `run()`:
 
+0. **A self-update on trial** (#83, `src/selfupdate.rs`), before anything
+   else: counts this start, or, after two starts that never attached, puts
+   the previous files back and chain-loads them. See *Self-update*.
 1. **Banner**: version and build stamp (`STORMBOOTX_BUILD`: the short commit,
    with `-dirty` if the tree had changes, set by `build-boot-agent.sh`;
    `unstamped build` otherwise), so the console always says which binary is
@@ -119,6 +125,10 @@ given back on the fall-through.
    handle and waits up to 5 s. Then it falls through, saying the NIC needs a
    UEFI driver. The console prints `tcp4 : smoltcp over SNP (nic 0 <mac>, …)`
    and `rng : firmware | rdrand | rndr | jitter`.
+   Then **the self-update** (#83): with `update =` on a writable medium, ask
+   stormcentral for the current release and, if it is newer and its signature
+   verifies, write it and restart into it (*Self-update*). One `update :`
+   line either way.
 5. **Where and which.** `config::resolve` gives the portal from the conf,
    falling back to compiled defaults. Unless the conf says `claim = no`, it
    first reads the machine's **boot intent** (`src/intent.rs`):
@@ -261,6 +271,8 @@ given back on the fall-through.
    - `StormBootHostNqn`: the host NQN of step 6, once the attach worked.
    - `StormBootClock` (#77): `synced:<NTP server address>` or `unsynced`,
      from step 5a (or the fall-through).
+   - `StormBootUpdate` (#83): the boot medium's self-update, `serial:<n>`,
+     `trial:<n>:<start>`, `good:<n>` or `failed:<n>` (*Self-update*).
    A value outside `[A-Za-z0-9._:-]` (Linux ignores those) is not set. Each
    is printed as `handoff : …`; a failure to set is printed and not fatal.
    Linux reads them from `/sys/firmware/efi/efivars/<Name>-<guid>` (four
@@ -297,6 +309,83 @@ given back on the fall-through.
    and every 64 MiB read with its MiB/s. A boot that stalls inside the
    bootloader then shows whether reads crawl, fail, or stopped being asked
    for.
+
+### Self-update
+
+A medium written once must not stay on that version forever (#83; the X9
+blades boot from USB sticks). `src/selfupdate.rs`, with the format and every
+decision in `src/manifest.rs` (core-only, host-tested). The design is the
+owner's (2026-10-02); stormcentral's half, the signing and the serving, is
+stormcentral#279.
+
+- **Where.** `update = http://stormcentral.g8.lo/api/v1/boothelpers/<golden>`
+  in `stormboot.conf`, written by the golden build. stormbootx GETs
+  `<url>/current` (the manifest), `<url>/current.sig` (an Ed25519 signature
+  over those exact bytes, raw or hex) and `<url>/files/<path>`. No token.
+  `update = off` pins a medium; no `update =` (media built by hand) checks
+  nothing; a read-only medium (an ISO on virtual media) is skipped.
+- **The manifest** is text:
+
+  ```
+  stormbootx-manifest 1
+  version 0.13.0
+  commit 1f27df3
+  golden golden-stormbootx-rustnic-0123456789abcdef
+  serial 42
+  canary 52:54:00:12:34:56          (optional, repeatable: only these MACs)
+  file <sha256> <size> EFI/BOOT/BOOTX64.EFI
+  file <sha256> <size> stormboot/stormboot.conf
+  file <sha256> <size> stormboot/drivers/stormnic-ixgbe.efi
+  file <sha256> <size> startup.nsh
+  ```
+
+  Paths are only `startup.nsh`, `EFI/BOOT/*` and `stormboot/*` (never
+  `stormboot/state` or `stormboot/local.conf`), and `BOOTX64.EFI` must be
+  there. A media golden's `media.files` is exactly its `file` lines.
+- **Authentic.** The signature is checked against the Ed25519 public keys
+  compiled in (`RELEASE_KEYS`, current and next) before a byte of the
+  manifest is believed, then each fetched file's size and SHA-256. Plain
+  HTTP is enough: whoever answers can only serve what was signed. The
+  private key never leaves the stormcentral VM. **Until stormcentral#279 makes
+  its key, `RELEASE_KEYS` is empty and every medium says `no release key
+  compiled in yet` and updates nothing.** A test build may add one key at
+  build time (`STORMBOOTX_UPDATE_TEST_KEY`, hex); no golden build sets it,
+  and a binary that has one says so on every check.
+- **Never backwards.** The serial must be above every serial the medium has
+  carried, at or above `StormBootMinSerial` (the machine's highest passed
+  trial), and above any serial that failed its trial on this medium. A
+  rollback is a new, higher serial.
+- **A/B.** Only the files that differ are fetched. Each is written as
+  `*.new`; then the current file becomes `*.prev` and the new one takes its
+  name, the bootloader last; a loadable driver the release no longer carries
+  becomes `*.prev` too. `\stormboot\state` records the trial before the swap,
+  and the machine warm-resets into the new set:
+  `update : v0.12.0 -> v0.13.0 (golden-…, serial 6), 3 file(s), 280 KB; restarting into it`.
+- **The trial.** The new binary counts its starts
+  (`update : serial 6 on trial, start 1 of 2; it must reach an attach`) and
+  passes once it has attached an image, or the engine answered a `local`
+  intent (`update : serial 6 passed its trial (attached); it stays`). After
+  two starts without that, the third puts every changed file back from
+  `*.prev`, marks the serial failed on this medium, and chain-loads the
+  restored binary. A boot that fails for a reason that is not the release
+  (the engine down twice) also puts it back; the cost is a stick on the
+  previous release until the next serial.
+- **Linux is told**: `StormBootUpdate` (volatile, #76's vendor GUID) is
+  `serial:<n>`, `trial:<n>:<start>`, `good:<n>` or `failed:<n>`.
+- **`local.conf`** is the medium's own. It is read before `stormboot.conf`, so
+  its keys win, and an update never writes it, except to keep a `name =` or
+  `tag =` that the release's `stormboot.conf` would drop.
+- **Room.** The new files are written beside the old, so the medium needs
+  their size free (the `*.prev` copies about to be replaced count); a
+  medium without room says so and is left alone. The 4 MiB ESP of
+  `build-boot-agent.sh` holds a set of binary and drivers three times over.
+
+`tests/update-ovmf.sh` boots a writable GPT medium under OVMF six times
+against a stub stormcentral and a test key: a manifest signed by another key
+is refused; serial 5 is written, restarts, passes its trial on the attach;
+serial 5 again is `current`; serial 6, whose `stormboot.conf` names a dead
+NVMe port, fails both trial starts, and the third start puts serial 5 back,
+which then refuses 6. The disk is checked with mtools after each boot.
 
 ### Why chain-load
 
@@ -440,7 +529,11 @@ others.
 | `rng` | `firmware` | the first entropy source tried (#56): `firmware`, `cpu` (skip `EFI_RNG`) or `jitter` (skip both); `build-boot-agent.sh --rng` |
 | `media` | none | the media's label, printed under the banner (`media : normal`); written by the golden build, `build-boot-agent.sh --media` |
 | `fec` | none | **recovery sticks only**: write this FEC and warm-reset |
-| `stamp` | none | parsed, not yet used; for self-update (#2) |
+| `update` | none (no self-update) | `http://host[:port]/path` of this medium's release on stormcentral, or `off` to pin the medium (#83, *Self-update*); written by the golden build, `build-boot-agent.sh --update` |
+| `stamp` | none | parsed, not used |
+
+`\stormboot\local.conf`, when present, takes the same keys and is read first,
+so its values win. It belongs to the medium: a self-update never replaces it.
 
 ## `tcp4probe`
 
@@ -483,30 +576,35 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   rustc --edition 2021 --test src/dnsname.rs -o t/dnsname-test && ./t/dnsname-test && \
   rustc --edition 2021 --test src/esp.rs -o t/esp-test && ./t/esp-test && \
   rustc --edition 2021 --test src/sntp.rs -o t/sntp-test && ./t/sntp-test && \
+  rustc --edition 2021 --test src/manifest.rs -o t/manifest-test && ./t/manifest-test && \
   R=${CARGO_TARGET_DIR:-target}/x86_64-unknown-uefi/release && \
   tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi && \
   tests/net-ovmf.sh $R/stormbootx.efi $R/tcp4probe.efi && \
   scripts/build-boot-agent.sh --iso --binary $R/stormbootx.efi --media shelltest --output $PWD/t/s.iso && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso old "media       : shelltest" && \
-  LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso ovmf "media       : shelltest"'
+  LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso ovmf "media       : shelltest" && \
+  tests/update-ovmf.sh $R/tcp4probe.efi'
 ```
 
 That builds `stormbootx.efi`, `tcp4probe.efi` and `espprobe.efi`, and runs the
-six host test suites. Then it boots espprobe under OVMF (`tests/esp-ovmf.sh`),
+seven host test suites. Then it boots espprobe under OVMF (`tests/esp-ovmf.sh`),
 and stormbootx itself against the stub engine and NVMe/TCP target
 (`tests/net-ovmf.sh`). Last, it builds an ISO and boots its `startup.nsh`
 from an EFI Shell (`tests/shell-ovmf.sh`, #60), once with the old EDK shell
-and once with OVMF's own.
+and once with OVMF's own. `tests/update-ovmf.sh` (#83) runs last, because it
+rebuilds `stormbootx.efi` with a test key: six self-update boots off a
+writable disk (*Self-update*).
 There is no host target and no `cargo test`. `src/sha256.rs`,
-`src/intent.rs`, `src/universal.rs`, `src/dnsname.rs`, `src/esp.rs` and
-`src/sntp.rs` are the exceptions: each uses only
+`src/intent.rs`, `src/universal.rs`, `src/dnsname.rs`, `src/esp.rs`,
+`src/sntp.rs` and `src/manifest.rs` are the exceptions: each uses only
 `core` and names no `crate::` item, so each compiles as its own crate with
 `rustc --test`. `esp.rs`'s tests build their images with `mkfs.fat` and
 mtools, which must be on the `PATH`.
 `--edition 2021` is required, because bare `rustc` defaults to 2015, where
 `core` is not in scope.
 
-`Cargo.lock` is tracked, and `uefi` is pinned at 0.39 / `uefi-raw` at 0.15.
+`Cargo.lock` is tracked, and `uefi` is pinned at 0.39 / `uefi-raw` at 0.15,
+`ed25519-compact` at 2.6.0 (verify only, no default features, #83).
 Bump them deliberately, in their own commit.
 
 ### Getting it onto a stick
@@ -577,6 +675,7 @@ only makes outbound connections:
 | DNS server (A record of the NTP server, when it is named, #77) | the same server, UDP 53 | DHCP, else `dns` |
 | NTP server (one SNTP exchange, #77) | DHCP option 42, else `pool.ntp.org`, UDP 123 | DHCP, else `ntp` |
 | NVMe/TCP portal (attach) | `<portal>:4420`, or what the claim returns | `port`, or the claim reply |
+| stormcentral (the self-update's manifest, signature and files, #83) | the `update =` URL, HTTP/1.1; its host looked up over UDP 53 | `update` |
 
 The portal defaults to `192.168.31.202` (forge). Since stormblock v17.0.0 the
 engine API requires a token for everything except `POST
@@ -592,8 +691,15 @@ does nothing else, for stormcentral to run into the volume it mounts:
 
 | golden | tree |
 |---|---|
-| `stormbootx` | `bin/stormbootx.efi`, `bin/tcp4probe.efi`, `boot/stormbootx.iso` (BMC virtual media), `boot/stormbootx.img` (USB), `boot/tcp4probe.iso`, `SHA256SUMS`, `BUILD` |
-| `stormbootx-rustnic` | `bin/stormbootx.efi`, `boot/stormbootx-rustnic.iso` (BMC virtual media), `SHA256SUMS`, `BUILD` |
+| `stormbootx` | `bin/stormbootx.efi`, `bin/tcp4probe.efi`, `boot/stormbootx.iso` (BMC virtual media), `boot/stormbootx.img` (USB), `boot/tcp4probe.iso`, `media/`, `media.files`, `SHA256SUMS`, `BUILD` |
+| `stormbootx-rustnic` | `bin/stormbootx.efi`, `boot/stormbootx-rustnic.iso` (BMC virtual media), `media/`, `media.files`, `SHA256SUMS`, `BUILD` |
+
+`media/` is the medium's files as a tree (`EFI/BOOT/BOOTX64.EFI`,
+`stormboot/stormboot.conf`, `stormboot/drivers/*`, `startup.nsh`), and
+`media.files` one `<sha256> <size> <path>` line per file: what stormcentral
+signs and serves when it promotes the golden, for media to update themselves
+from (#83, stormcentral#279). Each medium's `stormboot.conf` carries
+`update = http://stormcentral.g8.lo/api/v1/boothelpers/<golden>`.
 | `nic-drivers` | `bin/ipxe-intelx.efi`, `bin/stormnic-ixgbe.efi.off`, `bin/stormnic-mlx4.efi.off`, `IPXE-SOURCE.txt`, `STORMNIC-SOURCE.txt`, `SHA256SUMS`, `BUILD` |
 
 **Two media, side by side (#45).** `stormbootx` is the normal media, with
@@ -650,8 +756,11 @@ bytes are its `boot/<name>.iso`.
 - `registry::claim` / `registry::existing`: the older sbregistry
   `/v1/clones/claim` path at `sbregistry.gt.lo:5100`, behind
   `USE_REGISTRY = false` in `main.rs`.
-- `config::render` / `config::write_file`, `sha256.rs`, and the `stamp` key:
-  the self-update path (#2), not wired up.
+- `config::render` / `config::write_file` and the `stamp` key: the first
+  self-update plan (#2), superseded by #83, which writes through its own
+  `selfupdate.rs`.
+- The self-update's release keys: `RELEASE_KEYS` is empty until
+  stormcentral#279 publishes its public key, so no medium updates yet.
 - The FEC self-heal (automatic write on "all ports down") was switched off in
   0.3.6. It was triggered by a single link sample. The reasoning is in
   `main.rs` step 2b.
@@ -707,7 +816,8 @@ Open issues:
 | #36, #52 | the golden media's pinned fallback (nsid 2); the third, firmware-drivers-only media golden |
 | #7 | placeholder list shared with stormipmi |
 | #27, #30, #69–#75, #80, #81 | Rust NIC drivers replacing iPXE (and whether the X9 blades move to the rustnic media); hermon's hang |
-| #2, #4, #10, #14 | self-update; inventory; the shared initiator; test containers |
+| #83 | self-update: in the binary and tested under OVMF; no medium updates until stormcentral#279 signs and serves releases and its key is compiled in |
+| #4, #10, #14 | inventory; the shared initiator; test containers |
 
 A slide deck of the above is in [`docs/presentation.md`](docs/presentation.md)
 (Marp: `npx @marp-team/marp-cli docs/presentation.md`).

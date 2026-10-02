@@ -297,18 +297,17 @@ fn try_update(mac: Option<&str>) -> Result<(), String> {
         Some(Setting::At { host, port, path }) => (host, port, path),
         None => return Err(format!("update = {stated:?} is not http://host[:port]/path; ignored")),
     };
+    let mut vol = Vol::mount().map_err(|e| format!("the boot medium cannot be opened ({e})"))?;
+    let info = vol.fs_info()?;
+    if info.read_only() {
+        return Err("the boot medium is read-only (an ISO or virtual media); not updated".to_string());
+    }
     let keys = keys();
     if keys.is_empty() {
         return Err("no release key compiled in yet (stormcentral#279); not checked".to_string());
     }
     if test_key().is_some() {
         uefi::println!("update      : a TEST key is compiled in (STORMBOOTX_UPDATE_TEST_KEY)");
-    }
-
-    let mut vol = Vol::mount().map_err(|e| format!("the boot medium cannot be opened ({e})"))?;
-    let info = vol.fs_info()?;
-    if info.read_only() {
-        return Err("the boot medium is read-only (an ISO or virtual media); not updated".to_string());
     }
     let state_text = vol.read_text(STATE_PATH)?.unwrap_or_default();
     let state = State::parse(&state_text);

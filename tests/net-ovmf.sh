@@ -313,6 +313,9 @@ boot() {
     local args=(--iso --binary "$EFI" --engine 10.0.2.2 --api-port "$PORT" --port "$NVME_PORT"
                 --nsid 1 --ntp "10.0.2.2:$NTP_PORT" --output "$iso")
     [[ -n "$rng" ]] && args+=(--rng "$rng")
+    # The shipped boot's medium names a self-update (#83), which an ISO must
+    # skip as read-only; the other names none.
+    [[ $name == shipped ]] && args+=(--update "http://10.0.2.2:$PORT/api/v1/boothelpers/stormbootx-test")
     "$ROOT/scripts/build-boot-agent.sh" "${args[@]}" >/dev/null
     cp "$OVMF_VARS" "$W/$name.vars"
     : > "$W/stub.log"
@@ -388,7 +391,8 @@ boot shipped "$host_cpu" "" 404 good "${common[@]}" "rng         : " \
     " UTC from 10.0.2.2:$NTP_PORT (step +" \
     "handoff     : StormBootClock = synced:10.0.2.2" \
     "handed down : StormBootClock = synced:10.0.2.2  (attributes 0x6)" \
-    "rtc         : 2031-05-04 03:0"
+    "rtc         : 2031-05-04 03:0" \
+    "update      : the boot medium is read-only (an ISO or virtual media); not updated"
 grep -q "rng         : jitter" "$W/shipped.txt" && say "note: the shipped boot fell back to jitter"
 boot jitter "$host_cpu,-rdrand,-rdseed" cpu ok bad "${common[@]}" "rng         : jitter" \
     "clock       : NTP unreachable at 10.0.2.2:$NTP_PORT (the server says it is not synchronised (LI 3)); left at " \
@@ -397,5 +401,6 @@ boot jitter "$host_cpu,-rdrand,-rdseed" cpu ok bad "${common[@]}" "rng         :
     "booting stubhost's image" \
     "handoff     : StormBootTag = stubhost" \
     "handed down : StormBootTag = stubhost  (attributes 0x6)" \
-    "handed down : StormBootHostNqn = nqn.2026-09.lo.storm:host-stubhost  (attributes 0x6)"
+    "handed down : StormBootHostNqn = nqn.2026-09.lo.storm:host-stubhost  (attributes 0x6)" \
+    "update      : not configured (no update = in \\stormboot\\stormboot.conf)"
 say "PASS"
