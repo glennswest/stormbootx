@@ -855,40 +855,26 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 - [ ] #10 — extract `nvme.rs` (and the claim) into a transport-generic
       `no_std` crate. Prerequisite for stormboot4bios.
 
-- [ ] **#83 — self-update of the boot media (USB stick / local ESP) from
-      the current golden (P2, owner 2026-10-02). In progress.** Answered
-      2026-10-02 (owner, on the master's recommendation): stormcentral serves
-      an open `GET /api/v1/boothelpers/<golden>/current` (signed manifest),
-      `…/current.sig` and `…/files/<path>` (stormcentral#279); Ed25519 in the
-      first version, keys compiled in (current + next), serial never goes
-      down, A/B with a trial boot. Plan:
-      1. `src/manifest.rs`, core-only + host tests: the manifest text format
-         (`stormbootx-manifest 1`, `version`, `commit`, `golden`, `serial`,
-         `canary <mac>`, `file <sha256> <size> <path>`), path rules, the
-         `\stormboot\state` file, the start/accept decisions, HTTP response
-         split + chunked decode, `update =` URL parse.
-      2. `src/selfupdate.rs`: `ed25519-compact` (no_std, verify only);
-         `TRUSTED_KEYS` empty until stormcentral#279 publishes its key, plus a
-         build-time `STORMBOOTX_UPDATE_TEST_KEY` for the OVMF test only.
-         Start: count the trial, revert to `*.prev` and chain-load after 2
-         starts that never attached. After `net::up`: fetch, verify the
-         signature first, then serial (> state and NV `StormBootMinSerial`,
-         never a serial that failed here), canaries, per-file sha256 + size,
-         free space; write `*.new`, swap (old → `*.prev`), reset. Mark good
-         after the NVMe attach (or a `local` intent): state + NV min serial.
-         `StormBootUpdate` (volatile) to Linux. Read-only media skips;
-         `update = off|false` pins. `\stormboot\local.conf` (never updated)
-         is read before `stormboot.conf`, and an update carries `name`/`tag`
-         there.
-      3. `build-boot-agent.sh --update URL --tree DIR`; `build-golden.sh`
-         writes each media golden's file tree (`media/`) and `media.files`
-         (sha256 size path), and the conf's `update =` URL.
-      4. `tests/update-ovmf.sh`: a test key, a test-key build, and boots off
-         a writable GPT disk against a stub: bad signature refused; update
-         applied, trial passed; current; a release that can't attach fails
-         its trial twice and is reverted.
-      5. docs, CHANGELOG, sc-build, release, goldens; post the manifest
-         contract on stormcentral#279.
+- [x] **#83 — self-update of the boot media (USB stick / local ESP) from
+      the current golden (P2, owner 2026-10-02). Closed 2026-10-02.** The
+      owner's design: stormcentral serves `…/boothelpers/<golden>/current`
+      (a signed text manifest), `current.sig` and `files/<path>`
+      (stormcentral#279; the contract is posted there); Ed25519 keys compiled
+      in; serial never down; A/B with a trial that must reach an attach.
+      `src/manifest.rs` (core-only, 10 host tests), `src/selfupdate.rs`,
+      `local.conf`, `build-boot-agent.sh --update/--tree`, goldens carry
+      `media/` + `media.files`. Released **v0.13.0** (6a74b55). sc-build: no
+      warnings, suites 9/7/7/8/12/8/10, espprobe, net-ovmf (the ISO skips its
+      `update =` as read-only), both shells, and `tests/update-ovmf.sh`'s six
+      boots (bad signature refused; serial 5 written, restarted, trial
+      passed on the attach, `StormBootUpdate = good:5`; current; serial 6
+      with a dead NVMe port fails two starts and the third puts serial 5
+      back and chain-loads it, `failed:6`; disk checked with mtools). Goldens
+      `golden-stormbootx-190ef2877df1330d` and
+      `golden-stormbootx-rustnic-3cc3ee69c819e68d`. **Left: #86**,
+      `RELEASE_KEYS` is empty until stormcentral#279 makes its key, so no
+      medium updates yet (proposed after stormcentral#279). Not run: a real
+      stick on metal, canary lines, a driver retired, a medium short of room.
 
 ### Blocked on other repos
 
@@ -1087,7 +1073,8 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       (stormnetboot#8 is no longer on the path). Whether firmware
       registration is still wanted beyond machines without a BMC is an
       owner call.
-- [ ] #2 — self-update of the boot media (P3). stormbootx has no golden and
+- [ ] #2 — self-update of the boot media (P3). **Superseded by #83
+      (v0.13.0).** stormbootx has no golden and
       nothing publishes `stormbootx.efi`, so there is not yet an artifact for a
       controlled digest to name. SHA-256 is done; what is left is
       gated on #4, because updating to "whatever was on the last image
