@@ -823,6 +823,17 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 - [ ] #10 — extract `nvme.rs` (and the claim) into a transport-generic
       `no_std` crate. Prerequisite for stormboot4bios.
 
+- [ ] **#83 — self-update of the boot media (USB stick / local ESP) from
+      the current golden (P2, owner 2026-10-02). Waiting on the owner
+      (`needs-owner`, 2026-10-02).** Nothing serves it yet: stormcentral's
+      `/api/v1/boothelpers` needs a token and stormbootx carries none, and the
+      media goldens are ISO images, not file trees. Asked on #83: where the
+      manifest and files come from (recommended: an open stormcentral
+      endpoint serving the golden's `bin/` tree), and whether the manifest is
+      signed in the first version (recommended: Ed25519, key compiled in),
+      since a sha256 alone trusts anyone on the LAN. No code until answered.
+      Supersedes #2's plan.
+
 ### Blocked on other repos
 
 - [ ] #14 — test containers (short/medium/long). **Waiting on an owner
