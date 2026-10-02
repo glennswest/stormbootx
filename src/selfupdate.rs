@@ -98,7 +98,7 @@ fn kb(n: u64) -> u64 {
 /// failed its trial back and chain-load the binary it restored. `Some` is the
 /// status to return with (the chain-loaded binary's).
 pub fn at_start() -> Option<Status> {
-    let mut vol = Vol::open().ok()?;
+    let mut vol = Vol::mount().ok()?;
     let text = vol.read_text(STATE_PATH).ok()??;
     let state = State::parse(&text);
     match manifest::at_start(&state) {
@@ -225,7 +225,7 @@ pub fn mark_good(why: &str) {
     if serial == 0 {
         return;
     }
-    let mut vol = match Vol::open() {
+    let mut vol = match Vol::mount() {
         Ok(v) => v,
         Err(e) => {
             uefi::println!("update      : serial {serial} {why}, and the medium cannot record it ({e})");
@@ -305,7 +305,7 @@ fn try_update(mac: Option<&str>) -> Result<(), String> {
         uefi::println!("update      : a TEST key is compiled in (STORMBOOTX_UPDATE_TEST_KEY)");
     }
 
-    let mut vol = Vol::open().map_err(|e| format!("the boot medium cannot be opened ({e})"))?;
+    let mut vol = Vol::mount().map_err(|e| format!("the boot medium cannot be opened ({e})"))?;
     let info = vol.fs_info()?;
     if info.read_only() {
         return Err("the boot medium is read-only (an ISO or virtual media); not updated".to_string());
@@ -550,7 +550,7 @@ struct Vol {
 }
 
 impl Vol {
-    fn open() -> Result<Vol, String> {
+    fn mount() -> Result<Vol, String> {
         let h = config::boot_volume().ok_or("LoadedImage names no boot volume")?;
         let mut fs = config::open_fs(h).ok_or("the boot volume has no file system")?;
         let root = fs.open_volume().map_err(|e| format!("open_volume: {:?}", e.status()))?;
