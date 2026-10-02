@@ -15,7 +15,7 @@ paginate: true
 
 **A UEFI boot agent that attaches a machine's image over NVMe/TCP and boots it.**
 
-v0.12.0 (2026-10-01) · `x86_64-unknown-uefi` · `no_std` · ~230 KB
+v0.13.0 (2026-10-02) · `x86_64-unknown-uefi` · `no_std` · ~270 KB
 
 No kernel, no initramfs, no PXE, no TFTP. It carries its own TCP/IP (smoltcp
 on the NIC driver's SNP), so it needs no network stack from the firmware.
@@ -205,7 +205,7 @@ Read from the volume it booted from. `key = value`, each key independent.
 - **No boot option?** The media's `\startup.nsh` (#60) finds the volume
   with `BOOTX64.EFI` and `stormboot.conf` on `fs0`..`fs7` and starts it from
   the firmware's EFI Shell.
-- **Updated** by booting a newer golden's media. Self-update (#2) is planned.
+- **Updated** by itself (#83): a writable medium with `update =` fetches the current release from stormcentral, checks its Ed25519-signed manifest and every file's SHA-256, swaps the files (old kept as `*.prev`) and restarts; the new set must reach an attach within two starts or the old one comes back. Live once stormcentral#279 signs releases and its key is compiled in.
 - **Firmware needs only a UEFI driver for its NIC** (SNP), or one on the
   media in `\stormboot\drivers` (#26: the Supermicro X9 blades have
   legacy-only NICs). No `EFI_TCP4` since #56.
@@ -249,7 +249,7 @@ smoltcp, through stormuefi to a running stormcos (#56, #68).
 | stormblock#204 | a DNS name the engine hasn't seen reaches its host (#23 is closed) | stormblock |
 | #27 | NIC drivers in Rust, replacing iPXE | the rustnic media proven on metal; decision #81 |
 | #4 | report inventory before any OS | decision #20 |
-| #2 | self-update the media, digest-verified | #4, the golden |
+| #83 | self-update the media (in the binary, OVMF-tested) | stormcentral#279: signing, serving, the release key |
 | #10 | NVMe/TCP initiator as a shared crate | stormboot4bios |
 | #14 | test containers | decision #22 |
 
@@ -257,7 +257,7 @@ smoltcp, through stormuefi to a running stormcos (#56, #68).
 
 ## Status
 
-- **v0.12.0**, running on metal since 2026-09-05.
+- **v0.13.0**, running on metal since 2026-09-05.
 - Intents, universal boot and names are in the binary, and inert until the
   engine serves them: forge runs stormblock 13.7.0 (2026-10-02), so every
   intent read is a 404 (→ `auto`, which claims, #3) and there is no
