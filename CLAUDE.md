@@ -539,7 +539,7 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       0x…` line, then bring-up and `Start: bound, SNP on a child handle`.
 
 - [ ] **#56 — stormbootx's own TCP/IP: smoltcp on SNP (P0, owner
-      2026-09-30). In progress.** server3 (X9, Aptio 4) loaded
+      2026-09-30). Verified on metal 2026-09-30; the rest is #68.** server3 (X9, Aptio 4) loaded
       `ipxe-intelx.efi` and then reported `EFI_TCP4 is not present`. The
       EDK2-stack plan was dropped because since edk2-stable202405 its IPv4
       drivers refuse to start without `EFI_RNG` (and TcpDxe without
@@ -565,6 +565,10 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       rdrand` (or `firmware`) and a lease, then claim.
       Not seen yet: a multi-NIC machine, iPXE's or stormnic's SNP under
       smoltcp, a 25G link, and `release` handing NICs back to firmware.
+      **2026-09-30 ~23:11Z, server3 on v0.9.0:** `tcp4 : smoltcp over SNP
+      (nic 0 ac:1f:6b:8a:a4:5c)`, `rng : rdrand`, a lease, the claim, the
+      attach, stormuefi and stormcos Ready (iPXE `intelx`'s SNP, one NIC).
+      The owner says #56 can close; the four checks above are tracked in #68.
 
 - [ ] **#55 — X9 (AMI Aptio 4) hangs at POST A2 reading the ISO's
       esp.img (P1, 2026-09-30). Handed off.** server1's capture: the
@@ -732,6 +736,12 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       (`stormcentral shipped`): nothing is left in this repo, and the golden
       is current (only docs since b693698). The metal run closes it; a
       failure there comes back as a new issue or a reopen.
+      **2026-09-30 ~21:37Z:** server1 (X9SRD-F, Aptio 4) booted release
+      11.56 from a 4096-byte namespace on v0.7.0 media, once 11.56's ESP was
+      FAT16 (stormcos#188; 11.50's FAT32-labelled ESP of 16,384 clusters was
+      what Aptio misread, and #67 is `esp.rs` reading one as Linux does).
+      Which reader loaded `BOOTX64.EFI` waits on the SOL capture
+      (stormcentral#220, #33).
 
 - [x] **#45 — two media goldens, served side by side (P0, owner
       2026-09-29). Closed 2026-09-29.** `stormbootx` (normal: iPXE `intelx`) and
@@ -783,12 +793,14 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       7fd80dd ISO that was put on dev for server1 was removed (2026-09-28).
       **This repo's side is done (d10f734, sc-build 119 s):** both trees
       build; the ISO's `BOOTX64.EFI` is byte-identical to `bin/stormbootx.efi`
-      and its ESP carries the driver and `stormboot.conf`. **Waiting on
-      stormcentral#153** (register the component and a build path that runs
-      `build-golden.sh`, not the musl `binaries` build). Then request the
-      golden (`stormcentral component build stormbootx`). The media golden
-      already exists (`golden-stormbootx-74a242a6f0e89f75`, a709f9f) and
-      server1's #26 test booted it; #153 is left for `nic-drivers`.
+      and its ESP carries the driver and `stormboot.conf`. **Registered:**
+      `stormbootx` and `stormbootx-rustnic` are stormcentral components of
+      kind `media` (stormcentral#153's `media` kind); `stormcentral component
+      build <name>` builds a drive golden whose bytes are the ISO, and every
+      release since v0.5.1 has had one. `nic-drivers` is built the same way
+      (stormcentral#189 for its private-repo fetch). Left: #41 (a USB `.img`
+      golden), #35 (whether the media golden keeps the `.img`, `bin/` and
+      `tcp4probe.iso` it builds), #52 (a third, firmware-drivers-only media).
 
 - [x] #26 — **NIC UEFI drivers from the boot media. Closed 2026-09-28**
       on metal: server1 (Supermicro X9, AMI Aptio 4) booted
@@ -852,7 +864,7 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
         becoming `mac-<hex>` — until then, alias its MAC to it (#199);
       - a metal check: two machines, one ISO, no tag, two clones.
 
-- [ ] #23 — **identity from DNS (P1, owner 2026-09-27). The stormbootx side
+- [x] #23 — **identity from DNS (P1, owner 2026-09-27). The stormbootx side
       is done (2026-09-27, sc-build passing).** With no `name =`/`tag =`, a
       machine claims `boothost/<first label of its DNS name>`: DHCP option
       12 (+15 for the console) from the lease of **the interface that reached
@@ -871,7 +883,10 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
         claims `boothost/serverN`, and two shared-serial MicroCloud nodes get
         different images. Not run: no VM or metal harness here (#14/#22).
         That `EFI_DHCP4.GetModeData` on a fresh child shows the platform's
-        own lease is EDK2 behaviour, read from its source, not yet observed.
+        own lease is EDK2 behaviour; on AMI Aptio 4 a fresh child returned
+        no reply (#23's comments), which is why 648e366 keeps its own lease's
+        reply. Since #56 the reply is smoltcp's, kept per NIC. **#23 is
+        closed**; stormblock#204 is the engine's.
       **2026-09-28:** server1's first boot (#26, ISO 97045e0) printed `name :
       none` and claimed the shared chassis serial. 648e366 is the fix: the
       reply of a lease stormbootx ran is kept, microdns gives no option 12 so
@@ -892,8 +907,8 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       binary builds and `intent.rs`'s 7 host tests pass. **Still open on:**
       - **stormblock#148**: the engine route, the one-shot `install` → `local`
         reset, and carrying `install` in the claim reply for the initramfs.
-        **2026-09-28: on stormblock main (0e3c47b), unreleased** (3 commits
-        past v19.4.0); forge on 13.7.0. GET is open and resolves names and
+        **Released in stormblock v20.0.0** (0e3c47b, tagged 2026-09-28);
+        forge still on 13.7.0 (re-checked 2026-10-02). GET is open and resolves names and
         aliases through `host_of`; the reply is `{host, intent, updated_at}`
         (+`resolved_from`); PUT is admin; `POST …/installed {volume}` resets
         `install` → `local` (the node's OS sends it, not this binary); the
@@ -905,10 +920,11 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
         set on a host the engine knows by its MAC was missed whenever the
         DNS name was not yet a host or alias (stormblock#204).
         `the_engines_own_reply` tests 0e3c47b's `intent_body` shape.
-        **Left for the close:** a stormblock release with #148 on forge,
+        **Left for the close:** forge on stormblock v20 (#148),
         then one metal boot with `local` set that prints `nothing claimed`.
-      - ~~**#3**~~: done in v0.8.0. `auto` boots a local disk whose ESP
-        carries `BOOTX64.EFI`, and claims otherwise. stormcos#30 is not needed.
+      - ~~**#3**~~: done in v0.8.0, then overridden in v0.8.1 (owner,
+        2026-09-30): `auto` claims, and the local-ESP rule runs only with
+        `local_when_bootable = true`. stormcos#30's marker is not needed.
       - Not yet seen on metal: nothing can serve `local` until #148 lands.
 
 - [x] #3 — **owner override, 2026-09-30 (later the same day): until
@@ -964,7 +980,9 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       2. **stormcos#30** — nothing writes an installed marker yet, and its
          natural home is the ESP that #123 adds.
       3. **The compare key** — an owner decision, #19, see below.
-         **Re-checked 2026-09-27: still unanswered, so no code.** New
+         **Superseded: #19 was decided 2026-09-29 (no golden comparison;
+         install only on request) and is closed.** Was, 2026-09-27: still
+         unanswered, so no code. New
          since: on stormblock ≥ 17 the `GET boothost/<tag>` below needs a
          token (only the claim and `/api/v1/health` are open), so option 2
          also needs an engine change: e.g. the intended golden's key in the
@@ -975,6 +993,10 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       reinstall": a node boots **local** unless there is a new golden **and**
       an install was requested. So #3 is the "is there a new golden?" half and
       #11 the "was it requested?" half; neither reinstalls on its own.
+      **Superseded (history only):** #19's decision dropped the golden
+      comparison, and the owner's 2026-09-28 reply on stormblock#148 wants a
+      fresh clone on **every** network boot (#31, #32), so ending the
+      per-boot clone is not a goal of #3 or #11.
 
       Found while re-checking: the intended golden is answerable **without a
       claim**. `GET /api/v1/synonyms/boothost/<tag>` returns the synonym's

@@ -78,8 +78,8 @@ given back on the fall-through.
      (`src/dnsname.rs`; microdns answers over TCP, and TCP is the one
      transport this binary carries). **microdns sends no option 12**: it puts the
      reservation's name in DNS, so on microdns networks the PTR is the path.
-     When the reply names no DNS server, or firmware cannot give the reply
-     back, `dns =` in `stormboot.conf` is asked instead; each way this comes
+     When the reply names no DNS server, or no reply was kept for that
+     interface, `dns =` in `stormboot.conf` is asked instead; each way this comes
      up empty is printed. The engine knows hosts by the first label, so
      `server3.g10.lo` claims `boothost/server3`. The console prints
      `name : server3.g10.lo (from DHCP)`. A name that is not a valid DNS name
@@ -161,9 +161,9 @@ given back on the fall-through.
    installs, and an installed one boots itself until someone sets `install`.
    Any bootloader counts, not only stormuefi: a disk with another OS on it
    boots that OS under `auto`. The console prints the intent and, when it defaulted, why. The
-   contract is stormblock#148, which is on stormblock main (0e3c47b) but not
-   yet released or on forge (13.7.0), so today every read there is a 404 and
-   every boot is `auto`. Setting it is `PUT …/intent {"intent":"local"}` with
+   contract is stormblock#148, released in stormblock v20.0.0 but not yet on
+   forge (13.7.0 on 2026-10-02), so today every read there is a 404 and every
+   boot is `auto`. Setting it is `PUT …/intent {"intent":"local"}` with
    the admin token. Resetting `install` back to `local` is the engine's job: the
    node's OS reports `POST …/installed {volume}` after the flow-over, and the
    claim reply carries `intent` for the initramfs. stormbootx never writes it.
@@ -389,28 +389,33 @@ nothing and hand down `StormBootClock = unsynced`.
 
 ## When it fails
 
-Every error in `run()` ends in `fall_through`:
+Every error in `run()`, and a `local` intent, ends in `fall_through`:
 
 1. It prints `no network boot: <reason>`.
 2. It offers a console: *press c within 5 s*. Silence continues, so an
    unattended machine never stops at a prompt.
-3. It counts local disks (whole, non-removable BlockIO devices).
+3. It sets the clock from NTP if the boot has not yet (step 5a, #77), so the
+   local disk's OS gets the right time too.
+4. It gives every NIC back to the firmware (`net::release`, #56), so a later
+   boot option (PXE, HTTP boot) finds the firmware's own stack bound again.
+5. It counts local disks (whole, non-removable BlockIO devices).
    - If there are any, it prints `falling through to the local disk (N found)`.
    - If there are none, it says so and waits 30 s.
-4. It returns `EFI_ABORTED`, so the boot manager tries the next boot option.
+6. It returns `EFI_ABORTED`, so the boot manager tries the next boot option.
 
 The console (`src/shell.rs`):
 
 | Command | Does |
 |---|---|
-| `nics` | every network interface the firmware knows |
-| `state` | each interface's address and IP4 policy |
-| `dhcp [n]` | run DHCP on interface n, or all |
-| `connect IP PORT` | open a TCP connection the way the attach does |
+| `nics` | every NIC with an `EFI_SIMPLE_NETWORK`: MAC, MTU, link, SNP state |
+| `state` | the address each NIC leased on stormbootx's own stack |
+| `dhcp [secs]` | bring the stack up if it is not, and wait up to `secs` (default 10) for every NIC's lease |
+| `connect IP PORT` | open a TCP connection the way the attach does (8 s) |
 | `pci [all]` | devices on the bus, with or without a driver |
 | `fec [MODE]` | read the ConnectX FEC; with MODE (`default`/`rs`/`fc`/`off`/`autoneg`), write it |
 | `reset` | warm reset, so firmware re-reads NV config |
 | `boot` | leave the console and continue the fall-through |
+| `help` | the list above |
 
 ## `stormboot.conf`
 
@@ -432,6 +437,8 @@ others.
 | `ntp` | none (DHCP option 42, then `pool.ntp.org`) | NTP server for the hardware clock when the lease names none: `host[:port]`, or `off` to leave the clock alone (#77); `build-boot-agent.sh --ntp` |
 | `local_when_bootable` | `false` | `true`: `auto` and every doubt boot a local disk whose ESP carries `BOOTX64.EFI` instead of claiming (#3). Off until intents work on forge |
 | `esp` | `auto` | who reads the attached ESP (#37): `auto` (firmware, then stormbootx), `firmware`, or `stormbootx` |
+| `rng` | `firmware` | the first entropy source tried (#56): `firmware`, `cpu` (skip `EFI_RNG`) or `jitter` (skip both); `build-boot-agent.sh --rng` |
+| `media` | none | the media's label, printed under the banner (`media : normal`); written by the golden build, `build-boot-agent.sh --media` |
 | `fec` | none | **recovery sticks only**: write this FEC and warm-reset |
 | `stamp` | none | parsed, not yet used; for self-update (#2) |
 
@@ -485,13 +492,14 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
 ```
 
 That builds `stormbootx.efi`, `tcp4probe.efi` and `espprobe.efi`, and runs the
-five host test suites. Then it boots espprobe under OVMF (`tests/esp-ovmf.sh`),
+six host test suites. Then it boots espprobe under OVMF (`tests/esp-ovmf.sh`),
 and stormbootx itself against the stub engine and NVMe/TCP target
 (`tests/net-ovmf.sh`). Last, it builds an ISO and boots its `startup.nsh`
 from an EFI Shell (`tests/shell-ovmf.sh`, #60), once with the old EDK shell
 and once with OVMF's own.
 There is no host target and no `cargo test`. `src/sha256.rs`,
-`src/intent.rs`, `src/universal.rs`, `src/dnsname.rs` and `src/esp.rs` are the exceptions: each uses only
+`src/intent.rs`, `src/universal.rs`, `src/dnsname.rs`, `src/esp.rs` and
+`src/sntp.rs` are the exceptions: each uses only
 `core` and names no `crate::` item, so each compiles as its own crate with
 `rustc --test`. `esp.rs`'s tests build their images with `mkfs.fat` and
 mtools, which must be on the `PATH`.
@@ -566,6 +574,8 @@ only makes outbound connections:
 |---|---|---|
 | engine API (health, intent read, claim) | `<portal>:9090`, HTTP/1.1 | `api_port` |
 | DNS server (PTR of its own address, #23) | option 6 of its DHCP lease, TCP 53 | DHCP, else `dns` |
+| DNS server (A record of the NTP server, when it is named, #77) | the same server, UDP 53 | DHCP, else `dns` |
+| NTP server (one SNTP exchange, #77) | DHCP option 42, else `pool.ntp.org`, UDP 123 | DHCP, else `ntp` |
 | NVMe/TCP portal (attach) | `<portal>:4420`, or what the claim returns | `port`, or the claim reply |
 
 The portal defaults to `192.168.31.202` (forge). Since stormblock v17.0.0 the
@@ -648,7 +658,7 @@ bytes are its `boot/<name>.iso`.
 
 ## Status
 
-v0.9.0. Running on hardware since 2026-09-05. A Dell PowerEdge R230 (C2NR0Q2)
+v0.12.0. Running on hardware since 2026-09-05. A Dell PowerEdge R230 (C2NR0Q2)
 booted the ISO over iDRAC virtual media, claimed `boothost/C2NR0Q2` and
 attached a 32 GiB 4K clone from forge over 25 GbE. The console of that first
 attach, verbatim (the build before chain-loading, ea26be1):
@@ -678,18 +688,25 @@ from the PTR, claimed `boothost/server1` and attached its clone over NVMe/TCP
 (#26, closed). The release disk's `BOOTX64.EFI` then read as `NOT_FOUND`
 on that firmware, a 4096-byte-block namespace (#33). Volumes stay 4K (owner,
 2026-09-29), so stormbootx now reads the ESP itself when the firmware can't
-(#37).
+(#37). On 2026-09-30 server1 booted release 11.56 from a 4096-byte
+namespace (v0.7.0 media) once that release's ESP was FAT16 (stormcos#188);
+which reader loaded `BOOTX64.EFI` there is not yet known (#33). The same
+night server3, also an X9, booted on smoltcp (v0.9.0): `tcp4 : smoltcp over
+SNP`, `rng : rdrand`, a lease, the claim, the attach, stormuefi and a running
+stormcos (#56, #68).
 
 Open issues:
 
 | Issue | What |
 |---|---|
-| #37, #33 | X9 blades: `BOOTX64.EFI` not found on a 4096-byte namespace. stormbootx now reads the 4K ESP itself when the firmware can't; verified under OVMF, not yet on server1. #33 also has the SOL console on ttyS1 |
+| #37, #33 | X9 blades on a 4096-byte namespace: server1 boots 11.56; which reader loaded it, and the SOL console on ttyS1, are still open; #67 hardens `esp.rs` |
+| #68 | smoltcp on metal: multi-NIC ranking, a 25G link, stormnic's SNP and `release` not yet seen |
+| #78 | server1 on v0.10.0 normal media goes silent after `target` |
 | #15 | universal boot: client side done; forge is on stormblock 13.7.0, and there is no `boothost/default` |
-| #23 | identity from DNS: client side done; stormblock#204 and a metal test |
-| #11 | a per-machine boot intent (`install`/`local` wait on forge running stormblock#148; `auto` already boots a bootable local disk, #3) |
+| #11 | a per-machine boot intent (`install`/`local` wait on forge running stormblock v20, #148; `auto` claims unless `local_when_bootable = true`, #3) |
+| #36, #52 | the golden media's pinned fallback (nsid 2); the third, firmware-drivers-only media golden |
 | #7 | placeholder list shared with stormipmi |
-| #27, #29, #30 | Rust NIC drivers replacing iPXE; hermon's hang |
+| #27, #30, #69–#75, #80, #81 | Rust NIC drivers replacing iPXE (and whether the X9 blades move to the rustnic media); hermon's hang |
 | #2, #4, #10, #14 | self-update; inventory; the shared initiator; test containers |
 
 A slide deck of the above is in [`docs/presentation.md`](docs/presentation.md)

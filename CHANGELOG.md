@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-10-02
+- **docs:** refreshed from the code (changes since 2026-09-25). README: the failure console's `state`/`dhcp [secs]` (smoltcp, not the firmware's IP4 policy) and `help`; the fall-through's NTP sync and NIC release; `rng` and `media` in the `stormboot.conf` table; the NTP and DNS/UDP outbound connections; six host suites; stormblock#148 released in v20.0.0 (not on forge); v0.12.0 status with server1's 4K boot and server3's smoltcp boot; open-issue table. Deck: v0.12.0, the clock and hand-off, the full config table, how the two media goldens ship, test counts, planned/status slides. CLAUDE.md: #56 verified on metal (#68), #37's server1 boot, the media components registered, #23 closed, #148 released, #3's v0.8.1 override, #19 decided (#32, #59).
+
 ## [v0.12.0] — 2026-10-01
 
 ### Added
