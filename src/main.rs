@@ -62,10 +62,12 @@ mod esp;
 mod espboot;
 mod handoff;
 mod intent;
+mod manifest;
 mod mlxfec;
 mod net;
 mod nvme;
 mod registry;
+mod selfupdate;
 mod shell;
 mod sha256;
 mod smbios;
@@ -111,12 +113,12 @@ fn banner(line: &str) {
     uefi::println!("{line}");
 }
 
-fn run() -> Result<(), String> {
+/// Identify the build, always. Four separate boots during hardware bring-up
+/// were spent reading output from three *different* stale sticks in the same
+/// machine, each looking plausible, because nothing on the console said
+/// which binary was talking. A version and a commit cost one line.
+fn identify() {
     banner("");
-    // Identify the build, always. Four separate boots during hardware bring-up
-    // were spent reading output from three *different* stale sticks in the same
-    // machine, each looking plausible, because nothing on the console said
-    // which binary was talking. A version and a commit cost one line.
     match option_env!("STORMBOOTX_BUILD") {
         Some(b) => uefi::println!(
             "stormbootx {} ({b}) — NVMe/TCP boot extension",
@@ -128,6 +130,9 @@ fn run() -> Result<(), String> {
         ),
     }
     banner("============================================================");
+}
+
+fn run() -> Result<(), String> {
     // Two media goldens share a commit and differ in their NIC drivers (#45):
     // the stamp above cannot tell them apart, this line does.
     if let Some(m) = config::stated_media() {
@@ -251,6 +256,12 @@ fn run() -> Result<(), String> {
         (Some(c), Some((_, n))) => uefi::println!("mac         : {c}  (lowest of {n} NIC(s))"),
         _ => uefi::println!("mac         : none usable"),
     }
+
+    // 2c. The medium updates itself (#83): ask stormcentral for the current
+    //     release of this medium's golden and, if it is newer and its signed
+    //     manifest verifies, write it to the medium and restart into it.
+    //     Read-only media, `update = off` and every failure go on booting.
+    selfupdate::check(mac_colon.as_deref());
 
     // What an older engine is asked for, and what the host NQN falls back to:
     // the stated tag, else the SMBIOS serial, else the MAC (#7's floor).
@@ -477,6 +488,10 @@ fn run() -> Result<(), String> {
                     }
                 };
             if intent::decide(chosen, local_bootable) == intent::Action::Local {
+                // The engine answered: a medium on trial (#83) has reached it.
+                if matches!(said, intent::Reply::Stated(_)) {
+                    selfupdate::mark_good("the engine's intent is local");
+                }
                 // The local disk's Linux gets the name only when stormbootx
                 // named the machine anyway (a stated tag, a DNS name), never
                 // a serial or MAC guess (#76).
@@ -649,6 +664,9 @@ fn run() -> Result<(), String> {
         &hostnqn,
     )?;
 
+    // An attach is what a new medium on trial has to reach (#83).
+    selfupdate::mark_good("attached");
+
     let g = ns.geometry;
     let gib = (g.blocks.saturating_mul(g.block_size as u64)) / (1024 * 1024 * 1024);
     uefi::println!(
@@ -792,6 +810,14 @@ fn ptr_lookup(server: [u8; 4], addr: [u8; 4]) -> Result<String, String> {
 #[entry]
 fn main() -> Status {
     uefi::helpers::init().unwrap();
+    identify();
+
+    // A medium that updated itself counts its trial starts here, before
+    // anything else runs, and one whose new set never attached puts the old
+    // one back and starts it instead (#83).
+    if let Some(status) = selfupdate::at_start() {
+        return status;
+    }
 
     // run() hands off to the image's bootloader and does not return on
     // success; every path back here is a failure to fall through from.

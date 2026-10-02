@@ -88,6 +88,7 @@ fn handed_down() {
         (uefi::cstr16!("StormBootTag"), "StormBootTag"),
         (uefi::cstr16!("StormBootHostNqn"), "StormBootHostNqn"),
         (uefi::cstr16!("StormBootClock"), "StormBootClock"),
+        (uefi::cstr16!("StormBootUpdate"), "StormBootUpdate"),
     ] {
         let mut buf = [0u8; 256];
         if let Ok((value, attrs)) = get_variable(name, &vendor, &mut buf) {

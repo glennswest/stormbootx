@@ -103,31 +103,36 @@ fn left(why: &str) -> String {
 /// The address of `host`: itself when it is one, else the first A record
 /// from the lease's DNS server (or `dns =`).
 fn resolve(host: &str, lease: &[u8]) -> Result<[u8; 4], String> {
+    lookup(host, lease).map_err(|e| left(&e))
+}
+
+/// `host` as an address: itself when it is one, else the first A record from
+/// the lease's option 6 server (or `dns =`), asked twice over UDP. Also the
+/// self-update's lookup of stormcentral (#83).
+pub fn lookup(host: &str, lease: &[u8]) -> Result<[u8; 4], String> {
     if let Some(a) = config::parse_ipv4(host) {
         return Ok(a);
     }
     let dns = dnsname::dhcp_option(lease, dnsname::OPT_DNS)
         .and_then(dnsname::first_dns)
         .or_else(config::stated_dns)
-        .ok_or_else(|| left(&format!("no DNS server to look up {host} (none in the lease, no dns =)")))?;
+        .ok_or_else(|| format!("no DNS server to look up {host} (none in the lease, no dns =)"))?;
     let mut last = String::new();
     for _ in 0..2 {
         let id = net::random_u64().unwrap_or(0x5b77) as u16;
         let mut q = [0u8; 300];
-        let n = dnsname::a_query(host, id, &mut q)
-            .ok_or_else(|| left(&format!("{host:?} is not a DNS name")))?;
+        let n = dnsname::a_query(host, id, &mut q).ok_or_else(|| format!("{host:?} is not a DNS name"))?;
         // Any reply to this id ends the wait, an NXDOMAIN included.
         let ours = |m: &[u8]| m.len() >= 12 && m[..2] == id.to_be_bytes() && m[2] & 0x80 != 0;
         match net::udp_exchange(dns, 53, &q[..n], TRY_MS, ours) {
             Ok((m, _)) => {
-                return dnsname::a_answer(&m, id).ok_or_else(|| {
-                    left(&format!("{host} has no address at DNS server {}", ip_text(dns)))
-                })
+                return dnsname::a_answer(&m, id)
+                    .ok_or_else(|| format!("{host} has no address at DNS server {}", ip_text(dns)))
             }
             Err(e) => last = e,
         }
     }
-    Err(left(&format!("could not look up {host}: {last}")))
+    Err(format!("could not look up {host}: {last}"))
 }
 
 /// The NTP server's address on success, or the console line on failure.

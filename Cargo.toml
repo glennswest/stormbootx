@@ -29,6 +29,10 @@ uefi-raw = "0.15"
 # stormbootx's own TCP/IP, on the NIC driver's SNP (#56): DHCP, ARP and TCP,
 # and UDP for one SNTP exchange and its DNS lookup (#77). The firmware's
 # EFI_TCP4 is not used.
+# Verify-only Ed25519 for the self-update's signed manifest (#83): an audited
+# no_std crate with no dependencies once its defaults are off, never crypto
+# written here. Nothing in this binary signs.
+ed25519-compact = { version = "2.6", default-features = false, features = ["opt_size"] }
 smoltcp = { version = "0.14", default-features = false, features = ["alloc", "medium-ethernet", "proto-ipv4", "socket-tcp", "socket-udp", "socket-dhcpv4"] }
 
 [profile.release]

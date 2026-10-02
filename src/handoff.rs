@@ -13,6 +13,7 @@
 //! | `StormBootTag` | the name claimed on: the reply's host, else the name claimed |
 //! | `StormBootHostNqn` | the host NQN the namespace was attached as |
 //! | `StormBootClock` | `synced:<NTP server address>` or `unsynced` (#77, `clock.rs`) |
+//! | `StormBootUpdate` | the medium's self-update (#83, `selfupdate.rs`): `serial:<n>`, `trial:<n>:<start>`, `good:<n>` or `failed:<n>` |
 //!
 //! Vendor GUID `ab361f54-0166-44a4-a088-1ac22e98ab76`, attributes
 //! `BOOTSERVICE_ACCESS | RUNTIME_ACCESS` and never `NON_VOLATILE`: they die
@@ -46,6 +47,20 @@ pub fn set_host_nqn(nqn: &str) {
 /// knows whether to trust the clock it starts with.
 pub fn set_clock(value: &str) {
     set(cstr16!("StormBootClock"), "StormBootClock", value);
+}
+
+/// `StormBootUpdate` (#83): what the boot medium's self-update did, for
+/// stormcentral to see from Linux. `keep` leaves a value already set this
+/// boot alone: a set put back after a failed trial says `failed:<n>` before
+/// it chain-loads the previous binary, which must not overwrite it.
+pub fn set_update(value: &str, keep: bool) {
+    if keep {
+        let mut buf = [0u8; 64];
+        if uefi::runtime::get_variable(cstr16!("StormBootUpdate"), &VENDOR, &mut buf).is_ok() {
+            return;
+        }
+    }
+    set(cstr16!("StormBootUpdate"), "StormBootUpdate", value);
 }
 
 fn set(var: &CStr16, label: &str, value: &str) {

@@ -47,6 +47,27 @@ use uefi::{CStr16, Handle};
 /// Path on the ESP holding both the config and the update stamp.
 pub const CONF_PATH: &str = r"\stormboot\stormboot.conf";
 
+/// This medium's own settings (#83), read before `stormboot.conf`, so a key
+/// set here wins. A self-update replaces `stormboot.conf` with the golden's
+/// and never touches this file; it carries a `name =`/`tag =` here when the
+/// new `stormboot.conf` would drop it.
+pub const LOCAL_CONF_PATH: &str = r"\stormboot\local.conf";
+
+/// `local.conf` then `stormboot.conf`, as one text: `field` takes the first
+/// match, so the medium's own settings win.
+pub fn conf_text() -> Option<String> {
+    match (read_file(LOCAL_CONF_PATH), read_file(CONF_PATH)) {
+        (Some(local), Some(main)) => Some(format!("{local}\n{main}")),
+        (local, main) => local.or(main),
+    }
+}
+
+/// `update =` (#83): where this medium's current release is, or `off`.
+/// `None` when the media names nothing.
+pub fn stated_update() -> Option<String> {
+    field(&conf_text()?, "update")
+}
+
 /// What the extension needs in order to attach.
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -111,7 +132,7 @@ pub fn boot_volume() -> Option<Handle> {
     li.device()
 }
 
-fn open_fs(handle: Handle) -> Option<ScopedProtocol<SimpleFileSystem>> {
+pub(crate) fn open_fs(handle: Handle) -> Option<ScopedProtocol<SimpleFileSystem>> {
     boot::open_protocol_exclusive::<SimpleFileSystem>(handle).ok()
 }
 
@@ -129,7 +150,7 @@ fn open_fs(handle: Handle) -> Option<ScopedProtocol<SimpleFileSystem>> {
 /// and finds nothing to do on the boot after. An unparseable value is ignored
 /// rather than guessed at — writing the wrong FEC is what made this necessary.
 pub fn stated_fec() -> Option<crate::mlxfec::Fec> {
-    let text = read_file(CONF_PATH)?;
+    let text = conf_text()?;
     crate::mlxfec::Fec::parse(&field(&text, "fec")?)
 }
 
@@ -149,7 +170,7 @@ pub enum EspReader {
 /// `esp =` from the config file, read before the network, with the rest of
 /// the media: nothing on the media is opened after the attach (#46).
 pub fn esp_reader() -> EspReader {
-    match read_file(CONF_PATH).and_then(|t| field(&t, "esp")).as_deref() {
+    match conf_text().and_then(|t| field(&t, "esp")).as_deref() {
         Some("firmware") => EspReader::Firmware,
         Some("stormbootx") => EspReader::Stormbootx,
         _ => EspReader::Auto,
@@ -164,7 +185,7 @@ pub fn esp_reader() -> EspReader {
 /// the rest of the media, like `esp =` (#46).
 pub fn local_when_bootable() -> bool {
     matches!(
-        read_file(CONF_PATH).and_then(|t| field(&t, "local_when_bootable")).as_deref(),
+        conf_text().and_then(|t| field(&t, "local_when_bootable")).as_deref(),
         Some("true" | "yes" | "1")
     )
 }
@@ -176,7 +197,7 @@ pub fn local_when_bootable() -> bool {
 /// it is the first thing printed and the thing the claim is keyed on — so this
 /// reads that one field rather than reordering the boot to suit it.
 pub fn stated_tag() -> Option<String> {
-    let text = read_file(CONF_PATH)?;
+    let text = conf_text()?;
     field(&text, "name")
         .filter(|v| !v.is_empty())
         .or_else(|| field(&text, "tag").filter(|v| !v.is_empty()))
@@ -187,13 +208,13 @@ pub fn stated_tag() -> Option<String> {
 /// differ only in the NIC drivers they carry, so the console says which one
 /// booted. Absent on media built by hand.
 pub fn stated_media() -> Option<String> {
-    field(&read_file(CONF_PATH)?, "media").filter(|v| !v.is_empty())
+    field(&conf_text()?, "media").filter(|v| !v.is_empty())
 }
 
 /// The first entropy source to try (`rng = firmware | cpu | jitter`, #56).
 /// Absent or unrecognised is `firmware`: the best source present.
 pub fn stated_rng() -> crate::entropy::Start {
-    read_file(CONF_PATH)
+    conf_text()
         .and_then(|t| field(&t, "rng"))
         .and_then(|v| crate::entropy::Start::parse(&v))
         .unwrap_or(crate::entropy::Start::Firmware)
@@ -203,14 +224,14 @@ pub fn stated_rng() -> crate::entropy::Start {
 /// of the machine's own address when its DHCP reply names none or cannot be
 /// read (#26). Absent on ordinary media; the lease's option 6 comes first.
 pub fn stated_dns() -> Option<[u8; 4]> {
-    parse_ipv4(&field(&read_file(CONF_PATH)?, "dns")?)
+    parse_ipv4(&field(&conf_text()?, "dns")?)
 }
 
 /// `ntp =` from the config file (#77): `host[:port]` or `off`, as text for
 /// `sntp::setting`. Absent on ordinary media: the lease's option 42 comes
 /// first, then `pool.ntp.org`.
 pub fn stated_ntp() -> Option<String> {
-    field(&read_file(CONF_PATH)?, "ntp")
+    field(&conf_text()?, "ntp")
 }
 
 /// Read a file from the boot volume as text.
@@ -280,7 +301,7 @@ pub fn list_dir(path: &str) -> Vec<String> {
 }
 
 /// Pull `key = value` out of a flat config file, ignoring comments.
-fn field(text: &str, key: &str) -> Option<String> {
+pub(crate) fn field(text: &str, key: &str) -> Option<String> {
     for line in text.lines() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
@@ -317,7 +338,7 @@ pub fn resolve(d: &Defaults) -> Config {
         source: "compiled defaults".to_string(),
     };
 
-    let text = read_file(CONF_PATH);
+    let text = conf_text();
     let file = text.as_deref();
 
     // A config that exists but is unreadable in part should still contribute
@@ -432,7 +453,7 @@ pub fn write_file(path: &str, body: &[u8]) -> Result<(), String> {
 /// `FileInfo` has no setters that means rebuilding it around the existing
 /// times, attribute and **name**: a `SetInfo` whose `FileName` differs is a
 /// rename, so the name has to be carried across unchanged.
-fn truncate(file: &mut RegularFile, len: u64) -> Result<(), String> {
+pub(crate) fn truncate(file: &mut RegularFile, len: u64) -> Result<(), String> {
     let info = file
         .get_boxed_info::<FileInfo>()
         .map_err(|e| format!("get file info: {e:?}"))?;
