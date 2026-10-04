@@ -303,6 +303,35 @@ say "SNTP stub on 127.0.0.1:$NTP_PORT (udp)"
 accel=tcg
 [[ -w /dev/kvm ]] && accel=kvm
 
+# install-config.yaml (#79), written into a built ISO the way storminstall
+# does (its docs/config-slot.md): into the FAT volume the isohybrid MBR's 0xEF
+# entry names, with mtools, nothing else touched. 2 KiB, so it takes three of
+# stormbootx's 768-byte chunk variables.
+IC="$W/install-config.yaml"
+{
+    printf 'apiVersion: v1\nbaseDomain: stub.lo\nmetadata:\n  name: stubcluster\n'
+    printf 'pullSecret: '"'"'{"auths":{"registry.stub.lo":{"auth":"%s"}}}'"'"'\n' "$(head -c 900 /dev/zero | tr '\0' 'A')"
+    printf 'sshKey: ssh-ed25519 %s stub@test\n' "$(head -c 1000 /dev/zero | tr '\0' 'B')"
+} > "$IC"
+IC_LEN=$(stat -c %s "$IC")
+IC_SHA=$(sha256sum "$IC" | cut -d' ' -f1)
+write_install_config() { # ISO
+    local off
+    off=$(python3 - "$1" <<'PY'
+import struct, sys
+mbr = open(sys.argv[1], "rb").read(512)
+for i in range(4):
+    e = mbr[446 + 16 * i: 462 + 16 * i]
+    if e[4] == 0xEF:
+        print(struct.unpack_from("<I", e, 8)[0] * 512)
+        break
+PY
+)
+    [[ -n "$off" ]] || die "no 0xEF partition in $1's MBR"
+    mcopy -o -i "$1@@$off" "$IC" ::/stormboot/install-config.yaml || die "could not write install-config.yaml into $1"
+    say "install-config.yaml ($IC_LEN bytes, sha256 $IC_SHA) written to the ESP at byte $off"
+}
+
 # boot NAME CPU RNG CLAIM NTP EXPECTED...   (CLAIM: 404 or ok; NTP: good or bad)
 boot() {
     local name=$1 cpu=$2 rng=$3 claim=$4 ntp=$5; shift 5
@@ -317,6 +346,7 @@ boot() {
     # skip as read-only; the other names none.
     [[ $name == shipped ]] && args+=(--update "http://10.0.2.2:$PORT/api/v1/boothelpers/stormbootx-test")
     "$ROOT/scripts/build-boot-agent.sh" "${args[@]}" >/dev/null
+    [[ $name == jitter ]] && write_install_config "$iso"
     cp "$OVMF_VARS" "$W/$name.vars"
     : > "$W/stub.log"
     : > "$W/ntp.log"
@@ -392,7 +422,9 @@ boot shipped "$host_cpu" "" 404 good "${common[@]}" "rng         : " \
     "handoff     : StormBootClock = synced:10.0.2.2" \
     "handed down : StormBootClock = synced:10.0.2.2  (attributes 0x6)" \
     "rtc         : 2031-05-04 03:0" \
-    "update      : the boot medium is read-only (an ISO or virtual media); not updated"
+    "update      : the boot medium is read-only (an ISO or virtual media); not updated" \
+    "install cfg : none on the media (\\stormboot\\install-config.yaml)" \
+    "not:handed down : StormBootInstallConfig"
 grep -q "rng         : jitter" "$W/shipped.txt" && say "note: the shipped boot fell back to jitter"
 boot jitter "$host_cpu,-rdrand,-rdseed" cpu ok bad "${common[@]}" "rng         : jitter" \
     "clock       : NTP unreachable at 10.0.2.2:$NTP_PORT (the server says it is not synchronised (LI 3)); left at " \
@@ -402,5 +434,9 @@ boot jitter "$host_cpu,-rdrand,-rdseed" cpu ok bad "${common[@]}" "rng         :
     "handoff     : StormBootTag = stubhost" \
     "handed down : StormBootTag = stubhost  (attributes 0x6)" \
     "handed down : StormBootHostNqn = nqn.2026-09.lo.storm:host-stubhost  (attributes 0x6)" \
-    "update      : not configured (no update = in \\stormboot\\stormboot.conf)"
+    "update      : not configured (no update = in \\stormboot\\stormboot.conf)" \
+    "handoff     : StormBootInstallConfig ($IC_LEN bytes in 3 chunk(s)) = v1:$IC_LEN:3:$IC_SHA" \
+    "handed down : StormBootInstallConfig = v1:$IC_LEN:3:$IC_SHA  (attributes 0x6)" \
+    "install cfg : $IC_LEN bytes reassembled from 3 chunk(s), length and sha256 match" \
+    "not:stub@test"
 say "PASS"

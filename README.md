@@ -53,7 +53,7 @@ as a NIC driver (#26; absent on ordinary media). It writes to these:
 | the attached clone on the engine | the booted OS writes to its disk, and the BlockIO handle is read-write |
 | the ConnectX NV FEC setting | only with `fec =` on a recovery stick, or `fec MODE` typed at the failure console; followed by a warm reset |
 | the hardware clock (RTC), through UEFI `SetTime` | a boot whose NTP server answers while the RTC is more than a second off (#77); UTC, time zone and daylight left as the firmware had them |
-| **volatile** EFI variables, `StormBootTag`, `StormBootHostNqn`, `StormBootClock` and `StormBootUpdate` | every boot that names the machine, attaches an image, asks NTP or has a self-update state (#76, #77, #83); gone at the next reset |
+| **volatile** EFI variables, `StormBootTag`, `StormBootHostNqn`, `StormBootClock`, `StormBootUpdate` and `StormBootInstallConfig` (+ its chunks) | every boot that names the machine, attaches an image, asks NTP, has a self-update state or finds an `install-config.yaml` on the media (#76, #77, #83, #79); gone at the next reset |
 | its own boot medium: `\EFI\BOOT\BOOTX64.EFI`, `\startup.nsh`, `\stormboot\stormboot.conf`, `\stormboot\drivers\*` (with `*.new`/`*.prev` copies), `\stormboot\state`, and `\stormboot\local.conf` only to keep a `name =` | a writable medium (USB stick, local ESP) with `update =`, when a newer signed release verifies, and the starts of its trial (#83, *Self-update*) |
 | one **non-volatile** EFI variable, `StormBootMinSerial` | when a self-updated medium passes its trial (#83): the highest release serial this machine has run, so an older signed release can't be replayed onto it |
 
@@ -273,6 +273,8 @@ given back on the fall-through.
      from step 5a (or the fall-through).
    - `StormBootUpdate` (#83): the boot medium's self-update, `serial:<n>`,
      `trial:<n>:<start>`, `good:<n>` or `failed:<n>` (*Self-update*).
+   - `StormBootInstallConfig` (#79): the media's `install-config.yaml`, as a
+     header and chunks (*install-config.yaml*, below). Set before step 1.
    A value outside `[A-Za-z0-9._:-]` (Linux ignores those) is not set. Each
    is printed as `handoff : …`; a failure to set is printed and not fatal.
    Linux reads them from `/sys/firmware/efi/efivars/<Name>-<guid>` (four
@@ -309,6 +311,49 @@ given back on the fall-through.
    and every 64 MiB read with its MiB/s. A boot that stalls inside the
    bootloader then shows whether reads crawl, fail, or stopped being asked
    for.
+
+### install-config.yaml
+
+A node's first-boot input (stormcos#82, stormcos `docs/INSTALL-CONFIG.md`:
+cluster name and domain, `sshKey`, `pullSecret`, `apiToken`, `hosts[]`)
+travels **inside the boot media** (owner, 2026-10-02, #79). storminstall
+writes it, stormbootx hands it down, the initramfs puts it in
+`/state/config/install-config.yaml` on a first boot, and stormpump applies it.
+
+**The slot** (storminstall `docs/config-slot.md`):
+`\stormboot\install-config.yaml` on the media's ESP, the `STORMBOOTX` FAT
+volume `build-boot-agent.sh` makes, beside `stormboot.conf`. No partition of
+its own: the ESP is the one volume firmware reads however the media is
+presented (El Torito image on a CD, the isohybrid MBR 0xEF / GPT entry on a
+USB stick, the GPT ESP of the `.img`), and storminstall writes it with plain
+FAT file I/O. At most 256 KiB; a real one is about 1 KiB. For it to keep
+working, the ESP keeps its `\stormboot\` directory, `stormboot.conf`, and
+some free space (the 4 MiB FAT12 ESP has ~4 MiB less any NIC drivers).
+
+**The hand-down** (`src/installconf.rs`, `handoff::set_install_config`):
+read with the rest of the media before step 1, whatever the boot does next,
+into volatile EFI variables under #76's GUID, attributes 0x6. A firmware
+variable may be capped at 1 KiB (EDK2's default `PcdMaxVariableSize`), so the
+file goes in chunks:
+
+| variable | value |
+|---|---|
+| `StormBootInstallConfig0` … `StormBootInstallConfig<N-1>` | the file's bytes, 768 each, the last one shorter |
+| `StormBootInstallConfig` | `v1:<length>:<N>:<sha256, lower-case hex>` |
+
+The header is set last, and a chunk the firmware refuses takes the ones
+already set with it, so a header means the whole file is there. A reader
+concatenates the `N` chunks (each efivarfs file is four attribute bytes and
+then the data) and uses the result only if its length and SHA-256 match. The
+console prints `install cfg : none on the media (…)`, or `handoff :
+StormBootInstallConfig (<length> bytes in <N> chunk(s)) = v1:…`, and never the
+content: it carries the pull secret and the API token. An empty file, one over
+256 KiB, or one the variable store can't hold is reported and not handed down.
+
+The variables are world-readable through efivarfs once Linux is up, so the
+initramfs deletes them after copying (stormblock's side). The copy is made
+only when `/state` has none, so booting old media again never overwrites a
+node's applied config.
 
 ### Self-update
 
@@ -546,8 +591,10 @@ pass when TCP4 is missing, and then creates and configures a TCP4 child. Since
 firmware, not a requirement. `src/tcp4.rs` and `src/dhcp4.rs` (the firmware
 TCP4 client stormbootx used until 0.9) are compiled only into it now.
 When a loader before it set them, it prints the `StormBootTag`,
-`StormBootHostNqn` and `StormBootClock` variables and their attributes
-(`handed down : …`, #76, #77), then what the RTC reads (`rtc : …`);
+`StormBootHostNqn`, `StormBootClock` and `StormBootUpdate` variables and
+their attributes (`handed down : …`, #76, #77, #83), reassembles
+`StormBootInstallConfig` and checks its length and SHA-256 (`install cfg :
+…`, #79), then what the RTC reads (`rtc : …`);
 `tests/net-ovmf.sh` starts it as the attached image's `BOOTX64.EFI` and
 checks them.
 A stick that boots it is made with `--probe` (see *Getting it onto a stick*).
@@ -579,6 +626,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   rustc --edition 2021 --test src/esp.rs -o t/esp-test && ./t/esp-test && \
   rustc --edition 2021 --test src/sntp.rs -o t/sntp-test && ./t/sntp-test && \
   rustc --edition 2021 --test src/manifest.rs -o t/manifest-test && ./t/manifest-test && \
+  rustc --edition 2021 --test src/installconf.rs -o t/installconf-test && ./t/installconf-test && \
   R=${CARGO_TARGET_DIR:-target}/x86_64-unknown-uefi/release && \
   tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi && \
   tests/net-ovmf.sh $R/stormbootx.efi $R/tcp4probe.efi && \
@@ -589,7 +637,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
 ```
 
 That builds `stormbootx.efi`, `tcp4probe.efi` and `espprobe.efi`, and runs the
-seven host test suites. Then it boots espprobe under OVMF (`tests/esp-ovmf.sh`),
+eight host test suites. Then it boots espprobe under OVMF (`tests/esp-ovmf.sh`),
 and stormbootx itself against the stub engine and NVMe/TCP target
 (`tests/net-ovmf.sh`). Last, it builds an ISO and boots its `startup.nsh`
 from an EFI Shell (`tests/shell-ovmf.sh`, #60), once with the old EDK shell
@@ -598,7 +646,7 @@ rebuilds `stormbootx.efi` with a test key: six self-update boots off a
 writable disk (*Self-update*).
 There is no host target and no `cargo test`. `src/sha256.rs`,
 `src/intent.rs`, `src/universal.rs`, `src/dnsname.rs`, `src/esp.rs`,
-`src/sntp.rs` and `src/manifest.rs` are the exceptions: each uses only
+`src/sntp.rs`, `src/manifest.rs` and `src/installconf.rs` are the exceptions: each uses only
 `core` and names no `crate::` item, so each compiles as its own crate with
 `rustc --test`. `esp.rs`'s tests build their images with `mkfs.fat` and
 mtools, which must be on the `PATH`.

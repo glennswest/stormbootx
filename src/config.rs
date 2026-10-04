@@ -236,6 +236,18 @@ pub fn stated_ntp() -> Option<String> {
 
 /// Read a file from the boot volume as text.
 pub fn read_file(path: &str) -> Option<String> {
+    // Config files here are a few hundred bytes; refuse anything that is not,
+    // rather than allocating whatever a corrupt directory entry claims.
+    let out = read_bytes(path, 64 * 1024)?;
+    if out.len() > 64 * 1024 {
+        return None;
+    }
+    String::from_utf8(out).ok()
+}
+
+/// Read a file from the boot volume, at most `cap + 1` bytes of it: a result
+/// longer than `cap` says the file is over the cap, without reading it all.
+pub fn read_bytes(path: &str, cap: usize) -> Option<Vec<u8>> {
     let handle = boot_volume()?;
     let mut fs = open_fs(handle)?;
     let mut root = fs.open_volume().ok()?;
@@ -250,8 +262,6 @@ pub fn read_file(path: &str) -> Option<String> {
         FileType::Dir(_) => return None,
     };
 
-    // Config files here are a few hundred bytes; refuse anything that is not,
-    // rather than allocating whatever a corrupt directory entry claims.
     let mut out = Vec::new();
     let mut chunk = [0u8; 1024];
     loop {
@@ -260,11 +270,11 @@ pub fn read_file(path: &str) -> Option<String> {
             break;
         }
         out.extend_from_slice(&chunk[..n]);
-        if out.len() > 64 * 1024 {
-            return None;
+        if out.len() > cap {
+            break;
         }
     }
-    String::from_utf8(out).ok()
+    Some(out)
 }
 
 /// The regular files in a directory on the boot volume, by name. Empty when

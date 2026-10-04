@@ -43,6 +43,14 @@ mod dhcp4;
 #[path = "universal.rs"]
 #[allow(dead_code)]
 mod universal;
+// For reading back stormbootx's `install-config.yaml` hand-down (#79) the way
+// the initramfs will: the header, the chunks, the digest.
+#[path = "installconf.rs"]
+#[allow(dead_code)]
+mod installconf;
+#[path = "sha256.rs"]
+#[allow(dead_code)]
+mod sha256;
 
 use uefi::boot::{self, SearchType};
 use uefi::prelude::*;
@@ -99,6 +107,51 @@ fn handed_down() {
             );
         }
     }
+    install_config(&vendor);
+}
+
+/// Reassemble `StormBootInstallConfig` (#79) as the initramfs will, and say
+/// whether it is whole: length and SHA-256 against the header. The content is
+/// not printed; it carries secrets.
+fn install_config(vendor: &uefi::runtime::VariableVendor) {
+    use uefi::runtime::get_variable;
+    let mut buf = [0u8; 256];
+    let Ok((value, attrs)) = get_variable(uefi::cstr16!("StormBootInstallConfig"), vendor, &mut buf) else {
+        return;
+    };
+    let text = core::str::from_utf8(value).unwrap_or("");
+    uefi::println!("handed down : StormBootInstallConfig = {text}  (attributes {:#x})", attrs.bits());
+    let Some(h) = installconf::parse_header(text) else {
+        uefi::println!("install cfg : the header does not parse");
+        return;
+    };
+    let mut hash = sha256::Sha256::default();
+    let mut total = 0usize;
+    for i in 0..h.chunks {
+        let mut name = [0u8; 40];
+        let mut wide = [0u16; 40];
+        let mut chunk = [0u8; installconf::CHUNK];
+        let var = match uefi::CStr16::from_str_with_buf(installconf::chunk_name(i, &mut name), &mut wide) {
+            Ok(v) => v,
+            Err(_) => return,
+        };
+        match get_variable(var, vendor, &mut chunk) {
+            Ok((data, a)) if a.bits() == attrs.bits() => {
+                hash.update(data);
+                total += data.len();
+            }
+            _ => {
+                uefi::println!("install cfg : chunk {i} of {} missing", h.chunks);
+                return;
+            }
+        }
+    }
+    let ok = total == h.len && hash.finalize().matches_hex(h.sha256);
+    uefi::println!(
+        "install cfg : {total} bytes reassembled from {} chunk(s), {}",
+        h.chunks,
+        if ok { "length and sha256 match" } else { "MISMATCH" }
+    );
 }
 
 #[entry]

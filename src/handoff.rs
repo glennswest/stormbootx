@@ -14,6 +14,7 @@
 //! | `StormBootHostNqn` | the host NQN the namespace was attached as |
 //! | `StormBootClock` | `synced:<NTP server address>` or `unsynced` (#77, `clock.rs`) |
 //! | `StormBootUpdate` | the medium's self-update (#83, `selfupdate.rs`): `serial:<n>`, `trial:<n>:<start>`, `good:<n>` or `failed:<n>` |
+//! | `StormBootInstallConfig` (+ `…0`..`…<N-1>`) | the media's `install-config.yaml` (#79): `v1:<length>:<N>:<sha256>`, the bytes in `N` chunks (`installconf.rs`) |
 //!
 //! Vendor GUID `ab361f54-0166-44a4-a088-1ac22e98ab76`, attributes
 //! `BOOTSERVICE_ACCESS | RUNTIME_ACCESS` and never `NON_VOLATILE`: they die
@@ -24,6 +25,9 @@
 use uefi::runtime::{VariableAttributes, VariableVendor};
 use uefi::{cstr16, guid, CStr16};
 
+use alloc::format;
+
+use crate::installconf;
 use crate::universal::handoff_value_ok;
 
 /// stormblock#249's vendor GUID for both variables.
@@ -61,6 +65,64 @@ pub fn set_update(value: &str, keep: bool) {
         }
     }
     set(cstr16!("StormBootUpdate"), "StormBootUpdate", value);
+}
+
+/// `install-config.yaml` from the media (#79, stormcos#82), in chunks under
+/// a header set last (`installconf.rs`). Read with the rest of the media,
+/// before the network. The console names its size and digest, never its
+/// content: it carries the pull secret and the API token.
+pub fn set_install_config() {
+    let Some(body) = crate::config::read_bytes(installconf::PATH, installconf::MAX) else {
+        uefi::println!("install cfg : none on the media ({})", installconf::PATH);
+        return;
+    };
+    match installconf::accept(body.len()) {
+        Ok(()) => {}
+        Err(installconf::Refused::Empty) => {
+            uefi::println!("install cfg : {} is empty; not handed down", installconf::PATH);
+            return;
+        }
+        Err(installconf::Refused::TooLarge(_)) => {
+            uefi::println!(
+                "install cfg : {} is over {} KiB; not handed down",
+                installconf::PATH,
+                installconf::MAX / 1024
+            );
+            return;
+        }
+    }
+    let attrs = VariableAttributes::BOOTSERVICE_ACCESS | VariableAttributes::RUNTIME_ACCESS;
+    let digest = crate::sha256::digest(&body).to_hex();
+    let digest = core::str::from_utf8(&digest).unwrap_or("");
+    let n = installconf::chunks(body.len());
+    for (i, chunk) in body.chunks(installconf::CHUNK).enumerate() {
+        let mut name = [0u8; 40];
+        let mut wide = [0u16; 40];
+        let Ok(var) = CStr16::from_str_with_buf(installconf::chunk_name(i, &mut name), &mut wide) else {
+            return;
+        };
+        if let Err(e) = uefi::runtime::set_variable(var, &VENDOR, attrs, chunk) {
+            uefi::println!(
+                "install cfg : not handed down: chunk {i} of {n} refused ({:?}); the firmware's variable store is too small for {} bytes",
+                e.status(),
+                body.len()
+            );
+            for j in 0..i {
+                let mut name = [0u8; 40];
+                let mut wide = [0u16; 40];
+                if let Ok(var) = CStr16::from_str_with_buf(installconf::chunk_name(j, &mut name), &mut wide) {
+                    let _ = uefi::runtime::delete_variable(var, &VENDOR);
+                }
+            }
+            return;
+        }
+    }
+    let mut hb = [0u8; 128];
+    let Some(header) = installconf::header(body.len(), digest, &mut hb) else {
+        return;
+    };
+    let label = format!("{} ({} bytes in {n} chunk(s))", installconf::NAME, body.len());
+    set(cstr16!("StormBootInstallConfig"), &label, header);
 }
 
 fn set(var: &CStr16, label: &str, value: &str) {

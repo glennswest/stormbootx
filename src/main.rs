@@ -61,6 +61,7 @@ mod entropy;
 mod esp;
 mod espboot;
 mod handoff;
+mod installconf;
 mod intent;
 mod manifest;
 mod mlxfec;
@@ -152,6 +153,10 @@ fn run() -> Result<(), String> {
     if local_when_bootable {
         uefi::println!("local       : auto boots a bootable local disk (local_when_bootable in {})", config::CONF_PATH);
     }
+
+    // The node's first-boot input (#79), handed down whatever this boot does
+    // next: it lives on the media, which nothing opens after the attach.
+    handoff::set_install_config();
 
     // 1. Who am I? No network, no configuration, no BMC.
     // A stated tag wins. Discovery is a convenience for a machine nobody has
