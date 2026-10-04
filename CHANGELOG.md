@@ -6,6 +6,7 @@
 ### 2026-10-03
 - **feat:** `install-config.yaml` from the boot media to the node (#79, stormcos#82). `\stormboot\install-config.yaml` on the media's ESP (storminstall's slot, at most 256 KiB) is handed to Linux in volatile EFI variables under #76's GUID: `StormBootInstallConfig0..N-1` carry 768 bytes each, and `StormBootInstallConfig` = `v1:<length>:<N>:<sha256>` is set last, so a header means the whole file. The console names size and digest, never the content. `src/installconf.rs` (core-only, the eighth host suite); `config::read_bytes`; tcp4probe reassembles and checks it.
 - **test:** `tests/net-ovmf.sh` writes a 2 KiB `install-config.yaml` into the ISO's ESP as storminstall does (the isohybrid MBR's 0xEF volume, mtools) and requires it handed down in three chunks with a matching digest; the boot without one must hand down nothing.
+- **fix:** no dead-code warnings for the header reader in stormbootx (tcp4probe and the tests use it).
 - **docs:** README *install-config.yaml* (the slot, the variables, the reader's rules); sc-build command, module map, CLAUDE.md work plan for #79.
 
 ### 2026-10-02

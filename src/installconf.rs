@@ -95,7 +95,9 @@ pub fn header<'a>(len: usize, sha256_hex: &str, out: &'a mut [u8; 128]) -> Optio
     format(out, format_args!("v1:{len}:{}:{sha256_hex}", chunks(len)))
 }
 
-/// A header read back.
+/// A header read back. The reader's half: tcp4probe and the tests use it,
+/// and it is the initramfs's contract; stormbootx itself only writes.
+#[allow(dead_code)]
 #[derive(Debug, PartialEq, Eq)]
 pub struct Header<'a> {
     pub len: usize,
@@ -105,6 +107,7 @@ pub struct Header<'a> {
 
 /// Read a header back. Anything but a `v1` header whose numbers agree with
 /// each other and with [`MAX`] is `None`.
+#[allow(dead_code)]
 pub fn parse_header(s: &str) -> Option<Header<'_>> {
     let mut parts = s.trim_end_matches(['\0', '\n']).split(':');
     if parts.next()? != "v1" {
