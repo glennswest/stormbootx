@@ -465,29 +465,32 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
-- [ ] **#79 — carry install-config.yaml from the media to the node (P1,
-      stormcos#82). In progress.** The slot is storminstall's
+- [x] **#79 — carry install-config.yaml from the media to the node (P1,
+      stormcos#82). Closed 2026-10-03.** The slot is storminstall's
       (`docs/config-slot.md`): `\stormboot\install-config.yaml` on the
-      media's ESP, at most 256 KiB. The carrier is ours to choose; chosen:
-      the owner's offer on #79, volatile EFI variables under #76's GUID,
-      chunked because many firmwares cap a variable near 1 KiB.
-      `StormBootInstallConfig` = `v1:<len>:<chunks>:<sha256 hex>`, set
-      **last**, and `StormBootInstallConfig0..N-1` hold 768 bytes each; a
-      failed chunk deletes the ones written, so the header means the whole
-      file is there. Plan:
-      1. `src/installconf.rs` (core-only, host-tested, the eighth suite):
-         chunk size, names, header format and parse;
-      2. `config::read_bytes` (256 KiB cap) and `handoff::set_install_config`,
-         called in `run()` with the other media reads, before the network;
-         the console names the size and digest, never the content (it has
-         the pull secret);
-      3. tcp4probe reassembles and checks the digest; `tests/net-ovmf.sh`
-         writes a 2 KiB file into the ISO's ESP the way storminstall does
-         (the isohybrid MBR's 0xEF entry, mtools) and requires it handed
-         down intact;
-      4. the initramfs's copy to `/state/config/` on a first boot (and
-         deleting the variables: efivarfs files are world-readable) is
-         stormblock's: file it there.
+      media's ESP, at most 256 KiB. The carrier, ours to choose, is the
+      owner's offer on #79: volatile EFI variables under #76's GUID, chunked
+      because a firmware variable may be capped at 1 KiB.
+      `StormBootInstallConfig0..N-1` hold 768 bytes each and
+      `StormBootInstallConfig` = `v1:<len>:<N>:<sha256>` is set **last**; a
+      refused chunk deletes the ones set, so a header means the whole file.
+      Read in `run()` with the other media reads, before the network; the
+      console names size and digest, never content (pull secret, API token).
+      `src/installconf.rs` (core-only, 7 host tests), `config::read_bytes`,
+      `handoff::set_install_config`; tcp4probe reassembles and checks it.
+      b5784f9 + f0dba90 (warnings), released **v0.15.0** (c74872e). sc-build
+      at the tag with `--locked`: no warnings, suites 9/7/7/8/12/8/11/7,
+      espprobe, both shells, update-ovmf, and `tests/net-ovmf.sh`: a 2053-byte
+      file written into the built ISO's ESP as storminstall does (MBR 0xEF
+      volume, mtools) was handed down as `v1:2053:3:984c…b92b` and tcp4probe,
+      started as the attached image's `BOOTX64.EFI`, reassembled 2053 bytes
+      from 3 chunks with the digest matching; the boot without one handed
+      down nothing. Goldens `golden-stormbootx-5e996dc349a7ec30` and
+      `golden-stormbootx-rustnic-3fce00aa442b9783`. **Left elsewhere:**
+      stormblock#275 (the initramfs copies it to `/state/config/` on a first
+      boot and deletes the variables), stormpump#78 (applies it). **Not run:**
+      a real firmware's variable store (X9 Aptio 4, the R230), a file near
+      256 KiB, storminstall's own binary writing the ISO.
 
 - [x] **#77 — set the hardware clock from NTP before Linux starts (P1,
       owner 2026-10-01). Closed 2026-10-01.** The X9 blades have no RTC
