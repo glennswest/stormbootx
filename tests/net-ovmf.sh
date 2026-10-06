@@ -26,7 +26,7 @@
 #     unsynchronised server (LI 3), which must not set anything:
 #     `StormBootClock = unsynced`.
 #
-# Two boots:
+# Three boots:
 #   1. as shipped: `rng : firmware` or `rdrand`;
 #   2. the entropy fallback: `rng = cpu` on the media masks the firmware's
 #      EFI_RNG, and the CPU is started without RDRAND and RDSEED, so the
@@ -34,8 +34,12 @@
 #      boot's claim succeeds, and the payload (tcp4probe) must read back
 #      `StormBootTag = stubhost` and the host NQN at attributes 0x6, the
 #      volatile `BOOTSERVICE_ACCESS | RUNTIME_ACCESS` Linux reads (#76).
+#   3. an attach that boots nothing (#54): a blank namespace from a second
+#      NVMe stub and a blank local virtio-scsi disk. The fall-through must
+#      withdraw the attached disk, count one local disk, and the firmware
+#      must try its other boot options for 25 s with no CPU exception.
 #
-# Each boot must show the stack, a lease from slirp, the engine's version from
+# Boots 1 and 2 must show the stack, a lease from slirp, the engine's version from
 # the stub, the attach, a blockio progress line and the payload's banner; the
 # engine stub must log the health GET and a claim POST.
 #
@@ -71,11 +75,13 @@ command -v python3 >/dev/null || die "python3 is not installed"
 W=$(mktemp -d "${TMPDIR:-/tmp}/net-ovmf.XXXXXX")
 STUB_PID=""
 NVME_PID=""
+BLANK_PID=""
 NTP_PID=""
 cleanup() {
     [[ -n "$STUB_PID" ]] && kill "$STUB_PID" 2>/dev/null
     [[ -n "$NTP_PID" ]] && kill "$NTP_PID" 2>/dev/null
     [[ -n "$NVME_PID" ]] && kill "$NVME_PID" 2>/dev/null
+    [[ -n "$BLANK_PID" ]] && kill "$BLANK_PID" 2>/dev/null
     rm -rf "$W"
 }
 trap cleanup EXIT
@@ -273,6 +279,15 @@ for _ in $(seq 100); do [[ -s "$W/nvme.port" ]] && break; sleep 0.1; done
 NVME_PORT=$(cat "$W/nvme.port" 2>/dev/null) || die "the NVMe/TCP stub did not start"
 say "NVMe/TCP stub on 127.0.0.1:$NVME_PORT, $(( $(stat -c %s "$W/disk4k.img") / 1048576 )) MiB at 4096-byte blocks"
 
+# A second target serving a blank 64 MiB namespace: an image with no ESP to
+# read, so the attach works and nothing boots (#54).
+truncate -s 64M "$W/blank4k.img"
+python3 "$W/nvme.py" "$W/blank4k.img" "$W/blank.port" &
+BLANK_PID=$!
+for _ in $(seq 100); do [[ -s "$W/blank.port" ]] && break; sleep 0.1; done
+BLANK_PORT=$(cat "$W/blank.port" 2>/dev/null) || die "the blank NVMe/TCP stub did not start"
+say "blank NVMe/TCP stub on 127.0.0.1:$BLANK_PORT"
+
 # The SNTP stub (#77): a fixed time, or with ntp.bad present an
 # unsynchronised answer (LI 3) that must not set the clock.
 cat > "$W/ntp.py" <<'PY'
@@ -333,13 +348,19 @@ PY
 }
 
 # boot NAME CPU RNG CLAIM NTP EXPECTED...   (CLAIM: 404 or ok; NTP: good or bad)
+# BOOT_PORT names another NVMe target for the media, BOOT_DISK adds a local
+# virtio-scsi disk, and BOOT_SETTLE is how long the firmware runs on after
+# the stop line (the payload, or a fall-through).
+BOOT_PORT=
+BOOT_DISK=
+BOOT_SETTLE=2
 boot() {
     local name=$1 cpu=$2 rng=$3 claim=$4 ntp=$5; shift 5
     rm -f "$W/claim.ok" "$W/ntp.bad"
     [[ $claim == ok ]] && : > "$W/claim.ok"
     [[ $ntp == bad ]] && : > "$W/ntp.bad"
     local iso="$W/$name.iso" log="$W/$name.serial" txt="$W/$name.txt"
-    local args=(--iso --binary "$EFI" --engine 10.0.2.2 --api-port "$PORT" --port "$NVME_PORT"
+    local args=(--iso --binary "$EFI" --engine 10.0.2.2 --api-port "$PORT" --port "${BOOT_PORT:-$NVME_PORT}"
                 --nsid 1 --ntp "10.0.2.2:$NTP_PORT" --output "$iso")
     [[ -n "$rng" ]] && args+=(--rng "$rng")
     # The shipped boot's medium names a self-update (#83), which an ISO must
@@ -350,6 +371,9 @@ boot() {
     cp "$OVMF_VARS" "$W/$name.vars"
     : > "$W/stub.log"
     : > "$W/ntp.log"
+    local extra=()
+    [[ -n "$BOOT_DISK" ]] && extra+=(-device virtio-scsi-pci,id=scsi0
+        -drive if=none,id=d0,format=raw,file="$BOOT_DISK" -device scsi-hd,drive=d0,bus=scsi0.0)
     say "[$name] booting under OVMF ($accel, cpu $cpu, rng ${rng:-as shipped}, up to ${LIMIT}s)"
     qemu-system-x86_64 -machine q35,accel="$accel" -cpu "$cpu" -m 1024 \
         -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
@@ -357,17 +381,19 @@ boot() {
         -fw_cfg name=opt/org.tianocore/IPv4Support,string=no \
         -fw_cfg name=opt/org.tianocore/IPv6Support,string=no \
         -netdev user,id=n0 -device virtio-net-pci,netdev=n0,romfile= \
-        -cdrom "$iso" -boot d \
+        -cdrom "$iso" -boot d "${extra[@]}" \
+        -debugcon file:"$W/$name.debug" -global isa-debugcon.iobase=0x402 \
         -display none -serial file:"$log" -no-reboot &
     local qemu=$! t=0
     # Stop once the payload has spoken, or at a fall-through.
     while kill -0 "$qemu" 2>/dev/null && (( t < LIMIT )); do
         grep -qE "is there a TCP/IP stack in this firmware|no network boot: " "$log" 2>/dev/null \
-            && { sleep 2; break; }
+            && { sleep "$BOOT_SETTLE"; break; }
         sleep 1; t=$((t + 1))
     done
     kill "$qemu" 2>/dev/null; wait "$qemu" 2>/dev/null || true
-    tr -d '\r' < "$log" | sed 's/\x1b\[[0-9;]*[A-Za-z]//g' > "$txt"
+    # The firmware's debug port is read too: an exception dump may go there.
+    cat "$log" "$W/$name.debug" 2>/dev/null | tr -d '\r' | sed 's/\x1b\[[0-9;]*[A-Za-z]//g' > "$txt"
     say "[$name] console:"
     grep -v '^\s*$' "$txt" | sed -n '1,90s/^/  | /p'
     say "[$name] stub log:"
@@ -439,4 +465,19 @@ boot jitter "$host_cpu,-rdrand,-rdseed" cpu ok bad "${common[@]}" "rng         :
     "handed down : StormBootInstallConfig = v1:$IC_LEN:3:$IC_SHA  (attributes 0x6)" \
     "install cfg : $IC_LEN bytes reassembled from 3 chunk(s), length and sha256 match" \
     "not:stub@test"
+
+# #54: an attach that boots nothing, on a machine with one blank local disk.
+# The fall-through must take the attached disk back before returning, or
+# the firmware, probing disks for the next boot option, calls into the
+# unloaded image (pvetest1: #UD at RIP 0x47FFFFFCA). The firmware gets 25 s
+# after the fall-through to try every boot option.
+truncate -s 64M "$W/local.img"
+BOOT_PORT=$BLANK_PORT BOOT_DISK="$W/local.img" BOOT_SETTLE=25 \
+boot noesp "$host_cpu" "" 404 good \
+    "blockio     : published on handle" \
+    "no network boot: " \
+    "blockio     : withdrawn" \
+    "RESULT: falling through to the local disk (1 found)" \
+    "not:X64 Exception" \
+    "not:!!!!"
 say "PASS"
