@@ -995,6 +995,21 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Blocked on other repos
 
+- [ ] **#92 — promote the install-config-capable media (P1). Blocked on
+      stormcentral#459 (2026-10-06).** Promotion (`stormcentral stormbootx
+      promote … --booted <pve> --booted <metal>`) needs a passed install on
+      each, booted *with* the golden. pvetest1/2 boot a v0.15.0 rustnic ISO
+      (pvetest1 passed 11.88-flowsdn), but no hardware test machine has ever
+      booted ≥ 0.15.0: the console banners in stormcentral's install logs
+      read `0.14.0 (7e9810f)` on C2NR0Q2 (iDRAC) and `0.10.0` on server8.
+      `check_booted` compares only times, so C2NR0Q2's 11.88 pass would be
+      accepted while proving nothing (stormcentral#286). Asked on
+      stormcentral#459: mount the **v0.17.0** rustnic golden
+      (`golden-stormbootx-rustnic-4207d13a085449f2`; v0.15.0 lacks #54's
+      fix) on a pve VM and C2NR0Q2, install, check the banner, promote as
+      serial 2. That also ends #96's downgrade for v0.15–v0.17 sticks.
+      Nothing in this repo changes for it.
+
 - [ ] #14 — test containers (short/medium/long). **Waiting on an owner
       decision, 2026-09-27.** stormbootx only runs in firmware, so a real test
       boots the `.efi` in a UEFI VM. What exists: the runner

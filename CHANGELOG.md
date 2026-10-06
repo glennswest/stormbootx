@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-06
+- **docs:** CLAUDE.md work plan: #92 blocked on stormcentral#459 (no hardware test machine boots stormbootx ≥ 0.15.0, so nothing can be promoted yet).
 - **docs:** CLAUDE.md work plan: #91 closed, v0.17.0 goldens; README and the presentation drop #27 (closed).
 
 ## [v0.17.0] — 2026-10-06
