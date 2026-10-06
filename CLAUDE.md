@@ -1035,6 +1035,20 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Blocked on other repos
 
+- [ ] **#75 — stormnic-virtio, a Rust virtio-net UEFI driver (P2, owner).
+      Waiting on the owner (2026-10-06, `needs-owner`).** The repo doesn't
+      exist, and this session can't make it a project: `project add` is
+      admin-only, and `project spawn` needs a family with spawn on (only
+      `nana`; from here it would make `stormbootx-virtio`). Asked on #75:
+      (a, recommended) the owner/master creates `glennswest/stormnic-virtio`
+      and registers it like stormnic-ixgbe/mlx4, and its own session writes
+      the driver; (b) a `stormnic` family with spawn; (c) this session
+      creates the repo itself. The PCI IDs are confirmed in pci.ids (1af4:1000
+      transitional, 1af4:1041 modern). This repo's side, once the driver
+      binds: pin it in `build-nic-drivers.sh` (the nic-drivers golden and
+      the rustnic media), then OVMF and pvetest1/2. #69–#74 have the same
+      question.
+
 - [ ] **#92 — promote the install-config-capable media (P1). Blocked on
       stormcentral#459 (2026-10-06).** Promotion (`stormcentral stormbootx
       promote … --booted <pve> --booted <metal>`) needs a passed install on

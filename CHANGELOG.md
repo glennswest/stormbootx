@@ -5,6 +5,7 @@
 
 ### 2026-10-06
 - **docs:** CLAUDE.md work plan: #88 closed, v0.18.0 goldens.
+- **docs:** CLAUDE.md work plan: #75 (stormnic-virtio) waits on the owner: who creates the repo and its project.
 
 ## [v0.18.0] — 2026-10-06
 
