@@ -3,13 +3,19 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
-### 2026-10-06
-- **fix:** the fall-through takes the attached disk back before returning to the firmware (#54): `blockio::withdraw` disconnects and uninstalls the published BlockIO and device path and drops the NVMe/TCP connection. An attach that booted nothing left them installed in an image the firmware then unloaded, so the boot manager probed a disk whose functions were freed: pvetest1's #UD at RIP 0x47FFFFFCA. It also counted that disk as a local one (`2 found` on a VM with one disk). A refused uninstall resets the machine instead of returning.
-- **feat:** a start names a disk an earlier start published and left installed (`blockio : N handle(s) an earlier start published are still installed`).
-- **test:** `tests/net-ovmf.sh` boots a third time (#54): a blank namespace from a second NVMe stub over a blank local virtio-scsi disk. It requires `blockio : withdrawn`, `(1 found)`, no stale disk when the boot manager starts stormbootx again, and no CPU exception in the 25 s after. On the old code it failed on the stale disk and `(2 found)`.
+## [v0.15.1] — 2026-10-06
 
-### 2026-10-03
-- **docs:** CLAUDE.md work plan: #79 closed, v0.15.0 goldens.
+### Fixed
+- The fall-through takes the attached disk back before returning to the firmware (#54): `blockio::withdraw` disconnects and uninstalls the published BlockIO and device path and drops the NVMe/TCP connection. An attach that booted nothing left them installed in an image the firmware then unloaded, so the boot manager probed a disk whose functions were freed: pvetest1's #UD at RIP 0x47FFFFFCA. It also counted that disk as a local one (`2 found` on a VM with one disk). A refused uninstall resets the machine instead of returning.
+
+### Added
+- A start names a disk an earlier start published and left installed (`blockio : N handle(s) an earlier start published are still installed`).
+
+### Testing
+- `tests/net-ovmf.sh` boots a third time (#54): a blank namespace from a second NVMe stub over a blank local virtio-scsi disk. It requires `blockio : withdrawn`, `(1 found)`, no stale disk when the boot manager starts stormbootx again, and no CPU exception in the 25 s after. On the old code it failed on the stale disk and `(2 found)`.
+
+### Documentation
+- README *When it fails*: step 0, the withdraw; CLAUDE.md work plan for #54; CLAUDE.md work plan: #79 closed, v0.15.0 goldens.
 
 ## [v0.15.0] — 2026-10-03
 
