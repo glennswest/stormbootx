@@ -3,11 +3,18 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
-### 2026-10-06
-- **feat:** `net::release` says on the console what it gave back on the fall-through (#68): `net : N of M NIC(s) given back to the firmware (exclusive SNP closed, reconnected)`, and `nic N: SNP not closed (…)` for any it could not. Until now a metal console could not show it.
-- **test:** `tests/net-ovmf.sh` fifth boot, `release` (#68): the firmware's own IPv4 stack on (plus a virtio-rng), stormbootx falls through (claim 404, dead NVMe port), gives the NIC back, and the firmware's PXE on that NIC leases from slirp and starts the payload over TFTP.
-- **docs:** CLAUDE.md work plan: #74 (stormnic-realtek) waits on the owner: the repo, and a machine with a Realtek NIC to verify on.
-- **docs:** CLAUDE.md work plan: #90 closed, v0.20.0 goldens.
+## [v0.21.0] — 2026-10-06
+
+### Added
+- `net::release` says on the console what it gave back on the fall-through (#68): `net : N of M NIC(s) given back to the firmware (exclusive SNP closed, reconnected)`, and `nic N: SNP not closed (…)` for any it could not. Until now a metal console could not show it.
+
+### Tests
+- `tests/net-ovmf.sh` fifth boot, `release` (#68): the firmware's own IPv4 stack on (plus a virtio-rng), stormbootx falls through (claim 404, dead NVMe port), gives the NIC back, and the firmware's PXE on that NIC leases from slirp and starts the payload over TFTP.
+
+### Documentation
+- CLAUDE.md work plan: #74 (stormnic-realtek) waits on the owner: the repo, and a machine with a Realtek NIC to verify on.
+- CLAUDE.md work plan: #90 closed, v0.20.0 goldens.
+- CLAUDE.md work plan: #68 closed.
 
 ## [v0.20.0] — 2026-10-06
 
