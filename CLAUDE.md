@@ -465,23 +465,29 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
-- [ ] **#54 — the fall-through after an attach crashes OVMF (#UD at
-      0x47FFFFFCA, pvetest1). In progress.** An attach that boots nothing
-      (no readable ESP) left `blockio::publish`'s BlockIO and device path
-      installed when `main` returned `ABORTED`. The firmware unloads the
-      image, so BDS, probing block devices for the next boot option, calls
-      `read_blocks` in freed memory. `local_disks()` counted that disk too
-      ("2 found" on a VM with one blank disk). Plan:
-      1. `blockio::withdraw()`: `DisconnectController`, uninstall BlockIO and
-         the device path, drop the namespace (its socket sends a reset);
-         `fall_through` calls it first, before counting disks or the shell.
-         If the firmware refuses the uninstall, say so, don't return to BDS
-         through a dangling protocol: reset instead.
-      2. `tests/net-ovmf.sh`: a fourth boot, `noesp`: a blank namespace
-         from a second NVMe stub, a blank local virtio-scsi disk; requires
-         `blockio : withdrawn`, `(1 found)`, and no `X64 Exception` on the
-         serial or debug console 25 s after the fall-through. Run once
-         against the old code to see it reproduce, then with the fix.
+- [x] **#54 — the fall-through after an attach crashed OVMF (#UD at
+      0x47FFFFFCA, pvetest1). Closed 2026-10-06.** An attach that booted
+      nothing left `blockio::publish`'s BlockIO and device path installed
+      when `main` returned `ABORTED`; the firmware unloaded the image, and
+      BDS probed a disk whose functions were freed. `local_disks()` counted
+      it too ("2 found" with one disk). `blockio::withdraw()` (disconnect,
+      uninstall both, drop the namespace) is `fall_through`'s first step; a
+      refused uninstall resets rather than return. `blockio::stale()` names
+      a disk an earlier start left behind, at the start of `run()`. 935758e,
+      released **v0.15.1** (782a074). `tests/net-ovmf.sh`'s third boot,
+      `noesp` (blank namespace from a second NVMe stub, blank local
+      virtio-scsi disk, 25 s of BDS after): on the old code (b2182c2) BDS's
+      second start of stormbootx printed `1 handle(s) an earlier start
+      published are still installed` and `(2 found)`; on the fix both starts
+      printed `blockio : withdrawn` and `(1 found)`, no stale disk, no
+      exception. Fedora's OVMF never crashed on the old code (the freed pages
+      weren't reused), so the stale handle is the test's evidence, not the
+      #UD. Full sc-build passing; the tag `--locked`. Goldens
+      `golden-stormbootx-232ee4743e6d2f82` and
+      `golden-stormbootx-rustnic-4e1013413b71399c`. **Not run:** pvetest1
+      itself (the master's: a v0.15.1 ISO over its blank disk should print
+      `blockio : withdrawn` and reach BDS's `No bootable option` without
+      the exception).
 
 - [x] **#79 — carry install-config.yaml from the media to the node (P1,
       stormcos#82). Closed 2026-10-03.** The slot is storminstall's
