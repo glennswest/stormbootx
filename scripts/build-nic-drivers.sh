@@ -45,6 +45,10 @@ STORMNIC_IXGBE_REPO="https://github.com/glennswest/stormnic-ixgbe.git"
 # (#2); builds --locked (#47, #48, #51, #63, #65).
 STORMNIC_IXGBE_REF="563ea8d2fc9991b63de51b702ffd6afc4f476e95"
 STORMNIC_MLX4_REPO="https://github.com/glennswest/stormnic-mlx4.git"
+# 0e50017 (v0.2.3, #66): v0.2.2's link diagnostics (speed, autoneg and
+# module from QUERY_PORT at the 5 s link wait and on every link change,
+# stormnic-mlx4#15) and a log line for the first own frame the adapter
+# loops back (spec §7 item 14, stormnic-mlx4#21). On top of
 # cf37f8b (v0.2.1): the UAR's PCI I/O BarIndex is found through
 # GetBarAttributes (stormnic-mlx4#15). AMI Aptio 4 numbers BARs, not BAR
 # registers, so the hard-coded BarIndex 2 was refused and every doorbell write
@@ -53,7 +57,7 @@ STORMNIC_MLX4_REPO="https://github.com/glennswest/stormnic-mlx4.git"
 # path (#4): Start keeps the ConnectX-3 (~1.5 s per NIC plus up to 5 s for
 # link), no #3 broadcast self-test (cef8dc5 is the pin that checks #1-#3), and
 # ExitBootServices stops the device's DMA. Builds --locked (#34, #50, #64).
-STORMNIC_MLX4_REF="cf37f8b7609c85d7c2e38a08f98529774aa8b0b7"
+STORMNIC_MLX4_REF="0e50017e9d1a47efb34ae73c8151ba567b2c0f22"
 read -r -a STORMNIC_DRIVERS <<< "${STORMNIC_DRIVERS:-ixgbe mlx4}"
 for d in "${STORMNIC_DRIVERS[@]}"; do
     [[ "$d" == ixgbe || "$d" == mlx4 ]] || die "STORMNIC_DRIVERS: no Rust driver '$d' (ixgbe, mlx4)"

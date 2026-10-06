@@ -993,6 +993,14 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       pass is `update : -> v… (golden-…, serial 1)`. Only media at v0.14.0 or
       later can take an update: older sticks must be rewritten once.
 
+- [ ] **#66 — rustnic media pins stormnic-mlx4 v0.2.3 (0e50017) (P1).
+      In progress.** The issue asked for v0.2.2 (link diagnostics,
+      stormnic-mlx4#15); the later comment asks for v0.2.3, which adds the
+      loop-back log line (stormnic-mlx4#21). Plan: pin, sc-build the suite
+      plus the rustnic and nic-drivers trees with the rustnic ISO under OVMF
+      (`media : rustnic ixgbe@563ea8d mlx4@0e50017`, mlx4 0.2.3 binding),
+      release, goldens. The first X9 boot at this pin is the master's.
+
 ### Blocked on other repos
 
 - [ ] **#92 — promote the install-config-capable media (P1). Blocked on
