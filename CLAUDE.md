@@ -466,6 +466,26 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
+- [ ] **#88 — a progress line while no NIC has a lease, and a named hung
+      SNP call (P2, from #78). In progress.** After `target` nothing printed
+      until `engine : version unknown (… after 30 s …)`, so a boot sitting in
+      DHCP looked like a dead SOL; and an SNP call that never returns is
+      outside every TSC deadline. Plan:
+      1. `connect_within`: while no NIC holds a lease, one line a second,
+         every NIC's link, DHCP frames out/in and frames received
+         (counted in `SnpDevice`);
+      2. `open_nic`: before the first SNP call, name the NIC's driver (the
+         agent that opened a protocol `BY_CHILD_CONTROLLER` for the SNP
+         handle, else `BY_DRIVER` on it; ComponentName2/ComponentName, else
+         the image's file name);
+      3. `src/snpwatch.rs`: every SNP call is marked; a 1 s periodic timer
+         event at `TPL_NOTIFY` prints `nic N: SNP.<call> (<driver>) has not
+         returned after N s` while one is stuck (it can't be aborted from
+         one thread, only named), and the call's return is reported; closed
+         in `net::release`;
+      4. `tests/net-ovmf.sh`: a fourth boot whose only NIC is on a dead hub
+         must print the driver line and the progress lines.
+
 - [x] **#52 — the firmware-drivers medium (`media : fw`), the third of
       #45's (owner, 2026-09-29). Closed 2026-10-06.** The owner's answer on
       #81 (2026-10-02, "I dont want the ipxe code ... we can keep the code to
