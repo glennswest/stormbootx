@@ -489,6 +489,20 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       the R230 on the fw medium. iPXE leaving `nic-drivers` and
       `build-nic-drivers.sh` is #91.
 
+- [ ] **#91 — retire iPXE from every medium and golden (P1, owner on #81,
+      2026-10-02). In progress.** #52 did the media. Left here:
+      1. `build-nic-drivers.sh`: no iPXE at all (no `IPXE_REF`, no fetch, no
+         make, no `IPXE-SOURCE.txt`); it builds the Rust drivers only, as
+         loadable `.efi` (the `.off` copies existed so a driver with no SNP
+         could not take the blades' network; both have SNP since #50/#51).
+      2. `nic-drivers` golden: `bin/stormnic-ixgbe.efi`,
+         `bin/stormnic-mlx4.efi`, `STORMNIC-SOURCE.txt`; registry
+         `binaries` follows (`component edit`).
+      3. Docs: README (*NIC drivers*, *How it ships*), this file, the
+         presentation; `drivers.rs`'s module doc.
+      4. sc-build including the `nic-drivers` tree; close #30 and the iPXE
+         half of #78 as moot; goldens.
+
 - [x] **#54 — the fall-through after an attach crashed OVMF (#UD at
       0x47FFFFFCA, pvetest1). Closed 2026-10-06.** An attach that booted
       nothing left `blockio::publish`'s BlockIO and device path installed
