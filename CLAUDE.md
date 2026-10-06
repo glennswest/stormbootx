@@ -467,25 +467,28 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
-- [ ] **#88 — a progress line while no NIC has a lease, and a named hung
-      SNP call (P2, from #78). In progress.** After `target` nothing printed
-      until `engine : version unknown (… after 30 s …)`, so a boot sitting in
-      DHCP looked like a dead SOL; and an SNP call that never returns is
-      outside every TSC deadline. Plan:
-      1. `connect_within`: while no NIC holds a lease, one line a second,
-         every NIC's link, DHCP frames out/in and frames received
-         (counted in `SnpDevice`);
-      2. `open_nic`: before the first SNP call, name the NIC's driver (the
-         agent that opened a protocol `BY_CHILD_CONTROLLER` for the SNP
-         handle, else `BY_DRIVER` on it; ComponentName2/ComponentName, else
-         the image's file name);
-      3. `src/snpwatch.rs`: every SNP call is marked; a 1 s periodic timer
-         event at `TPL_NOTIFY` prints `nic N: SNP.<call> (<driver>) has not
-         returned after N s` while one is stuck (it can't be aborted from
-         one thread, only named), and the call's return is reported; closed
-         in `net::release`;
-      4. `tests/net-ovmf.sh`: a fourth boot whose only NIC is on a dead hub
-         must print the driver line and the progress lines.
+- [x] **#88 — a progress line while no NIC has a lease, and a named hung
+      SNP call (P2, from #78). Closed 2026-10-06.** `connect_within`
+      prints `waiting for a lease (N s): nic 0 link UP, DHCP n out n in, n
+      frames in` once a second while no NIC holds a lease (counts kept in
+      `SnpDevice`/`TxQueue`; the shell shows them too). `open_nic` names the
+      NIC's driver before its first SNP call (`snpwatch::driver_of`: the
+      agent that opened the parent `BY_CHILD_CONTROLLER` for a MAC child, or
+      PCI I/O / NII `BY_DRIVER` on the handle; 07cdd22's "any `BY_DRIVER`"
+      named OVMF's VLAN Configuration Driver, a consumer, fixed in dac1712).
+      `src/snpwatch.rs` marks every SNP call; a 1 s periodic timer at
+      `TPL_NOTIFY` prints `SNP.<call> (<driver>) has not returned after N s`
+      (5 s, then every 30 s); `net::release` closes it. Released **v0.18.0**
+      (1dfec6d). sc-build of dac1712: no warnings, suites 9/7/7/8/12/8/11/7,
+      espprobe, both shells, update-ovmf, and net-ovmf's four boots: every
+      boot `nic 0: driver Virtio Network Driver`, and `nolease` (its only NIC
+      on a dead QEMU hub) printed 29 progress lines (`DHCP 1..15 out 0 in, 0
+      frames in`) then `engine : version unknown (no address after 30 s …)`.
+      blockio still 121–123 MiB/s with every call marked. The tag built
+      `--locked` and passed net-ovmf. Goldens
+      `golden-stormbootx-5659a6d6ba69d143` and
+      `golden-stormbootx-rustnic-fe9974d052fd822f`. **Not run:** the hang
+      watch firing (no driver here hangs), and metal.
 
 - [x] **#52 — the firmware-drivers medium (`media : fw`), the third of
       #45's (owner, 2026-09-29). Closed 2026-10-06.** The owner's answer on
