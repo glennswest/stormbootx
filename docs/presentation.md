@@ -196,7 +196,7 @@ Read from the volume it booted from. `key = value`, each key independent.
 - **Ships as goldens** (#21, decided 2026-09-28), written by
   `deploy/build-golden.sh`: `stormbootx` (no NIC drivers: the firmware's own, #52),
   `stormbootx-rustnic` (the Rust stormnic-ixgbe and stormnic-mlx4 drivers,
-  #45) and `nic-drivers`. Both media are stormcentral components of kind
+  #45) and `nic-drivers` (the two Rust drivers; no iPXE anywhere, #91). Both media are stormcentral components of kind
   `media`: `stormcentral component build stormbootx` (or
   `stormbootx-rustnic`) builds a drive golden whose bytes are the ISO.
   Nothing is kept on the build box.
@@ -208,7 +208,7 @@ Read from the volume it booted from. `key = value`, each key independent.
 - **Updated** by itself (#83): a writable medium with `update =` fetches the current release from stormcentral, checks its Ed25519-signed manifest and every file's SHA-256, swaps the files (old kept as `*.prev`) and restarts; the new set must reach an attach within two starts or the old one comes back. stormcentral's key is compiled in (#86); live once stormcentral promotes a golden.
 - **Firmware needs only a UEFI driver for its NIC** (SNP), or one on the
   media in `\stormboot\drivers` (#26: the Supermicro X9 blades have
-  legacy-only NICs). No `EFI_TCP4` since #56.
+  legacy-only NICs and boot the rustnic medium). No `EFI_TCP4` since #56.
 
 ---
 
@@ -247,7 +247,7 @@ smoltcp, through stormuefi to a running stormcos (#56, #68).
 | #11 | intents take effect | forge on stormblock v20 (#148) |
 | #15 | universal boot served | forge on stormblock ≥ 19.4.0, `boothost/default` set, stormblock#202 |
 | stormblock#204 | a DNS name the engine hasn't seen reaches its host (#23 is closed) | stormblock |
-| #27 | NIC drivers in Rust, replacing iPXE | the rustnic media proven on metal; decision #81 |
+| #27 | NIC drivers in Rust (iPXE retired from every medium, #91) | the rustnic media proven on every X9 blade |
 | #4 | report inventory before any OS | decision #20 |
 | #83 | self-update the media (in the binary, OVMF-tested, key compiled in) | stormcentral promoting a golden |
 | #10 | NVMe/TCP initiator as a shared crate | stormboot4bios |
@@ -264,7 +264,6 @@ smoltcp, through stormuefi to a running stormcos (#56, #68).
   `boothost/default`.
 - **P0:** #37 (the X9 blades' 4K ESP), #46 (the R230's initramfs read),
   #15 (one ISO, any machine).
-- **Decisions open:** #81 (X9 blades onto the rustnic media), #20
-  (inventory), #22 (test approach).
+- **Decisions open:** #20 (inventory), #22 (test approach).
 
 Source: https://github.com/glennswest/stormbootx

@@ -33,8 +33,8 @@
 #   firmware has no driver for their NICs (the X9 blades) boot
 #   stormbootx-rustnic.
 #
-# stormbootx-rustnic golden (#45): the same agent with the Rust NIC drivers
-# instead of iPXE's, so they are what a machine booting it tests:
+# stormbootx-rustnic golden (#45): the same agent with the Rust NIC drivers,
+# for machines whose firmware has no UEFI driver for their NICs (the X9 blades):
 #   bin/stormbootx.efi
 #   boot/stormbootx-rustnic.iso   carries stormnic-ixgbe.efi (STORMNIC_IXGBE_REF)
 #                                 and stormnic-mlx4.efi (STORMNIC_MLX4_REF, #34),
@@ -46,14 +46,13 @@
 #   nic-drivers golden, so the drivers are the commit's. The console says
 #   `media : rustnic ixgbe@<sha> mlx4@<sha>`.
 #
-# nic-drivers golden:
-#   bin/ipxe-intelx.efi     iPXE intelx as an EFI driver (on no medium since #52;
-#                           leaving the golden is #91)
-#   bin/stormnic-ixgbe.efi.off, bin/stormnic-mlx4.efi.off
-#                           the Rust drivers, carried, not loaded (#29, #34)
+# nic-drivers golden (an EFI boothelper; no medium takes it as an input since
+# #52):
+#   bin/stormnic-ixgbe.efi, bin/stormnic-mlx4.efi
+#                           the Rust drivers the rustnic medium carries (#29, #34)
 #   STORMNIC-SOURCE.txt     each Rust driver's commit and digest
-#   IPXE-SOURCE.txt         the GPL-2 source note
 #   SHA256SUMS, BUILD
+#   No iPXE, in this golden or any other (owner on #81; #91).
 set -euo pipefail
 
 say() { printf '==> %s\n' "$*"; }
@@ -113,14 +112,14 @@ media_files() {
 case "$GOLDEN" in
 nic-drivers)
     "$ROOT/scripts/build-nic-drivers.sh" "$WORK/drivers"
+    for d in stormnic-ixgbe stormnic-mlx4; do
+        [[ -f "$WORK/drivers/$d.efi" ]] || die "no $d.efi was built"
+    done
     mkdir -p "$OUT/bin"
     cp "$WORK/drivers/"*.efi "$OUT/bin/"
-    # The Rust drivers ride along as *.efi.off, not loaded unless placed on
-    # the media (#29).
-    cp "$WORK/drivers/"*.efi.off "$OUT/bin/" 2>/dev/null || true
-    cp "$WORK/drivers/IPXE-SOURCE.txt" "$WORK/drivers/STORMNIC-SOURCE.txt" "$OUT/"
-    seal "ipxe     = $(sed -n 's/^IPXE_REF="\(.*\)"/\1/p' "$ROOT/scripts/build-nic-drivers.sh")
-stormnic = $(cat "$WORK/drivers/STORMNIC-SOURCE.txt")"
+    cp "$WORK/drivers/STORMNIC-SOURCE.txt" "$OUT/"
+    ! compgen -G "$OUT/bin/ipxe-*" >/dev/null || die "an iPXE driver reached the nic-drivers golden"
+    seal "stormnic = $(cat "$WORK/drivers/STORMNIC-SOURCE.txt")"
     ;;
 stormbootx)
     say "building stormbootx and tcp4probe for x86_64-unknown-uefi"
@@ -153,9 +152,9 @@ stormbootx-rustnic)
     mkdir -p "$OUT/bin" "$OUT/boot"
     cp "$REL/stormbootx.efi" "$OUT/bin/"
 
-    # stormnic-ixgbe on the media in place of iPXE's intelx, stormnic-mlx4 for
-    # the ConnectX-3 (#34), and no iPXE at all.
-    STORMNIC_ON_MEDIA="ixgbe mlx4" "$ROOT/scripts/build-nic-drivers.sh" "$WORK/drivers"
+    # stormnic-ixgbe for the Intel 10G, stormnic-mlx4 for the ConnectX-3
+    # (#34), and no iPXE at all (#91).
+    "$ROOT/scripts/build-nic-drivers.sh" "$WORK/drivers"
     for d in stormnic-ixgbe stormnic-mlx4; do
         [[ -f "$WORK/drivers/$d.efi" ]] || die "no $d.efi was built"
     done

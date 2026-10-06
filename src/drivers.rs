@@ -11,9 +11,10 @@
 //! So the media brings the missing bottom layer: every `*.efi` in
 //! `\stormboot\drivers\` on the volume this binary booted from is loaded and
 //! started as a driver, and then every handle is connected so the new driver
-//! binds its NIC and the platform's own stack binds the SNP it produces. What
-//! ships there is iPXE built as EFI drivers (`scripts/build-nic-drivers.sh`),
-//! a separate GPL-2 binary beside this one.
+//! binds its NIC and stormbootx's own TCP/IP (#56) runs on the SNP it
+//! produces. What ships there, on the rustnic medium only, is the Rust
+//! stormnic drivers (`scripts/build-nic-drivers.sh`); no medium carries iPXE
+//! (#91), and the fw medium carries no drivers (#52).
 //!
 //! **The platform goes first.** Before anything is loaded, one recursive
 //! `ConnectController` pass lets the firmware's own drivers claim every NIC
@@ -121,8 +122,8 @@ fn elapsed(t0: Option<u32>) -> u32 {
 /// `LoadImage` by device path, then `StartImage`.
 ///
 /// By device path rather than from a buffer so the driver's `LoadedImage`
-/// carries a real `DeviceHandle` and `FilePath`: iPXE reads its own device
-/// path at start-up and refuses to run without one.
+/// carries a real `DeviceHandle` and `FilePath`: a driver may read its own
+/// device path at start-up and refuse to run without one (iPXE's did).
 fn load_one(volume: &uefi::proto::device_path::DevicePath, name: &str) -> Result<(), String> {
     let path = format!(r"{DRIVERS_DIR}\{name}");
     let mut buf = [0u16; 256];

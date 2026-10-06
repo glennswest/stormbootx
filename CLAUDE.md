@@ -236,7 +236,8 @@ These have each cost a debugging session. Do not "simplify" them away.
   only UEFI NIC driver in the firmware (`PRO/1000`) manages no device: the
   Intel 10G and the ConnectX-3 carry legacy option ROMs only. No SNP, so no
   TCP4, and no setup switch fixes it. The media carries the driver
-  (`\stormboot\drivers`, iPXE `.efidrv`). The platform's own drivers
+  (`\stormboot\drivers` on the rustnic medium: the Rust stormnic drivers;
+  iPXE's was the first, and no medium carries it since #91). The platform's own drivers
   bind first, so a media driver never displaces a native one.
 - **Never close an event the TCP driver may still signal** (#26, server1,
   2026-09-28). A token that timed out is still queued; closing its event and

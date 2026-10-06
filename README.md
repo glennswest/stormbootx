@@ -705,20 +705,20 @@ drive and is deleted with it. Nothing is left on the build box.
 ./scripts/build-boot-agent.sh --probe            # boots tcp4probe instead
 ./scripts/build-boot-agent.sh --fec default      # FEC recovery stick
 
-# NIC drivers for firmware without them (#26): iPXE as EFI drivers
+# NIC drivers for firmware without them (#26): the Rust stormnic drivers
 ./scripts/build-nic-drivers.sh tmp/drivers
 ./scripts/build-boot-agent.sh --iso --drivers tmp/drivers
 ```
 
-`build-nic-drivers.sh` builds iPXE's `intelx` (Intel 82599/X540/X552) as
-`bin-x86_64-efi/intelx.efidrv` from `glennswest/ipxe` at a pinned commit,
-named `ipxe-intelx.efi`, beside an `IPXE-SOURCE.txt` naming that commit.
-`hermon` (ConnectX-3) is opt-in (`IPXE_DRIVERS="intelx hermon"`): it hung
-server1's boot (#30). iPXE is GPL-2
-and ships as separate binaries on the media. It is the interim, EFI drivers
-only (no PXE), approved by the owner; the long-term replacement is a `no_std`
-Rust driver written from the Intel datasheets (#27). Since #52 no golden medium carries it (the owner on #81 wants no iPXE);
-its removal from the scripts and the `nic-drivers` golden is #91.
+`build-nic-drivers.sh` builds the Rust NIC drivers, each `--locked` from a
+pinned commit of its own repo: `stormnic-ixgbe.efi` (Intel 82599/X540/X552,
+`STORMNIC_IXGBE_REF`) and `stormnic-mlx4.efi` (ConnectX-3,
+`STORMNIC_MLX4_REF`), beside a `STORMNIC-SOURCE.txt` naming each commit and
+digest. `STORMNIC_DRIVERS="ixgbe"` builds one. It checks each is a PE
+boot-service driver (subsystem 11). There is no iPXE in it, on any medium or
+in any golden (owner on #81: "I dont want the ipxe code. Move to ours."; #91,
+#52). The iPXE `intelx` driver that first got the X9 blades onto the network
+(#26) is in the history.
 
 `--help` lists the rest (`--drivers`, `--api-port`, `--port`, `--size`, `--binary`,
 `--output`).
@@ -754,6 +754,7 @@ does nothing else, for stormcentral to run into the volume it mounts:
 |---|---|
 | `stormbootx` | `bin/stormbootx.efi`, `bin/tcp4probe.efi`, `boot/stormbootx.iso` (BMC virtual media), `boot/stormbootx.img` (USB), `boot/tcp4probe.iso`, `media/`, `media.files`, `SHA256SUMS`, `BUILD` |
 | `stormbootx-rustnic` | `bin/stormbootx.efi`, `boot/stormbootx-rustnic.iso` (BMC virtual media), `media/`, `media.files`, `SHA256SUMS`, `BUILD` |
+| `nic-drivers` | `bin/stormnic-ixgbe.efi`, `bin/stormnic-mlx4.efi`, `STORMNIC-SOURCE.txt`, `SHA256SUMS`, `BUILD` (an EFI boothelper; no medium takes it as an input since #52, and it holds no iPXE since #91) |
 
 `media/` is the medium's files as a tree (`EFI/BOOT/BOOTX64.EFI`,
 `stormboot/stormboot.conf`, `stormboot/drivers/*`, `startup.nsh`), and
@@ -761,7 +762,6 @@ does nothing else, for stormcentral to run into the volume it mounts:
 signs and serves when it promotes the golden, for media to update themselves
 from (#83, stormcentral#279). Each medium's `stormboot.conf` carries
 `update = http://stormcentral.g8.lo/api/v1/boothelpers/<golden>`.
-| `nic-drivers` | `bin/ipxe-intelx.efi`, `bin/stormnic-ixgbe.efi.off`, `bin/stormnic-mlx4.efi.off`, `IPXE-SOURCE.txt`, `STORMNIC-SOURCE.txt`, `SHA256SUMS`, `BUILD` |
 
 **Two media, side by side (#45, #52).** `stormbootx` is the
 firmware-drivers medium: no `\stormboot\drivers` at all, so every NIC is
@@ -872,12 +872,12 @@ Open issues:
 |---|---|
 | #37, #33 | X9 blades on a 4096-byte namespace: server1 boots 11.56; which reader loaded it, and the SOL console on ttyS1, are still open; #67 hardens `esp.rs` |
 | #68 | smoltcp on metal: multi-NIC ranking, a 25G link, stormnic's SNP and `release` not yet seen |
-| #78 | server1 on v0.10.0 normal media goes silent after `target` |
+| #78 | server1 on v0.10.0 normal media goes silent after `target` (its iPXE half moot since #91) |
 | #15 | universal boot: client side done; forge is on stormblock 13.7.0, and there is no `boothost/default` |
 | #11 | a per-machine boot intent (`install`/`local` wait on forge running stormblock v20, #148; `auto` claims unless `local_when_bootable = true`, #3) |
-| #36, #52 | the golden media's pinned fallback (nsid 2); the third, firmware-drivers-only media golden |
+| #36 | the golden media's pinned fallback (nsid 2) |
 | #7 | placeholder list shared with stormipmi |
-| #27, #30, #69–#75, #80, #81 | Rust NIC drivers replacing iPXE (and whether the X9 blades move to the rustnic media); hermon's hang |
+| #27, #69–#75, #80 | Rust NIC drivers (iPXE is gone from every medium and golden, #91; the X9 blades boot the rustnic media) |
 | #83 | self-update: in the binary, tested under OVMF, stormcentral's key compiled in (#86); no medium updates until stormcentral promotes a golden (`stormcentral stormbootx promote`) |
 | #4, #10, #14 | inventory; the shared initiator; test containers |
 
