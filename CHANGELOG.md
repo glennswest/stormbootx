@@ -4,6 +4,9 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-06
+- **feat:** The `stormbootx` golden is the firmware-drivers medium (#52, owner on #81): no `\stormboot\drivers`, no iPXE, `media : fw`; a `--drivers` given to `build-golden.sh stormbootx` is ignored. The X9 blades boot `stormbootx-rustnic`.
+- **feat:** Media with no NIC drivers say so: `drivers : none on the media; the firmware's own NIC drivers` (#52).
+- **docs:** README *How it ships*, firmware requirements and the presentation describe the fw medium (#52).
 - **docs:** CLAUDE.md work plan: #54 closed, v0.15.1 goldens.
 
 ## [v0.15.1] — 2026-10-06

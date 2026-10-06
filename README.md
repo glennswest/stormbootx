@@ -584,7 +584,7 @@ others.
 | `local_when_bootable` | `false` | `true`: `auto` and every doubt boot a local disk whose ESP carries `BOOTX64.EFI` instead of claiming (#3). Off until intents work on forge |
 | `esp` | `auto` | who reads the attached ESP (#37): `auto` (firmware, then stormbootx), `firmware`, or `stormbootx` |
 | `rng` | `firmware` | the first entropy source tried (#56): `firmware`, `cpu` (skip `EFI_RNG`) or `jitter` (skip both); `build-boot-agent.sh --rng` |
-| `media` | none | the media's label, printed under the banner (`media : normal`); written by the golden build, `build-boot-agent.sh --media` |
+| `media` | none | the media's label, printed under the banner (`media : fw`); written by the golden build, `build-boot-agent.sh --media` |
 | `fec` | none | **recovery sticks only**: write this FEC and warm-reset |
 | `update` | none (no self-update) | `http://host[:port]/path` of this medium's release on stormcentral, or `off` to pin the medium (#83, *Self-update*); written by the golden build, `build-boot-agent.sh --update` |
 | `stamp` | none | parsed, not used |
@@ -717,7 +717,8 @@ named `ipxe-intelx.efi`, beside an `IPXE-SOURCE.txt` naming that commit.
 server1's boot (#30). iPXE is GPL-2
 and ships as separate binaries on the media. It is the interim, EFI drivers
 only (no PXE), approved by the owner; the long-term replacement is a `no_std`
-Rust driver written from the Intel datasheets (#27).
+Rust driver written from the Intel datasheets (#27). Since #52 no golden medium carries it (the owner on #81 wants no iPXE);
+its removal from the scripts and the `nic-drivers` golden is #91.
 
 `--help` lists the rest (`--drivers`, `--api-port`, `--port`, `--size`, `--binary`,
 `--output`).
@@ -762,9 +763,14 @@ from (#83, stormcentral#279). Each medium's `stormboot.conf` carries
 `update = http://stormcentral.g8.lo/api/v1/boothelpers/<golden>`.
 | `nic-drivers` | `bin/ipxe-intelx.efi`, `bin/stormnic-ixgbe.efi.off`, `bin/stormnic-mlx4.efi.off`, `IPXE-SOURCE.txt`, `STORMNIC-SOURCE.txt`, `SHA256SUMS`, `BUILD` |
 
-**Two media, side by side (#45).** `stormbootx` is the normal media, with
-iPXE's `intelx`. `stormbootx-rustnic` is the same agent from the same commit
-with the Rust drivers instead: `stormnic-ixgbe.efi` built `--locked` from
+**Two media, side by side (#45, #52).** `stormbootx` is the
+firmware-drivers medium: no `\stormboot\drivers` at all, so every NIC is
+the firmware's own UEFI driver's (the Dell R230), and the console says
+`drivers : none on the media; the firmware's own NIC drivers`. Since #52 it
+carries no iPXE (owner on #81: "I dont want the ipxe code ... we can keep the
+code to use built in nic firmware"); a machine whose firmware has no driver
+for its NICs (the X9 blades) boots `stormbootx-rustnic`, the same agent from
+the same commit with the Rust drivers: `stormnic-ixgbe.efi` built `--locked` from
 `STORMNIC_IXGBE_REF` in `scripts/build-nic-drivers.sh`, and no iPXE NIC
 driver, so the Rust driver is what a machine booting it tests. Since #51
 (stormnic-ixgbe 0dd4267) it installs `EFI_SIMPLE_NETWORK_PROTOCOL` on a child
@@ -780,20 +786,18 @@ ConnectX-3, keeps it, and installs `EFI_SIMPLE_NETWORK_PROTOCOL` on a child
 handle per Ethernet port (about 1.5 s per NIC plus up to 5 s for link), so
 the network stack can bind above it. Since #64 (stormnic-mlx4 v0.2.1) it finds
 the UAR's PCI I/O BAR index through `GetBarAttributes`, because AMI Aptio 4
-numbers BARs rather than BAR registers (stormnic-mlx4#15). The normal media does not carry it until
-that is proven on server1. Each Rust driver
+numbers BARs rather than BAR registers (stormnic-mlx4#15). Each Rust driver
 is checked to be PE subsystem 11 (EFI boot-service driver) when it is built.
 The rustnic media builds its own drivers and takes no nic-drivers golden. Each ISO's `stormboot.conf` names the variant, and the console
 prints it under the banner:
 
 ```
-media       : normal
+media       : fw
 media       : rustnic ixgbe@563ea8d mlx4@cf37f8b
 ```
 
-The media carries `\stormboot\drivers` from the nic-drivers golden
-(`--drivers <its bin/>`), or builds the same pinned drivers itself when none
-is given; `BUILD` says which. Its `stormboot.conf` names forge
+The fw medium's `BUILD` says `drivers = none`, and a `--drivers` given to
+`build-golden.sh stormbootx` is ignored. Its `stormboot.conf` names forge
 (`192.168.31.202`) and `dns = 192.168.31.252`; which image a machine boots is
 its boothost on the engine, so one golden boots every machine. stormbootx is
 a stormcentral component of kind `media`, and so is `stormbootx-rustnic`:
@@ -808,7 +812,7 @@ bytes are its `boot/<name>.iso`.
   only when the NIC is in UEFI/PXE mode in setup (Dell: Integrated NIC
   **Enabled with PXE**; `GlobalSlotDriverDisable` off, or add-in cards have
   no UEFI driver). The Supermicro X9 blades' NICs carry legacy option ROMs
-  only, so the media brings `--drivers`.
+  only, so they boot `stormbootx-rustnic`, which brings its own.
 - Any OVMF will do for emulation, Fedora's included (`tests/net-ovmf.sh`).
 
 ## In the code, not active

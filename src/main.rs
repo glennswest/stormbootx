@@ -231,8 +231,12 @@ fn run() -> Result<(), String> {
     //     upper stack and no UEFI driver for its own NICs (the Supermicro X9
     //     blades), and then there is no SNP for TCP4 to sit on. The platform's
     //     drivers bind first; a media driver only takes a NIC nothing else did.
+    //     Media with none (`media : fw`, #52) leave every NIC to the
+    //     firmware's own drivers, and the console says so.
     let loaded = drivers::load_from_media();
-    if !loaded.is_empty() {
+    if loaded.is_empty() {
+        uefi::println!("drivers     : none on the media; the firmware's own NIC drivers");
+    } else {
         let ok = loaded.iter().filter(|l| l.result.is_ok()).count();
         uefi::println!("drivers     : {ok} of {} started from {}", loaded.len(), drivers::DRIVERS_DIR);
         for l in loaded.iter().filter(|l| l.result.is_err()) {

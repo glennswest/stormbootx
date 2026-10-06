@@ -26,10 +26,12 @@
 #                           signs when it promotes this golden (stormcentral#279)
 #   SHA256SUMS, BUILD       digests of every file above; commit and inputs
 #
-#   The media carries \stormboot\drivers: the nic-drivers golden's bin/ when
-#   --drivers names it (stormcentral mounts inputs read-only), else the same
-#   drivers built here from the same pinned iPXE commit. The console says
-#   `media : normal`.
+#   The firmware-drivers medium (#52, owner on #81): no \stormboot\drivers,
+#   so every NIC is the firmware's own UEFI driver's (the Dell R230). The
+#   console says `media : fw` and `drivers : none on the media`. A --drivers
+#   (stormcentral's old nic-drivers input) is ignored. Machines whose
+#   firmware has no driver for their NICs (the X9 blades) boot
+#   stormbootx-rustnic.
 #
 # stormbootx-rustnic golden (#45): the same agent with the Rust NIC drivers
 # instead of iPXE's, so they are what a machine booting it tests:
@@ -45,7 +47,8 @@
 #   `media : rustnic ixgbe@<sha> mlx4@<sha>`.
 #
 # nic-drivers golden:
-#   bin/ipxe-intelx.efi     iPXE intelx as an EFI driver (the approved interim, #26)
+#   bin/ipxe-intelx.efi     iPXE intelx as an EFI driver (on no medium since #52;
+#                           leaving the golden is #91)
 #   bin/stormnic-ixgbe.efi.off, bin/stormnic-mlx4.efi.off
 #                           the Rust drivers, carried, not loaded (#29, #34)
 #   STORMNIC-SOURCE.txt     each Rust driver's commit and digest
@@ -126,34 +129,21 @@ stormbootx)
     mkdir -p "$OUT/bin" "$OUT/boot"
     cp "$REL/stormbootx.efi" "$REL/tcp4probe.efi" "$OUT/bin/"
 
-    if [[ -n "$DRIVERS" ]]; then
-        compgen -G "$DRIVERS/*.efi" >/dev/null || die "no *.efi in $DRIVERS"
-        from="the nic-drivers golden at $DRIVERS"
-    else
-        # Only *.efi reaches the media, so the carried stormnic-ixgbe.efi.off
-        # is not built here unless STORMNIC_ON_MEDIA asks for it.
-        STORMNIC_CARRY=no "$ROOT/scripts/build-nic-drivers.sh" "$WORK/drivers"
-        DRIVERS="$WORK/drivers"
-        from="built here, iPXE $(sed -n 's/^IPXE_REF="\(.*\)"/\1/p' "$ROOT/scripts/build-nic-drivers.sh")"
-    fi
-    # Only the drivers and their source note go on the media.
-    mkdir -p "$WORK/media-drivers"
-    cp "$DRIVERS"/*.efi "$WORK/media-drivers/"
-    for note in "$DRIVERS/IPXE-SOURCE.txt" "$DRIVERS/../IPXE-SOURCE.txt"; do
-        if [[ -f "$note" ]]; then cp "$note" "$WORK/media-drivers/"; break; fi
-    done
+    # No NIC drivers on this medium (#52): the firmware's own bind every NIC.
+    [[ -z "$DRIVERS" ]] || say "ignoring --drivers $DRIVERS: the fw medium carries no NIC drivers (#52)"
 
     # The portal and the PTR fallback are forge's network, like the compiled
     # defaults. Which image a machine boots is its boothost on the engine,
     # never the media, so one golden boots every machine.
-    agent=(--binary "$OUT/bin/stormbootx.efi" --drivers "$WORK/media-drivers" --dns 192.168.31.252 --media normal
+    agent=(--binary "$OUT/bin/stormbootx.efi" --dns 192.168.31.252 --media fw
            --update "$(update_url stormbootx)")
     "$ROOT/scripts/build-boot-agent.sh" --iso "${agent[@]}" --output "$OUT/boot/stormbootx.iso"
     "$ROOT/scripts/build-boot-agent.sh" "${agent[@]}" --tree "$OUT/media" --output "$OUT/boot/stormbootx.img"
     media_files
     "$ROOT/scripts/build-boot-agent.sh" --iso --probe --binary "$OUT/bin/tcp4probe.efi" \
         --output "$OUT/boot/tcp4probe.iso"
-    seal "drivers  = $(cd "$WORK/media-drivers" && ls *.efi | tr '\n' ' ')($from)"
+    [[ ! -e "$OUT/media/stormboot/drivers" ]] || die "NIC drivers reached the fw medium"
+    seal "drivers  = none (the firmware's own, #52)"
     ;;
 stormbootx-rustnic)
     [[ -z "$DRIVERS" ]] || die "$GOLDEN builds its own drivers from the commit's pins; no --drivers"

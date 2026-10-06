@@ -194,7 +194,7 @@ Read from the volume it booted from. `key = value`, each key independent.
   stack (`net-ovmf.sh`, #56), and an ISO's `startup.nsh` starts it from
   the old EDK shell and OVMF's Shell 2.x (`shell-ovmf.sh`, #60).
 - **Ships as goldens** (#21, decided 2026-09-28), written by
-  `deploy/build-golden.sh`: `stormbootx` (normal media, iPXE `intelx`),
+  `deploy/build-golden.sh`: `stormbootx` (no NIC drivers: the firmware's own, #52),
   `stormbootx-rustnic` (the Rust stormnic-ixgbe and stormnic-mlx4 drivers,
   #45) and `nic-drivers`. Both media are stormcentral components of kind
   `media`: `stormcentral component build stormbootx` (or
