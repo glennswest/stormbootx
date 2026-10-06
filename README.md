@@ -577,6 +577,11 @@ Every error in `run()`, and a `local` intent, ends in `fall_through`:
    local disk's OS gets the right time too.
 4. It gives every NIC back to the firmware (`net::release`, #56), so a later
    boot option (PXE, HTTP boot) finds the firmware's own stack bound again.
+   It says so: `net : N of M NIC(s) given back to the firmware (exclusive
+   SNP closed, reconnected)`, and names any NIC whose SNP would not close
+   (#68). `tests/net-ovmf.sh`'s fifth boot falls through with the
+   firmware's IPv4 stack on, and the firmware's PXE on the same NIC then
+   boots the payload over TFTP.
 5. It counts local disks (whole, non-removable BlockIO devices; the
    attached image is no longer one of them).
    - If there are any, it prints `falling through to the local disk (N found)`.

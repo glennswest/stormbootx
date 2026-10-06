@@ -718,17 +718,29 @@ pub fn release() {
     snpwatch::close();
     let Some(n) = (unsafe { (*NET.0.get()).take() }) else { return };
     let Some(bs) = bs() else { return };
+    // Said on the console (#68): on metal, the line is the only evidence a
+    // fall-through left the NICs to the next boot option.
+    let mut given = 0;
     for nic in n.nics.iter().filter(|c| c.exclusive) {
-        unsafe {
-            let _ = (bs.close_protocol)(
+        let closed = unsafe {
+            (bs.close_protocol)(
                 nic.handle,
                 &SNP as *const Guid as *const uefi_raw::Guid,
                 boot::image_handle().as_ptr(),
                 ptr::null_mut(),
-            );
-        }
+            )
+        };
         connect(nic.handle);
+        if closed == uefi_raw::Status::SUCCESS {
+            given += 1;
+        } else {
+            uefi::println!("net         : nic {}: SNP not closed ({closed:?})", nic.index);
+        }
     }
+    uefi::println!(
+        "net         : {given} of {} NIC(s) given back to the firmware (exclusive SNP closed, reconnected)",
+        n.nics.len()
+    );
     // Frames still queued stay allocated: the NICs may yet read them.
     core::mem::forget(n);
 }

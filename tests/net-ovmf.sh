@@ -26,7 +26,7 @@
 #     unsynchronised server (LI 3), which must not set anything:
 #     `StormBootClock = unsynced`.
 #
-# Four boots:
+# Five boots:
 #   1. as shipped: `rng : firmware` or `rdrand`;
 #   2. the entropy fallback: `rng = cpu` on the media masks the firmware's
 #      EFI_RNG, and the CPU is started without RDRAND and RDSEED, so the
@@ -41,6 +41,12 @@
 #   4. a NIC on a dead hub (#88): one `waiting for a lease` line a second,
 #      with DHCP out/in and frames in, until the engine's 30 s connect gives
 #      up; and every boot names the NIC's driver before its first SNP call.
+#   5. a fall-through gives the NIC back (#68): the firmware's own IPv4
+#      stack is on (with a virtio-rng, which its drivers need), the claim
+#      404s and the media's NVMe port is dead, so stormbootx falls through
+#      and must say `1 of 1 NIC(s) given back`; the next boot option, the
+#      firmware's PXE on the same NIC, must then lease from slirp and start
+#      the payload over TFTP.
 #
 # Boots 1 and 2 must show the stack, a lease from slirp, the engine's version from
 # the stub, the attach, a blockio progress line and the payload's banner; the
@@ -362,6 +368,12 @@ BOOT_SETTLE=2
 # STOP_AT ends a boot at a console line of its own.
 BOOT_NET=
 STOP_AT=
+# BOOT_PXE=1 (#68) turns the firmware's own IPv4 stack on (its drivers need
+# an EFI_RNG, so a virtio-rng too) and makes the NIC the second boot option,
+# PXE-booting the payload over slirp's TFTP; WAIT_FOR is then the only line
+# that ends the boot, so a fall-through goes on to the next option.
+BOOT_PXE=
+WAIT_FOR=
 boot() {
     local name=$1 cpu=$2 rng=$3 claim=$4 ntp=$5; shift 5
     rm -f "$W/claim.ok" "$W/ntp.bad"
@@ -381,24 +393,31 @@ boot() {
     cp "$OVMF_VARS" "$W/$name.vars"
     : > "$W/stub.log"
     : > "$W/ntp.log"
-    local extra=() net=(-netdev user,id=n0)
+    local extra=() net=(-netdev user,id=n0) nicopt= ipv4=no media=(-cdrom "$iso" -boot d)
     [[ $BOOT_NET == dead ]] && net=(-netdev hubport,id=n0,hubid=7)
+    if [[ -n $BOOT_PXE ]]; then
+        mkdir -p "$W/tftp" && cp "$PAYLOAD" "$W/tftp/payload.efi"
+        net=(-netdev user,id=n0,tftp="$W/tftp",bootfile=payload.efi)
+        nicopt=,bootindex=2 ipv4=yes
+        media=(-drive if=none,id=cd0,media=cdrom,format=raw,file="$iso" -device ide-cd,drive=cd0,bootindex=1)
+        extra+=(-device virtio-rng-pci)
+    fi
     [[ -n "$BOOT_DISK" ]] && extra+=(-device virtio-scsi-pci,id=scsi0
         -drive if=none,id=d0,format=raw,file="$BOOT_DISK" -device scsi-hd,drive=d0,bus=scsi0.0)
     say "[$name] booting under OVMF ($accel, cpu $cpu, rng ${rng:-as shipped}, up to ${LIMIT}s)"
     qemu-system-x86_64 -machine q35,accel="$accel" -cpu "$cpu" -m 1024 \
         -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
         -drive if=pflash,format=raw,file="$W/$name.vars" \
-        -fw_cfg name=opt/org.tianocore/IPv4Support,string=no \
+        -fw_cfg name=opt/org.tianocore/IPv4Support,string=$ipv4 \
         -fw_cfg name=opt/org.tianocore/IPv6Support,string=no \
-        "${net[@]}" -device virtio-net-pci,netdev=n0,romfile= \
-        -cdrom "$iso" -boot d "${extra[@]}" \
+        "${net[@]}" -device virtio-net-pci,netdev=n0,romfile=$nicopt \
+        "${media[@]}" "${extra[@]}" \
         -debugcon file:"$W/$name.debug" -global isa-debugcon.iobase=0x402 \
         -display none -serial file:"$log" -no-reboot &
     local qemu=$! t=0
     # Stop once the payload has spoken, or at a fall-through.
     while kill -0 "$qemu" 2>/dev/null && (( t < LIMIT )); do
-        grep -qE "is there a TCP/IP stack in this firmware|no network boot: ${STOP_AT:+|$STOP_AT}" "$log" 2>/dev/null \
+        grep -qE "${WAIT_FOR:-is there a TCP/IP stack in this firmware|no network boot: ${STOP_AT:+|$STOP_AT}}" "$log" 2>/dev/null \
             && { sleep "$BOOT_SETTLE"; break; }
         sleep 1; t=$((t + 1))
     done
@@ -508,4 +527,20 @@ boot nolease "$host_cpu" "" 404 good \
     "engine      : version unknown (no address after 30 s: nothing answered DHCP on any of 1 NIC(s))" \
     "not:nic 0: leased" \
     "not:has not returned after"
+
+# #68: a fall-through gives the NICs back. The firmware's own IPv4 stack is
+# on, so stormbootx's exclusive SNP open first takes the NIC from the
+# firmware's MNP; the claim 404s and the media's NVMe port is dead, so it
+# falls through, and the next boot option is the firmware's PXE on that
+# NIC, which must lease and TFTP the payload, which then starts.
+BOOT_PORT=9 BOOT_PXE=1 WAIT_FOR="is there a TCP/IP stack in this firmware" BOOT_SETTLE=3 \
+boot release "$host_cpu" "" 404 good \
+    "tcp4        : smoltcp over SNP (nic " \
+    "no network boot: " \
+    "net         : 1 of 1 NIC(s) given back to the firmware (exclusive SNP closed, reconnected)" \
+    "is there a TCP/IP stack in this firmware" \
+    "not:SNP not closed"
+grep -qE "Start PXE over IPv4|Station IP address is" "$W/release.txt" \
+    && say "[release] the firmware's PXE ran on the NIC after the fall-through" \
+    || say "note: no PXE banner on the console (the payload's banner is the evidence)"
 say "PASS"
