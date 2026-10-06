@@ -467,17 +467,22 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
-- [ ] **#94 — the media names its stormbootx version (P2, storminstall#10).
-      In progress.** storminstall can't tell v0.14.0 media (no install-config
-      slot) from v0.15.0+. Plan: `build-boot-agent.sh` appends `version =
-      <Cargo.toml version>` and `commit = <short commit>` to
-      `stormboot.conf` (ESP, ISO9660 tree, golden `media/`), for every kind
-      of medium. The version must be found in the bytes of the `.efi` laid
-      down, or the build dies; the commit is the stamp the binary carries
-      (`STORMBOOTX_BUILD`), or `unstamped` when the binary has none.
-      `config.rs` ignores both keys. A self-update replaces `stormboot.conf`
-      with the release's, so the lines stay true. `tests/iso-layout.sh`
-      checks them (`VERSION=`).
+- [x] **#94 — the media names its stormbootx version (P2, storminstall#10).
+      Closed 2026-10-06.** `build-boot-agent.sh` appends `version =
+      <Cargo.toml version>` and `commit = <the binary's STORMBOOTX_BUILD, or
+      unstamped>` to `stormboot.conf` (ESP, ISO9660 tree, golden `media/`),
+      for every kind of medium; it dies if the `.efi` laid down does not
+      carry that version. stormbootx ignores both keys; a self-update
+      replaces the file with the release's. `tests/iso-layout.sh` checks
+      them. dd4fe58, released **v0.19.0** (649dd07). sc-build of dd4fe58: no
+      warnings, the full suite, a fake `.efi` refused (`does not carry
+      version 0.18.0`), both golden trees built in the job, `iso-layout` PASS
+      on all four ISOs (goldens `commit = dd4fe58`, the hand-built test ISO
+      `unstamped`), and `media/stormboot/stormboot.conf` carrying both
+      lines. The tag's golden tree: `version = 0.19.0`, `commit = 649dd07`.
+      Goldens `golden-stormbootx-069eee57e7f1255b` and
+      `golden-stormbootx-rustnic-61df2f5eed14f7ba`. Media before v0.19.0
+      carry no `version =`; storminstall treats that as too old.
 
 - [x] **#88 — a progress line while no NIC has a lease, and a named hung
       SNP call (P2, from #78). Closed 2026-10-06.** `connect_within`
