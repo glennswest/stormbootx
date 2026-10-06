@@ -465,6 +465,25 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
+- [ ] **#52 — the firmware-drivers medium (`media : fw`), the third of
+      #45's (owner, 2026-09-29). In progress.** The owner's answer on #81
+      (2026-10-02, "I dont want the ipxe code ... we can keep the code to use
+      built in nic firmware") leaves two media: rustnic, and one with no
+      `\stormboot\drivers`. As #91 proposes, the `stormbootx` golden *becomes*
+      that medium, so the name every BMC and recipe points at stays. Plan:
+      1. `build-golden.sh stormbootx`: no drivers on the media, `--media fw`;
+         a `--drivers` from stormcentral (its `nic-drivers` input) is ignored,
+         then the input is dropped (`component edit stormbootx`).
+      2. `run()` says `drivers : none on the media; the firmware's own NIC
+         drivers` when the media carries none, so the console shows it.
+      3. sc-build: build the golden tree in the job and boot its ISO with
+         `tests/media-ovmf.sh` for `media : fw` and that line; no
+         `stormboot/drivers` in `media/`.
+      4. Docs (README *How it ships*, build-golden.sh, presentation), then a
+         release and goldens. The X9 blades' BMCs move to
+         `stormbootx-rustnic` (the master's); iPXE leaving `nic-drivers` and
+         `build-nic-drivers.sh` is #91.
+
 - [x] **#54 — the fall-through after an attach crashed OVMF (#UD at
       0x47FFFFFCA, pvetest1). Closed 2026-10-06.** An attach that booted
       nothing left `blockio::publish`'s BlockIO and device path installed
