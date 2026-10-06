@@ -993,13 +993,21 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       pass is `update : -> v… (golden-…, serial 1)`. Only media at v0.14.0 or
       later can take an update: older sticks must be rewritten once.
 
-- [ ] **#66 — rustnic media pins stormnic-mlx4 v0.2.3 (0e50017) (P1).
-      In progress.** The issue asked for v0.2.2 (link diagnostics,
-      stormnic-mlx4#15); the later comment asks for v0.2.3, which adds the
-      loop-back log line (stormnic-mlx4#21). Plan: pin, sc-build the suite
-      plus the rustnic and nic-drivers trees with the rustnic ISO under OVMF
-      (`media : rustnic ixgbe@563ea8d mlx4@0e50017`, mlx4 0.2.3 binding),
-      release, goldens. The first X9 boot at this pin is the master's.
+- [x] **#66 — rustnic media pins stormnic-mlx4 v0.2.3 (0e50017) (P1).
+      Closed 2026-10-06.** The issue asked for v0.2.2 (link diagnostics,
+      stormnic-mlx4#15); its later comment v0.2.3, which adds the loop-back
+      log line (stormnic-mlx4#21). Pinned in 77b9d3b. sc-build: no warnings,
+      suites 9/7/7/8/12/8/11/7, espprobe, net-ovmf, both shells, update-ovmf,
+      the nic-drivers and rustnic trees (`STORMNIC-SOURCE.txt` mlx4 0e50017
+      `locked`, 81920 bytes, subsystem 11), rustnic ISO `iso-layout` PASS, and
+      under OVMF `media : rustnic ixgbe@563ea8d mlx4@0e50017`, `stormnic-mlx4
+      0.2.3: driver binding installed` and the ixgbe binding. Goldens
+      `golden-stormbootx-rustnic-0b0aba5038360c60` and
+      `golden-nic-drivers-9f614d980f62`; the fw medium carries no drivers and
+      is unchanged. **Left for the master:** an X9 blade (server3) on the
+      rustnic golden: per port, the speed/autoneg/module lines at the link
+      wait (match against dellsw#14) and the loop-back line
+      (stormnic-mlx4#21).
 
 ### Blocked on other repos
 
