@@ -162,7 +162,7 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/sntp.rs` | SNTP request and reply checks, NTP era → Unix, the UTC calendar (core-only, host-tested) |
 | `src/blockio.rs` | publish the namespace as a block device, then chain-load its `BOOTX64.EFI` (the firmware's FAT, then `esp.rs`) |
 | `src/intent.rs` | the boot intent (`install`/`local`/`auto`) read before the claim; every doubt is `auto` |
-| `src/registry.rs` | read the intent; claim `boothost/<tag>`, or `boothost/default` by MAC; read the engine's version; also the old sbregistry `/v1/clones/claim` path, compiled out by `USE_REGISTRY = false` |
+| `src/registry.rs` | read the intent; claim `boothost/<tag>`, or `boothost/default` by MAC, every claim naming the agent (#90); read the engine's version; also the old sbregistry `/v1/clones/claim` path, compiled out by `USE_REGISTRY = false` |
 | `src/dnsname.rs` | the machine's DNS name (#23): DHCP options 12/15/6, PTR query and answer over DNS/TCP |
 | `src/universal.rs` | universal boot (#15): is the engine new enough, which MAC is the machine's, what host the reply named |
 | `src/esp.rs` | the attached ESP read without the firmware's FAT (#37): GPT, FAT12/16/32 at 512..4096-byte sectors |
@@ -1076,20 +1076,25 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       and server3 rustnic v0.12.0. server4 is on v0.14.0. Whether those are
       sticks or BMC media is not in the console.
 
-- [ ] **#90 — the claim names the boot agent (P2, stormcentral#286). In
-      progress (2026-10-06).** Channel: the claim body, beside `{mac,
-      serial}`. The owner's answer on #20 already sends firmware data "with
-      the claim to the boothost record" (stormblock#177), and the engine's
-      `ClaimRequest` ignores unknown fields (no `deny_unknown_fields`,
-      stormblock c8f2e5d), so it costs nothing until #177 records it. Every
-      claim body gains `"agent":{"name":"stormbootx","version","commit",
-      "media","update_serial","update"}`: `commit` the `STORMBOOTX_BUILD`
-      stamp (omitted when unstamped), `media` the `media =` label,
-      `update_serial` the medium's `\stormboot\state` serial (omitted when 0),
-      `update` the `StormBootUpdate` value at claim time (`trial:6:1`, …).
-      Plan: `selfupdate::medium_serial()`, `handoff::update_value()`,
-      `registry::agent()`; net-ovmf and update-boots check the stub's logged
-      claim body; README's claim section; comment the shape on stormblock#177.
+- [x] **#90 — the claim names the boot agent (P2, stormcentral#286).
+      Closed 2026-10-06.** Every claim body carries `"agent":{"name":
+      "stormbootx","version","commit","media","update_serial","update"}`
+      beside `{mac, serial}`. That is the channel the owner chose on #20 for
+      firmware data ("with the claim to the boothost record"). The engine's
+      `ClaimRequest` ignores unknown fields (v13.7.0 on forge and v20.0.0
+      both), so it costs nothing until stormblock#177 records it (shape posted
+      there). `selfupdate::medium_serial()`, `handoff::update_value()`,
+      `registry::agent()`. bc1c83b, released **v0.20.0** (8f51155). sc-build
+      of bc1c83b: no warnings, suites 9/7/7/8/12/8/11/7, espprobe, both shells,
+      net-ovmf (`{"agent":{"name":"stormbootx","version":"0.19.0",…,"media":
+      "agent test"}` on every claim), update-ovmf (`"commit":"update-test"}`
+      on a fresh medium, `"update_serial":5,"update":"trial:5:1"}` on the
+      trial, `serial:5` when current, `"update_serial":6,"update":"failed:8"}`
+      after the revert). The tag built `--locked` and net-ovmf showed
+      `0.20.0`. Goldens `golden-stormbootx-feb820e885a03a63` and
+      `golden-stormbootx-rustnic-b01e86a2fbfca2ba`. **Left elsewhere:**
+      stormblock#177 keeps it; stormcentral#286 reads it; stormcos#219 is the
+      Linux half.
 
 ### Blocked on other repos
 
