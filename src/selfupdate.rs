@@ -66,6 +66,15 @@ const BOOT_PATH: &str = r"\EFI\BOOT\BOOTX64.EFI";
 /// The serial on trial in this boot, 0 for none.
 static TRIAL: AtomicU64 = AtomicU64::new(0);
 
+/// The serial of the files on the medium, as `at_start` read it; 0 for a
+/// medium no update has written (or no state at all).
+static SERIAL: AtomicU64 = AtomicU64::new(0);
+
+/// The medium's update serial, for the claim (#90). 0: none.
+pub fn medium_serial() -> u64 {
+    SERIAL.load(Ordering::Relaxed)
+}
+
 /// A key the OVMF test signs with (`tests/update-ovmf.sh`), compiled in only
 /// when the build sets `STORMBOOTX_UPDATE_TEST_KEY`. No golden build does.
 fn test_key() -> Option<[u8; 32]> {
@@ -96,6 +105,7 @@ pub fn at_start() -> Option<Status> {
     let mut vol = Vol::mount().ok()?;
     let text = vol.read_text(STATE_PATH).ok()??;
     let state = State::parse(&text);
+    SERIAL.store(state.serial, Ordering::Relaxed);
     match manifest::at_start(&state) {
         Start::Normal => {
             if state.serial > 0 {

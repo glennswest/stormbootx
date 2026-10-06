@@ -185,11 +185,28 @@ given back on the fall-through.
    best name first:
 
    ```
-   POST …/api/v1/synonyms/boothost/<stated name>/claim   body {}
-   POST …/api/v1/synonyms/boothost/<DNS name>/claim      body {"mac":"…","serial":"…"}
-   POST …/api/v1/synonyms/boothost/default/claim         body {"mac":"…","serial":"…"}
-   POST …/api/v1/synonyms/boothost/<serial>/claim        body {}
+   POST …/api/v1/synonyms/boothost/<stated name>/claim   body {"agent":{…}}
+   POST …/api/v1/synonyms/boothost/<DNS name>/claim      body {"agent":{…},"mac":"…","serial":"…"}
+   POST …/api/v1/synonyms/boothost/default/claim         body {"agent":{…},"mac":"…","serial":"…"}
+   POST …/api/v1/synonyms/boothost/<serial>/claim        body {"agent":{…}}
    ```
+
+   Every claim names the boot agent (#90, stormcentral#286), so stormcentral
+   can tell which stormbootx booted a machine, not only which release it
+   installed:
+
+   ```
+   "agent": {"name":"stormbootx","version":"0.19.0","commit":"649dd07",
+             "media":"rustnic ixgbe@563ea8d mlx4@0e50017",
+             "update_serial":5,"update":"serial:5"}
+   ```
+
+   `commit` is the build stamp (absent on an unstamped build), `media` the
+   medium's `media =` label, `update_serial` the self-update serial of the
+   files on the medium (absent when no update wrote them), and `update` the
+   `StormBootUpdate` value at claim time (`serial:<n>`, `trial:<n>:<start>`,
+   `failed:<n>`; absent when unset). The engine ignores fields it does not
+   know; keeping it on the host's claim record is stormblock#177.
 
    A stated name is the only one tried. Otherwise a 404 moves on to the next
    line, and any other failure falls back to the resolved target. The DNS

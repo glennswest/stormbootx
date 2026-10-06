@@ -67,6 +67,14 @@ pub fn set_update(value: &str, keep: bool) {
     set(cstr16!("StormBootUpdate"), "StormBootUpdate", value);
 }
 
+/// `StormBootUpdate` as this boot set it, for the claim (#90). `None` when
+/// nothing set it (no update state on the medium).
+pub fn update_value() -> Option<alloc::string::String> {
+    let mut buf = [0u8; 64];
+    let (data, _) = uefi::runtime::get_variable(cstr16!("StormBootUpdate"), &VENDOR, &mut buf).ok()?;
+    core::str::from_utf8(data).ok().map(alloc::string::String::from)
+}
+
 /// `install-config.yaml` from the media (#79, stormcos#82), in chunks under
 /// a header set last (`installconf.rs`). Read with the rest of the media,
 /// before the network. The console names its size and digest, never its

@@ -14,12 +14,15 @@
 #
 #   real      stormcentral's own promotion (tests/fixtures, serial 1, hex
 #             signature): verifies against the release key, and the first
-#             file fetch 404s here, so nothing is written
+#             file fetch 404s here, so nothing is written. Its claim names
+#             the agent with no update serial (#90)
 #   badsig    serial 5 signed with another key: refused, nothing written
 #   update    serial 5 signed: five files differ (two new, one a "driver"
 #             that is not a PE image), written, restart; the new binary's
 #             first start is a trial, and the attach passes it
-#   current   serial 5 again: nothing to do; StormBootUpdate = serial:5
+#   current   serial 5 again: nothing to do; StormBootUpdate = serial:5, and
+#             the claim's agent says update_serial 5 (#90; trial:5:1 in the
+#             update boot, failed:8 under serial 6 after the revert)
 #   notcanary serial 6 names another machine as its only canary: refused
 #   canary    serial 6 names this machine (52:54:00:12:34:56): taken, and the
 #             driver it no longer carries is retired to .prev
@@ -176,6 +179,7 @@ cp "$FIX/stormcentral-rustnic-serial1.sig" "$W/serve/current.sig"
 uboot real "${attached[@]}" \
     "update      : $URL/files/EFI/BOOT/BOOTX64.EFI answered HTTP 404" \
     "stub:GET /api/v1/boothelpers/stormbootx-test/current.sig" \
+    "stub:\"commit\":\"update-test\"}" \
     "not:does not verify" \
     "not:signed manifest refused"
 same /EFI/BOOT/BOOTX64.EFI "$W/A.efi"
@@ -199,7 +203,9 @@ uboot update "${attached[@]}" \
     "retire.efi not started: LoadImage" \
     "update      : serial 5 passed its trial (attached); it stays" \
     "handed down : StormBootUpdate = good:5  (attributes 0x6)" \
-    "stub:GET /api/v1/boothelpers/stormbootx-test/files/EFI/BOOT/BOOTX64.EFI"
+    "stub:GET /api/v1/boothelpers/stormbootx-test/files/EFI/BOOT/BOOTX64.EFI" \
+    "stub:\"commit\":\"update-test\"" \
+    "stub:\"update_serial\":5,\"update\":\"trial:5:1\"}"
 same /EFI/BOOT/BOOTX64.EFI "$W/rel5/EFI/BOOT/BOOTX64.EFI"
 same /EFI/BOOT/BOOTX64.EFI.prev "$W/A.efi"
 same /stormboot/stormboot.conf "$W/rel5/stormboot/stormboot.conf"
@@ -212,6 +218,7 @@ state_has "min = 5"
 uboot current "${attached[@]}" \
     "update      : current (serial 5, v0.13.0-test)" \
     "handed down : StormBootUpdate = serial:5  (attributes 0x6)" \
+    "stub:\"update_serial\":5,\"update\":\"serial:5\"}" \
     "not:restarting into it" \
     "not:on trial"
 
@@ -275,6 +282,7 @@ uboot revert "${attached[@]}" \
     "update      : 4 file(s) put back; starting the restored \\EFI\\BOOT\\BOOTX64.EFI" \
     "update      : serial 8 failed its trial on this medium; staying on serial 6 until a newer one" \
     "handed down : StormBootUpdate = failed:8  (attributes 0x6)" \
+    "stub:\"update_serial\":6,\"update\":\"failed:8\"}" \
     "not:passed its trial"
 same /EFI/BOOT/BOOTX64.EFI "$W/rel6/EFI/BOOT/BOOTX64.EFI"
 same /stormboot/stormboot.conf "$W/rel6/stormboot/stormboot.conf"

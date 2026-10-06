@@ -65,6 +65,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OVMF_CODE=${OVMF_CODE:-/usr/share/edk2/ovmf/OVMF_CODE.fd}
 OVMF_VARS=${OVMF_VARS:-/usr/share/edk2/ovmf/OVMF_VARS.fd}
 LIMIT=${LIMIT:-240}
+VERSION=$(sed -n 's/^version *= *"\(.*\)"/\1/p' "$ROOT/Cargo.toml" | head -1)
 export MTOOLS_SKIP_CHECK=1
 
 say() { printf 'net-ovmf: %s\n' "$*"; }
@@ -373,6 +374,8 @@ boot() {
     # The shipped boot's medium names a self-update (#83), which an ISO must
     # skip as read-only; the other names none.
     [[ $name == shipped ]] && args+=(--update "http://10.0.2.2:$PORT/api/v1/boothelpers/stormbootx-test")
+    # It also names a media label, which every claim carries (#90).
+    [[ $name == shipped ]] && args+=(--media "agent test")
     "$ROOT/scripts/build-boot-agent.sh" "${args[@]}" >/dev/null
     [[ $name == jitter ]] && write_install_config "$iso"
     cp "$OVMF_VARS" "$W/$name.vars"
@@ -443,6 +446,7 @@ common=(
     "not:no network boot"
     "stub:GET /api/v1/health"
     "stub:POST /api/v1/synonyms/boothost/"
+    "stub:{\"agent\":{\"name\":\"stormbootx\",\"version\":\"$VERSION\""
     "not:EFI_TCP4 is not present"
     "stub:NTP request from "
 )
@@ -458,6 +462,7 @@ boot shipped "$host_cpu" "" 404 good "${common[@]}" "rng         : " \
     "handed down : StormBootClock = synced:10.0.2.2  (attributes 0x6)" \
     "rtc         : 2031-05-04 03:0" \
     "update      : the boot medium is read-only (an ISO or virtual media); not updated" \
+    "stub:\"media\":\"agent test\"}" \
     "install cfg : none on the media (\\stormboot\\install-config.yaml)" \
     "not:handed down : StormBootInstallConfig"
 grep -q "rng         : jitter" "$W/shipped.txt" && say "note: the shipped boot fell back to jitter"

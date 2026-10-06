@@ -19,6 +19,7 @@
 
 use alloc::format;
 use alloc::string::{String, ToString};
+use alloc::vec;
 use alloc::vec::Vec;
 
 use crate::net::TcpSocket;
@@ -158,7 +159,8 @@ pub const BOOTHOST_NS: &str = "boothost";
 ///
 /// Also used for the machine's DNS name (#23). That claim carries the MAC and
 /// serial as `{"mac", "serial"}` so the engine can tie a name it has not seen
-/// to a host it already knows by either; a stated tag sends `{}` as before.
+/// to a host it already knows by either; a stated tag sends neither. Every
+/// claim also names the boot agent (`agent`, #90).
 /// The error carries the HTTP status (0 when nothing answered): a 404 means
 /// "not under this name", and the caller may try the next one.
 pub fn claim_boothost(
@@ -194,14 +196,45 @@ pub fn claim_boothost(
     attach_from(body).map_err(|e| (status, e))
 }
 
-/// `{"mac": …, "serial": …}` with whichever are known, or `{}`.
+/// `{"mac": …, "serial": …, "agent": {…}}`, the MAC and serial when known.
 fn hints(mac: Option<&str>, serial: Option<&str>) -> String {
-    let mut fields = Vec::new();
+    let mut fields = vec![format!("\"agent\":{}", agent())];
     if let Some(m) = mac {
         fields.push(format!("\"mac\":\"{}\"", json_str(m)));
     }
     if let Some(s) = serial {
         fields.push(format!("\"serial\":\"{}\"", json_str(s)));
+    }
+    format!("{{{}}}", fields.join(","))
+}
+
+/// The boot agent, named in every claim (#90, stormcentral#286): which
+/// stormbootx booted this machine, so stormcentral can tell a golden that
+/// booted clean from the release it installed. The engine ignores fields it
+/// does not know; stormblock#177's claim record is where it will be kept.
+///
+/// `{"name":"stormbootx","version","commit","media","update_serial","update"}`:
+/// `commit` is the build stamp (absent when unstamped), `media` the medium's
+/// `media =` label, `update_serial` the self-update serial of the files on the
+/// medium (absent when no update wrote them), `update` the `StormBootUpdate`
+/// value at claim time (`serial:5`, `trial:6:1`, `failed:6`).
+fn agent() -> String {
+    let mut fields = vec![
+        "\"name\":\"stormbootx\"".to_string(),
+        format!("\"version\":\"{}\"", env!("CARGO_PKG_VERSION")),
+    ];
+    if let Some(c) = option_env!("STORMBOOTX_BUILD") {
+        fields.push(format!("\"commit\":\"{}\"", json_str(c)));
+    }
+    if let Some(m) = crate::config::stated_media() {
+        fields.push(format!("\"media\":\"{}\"", json_str(&m)));
+    }
+    match crate::selfupdate::medium_serial() {
+        0 => {}
+        n => fields.push(format!("\"update_serial\":{n}")),
+    }
+    if let Some(u) = crate::handoff::update_value() {
+        fields.push(format!("\"update\":\"{}\"", json_str(&u)));
     }
     format!("{{{}}}", fields.join(","))
 }

@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-06
+- **feat:** Every claim names the boot agent (#90, stormcentral#286): the claim body carries `"agent":{"name":"stormbootx","version","commit","media","update_serial","update"}` beside `mac`/`serial` (build stamp, `media =` label, the medium's self-update serial, `StormBootUpdate` at claim time). The engine ignores it until stormblock#177 records it. `tests/net-ovmf.sh` and `tests/update-boots.sh` check the body the stub engine received.
 - **test:** `tests/update-boots.sh` covers the self-update's unseen paths (#89): the medium is a USB stick (`qemu-xhci` + `usb-storage`; `MEDIUM=virtio` for the old bus), stormcentral's real serial-1 manifest and hex signature (`tests/fixtures/`) verify against the release key, a manifest for another machine's canary MAC is refused and one naming this MAC is taken, a driver the release drops is retired to `.prev`, and a release larger than the ESP is refused for room with nothing written. Ten boots, was six.
 - **docs:** CLAUDE.md work plan: #89, OVMF half verified (sc-build of 46048c0); the metal half waits on #96.
 - **docs:** CLAUDE.md work plan: #94 closed, v0.19.0 goldens.
