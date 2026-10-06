@@ -467,6 +467,18 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
+- [ ] **#94 — the media names its stormbootx version (P2, storminstall#10).
+      In progress.** storminstall can't tell v0.14.0 media (no install-config
+      slot) from v0.15.0+. Plan: `build-boot-agent.sh` appends `version =
+      <Cargo.toml version>` and `commit = <short commit>` to
+      `stormboot.conf` (ESP, ISO9660 tree, golden `media/`), for every kind
+      of medium. The version must be found in the bytes of the `.efi` laid
+      down, or the build dies; the commit is the stamp the binary carries
+      (`STORMBOOTX_BUILD`), or `unstamped` when the binary has none.
+      `config.rs` ignores both keys. A self-update replaces `stormboot.conf`
+      with the release's, so the lines stay true. `tests/iso-layout.sh`
+      checks them (`VERSION=`).
+
 - [x] **#88 — a progress line while no NIC has a lease, and a named hung
       SNP call (P2, from #78). Closed 2026-10-06.** `connect_within`
       prints `waiting for a lease (N s): nic 0 link UP, DHCP n out n in, n
