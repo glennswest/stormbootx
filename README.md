@@ -428,12 +428,18 @@ stormcentral#279.
   medium without room says so and is left alone. The 4 MiB ESP of
   `build-boot-agent.sh` holds a set of binary and drivers three times over.
 
-`tests/update-ovmf.sh` boots a writable GPT medium under OVMF six times
-against a stub stormcentral and a test key: a manifest signed by another key
-is refused; serial 5 is written, restarts, passes its trial on the attach;
-serial 5 again is `current`; serial 6, whose `stormboot.conf` names a dead
-NVMe port, fails both trial starts, and the third start puts serial 5 back,
-which then refuses 6. The disk is checked with mtools after each boot.
+`tests/update-ovmf.sh` boots a writable GPT medium on a USB stick
+(`qemu-xhci` + `usb-storage`) under OVMF ten times against a stub
+stormcentral and a test key: stormcentral's own first promotion
+(`tests/fixtures/`, hex signature) verifies against the release key; a
+manifest signed by another key is refused; serial 5 is written, restarts,
+passes its trial on the attach; serial 5 again is `current`; serial 6 for
+another machine's MAC only is refused, then, naming this machine as a canary
+too, taken, retiring the driver it no longer carries to `.prev`; serial 7,
+larger than the ESP, is refused for room; serial 8, whose `stormboot.conf`
+names a dead NVMe port, fails both trial starts, and the third start puts
+serial 6 back, which then refuses 8. The disk is checked with mtools after
+each boot.
 
 ### Why chain-load
 
@@ -664,8 +670,8 @@ and stormbootx itself against the stub engine and NVMe/TCP target
 (`tests/net-ovmf.sh`). Last, it builds an ISO and boots its `startup.nsh`
 from an EFI Shell (`tests/shell-ovmf.sh`, #60), once with the old EDK shell
 and once with OVMF's own. `tests/update-ovmf.sh` (#83) runs last, because it
-rebuilds `stormbootx.efi` with a test key: six self-update boots off a
-writable disk (*Self-update*).
+rebuilds `stormbootx.efi` with a test key: ten self-update boots off a
+writable USB stick (*Self-update*).
 There is no host target and no `cargo test`. `src/sha256.rs`,
 `src/intent.rs`, `src/universal.rs`, `src/dnsname.rs`, `src/esp.rs`,
 `src/sntp.rs`, `src/manifest.rs` and `src/installconf.rs` are the exceptions: each uses only

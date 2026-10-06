@@ -4,6 +4,8 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-06
+- **test:** `tests/update-boots.sh` covers the self-update's unseen paths (#89): the medium is a USB stick (`qemu-xhci` + `usb-storage`; `MEDIUM=virtio` for the old bus), stormcentral's real serial-1 manifest and hex signature (`tests/fixtures/`) verify against the release key, a manifest for another machine's canary MAC is refused and one naming this MAC is taken, a driver the release drops is retired to `.prev`, and a release larger than the ESP is refused for room with nothing written. Ten boots, was six.
+- **docs:** CLAUDE.md work plan: #89 in progress.
 - **docs:** CLAUDE.md work plan: #94 closed, v0.19.0 goldens.
 
 ## [v0.19.0] — 2026-10-06

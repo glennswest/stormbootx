@@ -1,0 +1,11 @@
+stormbootx-manifest 1
+version 0.14.0
+commit 7e9810fa0aaaf914532df499c490173a04246b60
+golden golden-stormbootx-rustnic-75128a00457dab51
+serial 1
+file 7d6760ca1b3cce9de1c58a261bd0ea572ac05fd2d2c952eec481b2fa4381a72d 315904 EFI/BOOT/BOOTX64.EFI
+file 308a83761e874034db5bce6fede311408874280eaebcc9be745de2bb8af63d03 867 startup.nsh
+file 0bfedf94713e093894c9a1fb376d1b98d7421a295f7743a253b423e7ec4fb40d 255 stormboot/drivers/STORMNIC-SOURCE.txt
+file 83aa4d6a32ee19e482eaa886726833a3d859ec32a57510283690e542e1ba6fea 99328 stormboot/drivers/stormnic-ixgbe.efi
+file 91e1a4f1284a5f2e50b1a566d5e7dd60e67214f9009ed84adbddf55e5eadb959 79872 stormboot/drivers/stormnic-mlx4.efi
+file 757c912196bfab1fbd0f56520aadfca859b0bff54ad3d18bcfeba26631dfbcad 1408 stormboot/stormboot.conf

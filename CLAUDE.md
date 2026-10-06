@@ -47,11 +47,14 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
 
 `tests/update-ovmf.sh` (#83) must stay last: it rebuilds `stormbootx.efi`
 with an Ed25519 test key compiled in (`STORMBOOTX_UPDATE_TEST_KEY`) and boots
-a writable GPT medium six times through `tests/update-boots.sh`, sourced by
-`net-ovmf.sh` for its stubs: bad signature refused; serial 5 written,
-restarted, trial passed on the attach; serial 5 `current`; serial 6 (a dead
-NVMe port in its conf) fails two trial starts and the third puts serial 5
-back. mtools checks the disk after each boot.
+a writable GPT medium on a USB stick ten times through
+`tests/update-boots.sh`, sourced by `net-ovmf.sh` for its stubs (#89):
+stormcentral's real serial-1 manifest (`tests/fixtures/`) verifies; bad
+signature refused; serial 5 written, restarted, trial passed on the attach;
+serial 5 `current`; serial 6 refused as another machine's canary, then taken
+as this one's, retiring a driver; serial 7 refused for room; serial 8 (a
+dead NVMe port in its conf) fails two trial starts and the third puts serial
+6 back. mtools checks the disk after each boot.
 
 `tests/net-ovmf.sh` (#56) boots stormbootx under OVMF with no firmware
 network stack, against a stub engine, a stub NVMe/TCP target (4096-byte

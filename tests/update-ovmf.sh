@@ -5,10 +5,11 @@
 #
 # Makes an Ed25519 test key, builds stormbootx with its public half compiled
 # in (STORMBOOTX_UPDATE_TEST_KEY; no golden build sets it), and runs
-# tests/net-ovmf.sh's stubs with UPDATE_KEY set, which boots the medium six
-# times through tests/update-boots.sh: a bad signature, an update and its
-# trial, a current boot, and a release that cannot attach failing its trial
-# twice and being put back.
+# tests/net-ovmf.sh's stubs with UPDATE_KEY set, which boots the medium (a
+# USB stick) ten times through tests/update-boots.sh: stormcentral's own
+# signed manifest, a bad signature, an update and its trial, a current boot,
+# canaries, a retired driver, a medium short of room, and a release that
+# cannot attach failing its trial twice and being put back.
 #
 # Run it last in a build: the test-key build replaces stormbootx.efi in the
 # target dir. Needs what tests/net-ovmf.sh needs, plus openssl (Ed25519) and
