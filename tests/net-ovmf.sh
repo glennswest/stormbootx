@@ -478,6 +478,7 @@ boot noesp "$host_cpu" "" 404 good \
     "no network boot: " \
     "blockio     : withdrawn" \
     "RESULT: falling through to the local disk (1 found)" \
+    "not:handle(s) an earlier start published are still installed" \
     "not:X64 Exception" \
     "not:!!!!"
 say "PASS"

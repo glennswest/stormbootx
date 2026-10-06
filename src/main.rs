@@ -134,6 +134,12 @@ fn identify() {
 }
 
 fn run() -> Result<(), String> {
+    // A disk an earlier start published and left behind (#54): its BlockIO
+    // points into an unloaded image.
+    match blockio::stale() {
+        0 => {}
+        n => uefi::println!("blockio     : {n} handle(s) an earlier start published are still installed"),
+    }
     // Two media goldens share a commit and differ in their NIC drivers (#45):
     // the stamp above cannot tell them apart, this line does.
     if let Some(m) = config::stated_media() {

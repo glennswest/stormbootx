@@ -417,6 +417,34 @@ pub fn publish(ns: Namespace) -> Result<uefi_raw::Handle, String> {
     Ok(handle)
 }
 
+/// Disks an earlier start of stormbootx published and never took back (#54).
+///
+/// Each start's disk carries the same vendor node, so a disk left behind is
+/// one `firmware_boot`'s strict match would take for this start's own, and
+/// its BlockIO calls into an image the firmware has already unloaded. Since
+/// `withdraw` this should always be 0; the start says so when it is not.
+pub fn stale() -> usize {
+    let Ok(handles) = boot::locate_handle_buffer(SearchType::ByProtocol(&BlockIoProtocol::GUID))
+    else {
+        return 0;
+    };
+    handles
+        .iter()
+        .filter(|h| {
+            // Whole disks only: the partitions under one carry the same
+            // first node, and an HD() node after it.
+            device_path_of(h.as_ptr())
+                .filter(|dp| dp.node_iter().count() == 1)
+                .and_then(|dp| dp.node_iter().next())
+                .is_some_and(|n| {
+                    n.device_type() == uefi::proto::device_path::DeviceType::HARDWARE
+                        && n.sub_type() == uefi::proto::device_path::DeviceSubType::HARDWARE_VENDOR
+                        && n.data().get(..16) == Some(&DISK_DP_GUID.to_bytes()[..])
+                })
+        })
+        .count()
+}
+
 /// The vendor GUID naming a disk this binary published. Not an architectural
 /// constant — just a unique value so the device path is well-formed and so
 /// chain-loading can tell our ESP from a local one.
