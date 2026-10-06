@@ -713,8 +713,8 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       server3 on the rustnic golden for the `PCI attributes Get …; command
       0x…` line, then bring-up and `Start: bound, SNP on a child handle`.
 
-- [ ] **#56 — stormbootx's own TCP/IP: smoltcp on SNP (P0, owner
-      2026-09-30). Verified on metal 2026-09-30; the rest is #68.** server3 (X9, Aptio 4) loaded
+- [x] **#56 — stormbootx's own TCP/IP: smoltcp on SNP (P0, owner
+      2026-09-30). Verified on metal 2026-09-30; the rest was #68 (closed).** server3 (X9, Aptio 4) loaded
       `ipxe-intelx.efi` and then reported `EFI_TCP4 is not present`. The
       EDK2-stack plan was dropped because since edk2-stable202405 its IPv4
       drivers refuse to start without `EFI_RNG` (and TcpDxe without
@@ -1124,6 +1124,24 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       the driver binds: pin it in `build-nic-drivers.sh` (nic-drivers golden,
       rustnic media).
 
+- [x] **#68 — smoltcp (#56) on metal: the rest (P2). Closed 2026-10-06.**
+      From the consoles stormcentral keeps
+      (`/var/lib/stormcentral/console/`): **25G and two live links**: the
+      R230 (C2NR0Q2), on every boot since 2026-10-03 (rustnic media, v0.14.0),
+      opens four SNPs. nic 0/3 are the ConnectX-4 Lx 25G ports (`5c:06:22`,
+      mlx5 in Linux), both `link UP`; nic 6/9 are the tg3 1G ports, down.
+      nic 0 ranked first, `reached 192.168.31.202:9090`, claimed and attached,
+      and nic 3 leased too. **stormnic SNP** (ixgbe, mlx4) and **a down NIC
+      skipped** were seen on server3/server1 earlier. **`net::release`** now
+      prints `net : N of M NIC(s) given back …` (033e85f),
+      and `tests/net-ovmf.sh`'s fifth boot, `release`, falls through with the
+      firmware's IPv4 stack on (plus a virtio-rng). The firmware's `UEFI
+      PXEv4` on the same NIC then leased and started tcp4probe over TFTP.
+      Released **v0.21.0**. **Not seen:** the MTU tiebreak between two live
+      links (every firmware SNP here reports 1500), the 25G link-settle wait
+      (the links were up at the first sample), and the release line on a
+      metal fall-through.
+
 - [ ] **#92 — promote the install-config-capable media (P1). Blocked on
       stormcentral#459 (2026-10-06).** Promotion (`stormcentral stormbootx
       promote … --booted <pve> --booted <metal>`) needs a passed install on
@@ -1346,7 +1364,7 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ## Status
 
-v0.20.0. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
+v0.21.0. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
 (and the same day, the full chain: chain-load into stormuefi and a running
 stormcos kernel), on a
 Dell PowerEdge R230 (service tag C2NR0Q2) booting the agent over iDRAC virtual
