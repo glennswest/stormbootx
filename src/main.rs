@@ -70,6 +70,7 @@ mod nvme;
 mod registry;
 mod selfupdate;
 mod shell;
+mod snpwatch;
 mod sha256;
 mod smbios;
 mod sntp;

@@ -26,7 +26,7 @@
 #     unsynchronised server (LI 3), which must not set anything:
 #     `StormBootClock = unsynced`.
 #
-# Three boots:
+# Four boots:
 #   1. as shipped: `rng : firmware` or `rdrand`;
 #   2. the entropy fallback: `rng = cpu` on the media masks the firmware's
 #      EFI_RNG, and the CPU is started without RDRAND and RDSEED, so the
@@ -38,6 +38,9 @@
 #      NVMe stub and a blank local virtio-scsi disk. The fall-through must
 #      withdraw the attached disk, count one local disk, and the firmware
 #      must try its other boot options for 25 s with no CPU exception.
+#   4. a NIC on a dead hub (#88): one `waiting for a lease` line a second,
+#      with DHCP out/in and frames in, until the engine's 30 s connect gives
+#      up; and every boot names the NIC's driver before its first SNP call.
 #
 # Boots 1 and 2 must show the stack, a lease from slirp, the engine's version from
 # the stub, the attach, a blockio progress line and the payload's banner; the
@@ -354,6 +357,10 @@ PY
 BOOT_PORT=
 BOOT_DISK=
 BOOT_SETTLE=2
+# BOOT_NET=dead puts the only NIC on a hub with nothing else on it (#88), and
+# STOP_AT ends a boot at a console line of its own.
+BOOT_NET=
+STOP_AT=
 boot() {
     local name=$1 cpu=$2 rng=$3 claim=$4 ntp=$5; shift 5
     rm -f "$W/claim.ok" "$W/ntp.bad"
@@ -371,7 +378,8 @@ boot() {
     cp "$OVMF_VARS" "$W/$name.vars"
     : > "$W/stub.log"
     : > "$W/ntp.log"
-    local extra=()
+    local extra=() net=(-netdev user,id=n0)
+    [[ $BOOT_NET == dead ]] && net=(-netdev hubport,id=n0,hubid=7)
     [[ -n "$BOOT_DISK" ]] && extra+=(-device virtio-scsi-pci,id=scsi0
         -drive if=none,id=d0,format=raw,file="$BOOT_DISK" -device scsi-hd,drive=d0,bus=scsi0.0)
     say "[$name] booting under OVMF ($accel, cpu $cpu, rng ${rng:-as shipped}, up to ${LIMIT}s)"
@@ -380,14 +388,14 @@ boot() {
         -drive if=pflash,format=raw,file="$W/$name.vars" \
         -fw_cfg name=opt/org.tianocore/IPv4Support,string=no \
         -fw_cfg name=opt/org.tianocore/IPv6Support,string=no \
-        -netdev user,id=n0 -device virtio-net-pci,netdev=n0,romfile= \
+        "${net[@]}" -device virtio-net-pci,netdev=n0,romfile= \
         -cdrom "$iso" -boot d "${extra[@]}" \
         -debugcon file:"$W/$name.debug" -global isa-debugcon.iobase=0x402 \
         -display none -serial file:"$log" -no-reboot &
     local qemu=$! t=0
     # Stop once the payload has spoken, or at a fall-through.
     while kill -0 "$qemu" 2>/dev/null && (( t < LIMIT )); do
-        grep -qE "is there a TCP/IP stack in this firmware|no network boot: " "$log" 2>/dev/null \
+        grep -qE "is there a TCP/IP stack in this firmware|no network boot: ${STOP_AT:+|$STOP_AT}" "$log" 2>/dev/null \
             && { sleep "$BOOT_SETTLE"; break; }
         sleep 1; t=$((t + 1))
     done
@@ -423,6 +431,7 @@ if [[ -n "${UPDATE_KEY:-}" ]]; then
 fi
 
 common=(
+    "nic 0: driver Virtio Network Driver"
     "tcp4        : smoltcp over SNP (nic 0 "
     "nic 0: leased 10.0.2.15/24 gw 10.0.2.2"
     "engine      : stormblock 19.4.0  (universal boot)"
@@ -481,4 +490,17 @@ boot noesp "$host_cpu" "" 404 good \
     "not:handle(s) an earlier start published are still installed" \
     "not:X64 Exception" \
     "not:!!!!"
+
+# #88: a NIC nothing answers. The boot must say so once a second (link, DHCP
+# out and in, frames in) instead of sitting silent until the engine's 30 s
+# connect gives up, and must name the NIC's driver before its first SNP call.
+BOOT_NET=dead STOP_AT="engine      : version unknown" BOOT_SETTLE=1 \
+boot nolease "$host_cpu" "" 404 good \
+    "nic 0: driver Virtio Network Driver" \
+    "waiting for a lease (1 s): nic 0 link UP, DHCP " \
+    "waiting for a lease (10 s): nic 0 link UP, DHCP " \
+    " 0 in, 0 frames in" \
+    "engine      : version unknown (no address after 30 s: nothing answered DHCP on any of 1 NIC(s))" \
+    "not:nic 0: leased" \
+    "not:has not returned after"
 say "PASS"

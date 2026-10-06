@@ -145,6 +145,7 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/main.rs` | `run()`: the boot, step by step, and the fall-through |
 | `src/smbios.rs` | the serials (Type 1 → 2 → 3, placeholders and shared chassis serials rejected), before any network exists; the MAC as the floor |
 | `src/net.rs` | the TCP/IP stack (#56): smoltcp on every NIC's SNP (opened exclusively), DHCP, `TcpSocket`, the TSC clock; `release` gives the NICs back on the fall-through |
+| `src/snpwatch.rs` | which driver is under each SNP (named before the first call), and a `TPL_NOTIFY` timer that names an SNP call that has not returned (#88) |
 | `src/entropy.rs` | randomness for the ISN, DHCP xid and ports: firmware `EFI_RNG`, then RDSEED/RDRAND (RNDR on aarch64), then jitter through SHA-256; never fails |
 | `src/tcp4.rs` | tcp4probe only since #56: a blocking socket over the firmware's TCP4 |
 | `src/drivers.rs` | load NIC drivers from `\stormboot\drivers` on the media (#26), after the platform's own bind |

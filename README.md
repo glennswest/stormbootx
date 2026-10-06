@@ -123,8 +123,9 @@ given back on the fall-through.
    *The network path*). Then every `EFI_SIMPLE_NETWORK` handle is opened and
    smoltcp starts DHCP on all of them. With no SNP at all it connects every
    handle and waits up to 5 s. Then it falls through, saying the NIC needs a
-   UEFI driver. The console prints `tcp4 : smoltcp over SNP (nic 0 <mac>, …)`
-   and `rng : firmware | rdrand | rndr | jitter`.
+   UEFI driver. Each NIC's driver is named before its first SNP call
+   (`nic 0: driver <name>`, #88). The console prints `tcp4 : smoltcp over
+   SNP (nic 0 <mac>, …)` and `rng : firmware | rdrand | rndr | jitter`.
    Then **the self-update** (#83): with `update =` on a writable medium, ask
    stormcentral for the current release and, if it is newer and its signature
    verifies, write it and restart into it (*Self-update*). One `update :`
@@ -481,6 +482,16 @@ each NIC's SNP instead:
   storage port is the jumbo one). Each try gets 5 s while another leased NIC
   is left. A reset is an answer (nothing listens there), not a wrong wire.
   The NIC table prints once, at bring-up.
+- **Waiting is never silent** (#88). While no NIC holds a lease, a
+  connection prints `waiting for a lease (N s): nic 0 link UP, DHCP 3 out 0
+  in, 14 frames in; …` once a second: frames in with no DHCP in is a wire
+  that works and a server that doesn't answer; no frames in at all, a dark
+  wire. Every SNP call is marked, and a 1 s timer event at `TPL_NOTIFY`
+  prints `nic N: SNP.Receive (<driver>) has not returned after 5 s` (again
+  every 30 s) while one is stuck, since a NIC driver call that never returns
+  is outside every deadline and can't be abandoned from one thread. A driver
+  that hangs at `TPL_NOTIFY` or with interrupts off stops the timer too; the
+  `driver` line before `Start` is then the last word (`src/snpwatch.rs`).
 - **Timeouts** are per operation without progress: 30 s for the engine API and
   the attach (`TcpSocket::connect`), 5 s for the PTR query, 8 s for the
   console's `connect`. Nagle and delayed ACKs are off, with a 256 KiB receive
@@ -875,7 +886,6 @@ Open issues:
 |---|---|
 | #37, #33 | X9 blades on a 4096-byte namespace: server1 boots 11.56; which reader loaded it, and the SOL console on ttyS1, are still open; #67 hardens `esp.rs` |
 | #68 | smoltcp on metal: multi-NIC ranking, a 25G link, stormnic's SNP and `release` not yet seen |
-| #78 | server1 on v0.10.0 normal media goes silent after `target` (its iPXE half moot since #91) |
 | #15 | universal boot: client side done; forge is on stormblock 13.7.0, and there is no `boothost/default` |
 | #11 | a per-machine boot intent (`install`/`local` wait on forge running stormblock v20, #148; `auto` claims unless `local_when_bootable = true`, #3) |
 | #36 | the golden media's pinned fallback (nsid 2) |

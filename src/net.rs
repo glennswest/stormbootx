@@ -47,6 +47,7 @@ use alloc::vec::Vec;
 use core::ptr;
 
 use crate::entropy::{self, Entropy};
+use crate::snpwatch::{self, Snp};
 use smoltcp::iface::{Config, Interface, SocketHandle, SocketSet};
 use smoltcp::phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken};
 use smoltcp::socket::{dhcpv4, tcp, udp};
@@ -196,7 +197,11 @@ fn local_port(rng: &mut Entropy) -> u16 {
 /// may still be reading them, so they must stay allocated until then.
 struct TxQueue {
     snp: *const SimpleNetworkProtocol,
+    /// `net.rs`'s index of the NIC, for `snpwatch`.
+    nic: usize,
     inflight: Vec<Vec<u8>>,
+    /// DHCP messages handed to `Transmit`, for the lease progress line (#88).
+    dhcp_out: u32,
 }
 
 impl TxQueue {
@@ -204,7 +209,10 @@ impl TxQueue {
         for _ in 0..64 {
             let mut ist = InterruptStatus::empty();
             let mut done: *mut core::ffi::c_void = ptr::null_mut();
-            let st = unsafe { ((*self.snp).get_status)(self.snp, &mut ist, &mut done) };
+            let st = {
+                let _c = snpwatch::enter(self.nic, Snp::GetStatus);
+                unsafe { ((*self.snp).get_status)(self.snp, &mut ist, &mut done) }
+            };
             if st != Status::SUCCESS || done.is_null() {
                 break;
             }
@@ -222,7 +230,11 @@ impl TxQueue {
 
     fn send(&mut self, frame: Vec<u8>) {
         self.reclaim();
+        if dhcp_frame(&frame, false) {
+            self.dhcp_out = self.dhcp_out.saturating_add(1);
+        }
         for _ in 0..2000 {
+            let _c = snpwatch::enter(self.nic, Snp::Transmit);
             let st = unsafe {
                 ((*self.snp).transmit)(
                     self.snp,
@@ -234,6 +246,7 @@ impl TxQueue {
                     ptr::null(),
                 )
             };
+            drop(_c);
             match st {
                 Status::SUCCESS => {
                     self.inflight.push(frame);
@@ -257,6 +270,9 @@ struct SnpDevice {
     tx: TxQueue,
     /// Link MTU plus the media header: smoltcp's MTU for an Ethernet medium.
     mtu: usize,
+    /// Frames received, and how many were DHCP from a server (#88).
+    frames_in: u32,
+    dhcp_in: u32,
 }
 
 impl SnpDevice {
@@ -266,6 +282,7 @@ impl SnpDevice {
         let mut src: uefi_raw::MacAddress = unsafe { core::mem::zeroed() };
         let mut dst: uefi_raw::MacAddress = unsafe { core::mem::zeroed() };
         let mut proto = 0u16;
+        let _c = snpwatch::enter(self.tx.nic, Snp::Receive);
         let st = unsafe {
             ((*self.snp).receive)(
                 self.snp,
@@ -277,8 +294,16 @@ impl SnpDevice {
                 &mut proto,
             )
         };
+        drop(_c);
         match st {
-            Status::SUCCESS => Some(size.min(self.rx.len())),
+            Status::SUCCESS => {
+                let n = size.min(self.rx.len());
+                self.frames_in = self.frames_in.saturating_add(1);
+                if dhcp_frame(&self.rx[..n], true) {
+                    self.dhcp_in = self.dhcp_in.saturating_add(1);
+                }
+                Some(n)
+            }
             Status::BUFFER_TOO_SMALL => {
                 // Taken on the next poll.
                 self.rx.resize(size.max(self.rx.len() * 2), 0);
@@ -287,6 +312,20 @@ impl SnpDevice {
             _ => None,
         }
     }
+}
+
+/// Whether an Ethernet frame is an untagged IPv4 UDP datagram from a DHCP
+/// server's port 67 (`from_server`) or to it.
+fn dhcp_frame(f: &[u8], from_server: bool) -> bool {
+    if f.len() < 14 + 20 + 8 || f[12..14] != [0x08, 0x00] || f[14] >> 4 != 4 || f[23] != 17 {
+        return false;
+    }
+    let u = 14 + (f[14] & 0x0f) as usize * 4;
+    if f.len() < u + 4 {
+        return false;
+    }
+    let port = if from_server { [f[u], f[u + 1]] } else { [f[u + 2], f[u + 3]] };
+    u16::from_be_bytes(port) == 67
 }
 
 struct Rx<'a>(&'a [u8]);
@@ -478,6 +517,10 @@ pub fn up(rng: entropy::Start) -> Result<Up, String> {
     }
 
     let clock = Clock::calibrate();
+    // Every SNP call from here on is watched (#88).
+    if let Err(st) = snpwatch::arm(clock.per_ms) {
+        uefi::println!("      snp watch : not armed ({st:?}); a hung NIC driver call will not be named");
+    }
     let mut rng = Entropy::new(rng, machine_mac().map(|(m, _)| m));
     let mut nics = Vec::new();
     for (index, &handle) in handles.iter().enumerate() {
@@ -519,6 +562,11 @@ fn summary(n: &Net, waited_ms: u64) -> Up {
 
 fn open_nic(index: usize, handle: uefi_raw::Handle, clock: &Clock, rng: &mut Entropy) -> Result<Nic, String> {
     let bs = bs().ok_or("no boot services")?;
+    // Named before anything calls into it, so a driver that hangs in Start is
+    // the last line on the console rather than a silence (#88).
+    let driver = snpwatch::driver_of(handle);
+    uefi::println!("      nic {index}: driver {}", driver.as_deref().unwrap_or("unknown (nothing on the handle names it)"));
+    snpwatch::set_name(index, driver.as_deref().unwrap_or(""));
     let mut iface: *mut core::ffi::c_void = ptr::null_mut();
     let st = unsafe {
         (bs.open_protocol)(
@@ -541,18 +589,21 @@ fn open_nic(index: usize, handle: uefi_raw::Handle, clock: &Clock, rng: &mut Ent
             return Err("SNP has no mode".into());
         }
         if mode().state == NetworkState::STOPPED {
+            let _c = snpwatch::enter(index, Snp::Start);
             let s = ((*snp).start)(snp);
             if s != Status::SUCCESS && s != Status::ALREADY_STARTED {
                 return Err(format!("SNP Start: {s:?}"));
             }
         }
         if mode().state == NetworkState::STARTED {
+            let _c = snpwatch::enter(index, Snp::Initialize);
             let s = ((*snp).initialize)(snp, 0, 0);
             if s != Status::SUCCESS {
                 return Err(format!("SNP Initialize: {s:?}"));
             }
         }
         let want = ReceiveFlags::UNICAST | ReceiveFlags::BROADCAST;
+        let _c = snpwatch::enter(index, Snp::ReceiveFilters);
         let s = ((*snp).receive_filters)(snp, want, ReceiveFlags::empty(), Boolean::FALSE, 0, ptr::null());
         if s != Status::SUCCESS {
             // A driver that cannot filter can usually still be promiscuous.
@@ -578,8 +629,10 @@ fn open_nic(index: usize, handle: uefi_raw::Handle, clock: &Clock, rng: &mut Ent
     let mut dev = SnpDevice {
         snp,
         rx: vec![0u8; mtu.max(1514) + 64],
-        tx: TxQueue { snp, inflight: Vec::new() },
+        tx: TxQueue { snp, nic: index, inflight: Vec::new(), dhcp_out: 0 },
         mtu,
+        frames_in: 0,
+        dhcp_in: 0,
     };
     let mut cur = [0u8; 6];
     cur.copy_from_slice(&m.current_address.0[..6]);
@@ -625,6 +678,27 @@ impl Net {
         }
     }
 
+    /// Every NIC's link and what DHCP has seen on it, for the line printed
+    /// while no NIC holds a lease: `nic 0 link UP, DHCP 2 out 0 in, 14 frames
+    /// in`. Frames in with no DHCP in means the wire works and no server
+    /// answered; no frames in at all, a dark or unattached wire.
+    fn lease_progress(&self) -> String {
+        self.nics
+            .iter()
+            .map(|c| {
+                format!(
+                    "nic {} link {}, DHCP {} out {} in, {} frames in",
+                    c.index,
+                    if c.link_up() { "UP" } else { "down" },
+                    c.dev.tx.dhcp_out,
+                    c.dev.dhcp_in,
+                    c.dev.frames_in
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("; ")
+    }
+
     /// NIC positions in the order worth trying: the one that worked last,
     /// then link up, then the larger MTU, then enumeration order.
     fn order(&self) -> Vec<usize> {
@@ -641,6 +715,7 @@ impl Net {
 /// reconnect, so a boot option after this one finds the firmware's own stack.
 /// Called on the fall-through. The stack is gone afterwards.
 pub fn release() {
+    snpwatch::close();
     let Some(n) = (unsafe { (*NET.0.get()).take() }) else { return };
     let Some(bs) = bs() else { return };
     for nic in n.nics.iter().filter(|c| c.exclusive) {
@@ -765,7 +840,10 @@ pub fn show(secs: u32) {
                 l.prefix,
                 l.router.map(|r| format!(" gw {}", ip_text(r))).unwrap_or_default()
             ),
-            None => "no lease — nothing answered DHCP".to_string(),
+            None => format!(
+                "no lease — nothing answered DHCP (DHCP {} out {} in, {} frames in)",
+                c.dev.tx.dhcp_out, c.dev.dhcp_in, c.dev.frames_in
+            ),
         };
         uefi::println!(
             "  nic {}: {}  {}  link {}{}",
@@ -818,10 +896,17 @@ impl TcpSocket {
         let mut tried = vec![false; n.nics.len()];
         let mut attempt: Option<(usize, SocketHandle, Instant)> = None;
         let mut last = String::new();
+        let mut note = start + Duration::from_secs(1);
 
         loop {
             n.poll_all();
             let now = n.clock.now();
+            // A boot waiting for DHCP must not look like a dead console (#88):
+            // once a second until some NIC holds a lease.
+            if now >= note && n.nics.iter().all(|c| c.lease.is_none()) {
+                uefi::println!("    waiting for a lease ({} s): {}", (now - start).secs(), n.lease_progress());
+                note = now + Duration::from_secs(1);
+            }
             if let Some((i, h, t0)) = attempt {
                 let state = n.nics[i].sockets.get::<tcp::Socket>(h).state();
                 match state {
