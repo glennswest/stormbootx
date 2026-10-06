@@ -3,11 +3,15 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
-### 2026-10-06
-- **feat:** waiting for the network is never silent (#88, from #78). While no NIC holds a lease, a connection prints `waiting for a lease (N s): nic 0 link UP, DHCP n out n in, n frames in; …` once a second (the shell's `state`/`dhcp` show the same counts). Each NIC's driver is named before its first SNP call (`nic N: driver <ComponentName | image file>`). `src/snpwatch.rs` marks every SNP call, and a 1 s periodic timer event at `TPL_NOTIFY` prints `nic N: SNP.<call> (<driver>) has not returned after N s` while one is stuck (again every 30 s; `returned after N s` if it comes back); `net::release` closes it. `tests/net-ovmf.sh` has a fourth boot, its only NIC on a dead QEMU hub.
-- **feat:** the rustnic media and the nic-drivers golden pin stormnic-mlx4 v0.2.3 (0e50017, #66): link diagnostics (speed, autoneg, module) at the link wait and on link changes (stormnic-mlx4#15), and a log line for the first own frame looped back (stormnic-mlx4#21). Console label `media : rustnic ixgbe@563ea8d mlx4@0e50017`; the fw medium is unchanged. Goldens `golden-stormbootx-rustnic-0b0aba5038360c60` and `golden-nic-drivers-9f614d980f62`.
-- **docs:** CLAUDE.md work plan: #92 blocked on stormcentral#459 (no hardware test machine boots stormbootx ≥ 0.15.0, so nothing can be promoted yet).
-- **docs:** CLAUDE.md work plan: #91 closed, v0.17.0 goldens; README and the presentation drop #27 (closed).
+## [v0.18.0] — 2026-10-06
+
+### Added
+- Waiting for the network is never silent (#88, from #78). While no NIC holds a lease, a connection prints `waiting for a lease (N s): nic 0 link UP, DHCP n out n in, n frames in; …` once a second (the shell's `state`/`dhcp` show the same counts). Each NIC's driver is named before its first SNP call (`nic N: driver <ComponentName | image file>`): the agent that opened the parent `BY_CHILD_CONTROLLER` for a MAC child, or PCI I/O / NII `BY_DRIVER` on the handle, never a consumer stacked on it (dac1712). `src/snpwatch.rs` marks every SNP call, and a 1 s periodic timer event at `TPL_NOTIFY` prints `nic N: SNP.<call> (<driver>) has not returned after N s` while one is stuck (again every 30 s; `returned after N s` if it comes back); `net::release` closes it. `tests/net-ovmf.sh` has a fourth boot, its only NIC on a dead QEMU hub.
+- The rustnic media and the nic-drivers golden pin stormnic-mlx4 v0.2.3 (0e50017, #66): link diagnostics (speed, autoneg, module) at the link wait and on link changes (stormnic-mlx4#15), and a log line for the first own frame looped back (stormnic-mlx4#21). Console label `media : rustnic ixgbe@563ea8d mlx4@0e50017`; the fw medium is unchanged.
+
+### Documentation
+- CLAUDE.md work plan: #92 blocked on stormcentral#459 (no hardware test machine boots stormbootx ≥ 0.15.0, so nothing can be promoted yet).
+- CLAUDE.md work plan: #91 closed, v0.17.0 goldens; README and the presentation drop #27 (closed).
 
 ## [v0.17.0] — 2026-10-06
 
