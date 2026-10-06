@@ -852,6 +852,20 @@ fn main() -> Status {
 /// the boot manager that this option did not boot anything and the next one
 /// should be tried. It is the fall-through, not a complaint.
 fn fall_through(err: &str) -> Status {
+    // The attached disk first (#54): its BlockIO lives in this image, which
+    // the firmware unloads when this returns, and it is not a local disk.
+    match blockio::withdraw() {
+        None => {}
+        Some(Ok(())) => uefi::println!("blockio     : withdrawn (the attached image is not left to the firmware)"),
+        Some(Err(e)) => {
+            // Returning would leave the boot manager a disk whose functions
+            // are freed: a crash, not a fall-through. A reset is a boot that
+            // tries again, which is what a fall-through would have been.
+            uefi::println!("blockio     : could not withdraw the attached disk ({e}); resetting instead of returning");
+            uefi::boot::stall(core::time::Duration::from_secs(10));
+            uefi::runtime::reset(uefi::runtime::ResetType::WARM, Status::SUCCESS, None);
+        }
+    }
     let disks = blockio::local_disks();
 
     uefi::println!("");

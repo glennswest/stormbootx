@@ -55,6 +55,10 @@ static mut MEDIA: BlockIoMedia = BlockIoMedia {
     optimal_transfer_length_granularity: 1,
 };
 
+/// The handle `publish` installed, and the two interfaces on it, for
+/// `withdraw` (#54).
+static mut PUBLISHED: Option<(uefi_raw::Handle, *const core::ffi::c_void, *const core::ffi::c_void)> = None;
+
 #[allow(static_mut_refs)]
 unsafe fn namespace() -> Option<&'static mut Namespace> {
     NAMESPACE.as_mut()
@@ -401,6 +405,11 @@ pub fn publish(ns: Namespace) -> Result<uefi_raw::Handle, String> {
             dp.as_ffi_ptr() as *const core::ffi::c_void,
         )
         .map_err(|e| format!("InstallProtocolInterface(DevicePath) failed: {e:?}"))?;
+        PUBLISHED = Some((
+            handle,
+            proto as *const BlockIoProtocol as *const core::ffi::c_void,
+            dp.as_ffi_ptr() as *const core::ffi::c_void,
+        ));
     }
 
     // Bind the partition and filesystem drivers to the new handle, recursively,
@@ -415,6 +424,52 @@ pub fn publish(ns: Namespace) -> Result<uefi_raw::Handle, String> {
     }
 
     Ok(handle)
+}
+
+/// Take the published disk back before the image returns to the firmware
+/// (#54). `None` when nothing was published.
+///
+/// The BlockIO functions and the media they describe live in this image,
+/// which the firmware unloads when `main` returns. A disk left installed is
+/// one the boot manager probes for its next option, and calls into freed
+/// memory: pvetest1's #UD at RIP 0x47FFFFFCA, after a fall-through from an
+/// attached image with no readable ESP. So: disconnect the partition and FAT
+/// drivers, uninstall BlockIO and the device path (the handle goes with the
+/// last), and drop the namespace, whose socket resets the connection.
+/// `Err` means the firmware kept the disk; the caller must not return.
+#[allow(static_mut_refs)]
+pub fn withdraw() -> Option<Result<(), String>> {
+    let (handle, proto, dp) = unsafe { PUBLISHED.take() }?;
+    let result = unsafe {
+        let bs = uefi::table::system_table_raw()
+            .and_then(|st| st.as_ref().boot_services.as_ref())
+            .map(|bs| bs as *const uefi_raw::table::boot::BootServices);
+        match bs {
+            None => Err(String::from("no boot services")),
+            Some(bs) => {
+                let bs = &*bs;
+                // Uninstalling disconnects BY_DRIVER openers itself, in
+                // EDK2; asking first costs nothing where it does not.
+                let _ = (bs.disconnect_controller)(handle, ptr::null_mut(), ptr::null_mut());
+                let st = (bs.uninstall_protocol_interface)(handle, &BlockIoProtocol::GUID, proto);
+                if st != Status::SUCCESS {
+                    Err(format!("UninstallProtocolInterface(BlockIO) failed: {st:?}"))
+                } else {
+                    let st = (bs.uninstall_protocol_interface)(handle, &DEVICE_PATH_GUID, dp);
+                    if st != Status::SUCCESS {
+                        // BlockIO is gone, which is what the firmware would
+                        // have called; a bare device path calls nothing.
+                        uefi::println!("blockio     : the device path stays on {handle:p} ({st:?}); harmless");
+                    }
+                    Ok(())
+                }
+            }
+        }
+    };
+    if result.is_ok() {
+        drop(unsafe { NAMESPACE.take() });
+    }
+    Some(result)
 }
 
 /// Disks an earlier start of stormbootx published and never took back (#54).

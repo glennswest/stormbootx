@@ -527,6 +527,15 @@ nothing and hand down `StormBootClock = unsynced`.
 
 Every error in `run()`, and a `local` intent, ends in `fall_through`:
 
+0. If an image was attached, it takes the disk back first
+   (`blockio::withdraw`, #54): disconnect, uninstall BlockIO and the device
+   path, drop the NVMe/TCP connection, and print `blockio : withdrawn`. The
+   disk's functions live in this image, which the firmware unloads when it
+   returns, so a disk left installed is one the boot manager calls into
+   freed memory (pvetest1's #UD at RIP 0x47FFFFFCA). If the firmware refuses
+   the uninstall, stormbootx says so and resets the machine rather than
+   return. A start that finds a disk an earlier start left behind prints
+   `blockio : N handle(s) an earlier start published are still installed`.
 1. It prints `no network boot: <reason>`.
 2. It offers a console: *press c within 5 s*. Silence continues, so an
    unattended machine never stops at a prompt.
@@ -534,7 +543,8 @@ Every error in `run()`, and a `local` intent, ends in `fall_through`:
    local disk's OS gets the right time too.
 4. It gives every NIC back to the firmware (`net::release`, #56), so a later
    boot option (PXE, HTTP boot) finds the firmware's own stack bound again.
-5. It counts local disks (whole, non-removable BlockIO devices).
+5. It counts local disks (whole, non-removable BlockIO devices; the
+   attached image is no longer one of them).
    - If there are any, it prints `falling through to the local disk (N found)`.
    - If there are none, it says so and waits 30 s.
 6. It returns `EFI_ABORTED`, so the boot manager tries the next boot option.
