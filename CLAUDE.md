@@ -1050,6 +1050,29 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       wait (match against dellsw#14) and the loop-back line
       (stormnic-mlx4#21).
 
+- [ ] **#89 — the self-update's unseen paths (P2, from #83/#86). In
+      progress (2026-10-06).** stormcentral now serves a real promotion:
+      `stormbootx-rustnic` serial 1 = v0.14.0
+      (`golden-stormbootx-rustnic-75128a00457dab51`), hex signature that
+      openssl verifies against `RELEASE_KEYS`. `stormbootx` (fw) is still
+      404. Plan, all in `tests/update-boots.sh` under OVMF:
+      1. the medium on a USB stick (`qemu-xhci` + `usb-storage`), not
+         virtio-blk, so the writes go through OVMF's USB mass storage;
+      2. `real`: stormcentral's captured manifest and `.sig`
+         (`tests/fixtures/`) served to the binary; it must verify against
+         the release key and reach the file fetch (files 404, nothing
+         written);
+      3. `notcanary` / `canary`: serial 6 names another MAC (refused), then
+         this machine's (taken); serial 5 carries a `drivers/retire.efi`
+         that 6 drops, so 6 retires it to `.prev`;
+      4. `short`: serial 7 carries a file larger than the ESP's free space:
+         `needs N KB … nothing written`;
+      5. the bad-trial sequence moves to serial 8 and reverts to 6.
+      **Not here:** metal (a real stick on a real machine) and which
+      pre-v0.14.0 sticks/BMC media exist are the master's. #96 (serial-only
+      verdict) means today's serial 1 would take a v0.15+ stick back to
+      v0.14.0.
+
 ### Blocked on other repos
 
 - [ ] **#75 — stormnic-virtio, a Rust virtio-net UEFI driver (P2, owner).
