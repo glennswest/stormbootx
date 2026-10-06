@@ -1076,6 +1076,21 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       and server3 rustnic v0.12.0. server4 is on v0.14.0. Whether those are
       sticks or BMC media is not in the console.
 
+- [ ] **#90 — the claim names the boot agent (P2, stormcentral#286). In
+      progress (2026-10-06).** Channel: the claim body, beside `{mac,
+      serial}`. The owner's answer on #20 already sends firmware data "with
+      the claim to the boothost record" (stormblock#177), and the engine's
+      `ClaimRequest` ignores unknown fields (no `deny_unknown_fields`,
+      stormblock c8f2e5d), so it costs nothing until #177 records it. Every
+      claim body gains `"agent":{"name":"stormbootx","version","commit",
+      "media","update_serial","update"}`: `commit` the `STORMBOOTX_BUILD`
+      stamp (omitted when unstamped), `media` the `media =` label,
+      `update_serial` the medium's `\stormboot\state` serial (omitted when 0),
+      `update` the `StormBootUpdate` value at claim time (`trial:6:1`, …).
+      Plan: `selfupdate::medium_serial()`, `handoff::update_value()`,
+      `registry::agent()`; net-ovmf and update-boots check the stub's logged
+      claim body; README's claim section; comment the shape on stormblock#177.
+
 ### Blocked on other repos
 
 - [ ] **#75 — stormnic-virtio, a Rust virtio-net UEFI driver (P2, owner).
