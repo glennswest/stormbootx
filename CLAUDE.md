@@ -1053,28 +1053,28 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       wait (match against dellsw#14) and the loop-back line
       (stormnic-mlx4#21).
 
-- [ ] **#89 — the self-update's unseen paths (P2, from #83/#86). In
-      progress (2026-10-06).** stormcentral now serves a real promotion:
-      `stormbootx-rustnic` serial 1 = v0.14.0
-      (`golden-stormbootx-rustnic-75128a00457dab51`), hex signature that
-      openssl verifies against `RELEASE_KEYS`. `stormbootx` (fw) is still
-      404. Plan, all in `tests/update-boots.sh` under OVMF:
-      1. the medium on a USB stick (`qemu-xhci` + `usb-storage`), not
-         virtio-blk, so the writes go through OVMF's USB mass storage;
-      2. `real`: stormcentral's captured manifest and `.sig`
-         (`tests/fixtures/`) served to the binary; it must verify against
-         the release key and reach the file fetch (files 404, nothing
-         written);
-      3. `notcanary` / `canary`: serial 6 names another MAC (refused), then
-         this machine's (taken); serial 5 carries a `drivers/retire.efi`
-         that 6 drops, so 6 retires it to `.prev`;
-      4. `short`: serial 7 carries a file larger than the ESP's free space:
-         `needs N KB … nothing written`;
-      5. the bad-trial sequence moves to serial 8 and reverts to 6.
-      **Not here:** metal (a real stick on a real machine) and which
-      pre-v0.14.0 sticks/BMC media exist are the master's. #96 (serial-only
-      verdict) means today's serial 1 would take a v0.15+ stick back to
-      v0.14.0.
+- [ ] **#89 — the self-update's unseen paths (P2, from #83/#86). OVMF
+      half done 2026-10-06; the metal half waits on #96.** stormcentral serves
+      a real promotion: `stormbootx-rustnic` serial 1 = v0.14.0
+      (`golden-stormbootx-rustnic-75128a00457dab51`, hex signature);
+      `stormbootx` (fw) still 404. 46048c0, `tests/update-boots.sh`, ten
+      boots with the medium on a USB stick (`qemu-xhci` + `usb-storage`):
+      stormcentral's captured manifest (`tests/fixtures/`) verified in the
+      binary against the release key and went on to the file fetch (`…/files/
+      EFI/BOOT/BOOTX64.EFI answered HTTP 404`, nothing written); serial 6
+      refused as another MAC's canary (`is for its 1 canaries only`), then
+      taken naming this MAC, `1 driver(s) retired` with `retire.efi.prev` on
+      the disk; serial 7 `needs 4467 KB and the medium has 3727 KB free;
+      nothing written`; serial 8's failed trial put serial 6 back. A non-PE
+      `.efi` in `\stormboot\drivers` is `LoadImage: UNSUPPORTED` and the
+      boot goes on. sc-build of 46048c0: no warnings, suites
+      9/7/7/8/12/8/11/7, espprobe, net-ovmf, both shells, update-ovmf PASS.
+      **Left:** a real stick on metal taking a real promotion end to end.
+      Blocked on #96: today's serial 1 (v0.14.0) would take any v0.15+
+      writable stick backwards. There is no writable golden either (#41/#97).
+      Pre-v0.14.0 media seen in the latest consoles: server8 rustnic v0.10.0
+      and server3 rustnic v0.12.0. server4 is on v0.14.0. Whether those are
+      sticks or BMC media is not in the console.
 
 ### Blocked on other repos
 
