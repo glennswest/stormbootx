@@ -47,6 +47,11 @@ const COMPONENT_NAME2: Guid = guid!("6a7a5cff-e8d9-4f70-bada-75ab3025ce14");
 const COMPONENT_NAME: Guid = guid!("107a772c-d5e1-11d4-9a46-0090273fc14d");
 const DRIVER_BINDING: Guid = guid!("18a031ab-b443-4d1a-a5c0-0c09261e9f71");
 const LOADED_IMAGE: Guid = guid!("5b1b31a1-9562-11d2-8e3f-00a0c969723b");
+const DEVICE_PATH: Guid = guid!("09576e91-6d3f-11d2-8e39-00a0c969723b");
+const PCI_IO: Guid = guid!("4cf5b200-68b8-4ca5-9eec-b23e3f50029a");
+/// EFI_NETWORK_INTERFACE_IDENTIFIER_PROTOCOL_31 and its predecessor: an UNDI.
+const NII31: Guid = guid!("1aced566-76ed-4218-bc81-767f1f977a89");
+const NII: Guid = guid!("e18541cd-f755-4f73-928d-643c8a79b229");
 
 fn bs() -> Option<&'static BootServices> {
     unsafe { uefi::table::system_table_raw()?.as_ref().boot_services.as_ref() }
@@ -58,24 +63,23 @@ fn bs() -> Option<&'static BootServices> {
 /// its image's file name, else its handle. `None` when nothing on the handle
 /// says who installed it.
 ///
-/// A driver that installs SNP on the controller's own handle (UNDI + SnpDxe,
-/// most option-ROM drivers) opened something on that handle `BY_DRIVER`, and
-/// there may be two (UNDI and SnpDxe), so all of them are named. One that
-/// installs it on a child handle (VirtioNetDxe, the stormnic drivers) opened
-/// its parent's protocols `BY_CHILD_CONTROLLER` for that child. The first is
-/// asked first: a PCI handle is itself a child of PciBusDxe, which would
-/// otherwise answer. Openers of SNP itself are consumers (MNP, this binary)
-/// and do not count.
+/// Consumers stack on an SNP handle too, so "who opened something here
+/// `BY_DRIVER`" is not the question: under OVMF that answers MNP's VLAN
+/// Configuration Driver. Two opens identify the NIC's driver:
+///
+/// - a driver that made SNP on a child handle (its device path ends in a MAC
+///   node: VirtioNetDxe, the stormnic drivers, an UNDI's child) opened its
+///   parent's protocols `BY_CHILD_CONTROLLER` for that child. Only asked of a
+///   MAC child: a PCI handle is itself PciBusDxe's child;
+/// - a driver that bound the handle itself opened its PCI I/O or an UNDI's
+///   NII `BY_DRIVER` (option-ROM drivers; SnpDxe over an UNDI).
+///
+/// Both are named when both are there (`Intel UNDI + SNP driver`).
 pub fn driver_of(snp: uefi_raw::Handle) -> Option<String> {
     let bs = bs()?;
     let own = boot::image_handle().as_ptr();
     let mut agents: Vec<uefi_raw::Handle> = Vec::new();
-    for (guid, e) in opens(bs, snp) {
-        if guid != crate::net::SNP && e.attributes & BY_DRIVER != 0 && e.agent_handle != own {
-            agents.push(e.agent_handle);
-        }
-    }
-    if agents.is_empty() {
+    if ends_in_mac(snp) {
         let handles = boot::locate_handle_buffer(SearchType::AllHandles).ok()?;
         for h in handles.iter().map(|h| h.as_ptr()).filter(|&h| h != snp) {
             for (_, e) in opens(bs, h) {
@@ -83,6 +87,11 @@ pub fn driver_of(snp: uefi_raw::Handle) -> Option<String> {
                     agents.push(e.agent_handle);
                 }
             }
+        }
+    }
+    for (guid, e) in opens(bs, snp) {
+        if [PCI_IO, NII31, NII].contains(&guid) && e.attributes & BY_DRIVER != 0 && e.agent_handle != own {
+            agents.push(e.agent_handle);
         }
     }
     let mut names: Vec<String> = Vec::new();
@@ -93,6 +102,24 @@ pub fn driver_of(snp: uefi_raw::Handle) -> Option<String> {
         }
     }
     (!names.is_empty()).then(|| names.join(" + "))
+}
+
+/// Whether the handle's device path ends in a MAC node (messaging, subtype
+/// 11): a NIC driver's child, not the controller.
+fn ends_in_mac(h: uefi_raw::Handle) -> bool {
+    let Some(dp) = crate::net::handle_protocol(h, &DEVICE_PATH) else { return false };
+    let mut node = dp as *const u8;
+    let mut last = (0u8, 0u8);
+    for _ in 0..64 {
+        let (ty, sub) = unsafe { (*node, *node.add(1)) };
+        let len = unsafe { u16::from_le_bytes([*node.add(2), *node.add(3)]) } as usize;
+        if ty == 0x7f || len < 4 {
+            break;
+        }
+        last = (ty, sub);
+        node = unsafe { node.add(len) };
+    }
+    last == (3, 11)
 }
 
 /// Every open of every protocol on `h`: (protocol, entry).
