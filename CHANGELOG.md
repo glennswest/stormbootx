@@ -3,10 +3,14 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
-### 2026-10-06
-- **docs:** CLAUDE.md work plan: #52 closed, v0.16.0 goldens.
-- **BREAKING:** iPXE is retired from every golden (#91, owner on #81): `scripts/build-nic-drivers.sh` no longer fetches or builds iPXE (`IPXE_REF`, `IPXE_DRIVERS` and `IPXE-SOURCE.txt` are gone) and builds only the Rust stormnic drivers, as loadable `.efi` (no more `.efi.off`); `STORMNIC_ON_MEDIA`/`STORMNIC_CARRY` are replaced by `STORMNIC_DRIVERS` (default `ixgbe mlx4`). The `nic-drivers` golden holds `bin/stormnic-ixgbe.efi`, `bin/stormnic-mlx4.efi` and `STORMNIC-SOURCE.txt`.
-- **docs:** README (*NIC drivers*, *How it ships*: the misplaced `nic-drivers` row put back in its table), `drivers.rs`, CLAUDE.md and the presentation say no medium or golden carries iPXE.
+## [v0.17.0] — 2026-10-06
+
+### Breaking
+- iPXE is retired from every golden (#91, owner on #81): `scripts/build-nic-drivers.sh` no longer fetches or builds iPXE (`IPXE_REF`, `IPXE_DRIVERS` and `IPXE-SOURCE.txt` are gone) and builds only the Rust stormnic drivers, as loadable `.efi` (no more `.efi.off`); `STORMNIC_ON_MEDIA`/`STORMNIC_CARRY` are replaced by `STORMNIC_DRIVERS` (default `ixgbe mlx4`). The `nic-drivers` golden holds `bin/stormnic-ixgbe.efi`, `bin/stormnic-mlx4.efi` and `STORMNIC-SOURCE.txt`.
+
+### Documentation
+- CLAUDE.md work plan: #52 closed, v0.16.0 goldens.
+- README (*NIC drivers*, *How it ships*: the misplaced `nic-drivers` row put back in its table), `drivers.rs`, CLAUDE.md and the presentation say no medium or golden carries iPXE.
 
 ## [v0.16.0] — 2026-10-06
 
