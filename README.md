@@ -599,6 +599,7 @@ others.
 | `fec` | none | **recovery sticks only**: write this FEC and warm-reset |
 | `update` | none (no self-update) | `http://host[:port]/path` of this medium's release on stormcentral, or `off` to pin the medium (#83, *Self-update*); written by the golden build, `build-boot-agent.sh --update` |
 | `stamp` | none | parsed, not used |
+| `version`, `commit` | none | **not read by stormbootx**: the stormbootx on this medium, written by every `build-boot-agent.sh` run (#94) so a tool reading the FAT (storminstall, which refuses media older than v0.15.0's install-config slot) needs no EFI binary run. The version is Cargo.toml's and must be in the `.efi` laid down, or the build fails; the commit is the binary's `STORMBOOTX_BUILD` stamp, or `unstamped`. A self-update replaces the file with the release's, so they stay true |
 
 `\stormboot\local.conf`, when present, takes the same keys and is read first,
 so its values win. It belongs to the medium: a self-update never replaces it.

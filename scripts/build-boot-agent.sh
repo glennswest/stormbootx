@@ -258,6 +258,29 @@ update   = $UPDATE
 CONF
 fi
 
+# Which stormbootx this medium carries (#94), for a reader of the FAT that
+# never runs the binary: storminstall refuses media older than the
+# install-config slot (v0.15.0, storminstall#10). The version is Cargo.toml's
+# and must be in the binary laid down, so the line cannot name another build.
+# The commit is the stamp the binary carries (STORMBOOTX_BUILD), else
+# `unstamped`. stormbootx itself ignores both keys. A self-update (#83)
+# replaces this file with the release's, so they stay true.
+VERSION="$(sed -n 's/^version *= *"\([^"]*\)".*/\1/p' "$ROOT/Cargo.toml" | head -1)"
+[[ -n "$VERSION" ]] || die "no version in $ROOT/Cargo.toml"
+grep -aqF "$VERSION" "$BIN" || die "$BIN does not carry version $VERSION (Cargo.toml): built from another checkout?"
+STAMP="${STORMBOOTX_BUILD:-$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || true)}"
+if [[ -z "$STAMP" || "$STAMP" == unknown ]] || ! grep -aqF "$STAMP" "$BIN"; then
+    STAMP="unstamped"
+fi
+cat >> "$WORK/stormboot.conf" <<CONF
+
+# The stormbootx on this medium, written by the build (#94). Read by tools,
+# not by stormbootx.
+version  = $VERSION
+commit   = $STAMP
+CONF
+say "medium carries stormbootx $VERSION ($STAMP)"
+
 # mkfs.fat's own geometry: at 4 MiB that is FAT12 with 2 KiB clusters, the
 # same as Debian's efi.img. This was FAT16 at 512-byte clusters (-F 16 -s 1)
 # until #55: AMI Aptio 4 (server1, X9) read the first 12 KB of that ESP off

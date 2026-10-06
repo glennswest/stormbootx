@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-06
+- **feat:** every medium names the stormbootx on it (#94, storminstall#10): `build-boot-agent.sh` appends `version = <Cargo.toml version>` and `commit = <the binary's STORMBOOTX_BUILD stamp, or unstamped>` to `\stormboot\stormboot.conf` (ESP, ISO9660 tree, golden `media/`). It dies if the `.efi` it lays down does not carry that version. stormbootx ignores both keys. `tests/iso-layout.sh` checks them.
 - **docs:** CLAUDE.md work plan: #88 closed, v0.18.0 goldens.
 - **docs:** CLAUDE.md work plan: #75 (stormnic-virtio) waits on the owner: who creates the repo and its project.
 
