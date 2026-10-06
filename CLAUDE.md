@@ -465,24 +465,29 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
-- [ ] **#52 — the firmware-drivers medium (`media : fw`), the third of
-      #45's (owner, 2026-09-29). In progress.** The owner's answer on #81
-      (2026-10-02, "I dont want the ipxe code ... we can keep the code to use
-      built in nic firmware") leaves two media: rustnic, and one with no
-      `\stormboot\drivers`. As #91 proposes, the `stormbootx` golden *becomes*
-      that medium, so the name every BMC and recipe points at stays. Plan:
-      1. `build-golden.sh stormbootx`: no drivers on the media, `--media fw`;
-         a `--drivers` from stormcentral (its `nic-drivers` input) is ignored,
-         then the input is dropped (`component edit stormbootx`).
-      2. `run()` says `drivers : none on the media; the firmware's own NIC
-         drivers` when the media carries none, so the console shows it.
-      3. sc-build: build the golden tree in the job and boot its ISO with
-         `tests/media-ovmf.sh` for `media : fw` and that line; no
-         `stormboot/drivers` in `media/`.
-      4. Docs (README *How it ships*, build-golden.sh, presentation), then a
-         release and goldens. The X9 blades' BMCs move to
-         `stormbootx-rustnic` (the master's); iPXE leaving `nic-drivers` and
-         `build-nic-drivers.sh` is #91.
+- [x] **#52 — the firmware-drivers medium (`media : fw`), the third of
+      #45's (owner, 2026-09-29). Closed 2026-10-06.** The owner's answer on
+      #81 (2026-10-02, "I dont want the ipxe code ... we can keep the code to
+      use built in nic firmware") leaves two media: rustnic, and one with no
+      `\stormboot\drivers`. As #91 proposed, the `stormbootx` golden
+      *became* that medium, so the name every BMC and recipe points at stays.
+      `build-golden.sh stormbootx` lays no drivers and `--media fw`, ignores
+      `--drivers`, and dies if a driver reaches `media/`; the component's
+      `nic-drivers` input was dropped (`component edit stormbootx --set
+      inputs=[]`). `run()` prints `drivers : none on the media; the
+      firmware's own NIC drivers`. 04a58c4, released **v0.16.0** (e51ed45).
+      sc-build of 04a58c4: no warnings, suites 9/7/7/8/12/8/11/7, espprobe,
+      net-ovmf, both shells, update-ovmf, and the golden tree built in the
+      job (`--drivers /nonexistent` ignored, `BUILD` `drivers = none`, no
+      `media/stormboot/drivers`), `iso-layout` PASS and `media-ovmf` found
+      `media : fw` and the `drivers : none` line. The tag built `--locked`
+      and its golden ISO booted the same. Goldens
+      `golden-stormbootx-1fdb5a8eb0710bc1` and
+      `golden-stormbootx-rustnic-c2c2774b3fd29c72`. **Left for the master:**
+      the X9 blades' BMCs move to `stormbootx-rustnic` before they boot the
+      new `stormbootx` (it carries no driver for their NICs). **Not run:**
+      the R230 on the fw medium. iPXE leaving `nic-drivers` and
+      `build-nic-drivers.sh` is #91.
 
 - [x] **#54 — the fall-through after an attach crashed OVMF (#UD at
       0x47FFFFFCA, pvetest1). Closed 2026-10-06.** An attach that booted
