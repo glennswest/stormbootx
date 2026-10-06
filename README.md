@@ -877,7 +877,7 @@ Open issues:
 | #11 | a per-machine boot intent (`install`/`local` wait on forge running stormblock v20, #148; `auto` claims unless `local_when_bootable = true`, #3) |
 | #36 | the golden media's pinned fallback (nsid 2) |
 | #7 | placeholder list shared with stormipmi |
-| #27, #69–#75, #80 | Rust NIC drivers (iPXE is gone from every medium and golden, #91; the X9 blades boot the rustnic media) |
+| #69–#75, #80 | more Rust NIC drivers (iPXE is gone from every medium and golden, #91; the X9 blades boot the rustnic media) |
 | #83 | self-update: in the binary, tested under OVMF, stormcentral's key compiled in (#86); no medium updates until stormcentral promotes a golden (`stormcentral stormbootx promote`) |
 | #4, #10, #14 | inventory; the shared initiator; test containers |
 

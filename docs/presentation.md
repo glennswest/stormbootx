@@ -247,7 +247,7 @@ smoltcp, through stormuefi to a running stormcos (#56, #68).
 | #11 | intents take effect | forge on stormblock v20 (#148) |
 | #15 | universal boot served | forge on stormblock ≥ 19.4.0, `boothost/default` set, stormblock#202 |
 | stormblock#204 | a DNS name the engine hasn't seen reaches its host (#23 is closed) | stormblock |
-| #27 | NIC drivers in Rust (iPXE retired from every medium, #91) | the rustnic media proven on every X9 blade |
+| #69–#75 | more Rust NIC drivers (iPXE retired from every medium, #91) | each driver written and proven on metal |
 | #4 | report inventory before any OS | decision #20 |
 | #83 | self-update the media (in the binary, OVMF-tested, key compiled in) | stormcentral promoting a golden |
 | #10 | NVMe/TCP initiator as a shared crate | stormboot4bios |

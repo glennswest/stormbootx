@@ -4,7 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-06
-- **docs:** CLAUDE.md work plan: #91 closed, v0.17.0 goldens.
+- **docs:** CLAUDE.md work plan: #91 closed, v0.17.0 goldens; README and the presentation drop #27 (closed).
 
 ## [v0.17.0] — 2026-10-06
 
