@@ -1112,6 +1112,18 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       the rustnic media), then OVMF and pvetest1/2. #69–#74 have the same
       question.
 
+- [ ] **#74 — stormnic-realtek, a Rust RTL8111/8168, 8125, 8126 UEFI
+      driver (P2, owner). Waiting on the owner (2026-10-06, `needs-owner`).**
+      The repo doesn't exist. On #75 the owner agreed that the master creates
+      each `stormnic-*` repo and registers it with its own session. Asked on
+      #74: do the same for `glennswest/stormnic-realtek`, and which machine
+      with a Realtek port to verify on. QEMU emulates only rtl8139, so no VM
+      (OVMF, pvetest1/2) can bind it, and no registered test machine is known
+      to have one. IDs checked in pci.ids: 8168, 8125, 8126 right; 8161, 8127
+      and Killer 2600/3000/5000 are the same family. This repo's side, once
+      the driver binds: pin it in `build-nic-drivers.sh` (nic-drivers golden,
+      rustnic media).
+
 - [ ] **#92 — promote the install-config-capable media (P1). Blocked on
       stormcentral#459 (2026-10-06).** Promotion (`stormcentral stormbootx
       promote … --booted <pve> --booted <metal>`) needs a passed install on

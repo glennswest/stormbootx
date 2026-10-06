@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-06
+- **docs:** CLAUDE.md work plan: #74 (stormnic-realtek) waits on the owner: the repo, and a machine with a Realtek NIC to verify on.
 - **docs:** CLAUDE.md work plan: #90 closed, v0.20.0 goldens.
 
 ## [v0.20.0] — 2026-10-06
