@@ -1124,6 +1124,16 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       binds: pin it in `build-nic-drivers.sh` and add an OVMF boot on
       `-device igb`.
 
+- [ ] **#70 — stormnic-e1000e, a Rust 82574L/82579/I217–I219 UEFI driver
+      (P2, owner). Waiting on the owner (2026-10-06, `needs-owner`)** for the
+      master to create `glennswest/stormnic-e1000e` (as for stormnic-virtio,
+      #75). Verified in a VM: dev's QEMU has `-device e1000e` (82574L,
+      `8086:10d3`), and OVMF has no e1000e driver of its own. The issue's
+      named IDs are right; "15B7+" is not a range (I219 IDs are scattered
+      across 24 generations; listed on #70). This repo's side, once it
+      binds: pin it in `build-nic-drivers.sh` and add an OVMF boot on
+      `-device e1000e`.
+
 - [ ] **#71 — stormnic-i40e, a Rust X710/XL710/XXV710/X722 UEFI driver
       (P2, owner). Waiting on the owner (2026-10-06, `needs-owner`).** Same
       pair of questions as #74: the master creates `glennswest/stormnic-i40e`
