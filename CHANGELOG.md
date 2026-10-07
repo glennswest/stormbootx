@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-10-07
+- **docs:** CLAUDE.md work plan: #98 closed, not reproduced (11.80 on stormbootx v0.15.0 reached Ready on pvetest2); the initramfs console after `ublk devices starting` is stormblock#321.
+
 ### 2026-10-06
 - **docs:** CLAUDE.md work plan: #104 closed; goldens `golden-stormbootx-rustnic-0585a52012dcd66e`, `golden-nic-drivers-98976cdcd7eb`.
 - **chore:** rustnic media pins stormnic-mlx4 v0.2.5 (04e7d2c) (#104; asked for in the issue's comment, superseding v0.2.4 32083cd): per-port module EEPROM, PTYS and forced-speed diagnostics (stormnic-mlx4#17), and a quiet console with the full trace behind `StormnicVerbose` (stormnic-mlx4#16). Media label `rustnic ixgbe@728b328 mlx4@04e7d2c`.
