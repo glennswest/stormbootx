@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-06
+- **docs:** #33 closed. README: the X9's NOT_FOUND was the release's ESP (stormcos#188), and the ttyS1 kernel console is stormcos#220 / stormuefi#23. The open-issue table drops #33, #11 and #15. CLAUDE.md work plan entry for #33.
 - **docs:** the binary's size is ~320 KB (328,704 bytes at dc09321) in CLAUDE.md and the deck's title slide (was ~230/~270 KB) (#95).
 - **docs:** CLAUDE.md work plan: #14 waits on stormcentral#133 alone, not a decision (#22 answered; KVM via `privileged`; no TCP4 needed since #56) (#95). `docs/presentation.md`: #11, #15 and #68 out of *Planned*, #14 waits on stormcentral#133, #22 no longer an open decision, status at v0.22.0.
 - **docs:** CLAUDE.md work plan: #15 closed (default claim of a new machine verified under OVMF; forge still 13.7.0).

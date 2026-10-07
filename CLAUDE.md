@@ -900,6 +900,18 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       `blockio :` lines say whether reads crawl (MiB/s, slow reads), fail
       (the NVMe/TCP error), or stopped; check dsw1's dswfecfix log too.
 
+- [x] **#33 — X9 blades: `BOOTX64.EFI` NOT_FOUND on a 4096-byte
+      namespace, and the kernel console on ttyS1. Closed 2026-10-06.**
+      The NOT_FOUND was 11.50's FAT32-labelled ESP (FAT16 by cluster count),
+      fixed in stormcos#188; server1 booted 11.56 from a 4096-byte namespace
+      on v0.7.0 media (2026-09-30), with #37's `esp.rs` bridge behind the
+      firmware. Which reader loaded it stays on #37. The console is not
+      stormbootx's: stormcos 2628cb2 names `console=ttyS1,115200` before
+      `ttyS0` on every node (stormcos#220, shipped with its next release),
+      and stormuefi v0.9.0 puts the SPCR port last (stormuefi#23, ships with
+      the ESP golden, stormcentral#215). **Not seen:** a blade's SOL
+      capture past stormbootx (the capture drops: stormcentral#220/#499).
+
 - [ ] **#37 — boot a 4096-byte ESP on firmware whose FAT can't (P0, owner
       2026-09-29). In progress.** Volumes stay 4K. server1's console (#33)
       shows Aptio 4's FAT *mounting* the attached 4K ESP (an SFS was found)

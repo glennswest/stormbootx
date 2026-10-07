@@ -920,8 +920,12 @@ from the PTR, claimed `boothost/server1` and attached its clone over NVMe/TCP
 on that firmware, a 4096-byte-block namespace (#33). Volumes stay 4K (owner,
 2026-09-29), so stormbootx now reads the ESP itself when the firmware can't
 (#37). On 2026-09-30 server1 booted release 11.56 from a 4096-byte
-namespace (v0.7.0 media) once that release's ESP was FAT16 (stormcos#188);
-which reader loaded `BOOTX64.EFI` there is not yet known (#33). The same
+namespace (v0.7.0 media) once that release's ESP was FAT16 (stormcos#188),
+which closed #33. Which reader loaded `BOOTX64.EFI` there (the firmware's
+FAT or `esp.rs`) is not yet known (#37). The kernel console on the X9's SOL
+(COM2, `ttyS1`) is not stormbootx's: the release names `console=ttyS1,115200`
+too (stormcos#220), and stormuefi ≥ 0.9.0 puts the port ACPI SPCR names last
+(stormuefi#23). The same
 night server3, also an X9, booted on smoltcp (v0.9.0): `tcp4 : smoltcp over
 SNP`, `rng : rdrand`, a lease, the claim, the attach, stormuefi and a running
 stormcos (#56, #68).
@@ -930,9 +934,7 @@ Open issues:
 
 | Issue | What |
 |---|---|
-| #37, #33 | X9 blades on a 4096-byte namespace: server1 boots 11.56; which reader loaded it, and the SOL console on ttyS1, are still open; #67 hardens `esp.rs` |
-| #15 | universal boot: client side done; forge is on stormblock 13.7.0, and there is no `boothost/default` |
-| #11 | a per-machine boot intent (`install`/`local` wait on forge running stormblock v20, #148; `auto` claims unless `local_when_bootable = true`, #3) |
+| #37 | X9 blades on a 4096-byte namespace: server1 boots 11.56; which reader loaded it is still open; #67 hardens `esp.rs` |
 | #36 | the golden media's pinned fallback (nsid 2) |
 | #69–#75, #80 | more Rust NIC drivers (iPXE is gone from every medium and golden, #91; the X9 blades boot the rustnic media) |
 | #83 | self-update: in the binary, tested under OVMF, stormcentral's key compiled in (#86); no medium updates until stormcentral promotes a golden (`stormcentral stormbootx promote`) |
