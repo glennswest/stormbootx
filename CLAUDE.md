@@ -2,7 +2,7 @@
 
 A UEFI application that attaches a remote image over NVMe/TCP, publishes it
 as `EFI_BLOCK_IO_PROTOCOL` so the firmware's partition and FAT drivers see its
-GPT and ESP, and chain-loads the image's `\EFI\BOOT\BOOTX64.EFI`. ~230 KB,
+GPT and ESP, and chain-loads the image's `\EFI\BOOT\BOOTX64.EFI`. ~320 KB,
 `no_std`. It carries its own TCP/IP (smoltcp on SNP, #56), so the one thing it
 needs from the firmware's network side is a NIC driver's `EFI_SIMPLE_NETWORK`.
 

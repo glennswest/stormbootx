@@ -15,7 +15,7 @@ paginate: true
 
 **A UEFI boot agent that attaches a machine's image over NVMe/TCP and boots it.**
 
-v0.13.0 (2026-10-02) · `x86_64-unknown-uefi` · `no_std` · ~270 KB
+v0.22.0 (2026-10-06) · `x86_64-unknown-uefi` · `no_std` · ~320 KB
 
 No kernel, no initramfs, no PXE, no TFTP. It carries its own TCP/IP (smoltcp
 on the NIC driver's SNP), so it needs no network stack from the firmware.
