@@ -1137,7 +1137,9 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       and `tests/net-ovmf.sh`'s fifth boot, `release`, falls through with the
       firmware's IPv4 stack on (plus a virtio-rng). The firmware's `UEFI
       PXEv4` on the same NIC then leased and started tcp4probe over TFTP.
-      Released **v0.21.0**. **Not seen:** the MTU tiebreak between two live
+      Released **v0.21.0** (96d72d0, built `--locked`). Goldens
+      `golden-stormbootx-125a23abbe7b5a47` and
+      `golden-stormbootx-rustnic-16d7fcd957f5c8ed`. **Not seen:** the MTU tiebreak between two live
       links (every firmware SNP here reports 1500), the 25G link-settle wait
       (the links were up at the first sample), and the release line on a
       metal fall-through.
