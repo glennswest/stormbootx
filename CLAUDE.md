@@ -477,7 +477,9 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       check moved to `universal::serial_usable` (core-only) and refuses
       exactly what stormipmi's `identity::usable` refuses, host-tested with
       its vectors (`placeholders_match_stormipmi`); `Identity::Mac` prints
-      `lowest NIC MAC`. 464718a, released **v0.21.1**. sc-build of 464718a:
+      `lowest NIC MAC`. 464718a, released **v0.21.1** (2ab269c, `--locked`);
+      goldens `golden-stormbootx-682232a186bf621e` and
+      `golden-stormbootx-rustnic-2ad82f5191c40cea`. sc-build of 464718a:
       no warnings, suites 9/7/9/8/12/8/11/7, espprobe, five net boots, both
       shells, update-ovmf.
 
