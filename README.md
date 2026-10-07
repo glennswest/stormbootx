@@ -201,7 +201,7 @@ given back on the fall-through.
 
    ```
    "agent": {"name":"stormbootx","version":"0.19.0","commit":"649dd07",
-             "media":"rustnic ixgbe@728b328 mlx4@0e50017",
+             "media":"rustnic ixgbe@728b328 mlx4@04e7d2c",
              "update_serial":5,"update":"serial:5"}
    ```
 
@@ -850,14 +850,18 @@ the UAR's PCI I/O BAR index through `GetBarAttributes`, because AMI Aptio 4
 numbers BARs rather than BAR registers (stormnic-mlx4#15). Since #66
 (v0.2.3) it prints each port's speed, autonegotiation and module at the link
 wait and on every link change, and the first own frame the adapter loops
-back (stormnic-mlx4#21). Each Rust driver
+back (stormnic-mlx4#21). Since #104 (v0.2.5) it prints each port's module
+EEPROM, PTYS link modes and forced-speed support after the link wait and at
+every link-down (stormnic-mlx4#17), and its console is one line per port
+plus warnings, with the full trace only when `StormnicVerbose` is set
+(stormnic-mlx4#16). Each Rust driver
 is checked to be PE subsystem 11 (EFI boot-service driver) when it is built.
 The rustnic media builds its own drivers and takes no nic-drivers golden. Each ISO's `stormboot.conf` names the variant, and the console
 prints it under the banner:
 
 ```
 media       : fw
-media       : rustnic ixgbe@728b328 mlx4@0e50017
+media       : rustnic ixgbe@728b328 mlx4@04e7d2c
 ```
 
 The fw medium's `BUILD` says `drivers = none`, and a `--drivers` given to

@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-06
+- **chore:** rustnic media pins stormnic-mlx4 v0.2.5 (04e7d2c) (#104; asked for in the issue's comment, superseding v0.2.4 32083cd): per-port module EEPROM, PTYS and forced-speed diagnostics (stormnic-mlx4#17), and a quiet console with the full trace behind `StormnicVerbose` (stormnic-mlx4#16). Media label `rustnic ixgbe@728b328 mlx4@04e7d2c`.
 - **docs:** CLAUDE.md work plan: #101 closed; goldens `golden-stormbootx-rustnic-5673f944f5dab62d`, `golden-nic-drivers-a5962e89b0f7`.
 - **chore:** rustnic media pins stormnic-ixgbe 728b328 (#101; asked for in the issue's last comment, superseding 38d6f0c, ed9b719, b240082 and 32c0bfc): a quiet console, one line per NIC with link-down diagnostics (stormnic-ixgbe#22, #26), the X540/X552/X550/X553 simulation-only warnings (#17, #23), and the DMA check's 3 s receive listen only when verbose (#24). Media label `rustnic ixgbe@728b328 mlx4@0e50017`.
 - **docs:** #33 closed. README: the X9's NOT_FOUND was the release's ESP (stormcos#188), and the ttyS1 kernel console is stormcos#220 / stormuefi#23. The open-issue table drops #33, #11 and #15. CLAUDE.md work plan entry for #33.

@@ -471,6 +471,13 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
+- [ ] **#104 — rustnic media pins stormnic-mlx4 v0.2.5 (04e7d2c) (P2). In
+      progress 2026-10-06.** The issue asked for v0.2.4 (32083cd, module
+      EEPROM/PTYS/speed-control diagnostics, stormnic-mlx4#17); its comment
+      for v0.2.5, which adds the quiet console (stormnic-mlx4#16). Plan: as
+      #101: pin, full sc-build plus the nic-drivers, rustnic and
+      rustnic-disk trees under OVMF, then the goldens.
+
 - [x] **#101 — rustnic media pins stormnic-ixgbe 728b328 (P2). Closed
       2026-10-06.** The issue asked for 38d6f0c, and its comments moved the
       ask to ed9b719, b240082, 32c0bfc and last to 728b328, which contains
