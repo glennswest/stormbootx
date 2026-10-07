@@ -471,6 +471,19 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
+- [ ] **#107 — boot an X9 blade on the stormnic-ixgbe 728b328 media to
+      check stormnic-ixgbe#22 (P2). Waiting on the owner (2026-10-07,
+      `needs-owner`).** The check needs an 82599 blade with link
+      (server1/4/7) booted from BMC virtual media. That media is minismbd's
+      share, set by hand through its loopback API, and swapping it changes
+      what every blade boots next. No `boot` test machine (pve VMs) has an
+      82599. Asked on #107: may the blades' rustnic ISO be swapped to
+      `golden-stormbootx-rustnic-0585a52012dcd66e` (728b328 + mlx4 v0.2.5,
+      so one boot also checks stormnic-mlx4#16/#17), and by whom. Pass: one
+      `stormnic-ixgbe 0.1.0: 0000:03:00.0 … link up 10000 Mb/s, SNP
+      installed` line after `starting stormnic-ixgbe.efi`; post the SOL lines
+      on stormnic-ixgbe#22.
+
 - [x] **#98 — v0.15.0 + stormcos 11.80 hung in the initramfs after the
       ublk devices started (pvetest2, 2026-10-05). Closed 2026-10-07: not
       reproduced, and not stormbootx's.** v0.14.0..v0.15.0 changes only

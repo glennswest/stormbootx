@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-07
+- **docs:** CLAUDE.md work plan: #107 waits on the owner (who swaps the blades' rustnic ISO on minismbd and boots a blade).
 - **docs:** CLAUDE.md work plan: #98 closed, not reproduced (11.80 on stormbootx v0.15.0 reached Ready on pvetest2); the initramfs console after `ublk devices starting` is stormblock#321.
 
 ### 2026-10-06
