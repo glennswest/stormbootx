@@ -471,6 +471,20 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
+- [ ] **#41 — a golden for the USB disk image (owner on #35; also #97).
+      In progress (2026-10-06).** `deploy/build-golden.sh stormbootx-disk`
+      and `stormbootx-rustnic-disk` write only `boot/<golden>.img` (+
+      `SHA256SUMS`, `BUILD`): a GPT stick with the same tree as the family's
+      ISO, `update =` pointing at the family's boothelper (`stormbootx`,
+      `stormbootx-rustnic`), so a stick updates from the same promotion as the
+      ISO. ESP 64 MiB (the hand-built X9 stick of #97; room for the
+      self-update's new set beside the old), FAT16 at 512-byte sectors.
+      `tests/media-ovmf.sh` boots an `.img` as a USB stick. sc-build builds
+      both trees and boots both images. Registering them is
+      stormcentral#190 (its media build takes only `boot/<comp>.iso` today).
+      Dropping `.img`/`tcp4probe.iso`/`bin/` from the ISO goldens is #35,
+      after this.
+
 - [x] **#7 — boot identity: the last piece. Closed 2026-10-06.** Done
       earlier: placeholders refused, Type 1 → 2 → 3 → lowest MAC, shared
       chassis serials rejected, the DNS name primary. Last: the placeholder
