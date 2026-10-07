@@ -1307,7 +1307,16 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       which should print `name : server1a names this NIC; the machine is
       server1` and claim `boothost/server1`. Forge still reports 13.7.0.
 
-- [ ] #11 — per-machine boot intent. **The stormbootx half landed on
+- [x] #11 — per-machine boot intent. **Closed 2026-10-06** after cebeac1:
+      `tests/net-ovmf.sh`'s `intent` boot (the stub engine answers
+      stormblock's `intent_body` for the MAC alias `525400123456`) printed
+      `intent : local` and `no network boot: boot intent for 525400123456
+      is \`local\`: nothing claimed`, made no claim POST and attached
+      nothing; the `jitter` boot, told `install`, claimed and booted. sc-build
+      of cebeac1 passed the full suite. **Not seen:** forge serving a real
+      intent (still 13.7.0 on 2026-10-06), so on metal every read is a 404
+      and every boot claims. That is forge's upgrade, not this repo.
+      History: **the stormbootx half landed on
       2026-09-27** (`src/intent.rs`, `registry::boot_intent`, step 3a in
       `run()`). It reads `GET /api/v1/synonyms/boothost/<tag>/intent` before
       the claim. `local` falls through with no claim and no clone. `install`

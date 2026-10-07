@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-06
+- **docs:** CLAUDE.md work plan: #11 closed (OVMF `local`/`install` boots verified; forge still 13.7.0).
 - **test:** `tests/net-ovmf.sh` checks the boot intent (#11): the stub engine answers stormblock's `intent_body` for the MAC alias. A boot told `local` must print `intent : local` and fall through with `nothing claimed`, with no claim POST and nothing attached. The `jitter` boot is told `install` and claims as before.
 - **docs:** CLAUDE.md work plan: v0.22.0 goldens (#41).
 
