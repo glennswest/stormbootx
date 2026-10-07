@@ -481,27 +481,27 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
-- [ ] **#108 (with #106, #75) — stormnic-virtio on the rustnic media,
-      taking virtio-net NICs from OVMF's VirtioNetDxe (P2). In progress
-      2026-10-07.** Every OVMF binds virtio-net in the platform's
-      ConnectController pass, before the media drivers load, and the stormnic
-      drivers decline a held function, so pinning alone does nothing. Plan:
-      1. `build-nic-drivers.sh`: pin stormnic-virtio 1a04808 (#75), in the
-         default `STORMNIC_DRIVERS`; nic-drivers and rustnic goldens carry it,
-         label `virtio@1a04808`.
-      2. `prefer_media_drivers = virtio` in `stormboot.conf`
-         (`build-boot-agent.sh --prefer-media-drivers`), set on the rustnic
-         media only. Opt-in per family; without it the platform still wins.
-      3. `drivers.rs`: after the media drivers start, for each PCI function
-         of a preferred family (virtio: 1af4:1041, 1af4:1000, class 02) held
-         `BY_DRIVER` by another driver: disconnect its tree leaf first, up to
-         3 passes, judged by the `BY_DRIVER` opens left on its PciIo (pve
-         returns `NOT_FOUND` when every driver came off); then
-         `ConnectController` naming only our driver; if ours does not hold
-         it, reconnect the firmware's. One console line per NIC.
-      4. `tests/net-ovmf.sh`: a boot with the driver on the media and the
-         key set: `nic 0: driver stormnic-virtio…`, the claim and the 96 MiB
-         attach over it.
+- [x] **#108 (with #106, #75) — stormnic-virtio on the rustnic media,
+      taking virtio-net NICs from OVMF's VirtioNetDxe (P2). Closed
+      2026-10-07.** Pin stormnic-virtio 1a04808 (#75) in the default
+      `STORMNIC_DRIVERS`; `prefer_media_drivers = virtio` on the rustnic
+      media (`--prefer-media-drivers`); `drivers::take_over` disconnects the
+      firmware's driver tree leaf first (judged by who holds PciIo),
+      connects naming only stormnic-virtio, gives it back if ours doesn't
+      bind. 9efccd8 + e1acca6 (media-ovmf `NIC=virtio`, #109). sc-build of
+      9efccd8: suites, espprobe, both shells, update-ovmf, and net-ovmf's ten
+      boots: `virtio` (transitional) printed `0000:00:02.0 1af4:1000: taken
+      from Virtio PCI Driver; stormnic-virtio.efi drives it`, `stormnic-virtio
+      0.1.0: … 1af4:1000 virtio-net (transitional): MAC …, link up, queues
+      32/32, SNP installed`, `nic 0: driver stormnic-virtio.efi`, leased,
+      claimed and read the 96 MiB at 105 MiB/s (121–123 on OVMF's driver),
+      then started the payload; `virtio-modern` (1af4:1041, from `Virtio 1.0
+      PCI Driver`) leased; `virtio-kept` (no key) kept `Virtio Network
+      Driver`. sc-build of e1acca6: the nic-drivers, rustnic and
+      rustnic-disk trees (`prefer_media_drivers = virtio` on the media) took
+      the NIC under OVMF; the fw golden kept OVMF's driver. **Left:**
+      stormnic-virtio#1's pvetest1/2 boot of the rustnic media (pve's OVMF,
+      the iPXE option ROM, a real release).
 
 - [ ] **#107 — boot an X9 blade on the stormnic-ixgbe 728b328 media to
       check stormnic-ixgbe#22 (P2). Waiting on the owner (2026-10-07,

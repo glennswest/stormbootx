@@ -867,7 +867,7 @@ I/O) and connects it naming only stormnic-virtio. If that driver does not then
 hold it, the firmware's driver gets it back. The console says which:
 
 ```
-    [  0 s] 0000:00:02.0 1af4:1000: taken from Virtio PCI Device Driver; stormnic-virtio.efi drives it
+    [  0 s] 0000:00:02.0 1af4:1000: taken from Virtio PCI Driver; stormnic-virtio.efi drives it
 ```
 
 Virtio IDs exist only in VMs, so on metal the key changes nothing, and the
