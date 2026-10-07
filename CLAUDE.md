@@ -499,7 +499,11 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       PCI Driver`) leased; `virtio-kept` (no key) kept `Virtio Network
       Driver`. sc-build of e1acca6: the nic-drivers, rustnic and
       rustnic-disk trees (`prefer_media_drivers = virtio` on the media) took
-      the NIC under OVMF; the fw golden kept OVMF's driver. **Left:**
+      the NIC under OVMF; the fw golden kept OVMF's driver. Released
+      **v0.23.0** (a9f1be0; the tag built `--locked` and passed the full
+      suite). Goldens `golden-stormbootx-09d0fe152467b505`,
+      `golden-stormbootx-rustnic-4c485750874d219a`,
+      `golden-nic-drivers-6b2fa462d870`. **Left:**
       stormnic-virtio#1's pvetest1/2 boot of the rustnic media (pve's OVMF,
       the iPXE option ROM, a real release).
 
