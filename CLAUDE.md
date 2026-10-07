@@ -1246,8 +1246,18 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       would copy. Decisions needed: where the engine comes from, where a
       TCP4-capable OVMF comes from, and whether TCG (no KVM) is acceptable.
 
-- [ ] #15 — **universal boot (P0, owner 2026-09-27). The stormbootx side is
-      done (2026-09-27, sc-build passing).** One ISO boots any machine with
+- [x] #15 — **universal boot (P0, owner 2026-09-27). Closed 2026-10-06**
+      after 1dc7232: `tests/net-ovmf.sh`'s `newhost` boot (no name from DHCP
+      or PTR, stub engine 19.4.0) claimed `boothost/default as
+      52:54:00:12:34:56` with the MAC in the body, got the provisional
+      `mac-525400123456`, printed `booting the default image as
+      mac-525400123456`, attached, read 96 MiB and started the payload, which
+      read `StormBootTag = mac-525400123456` and its host NQN. The `jitter`
+      boot covers a default claim that names a known host (`stubhost`).
+      sc-build of 1dc7232 passed the full suite. **Not seen:** a real default
+      claim (forge 13.7.0, `boothost/default` a 404); the rest is
+      stormcentral#29, stormblock#202, stormblock#204. History: **the
+      stormbootx side was done 2026-09-27 (sc-build passing).** One ISO boots any machine with
       no tag: with no `tag =`, it claims `boothost/default` carrying
       `{"mac", "serial"}` and the engine (stormblock#200, on stormblock main
       after v19.3.0) gives it its own CoW clone as host `mac-<hex>`. The
