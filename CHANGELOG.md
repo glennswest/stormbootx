@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-07
+- **docs:** CLAUDE.md work plan: #107 is the master's blade boot (v0.23.0's rustnic golden named on the issue).
 - **docs:** CLAUDE.md work plan: v0.23.0 goldens (#108).
 
 ## [v0.23.0] — 2026-10-07
