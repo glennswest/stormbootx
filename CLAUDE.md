@@ -478,7 +478,10 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       one 64 MiB FAT16 ESP at 512-byte sectors (the hand-built X9 stick of
       #97; room for the self-update), the family's medium, and `update =`
       naming the family's boothelper. `tests/media-ovmf.sh` boots an `.img`
-      as a USB stick. fc76995, released **v0.22.0**. sc-build of fc76995
+      as a USB stick. fc76995, released **v0.22.0** (867c060; its
+      rustnic-disk tree built and booted `stormbootx 0.22.0`). ISO goldens at
+      the tag: `golden-stormbootx-97167fe091d6588e`,
+      `golden-stormbootx-rustnic-2e43403bdaa6d1fb`. sc-build of fc76995
       built both trees (3 files each), `sfdisk -d` showed one ESP at LBA 2048
       of 131072 sectors, the BPB said 512-byte sectors and FAT16, and both
       images booted under OVMF as USB sticks: `media : fw` with no drivers,
