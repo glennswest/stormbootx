@@ -243,27 +243,24 @@ smoltcp, through stormuefi to a running stormcos (#56, #68).
 | | What | Waiting on |
 |---|---|---|
 | #37 | which reader loads the X9's 4K ESP; `esp.rs` hardening (#67) | the SOL capture (stormcentral#220) |
-| #68 | smoltcp on multi-NIC, 25G, stormnic SNP, `release` | metal boots |
-| #11 | intents take effect | forge on stormblock v20 (#148) |
-| #15 | universal boot served | forge on stormblock ≥ 19.4.0, `boothost/default` set, stormblock#202 |
 | stormblock#204 | a DNS name the engine hasn't seen reaches its host (#23 is closed) | stormblock |
 | #69–#75 | more Rust NIC drivers (iPXE retired from every medium, #91) | each driver written and proven on metal |
 | #4 | report inventory before any OS | decision #20 |
 | #83 | self-update the media (in the binary, OVMF-tested, key compiled in) | stormcentral promoting a golden |
 | #10 | NVMe/TCP initiator as a shared crate | stormboot4bios |
-| #14 | test containers | decision #22 |
+| #14 | test containers | a test's engine token (stormcentral#133) |
 
 ---
 
 ## Status
 
-- **v0.13.0**, running on metal since 2026-09-05.
-- Intents, universal boot and names are in the binary, and inert until the
-  engine serves them: forge runs stormblock 13.7.0 (2026-10-02), so every
+- **v0.22.0**, running on metal since 2026-09-05.
+- Intents (#11) and universal boot (#15) are in the binary and tested
+  under OVMF against a stub engine, and inert until the engine serves
+  them: forge runs stormblock 13.7.0 (2026-10-06), so every
   intent read is a 404 (→ `auto`, which claims, #3) and there is no
   `boothost/default`.
-- **P0:** #37 (the X9 blades' 4K ESP), #46 (the R230's initramfs read),
-  #15 (one ISO, any machine).
-- **Decisions open:** #20 (inventory), #22 (test approach).
+- **P0:** #37 (the X9 blades' 4K ESP), #46 (the R230's initramfs read).
+- **Decisions open:** #20 (inventory).
 
 Source: https://github.com/glennswest/stormbootx

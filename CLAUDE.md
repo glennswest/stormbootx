@@ -1234,17 +1234,19 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       serial 2. That also ends #96's downgrade for v0.15–v0.17 sticks.
       Nothing in this repo changes for it.
 
-- [ ] #14 — test containers (short/medium/long). **Waiting on an owner
-      decision, 2026-09-27.** stormbootx only runs in firmware, so a real test
-      boots the `.efi` in a UEFI VM. What exists: the runner
-      (stormcentral `testruns.rs`) gives a Job no token, no privileged mode,
-      no `/dev/kvm` and reads no `requires:`; the node's stormblock needs a
-      token for everything but the claim (stormcos#89); stormvm boots UEFI
-      only from a golden/volume and its serial console is unproven live, and
-      its OVMF is not known to carry TCP4. stormblock's own test runs a
-      private engine on loopback, which is the pattern a self-contained test
-      would copy. Decisions needed: where the engine comes from, where a
-      TCP4-capable OVMF comes from, and whether TCG (no KVM) is acceptable.
+- [ ] #14 — test containers (short/medium/long). **Blocked on
+      stormcentral#133 alone (2026-10-06, #95).** No decision is left: the
+      owner answered #22 on 2026-10-02 ("Use a real stormblock engine on a
+      node to test"), so the test uses the node's own engine. stormcentral#74
+      lets a suite's `test/requires.toml` declare `privileged`, which shows
+      the container the node's `/dev/kvm`, so it runs under KVM, not TCG.
+      Since #56 no firmware TCP4 is needed, and `tests/net-ovmf.sh` already
+      runs the whole network path on Fedora's OVMF. What is missing is the
+      engine token: a test is handed no `STORM_STORMBLOCK_TOKEN`
+      (stormcentral#133), and stormblock ≥ v17 answers 401 to everything past
+      health and the claim. This repo's part, once a test can get the token:
+      `test/` with qemu and OVMF in the image, the `.efi` under test (the
+      media golden's ISO), and the node's engine.
 
 - [x] #15 — **universal boot (P0, owner 2026-09-27). Closed 2026-10-06**
       after 1dc7232: `tests/net-ovmf.sh`'s `newhost` boot (no name from DHCP

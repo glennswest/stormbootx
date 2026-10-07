@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-06
+- **docs:** CLAUDE.md work plan: #14 waits on stormcentral#133 alone, not a decision (#22 answered; KVM via `privileged`; no TCP4 needed since #56) (#95). `docs/presentation.md`: #11, #15 and #68 out of *Planned*, #14 waits on stormcentral#133, #22 no longer an open decision, status at v0.22.0.
 - **docs:** CLAUDE.md work plan: #15 closed (default claim of a new machine verified under OVMF; forge still 13.7.0).
 - **test:** `tests/net-ovmf.sh` boots a machine the engine has never seen (#15): the default claim by MAC answers the provisional host `mac-525400123456`, which must be attached, booted and handed down as `StormBootTag`/the host NQN; the stub must receive the claim carrying the MAC.
 - **docs:** CLAUDE.md work plan: #11 closed (OVMF `local`/`install` boots verified; forge still 13.7.0).
