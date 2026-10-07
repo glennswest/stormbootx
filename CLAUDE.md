@@ -470,6 +470,18 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
+- [ ] **#7 — boot identity: the last piece (2026-10-06). In progress.**
+      Done earlier: placeholders refused, Type 1 → 2 → 3 → lowest MAC,
+      shared chassis serials rejected, the DNS name primary. Left:
+      stormipmi#14's placeholders (its `ONLY_HERE`: `0123456789`,
+      `123456789`, all-`X`/`F`/`ÿ`/`*`, `na`, `empty`, `serial number`,
+      `chassis serial number`, `base board serial number`, NULs). Plan: move
+      the check into `universal.rs` (core-only) as `serial_usable`, matching
+      stormipmi's `identity::usable` exactly, with its test vectors (its
+      `STORMBOOTX_REFUSES` + `ONLY_HERE` + the four real serials). Also
+      `Identity::Mac`'s console source becomes "lowest NIC MAC", which is
+      what the value is.
+
 - [x] **#94 — the media names its stormbootx version (P2, storminstall#10).
       Closed 2026-10-06.** `build-boot-agent.sh` appends `version =
       <Cargo.toml version>` and `commit = <the binary's STORMBOOTX_BUILD, or
