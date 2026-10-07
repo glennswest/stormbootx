@@ -471,17 +471,15 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
-- [ ] **#7 — boot identity: the last piece (2026-10-06). In progress.**
-      Done earlier: placeholders refused, Type 1 → 2 → 3 → lowest MAC,
-      shared chassis serials rejected, the DNS name primary. Left:
-      stormipmi#14's placeholders (its `ONLY_HERE`: `0123456789`,
-      `123456789`, all-`X`/`F`/`ÿ`/`*`, `na`, `empty`, `serial number`,
-      `chassis serial number`, `base board serial number`, NULs). Plan: move
-      the check into `universal.rs` (core-only) as `serial_usable`, matching
-      stormipmi's `identity::usable` exactly, with its test vectors (its
-      `STORMBOOTX_REFUSES` + `ONLY_HERE` + the four real serials). Also
-      `Identity::Mac`'s console source becomes "lowest NIC MAC", which is
-      what the value is.
+- [x] **#7 — boot identity: the last piece. Closed 2026-10-06.** Done
+      earlier: placeholders refused, Type 1 → 2 → 3 → lowest MAC, shared
+      chassis serials rejected, the DNS name primary. Last: the placeholder
+      check moved to `universal::serial_usable` (core-only) and refuses
+      exactly what stormipmi's `identity::usable` refuses, host-tested with
+      its vectors (`placeholders_match_stormipmi`); `Identity::Mac` prints
+      `lowest NIC MAC`. 464718a, released **v0.21.1**. sc-build of 464718a:
+      no warnings, suites 9/7/9/8/12/8/11/7, espprobe, five net boots, both
+      shells, update-ovmf.
 
 - [x] **#94 — the media names its stormbootx version (P2, storminstall#10).
       Closed 2026-10-06.** `build-boot-agent.sh` appends `version =
@@ -1421,7 +1419,7 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ## Status
 
-v0.21.0. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
+v0.21.1. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
 (and the same day, the full chain: chain-load into stormuefi and a running
 stormcos kernel), on a
 Dell PowerEdge R230 (service tag C2NR0Q2) booting the agent over iDRAC virtual
