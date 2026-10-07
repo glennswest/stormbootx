@@ -471,16 +471,25 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
-- [ ] **#101 — rustnic media pins stormnic-ixgbe 728b328 (P2). In
-      progress 2026-10-06.** The issue asked for 38d6f0c, and its comments
-      moved the ask to ed9b719, b240082, 32c0bfc and last to 728b328, which
-      contains each of them: a quiet console with link-down diagnostics
+- [x] **#101 — rustnic media pins stormnic-ixgbe 728b328 (P2). Closed
+      2026-10-06.** The issue asked for 38d6f0c, and its comments moved the
+      ask to ed9b719, b240082, 32c0bfc and last to 728b328, which contains
+      each of them: a quiet console with link-down diagnostics
       (stormnic-ixgbe#22, #26), the simulation-only warnings for other chips
       (#17, #23), and the DMA check's receive listen only when verbose (#24).
-      Plan: pin, then sc-build the full suite plus the nic-drivers and
-      rustnic golden trees, `iso-layout` and `media-ovmf` on the rustnic ISO
-      (`media : rustnic ixgbe@728b328`, the ixgbe binding), then the two
-      goldens.
+      Pinned in 260541d. sc-build: no warnings, suites 9/7/9/8/12/8/11/7,
+      espprobe, net-ovmf, both shells, update-ovmf; the nic-drivers tree
+      (`STORMNIC-SOURCE.txt` ixgbe 728b328 `locked`, 119,808 bytes, subsystem
+      11), the rustnic ISO (`iso-layout` PASS) and the rustnic-disk image,
+      each booted under OVMF: `media : rustnic ixgbe@728b328 mlx4@0e50017`,
+      `stormnic-ixgbe.efi started` with no line of its own (quiet, no Intel
+      NIC), and the mlx4 0.2.3 binding. Goldens
+      `golden-stormbootx-rustnic-5673f944f5dab62d` and
+      `golden-nic-drivers-a5962e89b0f7`; the fw medium is unchanged. **Left
+      for the master:** an X9 blade (server3, 82599 at 03:00.0) on the
+      rustnic golden: one `stormnic-ixgbe 0.1.0: 0000:03:00.0 …` line after
+      `starting stormnic-ixgbe.efi` (MAC, link speed or `link down after N
+      ms (LINKS …)`). `StormnicVerbose` from the config is #102.
 
 - [x] **#41 — a golden for the USB disk image (owner on #35; also #97).
       Closed 2026-10-06; registering is stormcentral#190.**

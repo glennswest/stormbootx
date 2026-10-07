@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-06
+- **docs:** CLAUDE.md work plan: #101 closed; goldens `golden-stormbootx-rustnic-5673f944f5dab62d`, `golden-nic-drivers-a5962e89b0f7`.
 - **chore:** rustnic media pins stormnic-ixgbe 728b328 (#101; asked for in the issue's last comment, superseding 38d6f0c, ed9b719, b240082 and 32c0bfc): a quiet console, one line per NIC with link-down diagnostics (stormnic-ixgbe#22, #26), the X540/X552/X550/X553 simulation-only warnings (#17, #23), and the DMA check's 3 s receive listen only when verbose (#24). Media label `rustnic ixgbe@728b328 mlx4@0e50017`.
 - **docs:** #33 closed. README: the X9's NOT_FOUND was the release's ESP (stormcos#188), and the ttyS1 kernel console is stormcos#220 / stormuefi#23. The open-issue table drops #33, #11 and #15. CLAUDE.md work plan entry for #33.
 - **docs:** the binary's size is ~320 KB (328,704 bytes at dc09321) in CLAUDE.md and the deck's title slide (was ~230/~270 KB) (#95).
