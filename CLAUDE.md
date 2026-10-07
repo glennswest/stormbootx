@@ -471,12 +471,22 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
-- [ ] **#104 — rustnic media pins stormnic-mlx4 v0.2.5 (04e7d2c) (P2). In
-      progress 2026-10-06.** The issue asked for v0.2.4 (32083cd, module
-      EEPROM/PTYS/speed-control diagnostics, stormnic-mlx4#17); its comment
-      for v0.2.5, which adds the quiet console (stormnic-mlx4#16). Plan: as
-      #101: pin, full sc-build plus the nic-drivers, rustnic and
-      rustnic-disk trees under OVMF, then the goldens.
+- [x] **#104 — rustnic media pins stormnic-mlx4 v0.2.5 (04e7d2c) (P2).
+      Closed 2026-10-06.** The issue asked for v0.2.4 (32083cd: module
+      EEPROM, PTYS and speed-control diagnostics, stormnic-mlx4#17); its
+      comment for v0.2.5, which adds the quiet console (stormnic-mlx4#16).
+      Pinned in 10e9377. sc-build: no warnings, suites 9/7/9/8/12/8/11/7,
+      espprobe, net-ovmf, both shells, update-ovmf; nic-drivers tree
+      (`STORMNIC-SOURCE.txt` mlx4 04e7d2c `locked`, 106,496 bytes, subsystem
+      11); rustnic ISO `iso-layout` PASS; the ISO and the rustnic-disk image
+      under OVMF: `media : rustnic ixgbe@728b328 mlx4@04e7d2c`, both drivers
+      started, no binding line from either (quiet, no NIC of theirs).
+      Goldens `golden-stormbootx-rustnic-0585a52012dcd66e` and
+      `golden-nic-drivers-98976cdcd7eb`. **Left for the master:** an X9
+      blade on the rustnic golden: one `stormnic-mlx4 0.2.5: … port N: MAC
+      …` line per port; on a port with no link, the `module EEPROM:`,
+      `PTYS:` and `speed control:` lines (stormnic-mlx4#17). With link, the
+      #17 lines need a verbose boot (#102).
 
 - [x] **#101 — rustnic media pins stormnic-ixgbe 728b328 (P2). Closed
       2026-10-06.** The issue asked for 38d6f0c, and its comments moved the
