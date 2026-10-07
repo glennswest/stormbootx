@@ -26,7 +26,7 @@
 #     unsynchronised server (LI 3), which must not set anything:
 #     `StormBootClock = unsynced`.
 #
-# Six boots:
+# Seven boots:
 #   1. as shipped: `rng : firmware` or `rdrand`;
 #   2. the entropy fallback: `rng = cpu` on the media masks the firmware's
 #      EFI_RNG, and the CPU is started without RDRAND and RDSEED, so the
@@ -34,17 +34,19 @@
 #      boot's claim succeeds, and the payload (tcp4probe) must read back
 #      `StormBootTag = stubhost` and the host NQN at attributes 0x6, the
 #      volatile `BOOTSERVICE_ACCESS | RUNTIME_ACCESS` Linux reads (#76).
-#   3. an attach that boots nothing (#54): a blank namespace from a second
+#   3. a new machine (#15): the default claim by MAC answers the
+#      provisional host `mac-525400123456`, which is booted and handed down;
+#   4. an attach that boots nothing (#54): a blank namespace from a second
 #      NVMe stub and a blank local virtio-scsi disk. The fall-through must
 #      withdraw the attached disk, count one local disk, and the firmware
 #      must try its other boot options for 25 s with no CPU exception.
-#   4. a NIC on a dead hub (#88): one `waiting for a lease` line a second,
+#   5. a NIC on a dead hub (#88): one `waiting for a lease` line a second,
 #      with DHCP out/in and frames in, until the engine's 30 s connect gives
 #      up; and every boot names the NIC's driver before its first SNP call.
-#   5. the boot intent (#11): the stub engine says `local` for this MAC,
+#   6. the boot intent (#11): the stub engine says `local` for this MAC,
 #      and the boot must fall through with no claim POST (boot 2 is told
 #      `install` and claims);
-#   6. a fall-through gives the NIC back (#68): the firmware's own IPv4
+#   7. a fall-through gives the NIC back (#68): the firmware's own IPv4
 #      stack is on (with a virtio-rng, which its drivers need), the claim
 #      404s and the media's NVMe port is dead, so stormbootx falls through
 #      and must say `1 of 1 NIC(s) given back`; the next boot option, the
@@ -148,13 +150,17 @@ class H(http.server.BaseHTTPRequestHandler):
         log.write("POST %s %s\n" % (self.path, body))
         # claim.ok present: the default claim names this machine `stubhost`
         # and attaches the NVMe stub, the shape stormblock's claim reply has.
-        if self.path.endswith("/default/claim") and os.path.exists(W + "/claim.ok"):
+        # claim.new present (#15): a machine the engine has never seen, so it
+        # mints the provisional host `mac-<hex>` from the default.
+        new = os.path.exists(W + "/claim.new")
+        if self.path.endswith("/default/claim") and (new or os.path.exists(W + "/claim.ok")):
             port = int(open(W + "/nvme.port").read())
+            name = "mac-525400123456" if new else "stubhost"
             self.reply(200, {
                 "attach": {"addresses": [{"traddr": "10.0.2.2", "trsvcid": str(port)}],
                            "nqn": "nqn.2026-09.lo.stub:release", "nsid": 1},
-                "host": {"aliases": [], "claimed_as": "default", "mac": "52:54:00:12:34:56",
-                         "name": "stubhost", "new": False, "provisional": False},
+                "host": {"aliases": ["52:54:00:12:34:56"] if new else [], "claimed_as": "default",
+                         "mac": "52:54:00:12:34:56", "name": name, "new": new, "provisional": new},
             })
             return
         self.reply(404, {"error": "stub: no such host"})
@@ -367,7 +373,7 @@ PY
     say "install-config.yaml ($IC_LEN bytes, sha256 $IC_SHA) written to the ESP at byte $off"
 }
 
-# boot NAME CPU RNG CLAIM NTP EXPECTED...   (CLAIM: 404 or ok; NTP: good or bad)
+# boot NAME CPU RNG CLAIM NTP EXPECTED...   (CLAIM: 404, ok or new; NTP: good or bad)
 # BOOT_PORT names another NVMe target for the media, BOOT_DISK adds a local
 # virtio-scsi disk, and BOOT_SETTLE is how long the firmware runs on after
 # the stop line (the payload, or a fall-through).
@@ -388,8 +394,9 @@ WAIT_FOR=
 BOOT_INTENT=
 boot() {
     local name=$1 cpu=$2 rng=$3 claim=$4 ntp=$5; shift 5
-    rm -f "$W/claim.ok" "$W/ntp.bad" "$W/intent"
+    rm -f "$W/claim.ok" "$W/claim.new" "$W/ntp.bad" "$W/intent"
     [[ $claim == ok ]] && : > "$W/claim.ok"
+    [[ $claim == new ]] && : > "$W/claim.new"
     [[ -n $BOOT_INTENT ]] && printf '%s\n' "$BOOT_INTENT" > "$W/intent"
     [[ $ntp == bad ]] && : > "$W/ntp.bad"
     local iso="$W/$name.iso" log="$W/$name.serial" txt="$W/$name.txt"
@@ -516,6 +523,22 @@ boot jitter "$host_cpu,-rdrand,-rdseed" cpu ok bad "${common[@]}" "rng         :
     "handed down : StormBootInstallConfig = v1:$IC_LEN:3:$IC_SHA  (attributes 0x6)" \
     "install cfg : $IC_LEN bytes reassembled from 3 chunk(s), length and sha256 match" \
     "not:stub@test"
+
+# #15: a machine nothing has named and the engine has never seen. It must
+# claim `boothost/default` by its MAC (the engine is newer than 19.3.0),
+# boot the provisional host the engine minted, and hand that name down.
+boot newhost "$host_cpu" "" new good \
+    "engine      : stormblock 19.4.0  (universal boot)" \
+    "name        : none from DHCP or reverse DNS" \
+    "claim       : boothost/default as 52:54:00:12:34:56 at " \
+    "  booting the default image as mac-525400123456" \
+    "handed down : StormBootTag = mac-525400123456  (attributes 0x6)" \
+    "handed down : StormBootHostNqn = nqn.2026-09.lo.storm:host-mac-525400123456  (attributes 0x6)" \
+    "blockio     : 96 MiB read in all" \
+    "is there a TCP/IP stack in this firmware" \
+    "stub:POST /api/v1/synonyms/boothost/default/claim {" \
+    "stub:\"mac\":\"52:54:00:12:34:56\"" \
+    "not:no network boot"
 
 # #54: an attach that boots nothing, on a machine with one blank local disk.
 # The fall-through must take the attached disk back before returning, or
