@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-06
+- **docs:** CLAUDE.md work plan: #69 (stormnic-igb) waits on the owner for the repo; QEMU `-device igb` verifies it under OVMF.
 - **docs:** CLAUDE.md work plan: #71 (stormnic-i40e) waits on the owner: the repo, and a machine with an i40e NIC to verify on.
 - **docs:** CLAUDE.md work plan: v0.21.0 goldens (#68).
 

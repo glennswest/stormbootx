@@ -1112,6 +1112,18 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       the rustnic media), then OVMF and pvetest1/2. #69–#74 have the same
       question.
 
+- [ ] **#69 — stormnic-igb, a Rust i350/i210/i211/82576/82580 UEFI driver
+      (P2, owner). Waiting on the owner (2026-10-06, `needs-owner`)** for one
+      thing: the master creating `glennswest/stormnic-igb` (as for
+      stormnic-virtio, #75). Verification needs no test machine. dev's QEMU
+      10.1.5 has `-device igb` (82576, `8086:10c9`), and OVMF has no igb
+      driver of its own, so an sc-build OVMF boot is a clean check. (It also
+      has `-device e1000e`, for #70.) IDs: the issue's are right except
+      `1534`/`1535`, which are not in pci.ids; the family adds 82575EB, more
+      82576/82580 variants, I354 and DH8900CC. This repo's side, once it
+      binds: pin it in `build-nic-drivers.sh` and add an OVMF boot on
+      `-device igb`.
+
 - [ ] **#71 — stormnic-i40e, a Rust X710/XL710/XXV710/X722 UEFI driver
       (P2, owner). Waiting on the owner (2026-10-06, `needs-owner`).** Same
       pair of questions as #74: the master creates `glennswest/stormnic-i40e`
