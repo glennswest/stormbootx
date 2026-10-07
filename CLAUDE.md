@@ -471,19 +471,22 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
-- [ ] **#41 — a golden for the USB disk image (owner on #35; also #97).
-      In progress (2026-10-06).** `deploy/build-golden.sh stormbootx-disk`
-      and `stormbootx-rustnic-disk` write only `boot/<golden>.img` (+
-      `SHA256SUMS`, `BUILD`): a GPT stick with the same tree as the family's
-      ISO, `update =` pointing at the family's boothelper (`stormbootx`,
-      `stormbootx-rustnic`), so a stick updates from the same promotion as the
-      ISO. ESP 64 MiB (the hand-built X9 stick of #97; room for the
-      self-update's new set beside the old), FAT16 at 512-byte sectors.
-      `tests/media-ovmf.sh` boots an `.img` as a USB stick. sc-build builds
-      both trees and boots both images. Registering them is
-      stormcentral#190 (its media build takes only `boot/<comp>.iso` today).
-      Dropping `.img`/`tcp4probe.iso`/`bin/` from the ISO goldens is #35,
-      after this.
+- [x] **#41 — a golden for the USB disk image (owner on #35; also #97).
+      Closed 2026-10-06; registering is stormcentral#190.**
+      `deploy/build-golden.sh stormbootx-disk` and `stormbootx-rustnic-disk`
+      write only `boot/<golden>.img` (+ `SHA256SUMS`, `BUILD`): a GPT stick,
+      one 64 MiB FAT16 ESP at 512-byte sectors (the hand-built X9 stick of
+      #97; room for the self-update), the family's medium, and `update =`
+      naming the family's boothelper. `tests/media-ovmf.sh` boots an `.img`
+      as a USB stick. fc76995, released **v0.22.0**. sc-build of fc76995
+      built both trees (3 files each), `sfdisk -d` showed one ESP at LBA 2048
+      of 131072 sectors, the BPB said 512-byte sectors and FAT16, and both
+      images booted under OVMF as USB sticks: `media : fw` with no drivers,
+      and `media : rustnic ixgbe@563ea8d mlx4@0e50017` with both bindings.
+      **Left on stormcentral#190:** its `MEDIA_BUILD` takes only
+      `boot/<comp>.iso`, so the two components can't be registered and built
+      until it takes `boot/<comp>.img`. Dropping `.img`/`tcp4probe.iso`/`bin/`
+      from the ISO goldens is #35.
 
 - [x] **#7 — boot identity: the last piece. Closed 2026-10-06.** Done
       earlier: placeholders refused, Type 1 → 2 → 3 → lowest MAC, shared
@@ -1435,7 +1438,7 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ## Status
 
-v0.21.1. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
+v0.22.0. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
 (and the same day, the full chain: chain-load into stormuefi and a running
 stormcos kernel), on a
 Dell PowerEdge R230 (service tag C2NR0Q2) booting the agent over iDRAC virtual
