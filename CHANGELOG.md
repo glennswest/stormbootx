@@ -3,9 +3,14 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
-### 2026-10-06
-- **feat:** The USB sticks are their own goldens (#41, owner on #35; #97): `deploy/build-golden.sh stormbootx-disk` and `stormbootx-rustnic-disk` write only `boot/<golden>.img` (+ `SHA256SUMS`, `BUILD`), a GPT disk with a 64 MiB FAT16 ESP at 512-byte sectors carrying the family's medium, `update =` naming the family's boothelper. `tests/media-ovmf.sh` boots an `.img` as a USB stick.
-- **docs:** CLAUDE.md work plan: v0.21.1 goldens (#7).
+## [v0.22.0] — 2026-10-06
+
+### Added
+- The USB sticks are their own goldens (#41, owner on #35; #97): `deploy/build-golden.sh stormbootx-disk` and `stormbootx-rustnic-disk` write only `boot/<golden>.img` (+ `SHA256SUMS`, `BUILD`), a GPT disk with a 64 MiB FAT16 ESP at 512-byte sectors carrying the family's medium, `update =` naming the family's boothelper. `tests/media-ovmf.sh` boots an `.img` as a USB stick.
+
+### Documentation
+- CLAUDE.md work plan: v0.21.1 goldens (#7).
+- CLAUDE.md work plan: #41 closed; registering the disk goldens is stormcentral#190.
 
 ## [v0.21.1] — 2026-10-06
 
