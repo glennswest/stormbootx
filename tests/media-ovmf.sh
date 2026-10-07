@@ -2,6 +2,10 @@
 # Boot a stormbootx ISO under OVMF and require a line on its console (#45).
 #
 #   tests/media-ovmf.sh ISO 'EXPECTED LINE' ['ANOTHER' ...]
+#   tests/media-ovmf.sh IMG 'EXPECTED LINE' ['ANOTHER' ...]
+#
+# An `.img` (a disk golden, #41) is booted as a USB stick (qemu-xhci +
+# usb-storage, removable), the way the X9 blades boot theirs.
 #
 # Each argument after the ISO is a fixed string that must appear on the serial
 # console within the time limit. Fedora's OVMF has no TCP4, so the boot never
@@ -24,7 +28,12 @@ die() { say "FAIL: $*"; exit 1; }
 
 command -v qemu-system-x86_64 >/dev/null || die "qemu-system-x86_64 is not installed"
 [[ -r "$OVMF_CODE" ]] || die "no OVMF at $OVMF_CODE"
-[[ -s "$ISO" ]] || die "no ISO at $ISO"
+[[ -s "$ISO" ]] || die "no medium at $ISO"
+case $ISO in
+    *.img) medium=(-drive if=none,id=stick,format=raw,file="$ISO"
+                   -device qemu-xhci,id=xhci -device usb-storage,bus=xhci.0,drive=stick,removable=on,bootindex=1) ;;
+    *) medium=(-cdrom "$ISO" -boot d) ;;
+esac
 
 W=$(mktemp -d "${TMPDIR:-/tmp}/media-ovmf.XXXXXX")
 trap 'rm -rf "$W"' EXIT
@@ -36,7 +45,7 @@ say "booting $(basename "$ISO") under OVMF ($accel, up to ${LIMIT}s)"
 timeout "$LIMIT" qemu-system-x86_64 -machine q35,accel="$accel" -m 512 \
     -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
     -drive if=pflash,format=raw,file="$W/vars.fd" \
-    -cdrom "$ISO" -boot d -net none \
+    "${medium[@]}" -net none \
     -display none -serial file:"$W/serial.log" -no-reboot || true
 
 # The console carries CRs and escape sequences; compare on plain lines.

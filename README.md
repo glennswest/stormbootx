@@ -798,6 +798,8 @@ does nothing else, for stormcentral to run into the volume it mounts:
 |---|---|
 | `stormbootx` | `bin/stormbootx.efi`, `bin/tcp4probe.efi`, `boot/stormbootx.iso` (BMC virtual media), `boot/stormbootx.img` (USB), `boot/tcp4probe.iso`, `media/`, `media.files`, `SHA256SUMS`, `BUILD` |
 | `stormbootx-rustnic` | `bin/stormbootx.efi`, `boot/stormbootx-rustnic.iso` (BMC virtual media), `media/`, `media.files`, `SHA256SUMS`, `BUILD` |
+| `stormbootx-disk` | `boot/stormbootx-disk.img` (USB stick, the `stormbootx` medium), `SHA256SUMS`, `BUILD` |
+| `stormbootx-rustnic-disk` | `boot/stormbootx-rustnic-disk.img` (USB stick, the `stormbootx-rustnic` medium), `SHA256SUMS`, `BUILD` |
 | `nic-drivers` | `bin/stormnic-ixgbe.efi`, `bin/stormnic-mlx4.efi`, `STORMNIC-SOURCE.txt`, `SHA256SUMS`, `BUILD` (an EFI boothelper; no medium takes it as an input since #52, and it holds no iPXE since #91) |
 
 `media/` is the medium's files as a tree (`EFI/BOOT/BOOTX64.EFI`,
@@ -806,6 +808,17 @@ does nothing else, for stormcentral to run into the volume it mounts:
 signs and serves when it promotes the golden, for media to update themselves
 from (#83, stormcentral#279). Each medium's `stormboot.conf` carries
 `update = http://stormcentral.g8.lo/api/v1/boothelpers/<golden>`.
+
+**The USB sticks are their own goldens** (#41, owner on #35; #97).
+`stormbootx-disk` and `stormbootx-rustnic-disk` each hold one image, a GPT
+disk with a 64 MiB FAT16 ESP at 512-byte sectors carrying the same files as
+the family's ISO. `dd` it whole onto a stick. Its `update =` names the
+family's boothelper (`stormbootx` or `stormbootx-rustnic`), not its own, so a
+stick takes the same signed promotion as the ISO. The ESP is 64 MiB rather
+than the ISO's 4 because a stick is writable and updates itself, writing the
+new set beside the old. The sc-build check boots each image as a USB stick
+under OVMF (`tests/media-ovmf.sh IMG …`). Registering them with stormcentral
+is stormcentral#190.
 
 **Two media, side by side (#45, #52).** `stormbootx` is the
 firmware-drivers medium: no `\stormboot\drivers` at all, so every NIC is

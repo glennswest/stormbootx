@@ -126,7 +126,7 @@ deliberately, in its own commit, and rebuild.
 default in `tmp/images` in the checkout. Nothing in the agent creates media.
 
 **What ships is a golden, never a file on dev** (owner, 2026-09-28, #21).
-`deploy/build-golden.sh stormbootx|nic-drivers OUT` writes that golden's tree
+`deploy/build-golden.sh stormbootx|stormbootx-rustnic|stormbootx-disk|stormbootx-rustnic-disk|nic-drivers OUT` writes that golden's tree
 into OUT and nothing else (README, *How it ships*). Every build gets a fresh
 drive, and anything left on dev is deleted, so never write outside the job
 (no `/build/images`, no `/build/stormbuild/images`). To look at media in an

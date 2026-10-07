@@ -3,6 +3,8 @@
 #
 #   deploy/build-golden.sh stormbootx         OUT [--drivers DIR]
 #   deploy/build-golden.sh stormbootx-rustnic OUT
+#   deploy/build-golden.sh stormbootx-disk OUT
+#   deploy/build-golden.sh stormbootx-rustnic-disk OUT
 #   deploy/build-golden.sh nic-drivers        OUT
 #
 # Everything is a golden (owner, 2026-09-28; #21, stormcentral#126): the boot
@@ -46,6 +48,19 @@
 #   nic-drivers golden, so the drivers are the commit's. The console says
 #   `media : rustnic ixgbe@<sha> mlx4@<sha>`.
 #
+# stormbootx-disk and stormbootx-rustnic-disk goldens (#41, owner on #35;
+# #97): the USB stick of each family, its own golden beside the ISO:
+#   boot/stormbootx-disk.img          the fw medium's tree, as stormbootx's ISO
+#   boot/stormbootx-rustnic-disk.img  the rustnic medium's tree, as its ISO
+#   SHA256SUMS, BUILD
+#
+#   A GPT disk with one 64 MiB FAT16 ESP at 512-byte sectors (#33), `dd` it
+#   whole onto a stick. 64 MiB, not the ISO's 4: a stick is writable and
+#   updates itself, writing the new set beside the old (#83). `update =`
+#   names the family's boothelper (`stormbootx`, `stormbootx-rustnic`), so a
+#   stick takes the same signed promotion as the ISO, whose media/ tree is
+#   the same files.
+#
 # nic-drivers golden (an EFI boothelper; no medium takes it as an input since
 # #52):
 #   bin/stormnic-ixgbe.efi, bin/stormnic-mlx4.efi
@@ -59,7 +74,7 @@ say() { printf '==> %s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
 GOLDEN="${1:-}"; OUT="${2:-}"
-[[ -n "$GOLDEN" && -n "$OUT" ]] || die "usage: $0 stormbootx|stormbootx-rustnic|nic-drivers OUT [--drivers DIR]"
+[[ -n "$GOLDEN" && -n "$OUT" ]] || die "usage: $0 stormbootx|stormbootx-rustnic|stormbootx-disk|stormbootx-rustnic-disk|nic-drivers OUT [--drivers DIR]"
 shift 2
 DRIVERS=""
 while [[ $# -gt 0 ]]; do
@@ -109,6 +124,27 @@ media_files() {
     done ) > "$OUT/media.files"
 }
 
+# The Rust NIC drivers a rustnic medium carries, built from the commit's pins
+# into $WORK/media-drivers, and its `media =` label in RUSTNIC_LABEL.
+rustnic_drivers() {
+    "$ROOT/scripts/build-nic-drivers.sh" "$WORK/drivers"
+    for d in stormnic-ixgbe stormnic-mlx4; do
+        [[ -f "$WORK/drivers/$d.efi" ]] || die "no $d.efi was built"
+    done
+    ! compgen -G "$WORK/drivers/ipxe-*.efi" >/dev/null || die "an iPXE driver reached the rustnic media"
+    mkdir -p "$WORK/media-drivers"
+    cp "$WORK/drivers/"*.efi "$WORK/drivers/STORMNIC-SOURCE.txt" "$WORK/media-drivers/"
+    pin() { sed -n "s/^$1=\"\(.......\).*\"/\1/p" "$ROOT/scripts/build-nic-drivers.sh"; }
+    RUSTNIC_LABEL="rustnic ixgbe@$(pin STORMNIC_IXGBE_REF) mlx4@$(pin STORMNIC_MLX4_REF)"
+}
+
+# A disk golden holds the image and nothing else.
+only_the_image() {
+    local extra
+    extra=$(cd "$OUT" && find . -type f ! -path "./boot/$GOLDEN.img" | sed 's|^\./||')
+    [[ -z "$extra" ]] || die "a disk golden holds only boot/$GOLDEN.img; also found: $extra"
+}
+
 case "$GOLDEN" in
 nic-drivers)
     "$ROOT/scripts/build-nic-drivers.sh" "$WORK/drivers"
@@ -154,25 +190,41 @@ stormbootx-rustnic)
 
     # stormnic-ixgbe for the Intel 10G, stormnic-mlx4 for the ConnectX-3
     # (#34), and no iPXE at all (#91).
-    "$ROOT/scripts/build-nic-drivers.sh" "$WORK/drivers"
-    for d in stormnic-ixgbe stormnic-mlx4; do
-        [[ -f "$WORK/drivers/$d.efi" ]] || die "no $d.efi was built"
-    done
-    ! compgen -G "$WORK/drivers/ipxe-*.efi" >/dev/null || die "an iPXE driver reached the rustnic media"
-    mkdir -p "$WORK/media-drivers"
-    cp "$WORK/drivers/"*.efi "$WORK/drivers/STORMNIC-SOURCE.txt" "$WORK/media-drivers/"
-
-    pin() { sed -n "s/^$1=\"\(.......\).*\"/\1/p" "$ROOT/scripts/build-nic-drivers.sh"; }
+    rustnic_drivers
     "$ROOT/scripts/build-boot-agent.sh" --iso --binary "$OUT/bin/stormbootx.efi" \
         --drivers "$WORK/media-drivers" --dns 192.168.31.252 \
-        --media "rustnic ixgbe@$(pin STORMNIC_IXGBE_REF) mlx4@$(pin STORMNIC_MLX4_REF)" \
+        --media "$RUSTNIC_LABEL" \
         --update "$(update_url stormbootx-rustnic)" --tree "$OUT/media" \
         --output "$OUT/boot/stormbootx-rustnic.iso"
     media_files
     seal "drivers  = $(cd "$WORK/media-drivers" && ls *.efi | tr '\n' ' ')(built here)
 stormnic = $(cat "$WORK/drivers/STORMNIC-SOURCE.txt")"
     ;;
+stormbootx-disk|stormbootx-rustnic-disk)
+    [[ -z "$DRIVERS" ]] || die "$GOLDEN takes no --drivers"
+    say "building stormbootx for x86_64-unknown-uefi"
+    ( cd "$ROOT" && cargo build --locked --release --target x86_64-unknown-uefi --bin stormbootx )
+    REL="${CARGO_TARGET_DIR:-$ROOT/target}/x86_64-unknown-uefi/release"
+    cp "$REL/stormbootx.efi" "$WORK/stormbootx.efi"
+    mkdir -p "$OUT/boot"
+    # The same medium as the family's ISO, on a writable stick.
+    disk=(--binary "$WORK/stormbootx.efi" --dns 192.168.31.252 --size 64)
+    if [[ $GOLDEN == stormbootx-disk ]]; then
+        disk+=(--media fw --update "$(update_url stormbootx)")
+        note="drivers  = none (the firmware's own, #52)"
+    else
+        rustnic_drivers
+        disk+=(--drivers "$WORK/media-drivers" --media "$RUSTNIC_LABEL"
+               --update "$(update_url stormbootx-rustnic)")
+        note="drivers  = $(cd "$WORK/media-drivers" && ls *.efi | tr '\n' ' ')(built here)
+stormnic = $(cat "$WORK/drivers/STORMNIC-SOURCE.txt")"
+    fi
+    "$ROOT/scripts/build-boot-agent.sh" "${disk[@]}" --output "$OUT/boot/$GOLDEN.img"
+    only_the_image
+    seal "$note
+image    = boot/$GOLDEN.img (GPT, 64 MiB FAT ESP at 512-byte sectors; dd it whole onto a stick)"
+    ;;
 *)
-    die "no golden $GOLDEN (stormbootx, stormbootx-rustnic or nic-drivers)"
+    die "no golden $GOLDEN (stormbootx, stormbootx-rustnic, stormbootx-disk, stormbootx-rustnic-disk or nic-drivers)"
     ;;
 esac
