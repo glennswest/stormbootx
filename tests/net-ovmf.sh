@@ -26,7 +26,7 @@
 #     unsynchronised server (LI 3), which must not set anything:
 #     `StormBootClock = unsynced`.
 #
-# Five boots:
+# Six boots:
 #   1. as shipped: `rng : firmware` or `rdrand`;
 #   2. the entropy fallback: `rng = cpu` on the media masks the firmware's
 #      EFI_RNG, and the CPU is started without RDRAND and RDSEED, so the
@@ -41,7 +41,10 @@
 #   4. a NIC on a dead hub (#88): one `waiting for a lease` line a second,
 #      with DHCP out/in and frames in, until the engine's 30 s connect gives
 #      up; and every boot names the NIC's driver before its first SNP call.
-#   5. a fall-through gives the NIC back (#68): the firmware's own IPv4
+#   5. the boot intent (#11): the stub engine says `local` for this MAC,
+#      and the boot must fall through with no claim POST (boot 2 is told
+#      `install` and claims);
+#   6. a fall-through gives the NIC back (#68): the firmware's own IPv4
 #      stack is on (with a virtio-rng, which its drivers need), the claim
 #      404s and the media's NVMe port is dead, so stormbootx falls through
 #      and must say `1 of 1 NIC(s) given back`; the next boot option, the
@@ -130,6 +133,13 @@ class H(http.server.BaseHTTPRequestHandler):
             return
         if self.path == "/api/v1/health":
             self.reply(200, {"version": "19.4.0", "status": "ok", "pad": "x" * 120000})
+        # intent present (#11): the host this MAC is an alias of has that
+        # intent, in stormblock's `intent_body` shape (sorted keys, read by
+        # the alias); every other name is the engine's 404.
+        elif (self.path == "/api/v1/synonyms/boothost/525400123456/intent"
+              and os.path.exists(W + "/intent")):
+            self.reply(200, {"host": "stubhost", "intent": open(W + "/intent").read().strip(),
+                             "resolved_from": "525400123456", "updated_at": 1790553600})
         else:
             self.reply(404, {"error": "stub: not found"})
     def do_POST(self):
@@ -374,10 +384,13 @@ STOP_AT=
 # that ends the boot, so a fall-through goes on to the next option.
 BOOT_PXE=
 WAIT_FOR=
+# BOOT_INTENT (#11) is the intent the stub engine answers for this MAC.
+BOOT_INTENT=
 boot() {
     local name=$1 cpu=$2 rng=$3 claim=$4 ntp=$5; shift 5
-    rm -f "$W/claim.ok" "$W/ntp.bad"
+    rm -f "$W/claim.ok" "$W/ntp.bad" "$W/intent"
     [[ $claim == ok ]] && : > "$W/claim.ok"
+    [[ -n $BOOT_INTENT ]] && printf '%s\n' "$BOOT_INTENT" > "$W/intent"
     [[ $ntp == bad ]] && : > "$W/ntp.bad"
     local iso="$W/$name.iso" log="$W/$name.serial" txt="$W/$name.txt"
     local args=(--iso --binary "$EFI" --engine 10.0.2.2 --api-port "$PORT" --port "${BOOT_PORT:-$NVME_PORT}"
@@ -433,6 +446,9 @@ boot() {
         if [[ "$want" == stub:* ]]; then
             grep -qF -- "${want#stub:}" "$W/stub.log" "$W/ntp.log" && say "[$name] stub saw: ${want#stub:}" \
                 || { say "[$name] stub missing: ${want#stub:}"; fail=1; }
+        elif [[ "$want" == not-stub:* ]]; then
+            grep -qF -- "${want#not-stub:}" "$W/stub.log" && { say "[$name] stub unexpectedly saw: ${want#not-stub:}"; fail=1; } \
+                || say "[$name] stub never saw, as it should be: ${want#not-stub:}"
         elif [[ "$want" == not:* ]]; then
             grep -qF -- "${want#not:}" "$txt" && { say "[$name] unexpected: ${want#not:}"; fail=1; } \
                 || say "[$name] absent, as it should be: ${want#not:}"
@@ -485,7 +501,9 @@ boot shipped "$host_cpu" "" 404 good "${common[@]}" "rng         : " \
     "install cfg : none on the media (\\stormboot\\install-config.yaml)" \
     "not:handed down : StormBootInstallConfig"
 grep -q "rng         : jitter" "$W/shipped.txt" && say "note: the shipped boot fell back to jitter"
+BOOT_INTENT=install \
 boot jitter "$host_cpu,-rdrand,-rdseed" cpu ok bad "${common[@]}" "rng         : jitter" \
+    "intent      : install" \
     "clock       : NTP unreachable at 10.0.2.2:$NTP_PORT (the server says it is not synchronised (LI 3)); left at " \
     "handed down : StormBootClock = unsynced  (attributes 0x6)" \
     "not:rtc         : 2031" \
@@ -527,6 +545,20 @@ boot nolease "$host_cpu" "" 404 good \
     "engine      : version unknown (no address after 30 s: nothing answered DHCP on any of 1 NIC(s))" \
     "not:nic 0: leased" \
     "not:has not returned after"
+
+# #11: an engine that says `local` for this machine. The intent is read down
+# the claim's names (the DNS name, if any, 404s; the MAC is the host's
+# alias), and `local` must fall through with no claim made, so no clone is
+# minted.
+BOOT_INTENT=local \
+boot intent "$host_cpu" "" ok good \
+    "engine      : stormblock 19.4.0  (universal boot)" \
+    "intent      : local" \
+    "no network boot: boot intent for 525400123456 is \`local\`: nothing claimed" \
+    "stub:GET /api/v1/synonyms/boothost/525400123456/intent" \
+    "not-stub:/claim" \
+    "not:blockio     : published on handle" \
+    "not:claim       : boothost/"
 
 # #68: a fall-through gives the NICs back. The firmware's own IPv4 stack is
 # on, so stormbootx's exclusive SNP open first takes the NIC from the
