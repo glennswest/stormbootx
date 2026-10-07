@@ -31,6 +31,15 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 # Each driver from a pinned commit of its own repo, bumped deliberately in its
 # own commit: a driver on boot media changes only when someone changes its pin.
 STORMNIC_IXGBE_REPO="https://github.com/glennswest/stormnic-ixgbe.git"
+# 728b328 (#101): a quiet console by default (stormnic-ixgbe#22): one line per
+# bound NIC (MAC, link speed or `link down after N ms (LINKS, AUTOC, AUTOC2,
+# ESDP)`, SNP installed) plus warnings, and the full trace only when the
+# volatile `StormnicVerbose` variable is set (stormbootx#102, open);
+# link-down diagnostics (stormnic-ixgbe#26); X540/X552/X550/X553 Start says
+# "verified in simulation only" (stormnic-ixgbe#17, #23); the DMA check
+# listens 3 s for a received frame only when verbose (stormnic-ixgbe#24), so
+# a linked boot is 3 s faster. Nothing else changes for the
+# 82599 blades.
 # 563ea8d: the 82599 MAC reset's EEMNGCTL.CFG_DONE0 wait is logged, not fatal
 # (stormnic-ixgbe#21). On server3 (X9SRD-F, 8086:1557) CFG_DONE0 never set
 # (EEMNGCTL 0x80000196) and Start failed; EEC.AUTO_RD and EE_PRES already
@@ -43,7 +52,7 @@ STORMNIC_IXGBE_REPO="https://github.com/glennswest/stormnic-ixgbe.git"
 # On top of 0dd4267's SNP on a child handle (#4), 2afd319's rings (#3),
 # 9476135's PHY and link code (#13, 25 device IDs) and 884cf18's bring-up
 # (#2); builds --locked (#47, #48, #51, #63, #65).
-STORMNIC_IXGBE_REF="563ea8d2fc9991b63de51b702ffd6afc4f476e95"
+STORMNIC_IXGBE_REF="728b328a086d34faef8238c1b12e9966b18e9ee4"
 STORMNIC_MLX4_REPO="https://github.com/glennswest/stormnic-mlx4.git"
 # 0e50017 (v0.2.3, #66): v0.2.2's link diagnostics (speed, autoneg and
 # module from QUERY_PORT at the 5 s link wait and on every link change,

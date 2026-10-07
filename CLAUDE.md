@@ -471,6 +471,17 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
+- [ ] **#101 — rustnic media pins stormnic-ixgbe 728b328 (P2). In
+      progress 2026-10-06.** The issue asked for 38d6f0c, and its comments
+      moved the ask to ed9b719, b240082, 32c0bfc and last to 728b328, which
+      contains each of them: a quiet console with link-down diagnostics
+      (stormnic-ixgbe#22, #26), the simulation-only warnings for other chips
+      (#17, #23), and the DMA check's receive listen only when verbose (#24).
+      Plan: pin, then sc-build the full suite plus the nic-drivers and
+      rustnic golden trees, `iso-layout` and `media-ovmf` on the rustnic ISO
+      (`media : rustnic ixgbe@728b328`, the ixgbe binding), then the two
+      goldens.
+
 - [x] **#41 — a golden for the USB disk image (owner on #35; also #97).
       Closed 2026-10-06; registering is stormcentral#190.**
       `deploy/build-golden.sh stormbootx-disk` and `stormbootx-rustnic-disk`

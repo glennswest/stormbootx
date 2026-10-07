@@ -201,7 +201,7 @@ given back on the fall-through.
 
    ```
    "agent": {"name":"stormbootx","version":"0.19.0","commit":"649dd07",
-             "media":"rustnic ixgbe@563ea8d mlx4@0e50017",
+             "media":"rustnic ixgbe@728b328 mlx4@0e50017",
              "update_serial":5,"update":"serial:5"}
    ```
 
@@ -836,7 +836,11 @@ Intel 10G. Since #63 (stormnic-ixgbe 8ea722a) its `Start` enables memory
 decode and bus mastering on AMI Aptio 4, which refuses the PCI I/O attribute
 calls (stormnic-ixgbe#19). Since #65 (stormnic-ixgbe 563ea8d) a reset whose
 EEMNGCTL.CFG_DONE never sets is logged and `Start` continues, as on server3's
-82599 (stormnic-ixgbe#21). Since #34 it
+82599 (stormnic-ixgbe#21). Since #101 (stormnic-ixgbe 728b328) its console is
+one line per bound NIC (MAC, link speed, or `link down after N ms` with
+LINKS/AUTOC/AUTOC2/ESDP), plus warnings, and the full bring-up trace only
+when the volatile EFI variable `StormnicVerbose` is set (stormnic-ixgbe#22
+and #26); a linked boot is about 3 s faster (stormnic-ixgbe#24). Since #34 it
 also carries `stormnic-mlx4.efi` for the ConnectX-3, built `--locked` from
 `STORMNIC_MLX4_REF`. Since #50 (stormnic-mlx4 v0.2.0) its `Start` brings up the
 ConnectX-3, keeps it, and installs `EFI_SIMPLE_NETWORK_PROTOCOL` on a child
@@ -853,7 +857,7 @@ prints it under the banner:
 
 ```
 media       : fw
-media       : rustnic ixgbe@563ea8d mlx4@0e50017
+media       : rustnic ixgbe@728b328 mlx4@0e50017
 ```
 
 The fw medium's `BUILD` says `drivers = none`, and a `--drivers` given to
