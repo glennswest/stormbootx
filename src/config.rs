@@ -220,6 +220,22 @@ pub fn stated_rng() -> crate::entropy::Start {
         .unwrap_or(crate::entropy::Start::Firmware)
 }
 
+/// `prefer_media_drivers = virtio` in the config file (#108): the families of
+/// media driver that take their NICs from the firmware's own driver
+/// (`drivers::take_over`). Comma- or space-separated, lower-cased. Empty on
+/// ordinary media, where the platform's drivers win.
+pub fn stated_prefer_media_drivers() -> Vec<String> {
+    conf_text()
+        .and_then(|t| field(&t, "prefer_media_drivers"))
+        .map(|v| {
+            v.split(|c: char| c == ',' || c.is_whitespace())
+                .filter(|f| !f.is_empty())
+                .map(|f| f.to_ascii_lowercase())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// The DNS server stated in the config file (`dns = a.b.c.d`), for the PTR
 /// of the machine's own address when its DHCP reply names none or cannot be
 /// read (#26). Absent on ordinary media; the lease's option 6 comes first.

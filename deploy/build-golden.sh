@@ -46,7 +46,7 @@
 #
 #   Built here from the pins in scripts/build-nic-drivers.sh, never from a
 #   nic-drivers golden, so the drivers are the commit's. The console says
-#   `media : rustnic ixgbe@<sha> mlx4@<sha>`.
+#   `media : rustnic ixgbe@<sha> mlx4@<sha> virtio@<sha>`.
 #
 # stormbootx-disk and stormbootx-rustnic-disk goldens (#41, owner on #35;
 # #97): the USB stick of each family, its own golden beside the ISO:
@@ -128,14 +128,14 @@ media_files() {
 # into $WORK/media-drivers, and its `media =` label in RUSTNIC_LABEL.
 rustnic_drivers() {
     "$ROOT/scripts/build-nic-drivers.sh" "$WORK/drivers"
-    for d in stormnic-ixgbe stormnic-mlx4; do
+    for d in stormnic-ixgbe stormnic-mlx4 stormnic-virtio; do
         [[ -f "$WORK/drivers/$d.efi" ]] || die "no $d.efi was built"
     done
     ! compgen -G "$WORK/drivers/ipxe-*.efi" >/dev/null || die "an iPXE driver reached the rustnic media"
     mkdir -p "$WORK/media-drivers"
     cp "$WORK/drivers/"*.efi "$WORK/drivers/STORMNIC-SOURCE.txt" "$WORK/media-drivers/"
     pin() { sed -n "s/^$1=\"\(.......\).*\"/\1/p" "$ROOT/scripts/build-nic-drivers.sh"; }
-    RUSTNIC_LABEL="rustnic ixgbe@$(pin STORMNIC_IXGBE_REF) mlx4@$(pin STORMNIC_MLX4_REF)"
+    RUSTNIC_LABEL="rustnic ixgbe@$(pin STORMNIC_IXGBE_REF) mlx4@$(pin STORMNIC_MLX4_REF) virtio@$(pin STORMNIC_VIRTIO_REF)"
 }
 
 # A disk golden holds the image and nothing else.
@@ -148,7 +148,7 @@ only_the_image() {
 case "$GOLDEN" in
 nic-drivers)
     "$ROOT/scripts/build-nic-drivers.sh" "$WORK/drivers"
-    for d in stormnic-ixgbe stormnic-mlx4; do
+    for d in stormnic-ixgbe stormnic-mlx4 stormnic-virtio; do
         [[ -f "$WORK/drivers/$d.efi" ]] || die "no $d.efi was built"
     done
     mkdir -p "$OUT/bin"
@@ -189,10 +189,11 @@ stormbootx-rustnic)
     cp "$REL/stormbootx.efi" "$OUT/bin/"
 
     # stormnic-ixgbe for the Intel 10G, stormnic-mlx4 for the ConnectX-3
-    # (#34), and no iPXE at all (#91).
+    # (#34), stormnic-virtio for VMs, taking their NICs from OVMF's
+    # VirtioNetDxe (#108), and no iPXE at all (#91).
     rustnic_drivers
     "$ROOT/scripts/build-boot-agent.sh" --iso --binary "$OUT/bin/stormbootx.efi" \
-        --drivers "$WORK/media-drivers" --dns 192.168.31.252 \
+        --drivers "$WORK/media-drivers" --prefer-media-drivers virtio --dns 192.168.31.252 \
         --media "$RUSTNIC_LABEL" \
         --update "$(update_url stormbootx-rustnic)" --tree "$OUT/media" \
         --output "$OUT/boot/stormbootx-rustnic.iso"
@@ -214,7 +215,7 @@ stormbootx-disk|stormbootx-rustnic-disk)
         note="drivers  = none (the firmware's own, #52)"
     else
         rustnic_drivers
-        disk+=(--drivers "$WORK/media-drivers" --media "$RUSTNIC_LABEL"
+        disk+=(--drivers "$WORK/media-drivers" --prefer-media-drivers virtio --media "$RUSTNIC_LABEL"
                --update "$(update_url stormbootx-rustnic)")
         note="drivers  = $(cd "$WORK/media-drivers" && ls *.efi | tr '\n' ' ')(built here)
 stormnic = $(cat "$WORK/drivers/STORMNIC-SOURCE.txt")"

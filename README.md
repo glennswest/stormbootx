@@ -201,7 +201,7 @@ given back on the fall-through.
 
    ```
    "agent": {"name":"stormbootx","version":"0.19.0","commit":"649dd07",
-             "media":"rustnic ixgbe@728b328 mlx4@04e7d2c",
+             "media":"rustnic ixgbe@728b328 mlx4@04e7d2c virtio@1a04808",
              "update_serial":5,"update":"serial:5"}
    ```
 
@@ -627,6 +627,7 @@ others.
 | `local_when_bootable` | `false` | `true`: `auto` and every doubt boot a local disk whose ESP carries `BOOTX64.EFI` instead of claiming (#3). Off until intents work on forge |
 | `esp` | `auto` | who reads the attached ESP (#37): `auto` (firmware, then stormbootx), `firmware`, or `stormbootx` |
 | `rng` | `firmware` | the first entropy source tried (#56): `firmware`, `cpu` (skip `EFI_RNG`) or `jitter` (skip both); `build-boot-agent.sh --rng` |
+| `prefer_media_drivers` | none | media driver families that take their NICs from the firmware's own driver (#108): `virtio` (stormnic-virtio over OVMF's VirtioNetDxe). Set on the rustnic media; without it the platform's drivers win. `build-boot-agent.sh --prefer-media-drivers` |
 | `media` | none | the media's label, printed under the banner (`media : fw`); written by the golden build, `build-boot-agent.sh --media` |
 | `fec` | none | **recovery sticks only**: write this FEC and warm-reset |
 | `update` | none (no self-update) | `http://host[:port]/path` of this medium's release on stormcentral, or `off` to pin the medium (#83, *Self-update*); written by the golden build, `build-boot-agent.sh --update` |
@@ -856,12 +857,26 @@ every link-down (stormnic-mlx4#17), and its console is one line per port
 plus warnings, with the full trace only when `StormnicVerbose` is set
 (stormnic-mlx4#16). Each Rust driver
 is checked to be PE subsystem 11 (EFI boot-service driver) when it is built.
-The rustnic media builds its own drivers and takes no nic-drivers golden. Each ISO's `stormboot.conf` names the variant, and the console
+Since #108 it also carries `stormnic-virtio.efi` (stormnic-virtio 1a04808,
+#75) for VMs. Every OVMF's VirtioNetDxe binds a virtio-net NIC before the
+media drivers load, and a stormnic driver declines a NIC another driver holds,
+so the rustnic media's `stormboot.conf` says `prefer_media_drivers = virtio`.
+stormbootx then disconnects the firmware's drivers from each virtio-net
+function (leaf first, up to three passes, judged by who still holds its PCI
+I/O) and connects it naming only stormnic-virtio. If that driver does not then
+hold it, the firmware's driver gets it back. The console says which:
+
+```
+    [  0 s] 0000:00:02.0 1af4:1000: taken from Virtio PCI Device Driver; stormnic-virtio.efi drives it
+```
+
+Virtio IDs exist only in VMs, so on metal the key changes nothing, and the
+fw medium carries no drivers at all. The rustnic media builds its own drivers and takes no nic-drivers golden. Each ISO's `stormboot.conf` names the variant, and the console
 prints it under the banner:
 
 ```
 media       : fw
-media       : rustnic ixgbe@728b328 mlx4@04e7d2c
+media       : rustnic ixgbe@728b328 mlx4@04e7d2c virtio@1a04808
 ```
 
 The fw medium's `BUILD` says `drivers = none`, and a `--drivers` given to

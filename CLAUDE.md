@@ -38,7 +38,8 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   rustc --edition 2021 --test src/installconf.rs -o t/installconf-test && ./t/installconf-test && \
   R=${CARGO_TARGET_DIR:-target}/x86_64-unknown-uefi/release && \
   tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi && \
-  tests/net-ovmf.sh $R/stormbootx.efi $R/tcp4probe.efi && \
+  STORMNIC_DRIVERS=virtio scripts/build-nic-drivers.sh $PWD/t/nd && \
+  VIRTIO_EFI=t/nd/stormnic-virtio.efi tests/net-ovmf.sh $R/stormbootx.efi $R/tcp4probe.efi && \
   scripts/build-boot-agent.sh --iso --binary $R/stormbootx.efi --media shelltest --output $PWD/t/s.iso && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso old "media       : shelltest" && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso ovmf "media       : shelltest" && \
@@ -61,7 +62,11 @@ network stack, against a stub engine, a stub NVMe/TCP target (4096-byte
 blocks, a 96 MiB `BOOTX64.EFI`) and a stub SNTP server (#77: boot 1 must set
 the RTC to 2031, boot 2's unsynchronised answer must set nothing). It runs twice: as shipped, and with the
 firmware RNG and RDRAND/RDSEED masked (`rng : jitter`). The shipped boot's
-ISO names an `update =`, which must be skipped as read-only (#83).
+ISO names an `update =`, which must be skipped as read-only (#83). With
+`VIRTIO_EFI` (stormnic-virtio, built in the job) it boots three more times
+(#108): `prefer_media_drivers = virtio` must take a transitional and a
+modern-only virtio-net NIC from OVMF's drivers and carry the claim and the
+attach over stormnic-virtio, and without the key the firmware keeps it.
 
 `tests/shell-ovmf.sh ISO old|ovmf 'LINE' …` (#60) boots an ISO from an
 EFI Shell with no boot option for it, and requires its `startup.nsh` to
@@ -152,7 +157,7 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/snpwatch.rs` | which driver is under each SNP (named before the first call), and a `TPL_NOTIFY` timer that names an SNP call that has not returned (#88) |
 | `src/entropy.rs` | randomness for the ISN, DHCP xid and ports: firmware `EFI_RNG`, then RDSEED/RDRAND (RNDR on aarch64), then jitter through SHA-256; never fails |
 | `src/tcp4.rs` | tcp4probe only since #56: a blocking socket over the firmware's TCP4 |
-| `src/drivers.rs` | load NIC drivers from `\stormboot\drivers` on the media (#26), after the platform's own bind |
+| `src/drivers.rs` | load NIC drivers from `\stormboot\drivers` on the media (#26), after the platform's own bind; `take_over` gives a `prefer_media_drivers` family its NICs (#108) |
 | `src/dhcp4.rs` | tcp4probe only since #56: DHCP through the firmware's `EFI_DHCP4` |
 | `src/nvme.rs` | the NVMe/TCP initiator |
 | `src/handoff.rs` | `StormBootTag`/`StormBootHostNqn`, volatile EFI variables naming the machine to Linux's initramfs (#76, stormblock#249); `StormBootClock` (#77); `StormBootUpdate` (#83); `StormBootInstallConfig` + chunks (#79) |
@@ -243,7 +248,12 @@ These have each cost a debugging session. Do not "simplify" them away.
   TCP4, and no setup switch fixes it. The media carries the driver
   (`\stormboot\drivers` on the rustnic medium: the Rust stormnic drivers;
   iPXE's was the first, and no medium carries it since #91). The platform's own drivers
-  bind first, so a media driver never displaces a native one.
+  bind first, so a media driver never displaces a native one, with one
+  opt-in exception: `prefer_media_drivers = virtio` (rustnic media only, #108)
+  takes VMs' virtio-net NICs from OVMF's VirtioNetDxe for stormnic-virtio,
+  and gives them back if it does not bind. Judge a disconnect by the
+  `BY_DRIVER` opens left on PciIo, never its status (pve's OVMF answers
+  `NOT_FOUND` when every driver came off).
 - **Never close an event the TCP driver may still signal** (#26, server1,
   2026-09-28). A token that timed out is still queued; closing its event and
   then aborting the connection (`Drop`'s `Configure(NULL)`) signals freed

@@ -26,7 +26,7 @@
 #     unsynchronised server (LI 3), which must not set anything:
 #     `StormBootClock = unsynced`.
 #
-# Seven boots:
+# Seven boots, and three more with stormnic-virtio (#108, below):
 #   1. as shipped: `rng : firmware` or `rdrand`;
 #   2. the entropy fallback: `rng = cpu` on the media masks the firmware's
 #      EFI_RNG, and the CPU is started without RDRAND and RDSEED, so the
@@ -392,6 +392,12 @@ BOOT_PXE=
 WAIT_FOR=
 # BOOT_INTENT (#11) is the intent the stub engine answers for this MAC.
 BOOT_INTENT=
+# BOOT_DRIVERS (#108) is a directory laid on the media as \stormboot\drivers,
+# BOOT_PREFER its `prefer_media_drivers`, BOOT_NICDEV more virtio-net-pci
+# properties (disable-legacy=on: a modern-only 1af4:1041).
+BOOT_DRIVERS=
+BOOT_PREFER=
+BOOT_NICDEV=
 boot() {
     local name=$1 cpu=$2 rng=$3 claim=$4 ntp=$5; shift 5
     rm -f "$W/claim.ok" "$W/claim.new" "$W/ntp.bad" "$W/intent"
@@ -403,6 +409,8 @@ boot() {
     local args=(--iso --binary "$EFI" --engine 10.0.2.2 --api-port "$PORT" --port "${BOOT_PORT:-$NVME_PORT}"
                 --nsid 1 --ntp "10.0.2.2:$NTP_PORT" --output "$iso")
     [[ -n "$rng" ]] && args+=(--rng "$rng")
+    [[ -n "$BOOT_DRIVERS" ]] && args+=(--drivers "$BOOT_DRIVERS")
+    [[ -n "$BOOT_PREFER" ]] && args+=(--prefer-media-drivers "$BOOT_PREFER")
     # The shipped boot's medium names a self-update (#83), which an ISO must
     # skip as read-only; the other names none.
     [[ $name == shipped ]] && args+=(--update "http://10.0.2.2:$PORT/api/v1/boothelpers/stormbootx-test")
@@ -430,7 +438,7 @@ boot() {
         -drive if=pflash,format=raw,file="$W/$name.vars" \
         -fw_cfg name=opt/org.tianocore/IPv4Support,string=$ipv4 \
         -fw_cfg name=opt/org.tianocore/IPv6Support,string=no \
-        "${net[@]}" -device virtio-net-pci,netdev=n0,romfile=$nicopt \
+        "${net[@]}" -device virtio-net-pci,netdev=n0,romfile=$nicopt${BOOT_NICDEV:+,$BOOT_NICDEV} \
         "${media[@]}" "${extra[@]}" \
         -debugcon file:"$W/$name.debug" -global isa-debugcon.iobase=0x402 \
         -display none -serial file:"$log" -no-reboot &
@@ -582,6 +590,45 @@ boot intent "$host_cpu" "" ok good \
     "not-stub:/claim" \
     "not:blockio     : published on handle" \
     "not:claim       : boothost/"
+
+# #108: stormnic-virtio on the media, with `prefer_media_drivers = virtio`.
+# OVMF's virtio drivers bind the NIC in stormbootx's first pass; the media's
+# driver must take it from them and carry the whole boot (lease, claim, the
+# 96 MiB attach), on a transitional NIC (1af4:1000) and a modern-only one
+# (1af4:1041). Without the key, the firmware keeps it. VIRTIO_EFI names the
+# driver (scripts/build-nic-drivers.sh); without it these boots are skipped.
+if [[ -n "${VIRTIO_EFI:-}" ]]; then
+    [[ -s "$VIRTIO_EFI" ]] || die "no stormnic-virtio driver at $VIRTIO_EFI"
+    mkdir -p "$W/vdrv" && cp "$VIRTIO_EFI" "$W/vdrv/stormnic-virtio.efi"
+    virtio=(
+        "starting stormnic-virtio.efi"
+        "stormnic-virtio.efi started"
+        ": taken from "
+        "; stormnic-virtio.efi drives it"
+        "stormnic-virtio 0.1.0: "
+        ", SNP installed"
+        "not:nic 0: driver Virtio Network Driver"
+        "nic 0: leased 10.0.2.15/24 gw 10.0.2.2"
+        "not:given back to"
+        "not:would not let go"
+    )
+    BOOT_DRIVERS="$W/vdrv" BOOT_PREFER=virtio \
+    boot virtio "$host_cpu" "" ok good "${virtio[@]}" " 1af4:1000: " \
+        "booting stubhost's image" \
+        "blockio     : 96 MiB read in all" \
+        "is there a TCP/IP stack in this firmware"
+    BOOT_DRIVERS="$W/vdrv" BOOT_PREFER=virtio BOOT_NICDEV=disable-legacy=on,disable-modern=off \
+    STOP_AT="engine      : stormblock 19.4.0" BOOT_SETTLE=1 \
+    boot virtio-modern "$host_cpu" "" 404 good "${virtio[@]}" " 1af4:1041: "
+    BOOT_DRIVERS="$W/vdrv" STOP_AT="engine      : stormblock 19.4.0" BOOT_SETTLE=1 \
+    boot virtio-kept "$host_cpu" "" 404 good \
+        "stormnic-virtio.efi started" \
+        "nic 0: driver Virtio Network Driver" \
+        "not:taken from" \
+        "not:SNP installed"
+else
+    say "note: VIRTIO_EFI not set; the stormnic-virtio boots (#108) are skipped"
+fi
 
 # #68: a fall-through gives the NICs back. The firmware's own IPv4 stack is
 # on, so stormbootx's exclusive SNP open first takes the NIC from the

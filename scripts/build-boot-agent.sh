@@ -47,6 +47,7 @@ DNS=""
 NTP=""
 MEDIA=""
 RNG=""
+PREFER=""
 UPDATE=""
 TREE=""
 
@@ -63,13 +64,16 @@ Options:
   --drivers DIR    lay DIR's files in \stormboot\drivers; stormbootx loads each
                    *.efi as a NIC driver (#26; scripts/build-nic-drivers.sh)
   --media LABEL    name this media on the console (`media : LABEL`), e.g.
-                   normal, or rustnic ixgbe@728b328 mlx4@04e7d2c (#45, #34)
+                   normal, or rustnic ixgbe@728b328 mlx4@04e7d2c virtio@1a04808 (#45, #34)
   --dns ADDR       DNS server for the PTR of the machine's own address, when
                    its DHCP reply names none or cannot be read (#26)
   --ntp SERVER     NTP server (host[:port], or off) when the lease names none
                    in option 42; default pool.ntp.org (#77)
   --portal ADDR    NVMe/TCP portal, with --pin (default 192.168.31.202)
   --engine ADDR    the portal and engine host, claim still on (tests/net-ovmf.sh)
+  --prefer-media-drivers FAMILIES
+                   these media drivers take their NICs from the firmware's
+                   driver (#108): comma-separated, today only `virtio`
   --rng FIRST      the first entropy source tried: firmware (default), cpu or
                    jitter (#56); the ones above it are skipped
   --update URL     where the medium updates itself from (#83):
@@ -99,6 +103,7 @@ while [[ $# -gt 0 ]]; do
         --portal) PORTAL="$2"; PIN="yes"; shift 2 ;;
         --engine) PORTAL="$2"; shift 2 ;;
         --rng)    RNG="$2"; shift 2 ;;
+        --prefer-media-drivers) PREFER="$2"; shift 2 ;;
         --update) UPDATE="$2"; shift 2 ;;
         --tree)   TREE="$2"; shift 2 ;;
         --port)   PORT="$2"; shift 2 ;;
@@ -242,6 +247,21 @@ if [[ -n "$RNG" ]]; then
 
 # The first entropy source tried; the ones above it are skipped.
 rng      = $RNG
+CONF
+fi
+
+# Media drivers that take their NICs from the firmware's own (#108). Absent on
+# ordinary media: the platform's drivers win. The rustnic golden sets virtio,
+# because every OVMF's VirtioNetDxe holds a VM's NIC first.
+if [[ -n "$PREFER" ]]; then
+    [[ -n "$DRIVERS" ]] || die "--prefer-media-drivers needs --drivers"
+    for f in ${PREFER//,/ }; do
+        [[ "$f" == virtio ]] || die "--prefer-media-drivers: no family '$f' (virtio)"
+    done
+    cat >> "$WORK/stormboot.conf" <<CONF
+
+# These media drivers take their NICs from the firmware's driver.
+prefer_media_drivers = $PREFER
 CONF
 fi
 

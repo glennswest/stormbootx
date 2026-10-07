@@ -1,6 +1,6 @@
 #!/bin/bash
 # Build the Rust NIC UEFI drivers stormbootx loads from the rustnic media
-# (#26, #29, #34).
+# (#26, #29, #34, #75).
 #
 # Some platforms carry no UEFI driver for their own NICs: the Supermicro X9
 # blades (server1-8), an Intel 10G with a legacy `IBA XE` option ROM and a
@@ -9,6 +9,8 @@
 #
 #   ixgbe -> stormnic-ixgbe.efi   Intel 82599 / X540 / X552 10G
 #   mlx4  -> stormnic-mlx4.efi    Mellanox ConnectX-3
+#   virtio -> stormnic-virtio.efi virtio-net (VMs: pve, OVMF), bound only
+#                                 with `prefer_media_drivers = virtio` (#108)
 #
 # No iPXE (owner on #81, 2026-10-02: "I dont want the ipxe code. Move to
 # ours."; #91). A machine whose firmware has its own NIC driver boots the
@@ -17,7 +19,7 @@
 #   scripts/build-nic-drivers.sh [OUTDIR]     (default tmp/drivers in the checkout)
 #   scripts/build-boot-agent.sh --iso --drivers tmp/drivers
 #
-# STORMNIC_DRIVERS (default "ixgbe mlx4") picks which are built. What ships is
+# STORMNIC_DRIVERS (default "ixgbe mlx4 virtio") picks which are built. What ships is
 # the stormbootx-rustnic medium and the nic-drivers golden
 # (deploy/build-golden.sh).
 #
@@ -75,9 +77,17 @@ STORMNIC_MLX4_REPO="https://github.com/glennswest/stormnic-mlx4.git"
 # link), no #3 broadcast self-test (cef8dc5 is the pin that checks #1-#3), and
 # ExitBootServices stops the device's DMA. Builds --locked (#34, #50, #64).
 STORMNIC_MLX4_REF="04e7d2c346a49080d40bc077bef320cc4a1d3be2"
-read -r -a STORMNIC_DRIVERS <<< "${STORMNIC_DRIVERS:-ixgbe mlx4}"
+STORMNIC_VIRTIO_REPO="https://github.com/glennswest/stormnic-virtio.git"
+# 1a04808 (v0.1.0, #75): virtio-net (virtio 1.x PCI, 1af4:1041 and the
+# transitional 1af4:1000), verified under OVMF and on pve (stormnic-virtio#1).
+# It holds PciIo BY_DRIVER | EXCLUSIVE, so a NIC's iPXE option ROM can't
+# force it off, and like the others declines a function already held. Every
+# OVMF's VirtioNetDxe holds the NIC before the media drivers load, so it binds
+# only where the media says `prefer_media_drivers = virtio` (#108).
+STORMNIC_VIRTIO_REF="1a04808aea492e508c0c66d4134b06532405e0b8"
+read -r -a STORMNIC_DRIVERS <<< "${STORMNIC_DRIVERS:-ixgbe mlx4 virtio}"
 for d in "${STORMNIC_DRIVERS[@]}"; do
-    [[ "$d" == ixgbe || "$d" == mlx4 ]] || die "STORMNIC_DRIVERS: no Rust driver '$d' (ixgbe, mlx4)"
+    [[ "$d" == ixgbe || "$d" == mlx4 || "$d" == virtio ]] || die "STORMNIC_DRIVERS: no Rust driver '$d' (ixgbe, mlx4, virtio)"
 done
 wanted() { local d; for d in "${STORMNIC_DRIVERS[@]}"; do [[ "$d" == "$1" ]] && return 0; done; return 1; }
 OUTDIR="${1:-$(cd "$(dirname "$0")/.." && pwd)/tmp/drivers}"
@@ -91,7 +101,7 @@ trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$OUTDIR"
 
 # The Rust drivers: stormnic-ixgbe for the blades' Intel 10G (#29),
-# stormnic-mlx4 for their ConnectX-3 (#34).
+# stormnic-mlx4 for their ConnectX-3 (#34), stormnic-virtio for VMs (#75).
 # PE Subsystem of an image; 11 is an EFI boot-service driver, 10 an application.
 pe_subsystem() {
     local f=$1 pe
@@ -126,3 +136,4 @@ build_stormnic() {
 rm -f "$OUTDIR/STORMNIC-SOURCE.txt" "$OUTDIR/IPXE-SOURCE.txt" "$OUTDIR"/ipxe-*.efi "$OUTDIR"/*.efi.off
 build_stormnic stormnic-ixgbe "$STORMNIC_IXGBE_REPO" "$STORMNIC_IXGBE_REF" ixgbe
 build_stormnic stormnic-mlx4 "$STORMNIC_MLX4_REPO" "$STORMNIC_MLX4_REF" mlx4
+build_stormnic stormnic-virtio "$STORMNIC_VIRTIO_REPO" "$STORMNIC_VIRTIO_REF" virtio

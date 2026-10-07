@@ -53,7 +53,7 @@ const PCI_IO: Guid = guid!("4cf5b200-68b8-4ca5-9eec-b23e3f50029a");
 const NII31: Guid = guid!("1aced566-76ed-4218-bc81-767f1f977a89");
 const NII: Guid = guid!("e18541cd-f755-4f73-928d-643c8a79b229");
 
-fn bs() -> Option<&'static BootServices> {
+pub(crate) fn bs() -> Option<&'static BootServices> {
     unsafe { uefi::table::system_table_raw()?.as_ref().boot_services.as_ref() }
 }
 
@@ -123,7 +123,7 @@ fn ends_in_mac(h: uefi_raw::Handle) -> bool {
 }
 
 /// Every open of every protocol on `h`: (protocol, entry).
-fn opens(bs: &BootServices, h: uefi_raw::Handle) -> Vec<(Guid, OpenProtocolInformationEntry)> {
+pub(crate) fn opens(bs: &BootServices, h: uefi_raw::Handle) -> Vec<(Guid, OpenProtocolInformationEntry)> {
     let mut out = Vec::new();
     let mut guids: *mut *const uefi_raw::Guid = ptr::null_mut();
     let mut count = 0usize;
@@ -162,7 +162,7 @@ fn opens(bs: &BootServices, h: uefi_raw::Handle) -> Vec<(Guid, OpenProtocolInfor
 /// A driver's name: ComponentName2, then ComponentName (in the first language
 /// each says it supports), then the file name of its image. Asked of the
 /// agent handle, then of its DriverBinding's image handle.
-fn name_of(agent: uefi_raw::Handle) -> Option<String> {
+pub(crate) fn name_of(agent: uefi_raw::Handle) -> Option<String> {
     let mut handles = alloc::vec![agent];
     if let Some(db) = crate::net::handle_protocol(agent, &DRIVER_BINDING) {
         let image = unsafe { (*(db as *const DriverBindingProtocol)).image_handle };
