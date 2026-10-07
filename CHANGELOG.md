@@ -3,25 +3,29 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
-### 2026-10-07
-- **test:** `tests/media-ovmf.sh` takes `NIC=virtio` (one virtio-net NIC; otherwise none, as before), so the rustnic golden's own ISO shows stormnic-virtio taking the NIC (#108, #109: the check ran with no NIC, so there was nothing to take).
-- **feat:** stormnic-virtio on the rustnic media, taking VMs' virtio-net NICs from OVMF's VirtioNetDxe (#108, #106, #75). `build-nic-drivers.sh` pins stormnic-virtio 1a04808 (v0.1.0) in the default `STORMNIC_DRIVERS`, so the nic-drivers and rustnic goldens carry `stormnic-virtio.efi` (label `virtio@1a04808`). New `stormboot.conf` key `prefer_media_drivers = virtio` (`build-boot-agent.sh --prefer-media-drivers`, set on the rustnic media only). After the media drivers start, `drivers::take_over` disconnects the firmware's driver tree from each virtio-net function (1af4:1041, 1af4:1000), leaf first, in up to three passes, judged by the `BY_DRIVER` opens left on its PciIo. It then connects the function naming only stormnic-virtio, and gives it back to the firmware's driver if ours does not bind. One console line per NIC. Without the key the platform's drivers still win. `tests/net-ovmf.sh` boots three more times with `VIRTIO_EFI` set: takeover of a transitional and a modern-only NIC with the claim and attach over stormnic-virtio, and the firmware keeping the NIC without the key.
-- **docs:** CLAUDE.md work plan: #107 waits on the owner (who swaps the blades' rustnic ISO on minismbd and boots a blade).
-- **docs:** CLAUDE.md work plan: #98 closed, not reproduced (11.80 on stormbootx v0.15.0 reached Ready on pvetest2); the initramfs console after `ublk devices starting` is stormblock#321.
+## [v0.23.0] — 2026-10-07
 
-### 2026-10-06
-- **docs:** CLAUDE.md work plan: #104 closed; goldens `golden-stormbootx-rustnic-0585a52012dcd66e`, `golden-nic-drivers-98976cdcd7eb`.
-- **chore:** rustnic media pins stormnic-mlx4 v0.2.5 (04e7d2c) (#104; asked for in the issue's comment, superseding v0.2.4 32083cd): per-port module EEPROM, PTYS and forced-speed diagnostics (stormnic-mlx4#17), and a quiet console with the full trace behind `StormnicVerbose` (stormnic-mlx4#16). Media label `rustnic ixgbe@728b328 mlx4@04e7d2c`.
-- **docs:** CLAUDE.md work plan: #101 closed; goldens `golden-stormbootx-rustnic-5673f944f5dab62d`, `golden-nic-drivers-a5962e89b0f7`.
-- **chore:** rustnic media pins stormnic-ixgbe 728b328 (#101; asked for in the issue's last comment, superseding 38d6f0c, ed9b719, b240082 and 32c0bfc): a quiet console, one line per NIC with link-down diagnostics (stormnic-ixgbe#22, #26), the X540/X552/X550/X553 simulation-only warnings (#17, #23), and the DMA check's 3 s receive listen only when verbose (#24). Media label `rustnic ixgbe@728b328 mlx4@0e50017`.
-- **docs:** #33 closed. README: the X9's NOT_FOUND was the release's ESP (stormcos#188), and the ttyS1 kernel console is stormcos#220 / stormuefi#23. The open-issue table drops #33, #11 and #15. CLAUDE.md work plan entry for #33.
-- **docs:** the binary's size is ~320 KB (328,704 bytes at dc09321) in CLAUDE.md and the deck's title slide (was ~230/~270 KB) (#95).
-- **docs:** CLAUDE.md work plan: #14 waits on stormcentral#133 alone, not a decision (#22 answered; KVM via `privileged`; no TCP4 needed since #56) (#95). `docs/presentation.md`: #11, #15 and #68 out of *Planned*, #14 waits on stormcentral#133, #22 no longer an open decision, status at v0.22.0.
-- **docs:** CLAUDE.md work plan: #15 closed (default claim of a new machine verified under OVMF; forge still 13.7.0).
-- **test:** `tests/net-ovmf.sh` boots a machine the engine has never seen (#15): the default claim by MAC answers the provisional host `mac-525400123456`, which must be attached, booted and handed down as `StormBootTag`/the host NQN; the stub must receive the claim carrying the MAC.
-- **docs:** CLAUDE.md work plan: #11 closed (OVMF `local`/`install` boots verified; forge still 13.7.0).
-- **test:** `tests/net-ovmf.sh` checks the boot intent (#11): the stub engine answers stormblock's `intent_body` for the MAC alias. A boot told `local` must print `intent : local` and fall through with `nothing claimed`, with no claim POST and nothing attached. The `jitter` boot is told `install` and claims as before.
-- **docs:** CLAUDE.md work plan: v0.22.0 goldens (#41).
+### Added
+- stormnic-virtio on the rustnic media, taking VMs' virtio-net NICs from OVMF's VirtioNetDxe (#108, #106, #75). `build-nic-drivers.sh` pins stormnic-virtio 1a04808 (v0.1.0) in the default `STORMNIC_DRIVERS`, so the nic-drivers and rustnic goldens carry `stormnic-virtio.efi` (label `virtio@1a04808`). New `stormboot.conf` key `prefer_media_drivers = virtio` (`build-boot-agent.sh --prefer-media-drivers`, set on the rustnic media only). After the media drivers start, `drivers::take_over` disconnects the firmware's driver tree from each virtio-net function (1af4:1041, 1af4:1000), leaf first, in up to three passes, judged by the `BY_DRIVER` opens left on its PciIo. It then connects the function naming only stormnic-virtio, and gives it back to the firmware's driver if ours does not bind. One console line per NIC. Without the key the platform's drivers still win. `tests/net-ovmf.sh` boots three more times with `VIRTIO_EFI` set: takeover of a transitional and a modern-only NIC with the claim and attach over stormnic-virtio, and the firmware keeping the NIC without the key.
+
+### Changed
+- `tests/media-ovmf.sh` takes `NIC=virtio` (one virtio-net NIC; otherwise none, as before), so the rustnic golden's own ISO shows stormnic-virtio taking the NIC (#108, #109: the check ran with no NIC, so there was nothing to take).
+- rustnic media pins stormnic-mlx4 v0.2.5 (04e7d2c) (#104; asked for in the issue's comment, superseding v0.2.4 32083cd): per-port module EEPROM, PTYS and forced-speed diagnostics (stormnic-mlx4#17), and a quiet console with the full trace behind `StormnicVerbose` (stormnic-mlx4#16). Media label `rustnic ixgbe@728b328 mlx4@04e7d2c`.
+- rustnic media pins stormnic-ixgbe 728b328 (#101; asked for in the issue's last comment, superseding 38d6f0c, ed9b719, b240082 and 32c0bfc): a quiet console, one line per NIC with link-down diagnostics (stormnic-ixgbe#22, #26), the X540/X552/X550/X553 simulation-only warnings (#17, #23), and the DMA check's 3 s receive listen only when verbose (#24). Media label `rustnic ixgbe@728b328 mlx4@0e50017`.
+- `tests/net-ovmf.sh` boots a machine the engine has never seen (#15): the default claim by MAC answers the provisional host `mac-525400123456`, which must be attached, booted and handed down as `StormBootTag`/the host NQN; the stub must receive the claim carrying the MAC.
+- `tests/net-ovmf.sh` checks the boot intent (#11): the stub engine answers stormblock's `intent_body` for the MAC alias. A boot told `local` must print `intent : local` and fall through with `nothing claimed`, with no claim POST and nothing attached. The `jitter` boot is told `install` and claims as before.
+
+### Documentation
+- CLAUDE.md work plan: #107 waits on the owner (who swaps the blades' rustnic ISO on minismbd and boots a blade).
+- CLAUDE.md work plan: #98 closed, not reproduced (11.80 on stormbootx v0.15.0 reached Ready on pvetest2); the initramfs console after `ublk devices starting` is stormblock#321.
+- CLAUDE.md work plan: #104 closed; goldens `golden-stormbootx-rustnic-0585a52012dcd66e`, `golden-nic-drivers-98976cdcd7eb`.
+- CLAUDE.md work plan: #101 closed; goldens `golden-stormbootx-rustnic-5673f944f5dab62d`, `golden-nic-drivers-a5962e89b0f7`.
+- #33 closed. README: the X9's NOT_FOUND was the release's ESP (stormcos#188), and the ttyS1 kernel console is stormcos#220 / stormuefi#23. The open-issue table drops #33, #11 and #15. CLAUDE.md work plan entry for #33.
+- the binary's size is ~320 KB (328,704 bytes at dc09321) in CLAUDE.md and the deck's title slide (was ~230/~270 KB) (#95).
+- CLAUDE.md work plan: #14 waits on stormcentral#133 alone, not a decision (#22 answered; KVM via `privileged`; no TCP4 needed since #56) (#95). `docs/presentation.md`: #11, #15 and #68 out of *Planned*, #14 waits on stormcentral#133, #22 no longer an open decision, status at v0.22.0.
+- CLAUDE.md work plan: #15 closed (default claim of a new machine verified under OVMF; forge still 13.7.0).
+- CLAUDE.md work plan: #11 closed (OVMF `local`/`install` boots verified; forge still 13.7.0).
+- CLAUDE.md work plan: v0.22.0 goldens (#41).
 
 ## [v0.22.0] — 2026-10-06
 
