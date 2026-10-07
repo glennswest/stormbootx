@@ -3,13 +3,18 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
-### 2026-10-06
-- **fix:** SMBIOS serials refuse the same placeholders as stormipmi (#7, stormipmi#14): `0123456789`, `123456789`, `na`, `empty`, `serial number`, `chassis serial number`, `base board serial number`, NUL padding, and one filler repeated (`FFFFFFFF`, `XXXXXXXX`, `****`, 0xFF bytes). The check moved to `universal::serial_usable` (core-only), host-tested against stormipmi's vectors. The MAC floor's console source says `lowest NIC MAC`, which is what it is (was `first NIC MAC`).
-- **docs:** CLAUDE.md work plan: #70 (stormnic-e1000e) waits on the owner for the repo; QEMU `-device e1000e` verifies it under OVMF.
-- **docs:** CLAUDE.md work plan: #73 (stormnic-mlx5) waits on the owner for the repo; the R230 is the test card once #106 lands.
-- **docs:** CLAUDE.md work plan: #69 (stormnic-igb) waits on the owner for the repo; QEMU `-device igb` verifies it under OVMF.
-- **docs:** CLAUDE.md work plan: #71 (stormnic-i40e) waits on the owner: the repo, and a machine with an i40e NIC to verify on.
-- **docs:** CLAUDE.md work plan: v0.21.0 goldens (#68).
+## [v0.21.1] — 2026-10-06
+
+### Fixed
+- SMBIOS serials refuse the same placeholders as stormipmi (#7, stormipmi#14): `0123456789`, `123456789`, `na`, `empty`, `serial number`, `chassis serial number`, `base board serial number`, NUL padding, and one filler repeated (`FFFFFFFF`, `XXXXXXXX`, `****`, 0xFF bytes). The check moved to `universal::serial_usable` (core-only), host-tested against stormipmi's vectors. The MAC floor's console source says `lowest NIC MAC`, which is what it is (was `first NIC MAC`).
+
+### Documentation
+- CLAUDE.md work plan: #70 (stormnic-e1000e) waits on the owner for the repo; QEMU `-device e1000e` verifies it under OVMF.
+- CLAUDE.md work plan: #73 (stormnic-mlx5) waits on the owner for the repo; the R230 is the test card once #106 lands.
+- CLAUDE.md work plan: #69 (stormnic-igb) waits on the owner for the repo; QEMU `-device igb` verifies it under OVMF.
+- CLAUDE.md work plan: #71 (stormnic-i40e) waits on the owner: the repo, and a machine with an i40e NIC to verify on.
+- CLAUDE.md work plan: v0.21.0 goldens (#68).
+- CLAUDE.md work plan: #7 closed.
 
 ## [v0.21.0] — 2026-10-06
 
