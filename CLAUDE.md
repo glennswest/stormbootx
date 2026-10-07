@@ -1112,6 +1112,16 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       the rustnic media), then OVMF and pvetest1/2. #69–#74 have the same
       question.
 
+- [ ] **#71 — stormnic-i40e, a Rust X710/XL710/XXV710/X722 UEFI driver
+      (P2, owner). Waiting on the owner (2026-10-06, `needs-owner`).** Same
+      pair of questions as #74: the master creates `glennswest/stormnic-i40e`
+      (as for stormnic-virtio, #75), and which machine to verify on. QEMU
+      emulates no i40e part, and no registered test machine has one (the
+      consoles show only ixgbe, mlx4, mlx5 and tg3). The issue's IDs are
+      right in pci.ids; the PF family adds 1580/1581/1585–1588/158a,
+      104e/104f, 101f and 37ce/37cf/37d4. This repo's side, once the driver
+      binds: pin it in `build-nic-drivers.sh`.
+
 - [ ] **#74 — stormnic-realtek, a Rust RTL8111/8168, 8125, 8126 UEFI
       driver (P2, owner). Waiting on the owner (2026-10-06, `needs-owner`).**
       The repo doesn't exist. On #75 the owner agreed that the master creates
