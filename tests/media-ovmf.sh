@@ -3,6 +3,7 @@
 #
 #   tests/media-ovmf.sh ISO 'EXPECTED LINE' ['ANOTHER' ...]
 #   tests/media-ovmf.sh IMG 'EXPECTED LINE' ['ANOTHER' ...]
+#   NIC=virtio tests/media-ovmf.sh …   (one virtio-net NIC, #108)
 #
 # An `.img` (a disk golden, #41) is booted as a USB stick (qemu-xhci +
 # usb-storage, removable), the way the X9 blades boot theirs.
@@ -35,6 +36,12 @@ case $ISO in
     *) medium=(-cdrom "$ISO" -boot d) ;;
 esac
 
+# NIC=virtio gives the VM one virtio-net NIC (no option ROM), so a rustnic
+# medium's stormnic-virtio can be seen taking it from OVMF's driver (#108).
+# Otherwise there is no NIC at all.
+net=(-net none)
+[[ "${NIC:-}" == virtio ]] && net=(-netdev user,id=n0 -device virtio-net-pci,netdev=n0,romfile=)
+
 W=$(mktemp -d "${TMPDIR:-/tmp}/media-ovmf.XXXXXX")
 trap 'rm -rf "$W"' EXIT
 cp "$OVMF_VARS" "$W/vars.fd"
@@ -45,7 +52,7 @@ say "booting $(basename "$ISO") under OVMF ($accel, up to ${LIMIT}s)"
 timeout "$LIMIT" qemu-system-x86_64 -machine q35,accel="$accel" -m 512 \
     -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
     -drive if=pflash,format=raw,file="$W/vars.fd" \
-    "${medium[@]}" -net none \
+    "${medium[@]}" "${net[@]}" \
     -display none -serial file:"$W/serial.log" -no-reboot || true
 
 # The console carries CRs and escape sequences; compare on plain lines.

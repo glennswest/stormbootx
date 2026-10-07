@@ -77,7 +77,7 @@ CD carries a bootindex after the shell's; without it the CD is never mapped.
 `tests/iso-layout.sh ISO …` checks an ISO is isohybrid with a FAT12 ESP,
 the layout Aptio 4 boots (#55). `tests/media-ovmf.sh ISO 'LINE' …` boots a media ISO under OVMF and requires
 console lines (#45: `media : …`); build the goldens under `t/` in the same
-job to use it.
+job to use it. `NIC=virtio` gives it a virtio-net NIC (#108).
 
 The last line boots `espprobe` under dev's OVMF (KVM there) against a
 4096-byte disk (#37). `R=` is the one place the target dir is named, and it
