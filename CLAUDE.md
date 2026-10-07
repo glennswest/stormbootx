@@ -471,6 +471,17 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
+- [ ] **#98 — v0.15.0 + stormcos 11.80 hung in the initramfs after the
+      ublk devices started (pvetest2, 2026-10-05). In progress
+      2026-10-06.** v0.14.0..v0.15.0 changes only #79: with no
+      `install-config.yaml` on the media it reads nothing and sets nothing,
+      and with one it sets volatile EFI variables an older initramfs never
+      reads. 11.82 with v0.15.0 passed on pvetest1 the same evening, and
+      pvetest2 has passed 11.88-flowsdn since. Plan: reproduce with
+      `testhost install pvetest2 11.80 --any-flavor`; if it passes, the
+      hang was not v0.15.0's; if it hangs again, try the same on v0.14.0
+      media. What the initramfs waits for is stormblock's console.
+
 - [x] **#104 — rustnic media pins stormnic-mlx4 v0.2.5 (04e7d2c) (P2).
       Closed 2026-10-06.** The issue asked for v0.2.4 (32083cd: module
       EEPROM, PTYS and speed-control diagnostics, stormnic-mlx4#17); its
