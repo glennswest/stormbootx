@@ -471,6 +471,28 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
+- [ ] **#108 (with #106, #75) — stormnic-virtio on the rustnic media,
+      taking virtio-net NICs from OVMF's VirtioNetDxe (P2). In progress
+      2026-10-07.** Every OVMF binds virtio-net in the platform's
+      ConnectController pass, before the media drivers load, and the stormnic
+      drivers decline a held function, so pinning alone does nothing. Plan:
+      1. `build-nic-drivers.sh`: pin stormnic-virtio 1a04808 (#75), in the
+         default `STORMNIC_DRIVERS`; nic-drivers and rustnic goldens carry it,
+         label `virtio@1a04808`.
+      2. `prefer_media_drivers = virtio` in `stormboot.conf`
+         (`build-boot-agent.sh --prefer-media-drivers`), set on the rustnic
+         media only. Opt-in per family; without it the platform still wins.
+      3. `drivers.rs`: after the media drivers start, for each PCI function
+         of a preferred family (virtio: 1af4:1041, 1af4:1000, class 02) held
+         `BY_DRIVER` by another driver: disconnect its tree leaf first, up to
+         3 passes, judged by the `BY_DRIVER` opens left on its PciIo (pve
+         returns `NOT_FOUND` when every driver came off); then
+         `ConnectController` naming only our driver; if ours does not hold
+         it, reconnect the firmware's. One console line per NIC.
+      4. `tests/net-ovmf.sh`: a boot with the driver on the media and the
+         key set: `nic 0: driver stormnic-virtio…`, the claim and the 96 MiB
+         attach over it.
+
 - [ ] **#107 — boot an X9 blade on the stormnic-ixgbe 728b328 media to
       check stormnic-ixgbe#22 (P2). Waiting on the owner (2026-10-07,
       `needs-owner`).** The check needs an 82599 blade with link
