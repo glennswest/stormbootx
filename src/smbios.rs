@@ -18,38 +18,11 @@ use uefi::{Guid, guid};
 const SMBIOS_GUID: Guid = guid!("eb9d2d31-2d88-11d3-9a16-0090273fc14d");
 const SMBIOS3_GUID: Guid = guid!("f2fd1544-9794-4a2c-992e-e5bbcf20e394");
 
-/// A DMI string only counts as an identity if it identifies *this* machine.
-///
-/// Boards with nothing burned in do not leave the field empty — they fill it
-/// with a constant, and every board of that model carries the same one. A node
-/// claiming `boothost/Default string` resolves to whatever the last machine
-/// with that placeholder was assigned, which is worse than failing: it boots,
-/// and it boots as somebody else.
+/// A DMI string only counts as an identity if it identifies *this* machine:
+/// `universal::serial_usable` (#7), which refuses what stormipmi refuses.
 pub fn usable(raw: &str) -> Option<String> {
-    let v = raw.trim();
-    if v.is_empty() {
-        return None;
-    }
-    let low = v.to_ascii_lowercase();
-    let placeholder = matches!(
-        low.as_str(),
-        "none" | "unknown" | "default string" | "system serial number"
-            | "not applicable" | "not specified" | "n/a" | "invalid"
-    ) || low.contains("to be filled")
-        || low.contains("o.e.m.")
-        || v.chars().all(|c| c == '0' || c == '.' || c == '-' || c == ' ');
-    if placeholder || SHARED.contains(&v) { None } else { Some(v.into()) }
+    crate::universal::serial_usable(raw).map(String::from)
 }
-
-/// Serials known to be carried by more than one machine, treated exactly like
-/// placeholders.
-///
-/// `S11075924402016` is the Type 1 serial of seven of the eight Supermicro X9
-/// blades (server1–8, 2026-09-28): the chassis's number, not the blade's.
-/// Claiming by it would put seven machines on one boothost (#26). The general
-/// case is `chassis_serial_shared` below; this list is for the ones that
-/// slip past it.
-const SHARED: &[&str] = &["S11075924402016"];
 
 /// SMBIOS Type 3 chassis types that hold more than one machine: multi-system
 /// chassis (0x19), blade (0x1C) and blade enclosure (0x1D).
@@ -95,7 +68,7 @@ impl Identity {
             Identity::SystemSerial(_) => "SMBIOS system serial",
             Identity::BoardSerial(_) => "SMBIOS baseboard serial",
             Identity::ChassisSerial(_) => "SMBIOS chassis serial",
-            Identity::Mac(_) => "first NIC MAC",
+            Identity::Mac(_) => "lowest NIC MAC",
         }
     }
 }

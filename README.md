@@ -103,10 +103,14 @@ given back on the fall-through.
      (chassis type multi-system, blade or blade enclosure) is the enclosure's,
      so Type 1 and Type 3 are skipped and Type 2 is tried. `S11075924402016`,
      the chassis serial seven Supermicro X9 blades report, is listed outright.
-   - **Placeholders are rejected**: empty, `none`, `unknown`,
-     `default string`, `system serial number`, `not applicable`,
-     `not specified`, `n/a`, `invalid`, anything containing `to be filled` or
-     `o.e.m.`, and any string made only of `0`, `.`, `-` and spaces.
+   - **Placeholders are rejected** (`universal::serial_usable`, host-tested
+     against stormipmi's vectors, so both derive the same `boothost/<tag>`,
+     #7): empty or NULs, `none`, `unknown`, `na`, `n/a`, `empty`, `invalid`,
+     `default string`, `not applicable`, `not specified`, `serial number`,
+     `system serial number`, `chassis serial number`, `base board serial
+     number`, `0123456789`, `123456789`, anything containing `to be filled`
+     or `o.e.m.`, any string made only of `0`, `.`, `-` and spaces, and one
+     filler repeated (`FFFFFFFF`, `XXXXXXXX`, `****`, 0xFF bytes).
    - No usable serial is no longer a failure: once the network stack exists
      (step 4) the machine's **MAC** identifies it, the lowest usable unicast
      permanent address across every NIC (`net::machine_mac`), so the answer
@@ -914,11 +918,9 @@ Open issues:
 | Issue | What |
 |---|---|
 | #37, #33 | X9 blades on a 4096-byte namespace: server1 boots 11.56; which reader loaded it, and the SOL console on ttyS1, are still open; #67 hardens `esp.rs` |
-| #68 | smoltcp on metal: multi-NIC ranking, a 25G link, stormnic's SNP and `release` not yet seen |
 | #15 | universal boot: client side done; forge is on stormblock 13.7.0, and there is no `boothost/default` |
 | #11 | a per-machine boot intent (`install`/`local` wait on forge running stormblock v20, #148; `auto` claims unless `local_when_bootable = true`, #3) |
 | #36 | the golden media's pinned fallback (nsid 2) |
-| #7 | placeholder list shared with stormipmi |
 | #69–#75, #80 | more Rust NIC drivers (iPXE is gone from every medium and golden, #91; the X9 blades boot the rustnic media) |
 | #83 | self-update: in the binary, tested under OVMF, stormcentral's key compiled in (#86); no medium updates until stormcentral promotes a golden (`stormcentral stormbootx promote`) |
 | #4, #10, #14 | inventory; the shared initiator; test containers |

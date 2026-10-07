@@ -99,7 +99,8 @@ those vectors out of reach. Don't.
 `src/intent.rs` follows the same rule for the same reason: it parses the boot
 intent reply and decides, using `core` only, and the HTTP exchange stays in
 `registry.rs`. Its tests are the proof that every doubt reads as `auto`. `src/universal.rs`
-(#15) is the third: the engine-version gate, the MAC choice and the claim
+(#15) is the third: the engine-version gate, the MAC choice, the serial
+placeholders (#7, stormipmi's vectors) and the claim
 reply's `host` object, `core` only. `tcp4probe.rs` includes it by `#[path]`
 because `tcp4.rs` uses it, so a new `crate::` use in `tcp4.rs` must be
 carried there too (#24 was that). `src/dnsname.rs` (#23) is the fourth:
@@ -164,7 +165,7 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/intent.rs` | the boot intent (`install`/`local`/`auto`) read before the claim; every doubt is `auto` |
 | `src/registry.rs` | read the intent; claim `boothost/<tag>`, or `boothost/default` by MAC, every claim naming the agent (#90); read the engine's version; also the old sbregistry `/v1/clones/claim` path, compiled out by `USE_REGISTRY = false` |
 | `src/dnsname.rs` | the machine's DNS name (#23): DHCP options 12/15/6, PTR query and answer over DNS/TCP |
-| `src/universal.rs` | universal boot (#15): is the engine new enough, which MAC is the machine's, what host the reply named |
+| `src/universal.rs` | universal boot (#15): is the engine new enough, which MAC is the machine's, what host the reply named; which SMBIOS serial is a placeholder (#7, matches stormipmi) |
 | `src/esp.rs` | the attached ESP read without the firmware's FAT (#37): GPT, FAT12/16/32 at 512..4096-byte sectors |
 | `src/espboot.rs` | read `BOOTX64.EFI` through `esp.rs` and `LoadImage` it from the buffer |
 | `src/espprobe.rs` | third binary: who can read a 4K ESP; booted under OVMF by `tests/esp-ovmf.sh` |

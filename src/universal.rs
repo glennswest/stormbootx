@@ -163,6 +163,59 @@ fn value<'a>(obj: &'a str, key: &str) -> Option<&'a str> {
     None
 }
 
+/// A DMI serial that names *this* machine, trimmed; `None` for a placeholder
+/// (#7).
+///
+/// Boards with nothing burned in fill the field with a constant that every
+/// board of the model carries, and a claim by it boots as another machine.
+/// stormipmi derives the same `boothost/<tag>` from the BMC, so this refuses
+/// exactly what its `identity::usable` refuses (stormipmi#14), and the tests
+/// carry its vectors. Change the two together.
+pub fn serial_usable(raw: &str) -> Option<&str> {
+    let v = raw.trim().trim_matches('\0').trim();
+    if v.is_empty() {
+        return None;
+    }
+    const PLACEHOLDERS: &[&str] = &[
+        "to be filled by o.e.m.", "to be filled by oem", "default string",
+        "system serial number", "not specified", "not applicable", "none", "unknown",
+        "n/a", "na", "serial number", "0123456789", "123456789", "xxxxxxxxxx",
+        "invalid", "empty", "chassis serial number", "base board serial number",
+    ];
+    if PLACEHOLDERS.iter().any(|p| v.eq_ignore_ascii_case(p))
+        || contains_ignore_case(v, "to be filled")
+        || contains_ignore_case(v, "o.e.m.")
+        || SHARED_SERIALS.contains(&v)
+    {
+        return None;
+    }
+    // Fillers: any mix of 0 . - and spaces, or one filler character repeated
+    // (FFFFFFFF, XXXXXXXX, 0xFF bytes read back as ÿ, ****).
+    if v.chars().all(|c| matches!(c, '0' | '.' | '-' | ' ')) {
+        return None;
+    }
+    let mut chars = v.chars();
+    let first = chars.next()?;
+    if chars.all(|c| c == first) && matches!(first, '0' | '-' | '.' | ' ' | 'F' | 'f' | 'X' | 'x' | '\u{ff}' | '*') {
+        return None;
+    }
+    Some(v)
+}
+
+/// Serials known to be carried by more than one machine, treated exactly like
+/// placeholders.
+///
+/// `S11075924402016` is the Type 1 serial of seven of the eight Supermicro X9
+/// blades (server1–8, 2026-09-28): the chassis's number, not the blade's.
+/// Claiming by it would put seven machines on one boothost (#26). The general
+/// case is `smbios::chassis_serial_shared`; this list is for the ones that
+/// slip past it.
+pub const SHARED_SERIALS: &[&str] = &["S11075924402016"];
+
+fn contains_ignore_case(hay: &str, needle: &str) -> bool {
+    hay.as_bytes().windows(needle.len()).any(|w| w.eq_ignore_ascii_case(needle.as_bytes()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -240,5 +293,35 @@ mod tests {
         let m = [0xac, 0x1f, 0x6b, 0x8a, 0xa7, 0x9c];
         assert_eq!(&mac_colon(&m), b"ac:1f:6b:8a:a7:9c");
         assert_eq!(&provisional_name(&m), b"mac-ac1f6b8aa79c");
+    }
+
+    /// stormipmi `src/identity.rs`'s vectors (stormipmi#14): what stormbootx
+    /// refused already, what only stormipmi refused until #7, and serials that
+    /// name a machine. Both must agree on every one.
+    #[test]
+    fn placeholders_match_stormipmi() {
+        const REFUSED_BEFORE: &[&str] = &[
+            "", "   ", "None", "unknown", "Default string", "System Serial Number", "Not Applicable",
+            "Not Specified", "N/A", "Invalid", "To be filled by O.E.M.", "To Be Filled By OEM",
+            "to be filled", "O.E.M.", "Filled by O.E.M. here", "0000000", "........", "--------",
+            "0 0 0", "S11075924402016",
+        ];
+        const STORMIPMI_ONLY_UNTIL_7: &[&str] = &[
+            "0123456789", "123456789", "XXXXXXXXXX", "xxxxxxxx", "FFFFFFFF", "\u{ff}\u{ff}\u{ff}\u{ff}",
+            "****", "na", "empty", "serial number", "chassis serial number",
+            "base board serial number", "\0\0\0",
+        ];
+        for v in REFUSED_BEFORE.iter().chain(STORMIPMI_ONLY_UNTIL_7) {
+            assert_eq!(serial_usable(v), None, "{v:?} must be refused");
+        }
+        for v in ["C2NR0Q2", "ZM12AS012345", "0CC47A000001", "FCH1234V5AB"] {
+            assert_eq!(serial_usable(v), Some(v), "{v:?} names a machine");
+        }
+    }
+
+    #[test]
+    fn a_serial_is_trimmed_of_spaces_and_nuls() {
+        assert_eq!(serial_usable("  C2NR0Q2 \0\0"), Some("C2NR0Q2"));
+        assert_eq!(serial_usable("\0 FCH1234V5AB"), Some("FCH1234V5AB"));
     }
 }
