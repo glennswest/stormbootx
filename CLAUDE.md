@@ -1134,6 +1134,16 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       104e/104f, 101f and 37ce/37cf/37d4. This repo's side, once the driver
       binds: pin it in `build-nic-drivers.sh`.
 
+- [ ] **#73 — stormnic-mlx5, a Rust ConnectX-4/4 Lx/5/6/6 Dx/6 Lx UEFI
+      driver (P2, owner). Waiting on the owner (2026-10-06, `needs-owner`)**
+      for the master to create `glennswest/stormnic-mlx5` (as for
+      stormnic-virtio, #75). The issue's seven IDs are right in pci.ids;
+      ConnectX-7 (1021) and BlueField (a2d2/a2d6/a2dc) share the interface.
+      The test card is the R230's ConnectX-4 Lx (`15b3:1015`, nic 0/3). Its
+      firmware's FlexBoot holds it, so verification also needs #106. QEMU
+      emulates no ConnectX. This repo's side, once it binds: pin it in
+      `build-nic-drivers.sh`.
+
 - [ ] **#74 — stormnic-realtek, a Rust RTL8111/8168, 8125, 8126 UEFI
       driver (P2, owner). Waiting on the owner (2026-10-06, `needs-owner`).**
       The repo doesn't exist. On #75 the owner agreed that the master creates
