@@ -1062,6 +1062,16 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       the ESP golden, stormcentral#215). **Not seen:** a blade's SOL
       capture past stormbootx (the capture drops: stormcentral#220/#499).
 
+- [ ] **#53 — stormbootx.efi is not reproducible across build
+      directories (P3). In progress 2026-10-08.** Two goldens from one
+      commit, two digests. Suspected: the checkout's, target dir's and
+      CARGO_HOME's paths in panic locations. `tests/repro.sh` builds from two
+      paths with two CARGO_HOMEs and compares (`REPRO_RAW=1`: plain cargo, to
+      show the leak); `scripts/cargo-repro.sh` is cargo with
+      `--remap-path-prefix` for the three. Next: confirm the cause in
+      sc-build, route build-golden.sh and build-boot-agent.sh through it, add
+      repro.sh to the sc-build command, close.
+
 - [x] **#36 — the golden media name no fallback namespace (P3). Closed
       2026-10-08.** Every golden carried `build-boot-agent.sh`'s
       default nsid 2, a 32 MB namespace with no ESP on forge, so every
