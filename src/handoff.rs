@@ -47,8 +47,9 @@ pub fn set_host_nqn(nqn: &str) {
 }
 
 /// `StormBootClock` (#77): whether the RTC was checked against NTP and is
-/// right (`synced:<server>`), or not (`unsynced`), so Linux (stormcos#213)
-/// knows whether to trust the clock it starts with.
+/// right (`synced:<server>`), or not (`unsynced`), so Linux knows whether to
+/// trust the clock it starts with: stormblock's initramfs reads it and skips
+/// its own step after `synced` (stormblock#253).
 pub fn set_clock(value: &str) {
     set(cstr16!("StormBootClock"), "StormBootClock", value);
 }

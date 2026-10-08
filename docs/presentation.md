@@ -39,10 +39,16 @@ on the NIC driver's SNP), so it needs no network stack from the firmware.
 ## Where it sits in stormcos
 
 ```
-stormcentral relationships (stormcentral check):
-  stormbootx   kind: boot   → stormblock        nothing depends on it
-  stormuefi    kind: boot   → stormblock        stormcos → stormuefi
+stormcentral relationships (stormcentral check: the project's group):
+  stormbootx   group: boot   → stormblock        nothing depends on it
+  stormuefi    group: boot   → stormblock        stormcos → stormuefi
 ```
+
+As components (`stormcentral component list`), stormbootx ships as
+`stormbootx` and `stormbootx-rustnic` of kind **media** (and the `-disk`
+images, #41), and the NIC drivers as `nic-drivers` of kind **tree**.
+stormuefi has no component entry of its own; its ESP golden is
+stormcentral#215.
 
 Boot is **two stages**. stormbootx picks and attaches the image; the
 `BOOTX64.EFI` it starts on a stormcos image is **stormuefi**, which verifies

@@ -23,8 +23,9 @@
 //!   on every boot.
 //! - **Linux is told** in the volatile `StormBootClock` variable (`handoff.rs`):
 //!   `synced:<server address>` once the RTC is known to be right (set, or
-//!   already within a second), `unsynced` otherwise, so stormcos#213 can
-//!   trust the clock or step it itself.
+//!   already within a second), `unsynced` otherwise. stormblock's initramfs
+//!   reads it and does not step the clock again after `synced`
+//!   (stormblock#253).
 //!
 //! Runs once per boot, from whichever comes first: after the claim, or the
 //! fall-through (a `local` intent, an attach that failed), before the NICs are

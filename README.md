@@ -268,8 +268,10 @@ given back on the fall-through.
    failed attach) does it on the way out, before the NICs are released.
    `ntp = off` leaves the clock alone. The outcome goes to Linux as
    `StormBootClock` (step 6a): `synced:<server address>` when the RTC is
-   known to be right, else `unsynced`, so stormcos#213 can trust it or step
-   the clock itself.
+   known to be right, else `unsynced`. stormblock's initramfs reads it
+   (stormblock#253): after `synced` it does not step the clock again (unless
+   the clock reads before the image was built, or `rd.stormblock.ntp=always`),
+   and it records how the clock was set in `/run/stormblock/clock`.
 6. **Attach** (`src/nvme.rs`). The host NQN is
    `nqn.2026-09.lo.storm:host-<name>`, so the target knows which machine is
    connecting: the engine's name for the machine from the claim reply

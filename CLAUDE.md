@@ -778,7 +778,8 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       (one UDP A query to option 6 / `dns =`). Two tries of 1 s. If the RTC
       is out by more than 1 s, `SetTime` writes UTC (the firmware's time zone
       and daylight kept, so EDK2 writes no NV variable). `StormBootClock` =
-      `synced:<addr>` / `unsynced`, volatile, #76's GUID, for stormcos#213.
+      `synced:<addr>` / `unsynced`, volatile, #76's GUID; stormblock's initramfs
+      reads it and skips its own step after `synced` (stormblock#253).
       `src/sntp.rs` (core-only, 8 host tests), `src/clock.rs`,
       `dnsname::{a_query, a_answer}`, `net::udp_exchange`. Done in c35822f,
       released **v0.12.0** (35ce03b). sc-build: no warnings, suites

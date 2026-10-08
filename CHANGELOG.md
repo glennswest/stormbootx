@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-08
+- **docs:** `StormBootClock` has a reader: stormblock's initramfs skips its own NTP step after `synced` (stormblock#253); README, CLAUDE.md, `clock.rs` and `handoff.rs` said stormcos#213. `docs/presentation.md`'s relationships slide says `group: boot` (the project's group, as `stormcentral check` prints it), and names the component kinds (`media`, `tree`) (#82).
 - **docs:** CLAUDE.md work plan: #89's metal run waits on #92 (a promotion newer than the stick); #92 and stormcentral#459 told to promote v0.23.1.
 - **docs:** README: the variable store is the install-config's real limit; OVMF's takes 256 KiB, and what a full store prints (#93).
 - **test:** under OVMF every install-config size up to storminstall's 256 KiB cap hands down and reassembles (64/128/192/256 KiB; 342 chunks at 256), so `tests/net-ovmf.sh` now requires it (#93).
