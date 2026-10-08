@@ -1247,7 +1247,10 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       boot goes on. sc-build of 46048c0: no warnings, suites
       9/7/7/8/12/8/11/7, espprobe, net-ovmf, both shells, update-ovmf PASS.
       **Left:** a real stick on metal taking a real promotion end to end.
-      Blocked on #96: today's serial 1 (v0.14.0) would take any v0.15+
+      **Behind #92 since 2026-10-08:** #96 is fixed (v0.23.1) and the
+      writable golden exists (#41); what remains is a promotion newer than
+      the stick (#92, after stormcentral#459, asked to mount v0.23.1) and a
+      stick on a blade (the master's). Was blocked on #96: today's serial 1 (v0.14.0) would take any v0.15+
       writable stick backwards. There is no writable golden either (#41/#97).
       Pre-v0.14.0 media seen in the latest consoles: server8 rustnic v0.10.0
       and server3 rustnic v0.12.0. server4 is on v0.14.0. Whether those are
