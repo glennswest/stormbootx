@@ -52,12 +52,13 @@ if [[ "$da" != "$db" ]]; then
     say "strings only in one build:"
     diff <(grep -aoE '[[:print:]]{6,}' "$A" | sort -u) <(grep -aoE '[[:print:]]{6,}' "$B" | sort -u) \
         | grep '^[<>]' | head -40 || true
-    say "$(cmp -l "$A" "$B" | wc -l) byte(s) differ; the first and the last:"
-    cmp -l "$A" "$B" | sed -n '1p;$p' | sed 's/^/repro: cmp /' || true
+    say "$(cmp -l "$A" "$B" | wc -l) byte(s) differ (offset, octal bytes):"
+    cmp -l "$A" "$B" | head -40 | sed 's/^/repro: cmp /' || true
     [[ -n "${REPRO_DUMP:-}" ]] && for f in "$A" "$B"; do
         say "$(basename "$f"): the PE header and the last 512 bytes"
         od -A x -t x1z -j 120 -N 160 "$f"
-        od -A x -t x1z -j $(( $(stat -c %s "$f") - 512 )) "$f"
+        local first; first=$(cmp -l "$A" "$B" | awk 'NR==1{next} {print $1; exit}')
+        [[ -n "$first" ]] && od -A x -t x1z -j $(( first - 129 )) -N 256 "$f"
     done
     die "$BIN.efi depends on where it was built"
 fi
