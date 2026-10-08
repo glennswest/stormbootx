@@ -57,7 +57,7 @@ if [[ "$da" != "$db" ]]; then
     [[ -n "${REPRO_DUMP:-}" ]] && for f in "$A" "$B"; do
         say "$(basename "$f"): the PE header and the last 512 bytes"
         od -A x -t x1z -j 120 -N 160 "$f"
-        local first; first=$(cmp -l "$A" "$B" | awk 'NR==1{next} {print $1; exit}')
+        first=$(cmp -l "$A" "$B" | awk 'NR==1{next} {print $1; exit}')
         [[ -n "$first" ]] && od -A x -t x1z -j $(( first - 129 )) -N 256 "$f"
     done
     die "$BIN.efi depends on where it was built"
