@@ -484,7 +484,13 @@ boot() {
             say "[$name] missing: $want"; fail=1
         fi
     done
-    [[ $fail -eq 0 ]] || die "[$name] expected lines missing"
+    if [[ $fail -ne 0 ]]; then
+        # The head above is mostly the firmware's debug port; the boot's own
+        # console is the serial log's end.
+        say "[$name] serial console, last 60 lines:"
+        tr -d '\r' < "$log" | sed 's/\x1b\[[0-9;?]*[A-Za-z]//g' | grep -v '^\s*$' | tail -60 | sed 's/^/  | /'
+        die "[$name] expected lines missing"
+    fi
 }
 
 if [[ -n "${UPDATE_KEY:-}" ]]; then
