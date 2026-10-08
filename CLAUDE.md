@@ -23,7 +23,7 @@ Push first, then `sc-build` from this checkout. It builds the pushed commit
 on dev.g8.lo as `stormbuild`. There is no checkout on dev, and no `ssh root@`.
 The plain `cargo build && cargo test` default does not suit a `no_std` UEFI
 crate, so name the command. This builds the three binaries, runs the eight
-host suites, boots `espprobe` and stormbootx under OVMF, boots an ISO's
+host suites and the initiator crate's tests, boots `espprobe` and stormbootx under OVMF, boots an ISO's
 `startup.nsh` from two EFI Shells, and runs the self-update's boots:
 
 ```bash
@@ -36,6 +36,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   rustc --edition 2021 --test src/sntp.rs -o t/sntp-test && ./t/sntp-test && \
   rustc --edition 2021 --test src/manifest.rs -o t/manifest-test && ./t/manifest-test && \
   rustc --edition 2021 --test src/installconf.rs -o t/installconf-test && ./t/installconf-test && \
+  cargo test -p nvme-tcp-initiator && \
   R=${CARGO_TARGET_DIR:-target}/x86_64-unknown-uefi/release && \
   tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi && \
   STORMNIC_DRIVERS=virtio scripts/build-nic-drivers.sh $PWD/t/nd && \
@@ -170,7 +171,8 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/tcp4.rs` | tcp4probe only since #56: a blocking socket over the firmware's TCP4 |
 | `src/drivers.rs` | load NIC drivers from `\stormboot\drivers` on the media (#26), after the platform's own bind; `take_over` gives a `prefer_media_drivers` family its NICs (#108); `nic_verbose` sets `StormnicVerbose` before the drivers load (#80) |
 | `src/dhcp4.rs` | tcp4probe only since #56: DHCP through the firmware's `EFI_DHCP4` |
-| `src/nvme.rs` | the NVMe/TCP initiator |
+| `src/nvme.rs` | the NVMe/TCP initiator's UEFI end: `TcpSocket` as its `Transport`, `boot::stall` (#10) |
+| `crates/nvme-tcp-initiator` | the NVMe/TCP initiator itself (#10): `no_std` + `alloc`, no dependencies, generic over a `Transport` and a `Platform`, shared with stormboot4bios; host tests against a fake controller (`cargo test -p nvme-tcp-initiator`) |
 | `src/handoff.rs` | `StormBootTag`/`StormBootHostNqn`, volatile EFI variables naming the machine to Linux's initramfs (#76, stormblock#249); `StormBootClock` (#77); `StormBootUpdate` (#83); `StormBootInstallConfig` + chunks (#79) |
 | `src/selfupdate.rs` | the boot medium updates itself (#83): trial count and revert at start; fetch, Ed25519 check, `*.new`/`*.prev` swap and restart after `net::up`; `mark_good` after the attach; `StormBootMinSerial` (NV) |
 | `src/manifest.rs` | the self-update's signed manifest, `RELEASE_KEYS` (stormcentral's, #86), `\stormboot\state`, trial and serial decisions, HTTP framing, `update =` (core-only, host-tested) |

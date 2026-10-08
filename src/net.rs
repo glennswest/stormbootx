@@ -1048,6 +1048,14 @@ impl TcpSocket {
     /// is known in advance, so this is the primitive that layer wants.
     pub fn read_exact(&mut self, n: usize) -> Result<Vec<u8>, String> {
         let mut out = vec![0u8; n];
+        self.read_into(&mut out)?;
+        Ok(out)
+    }
+
+    /// Fill `out` exactly: `read_exact` into the caller's buffer, which is
+    /// what the NVMe/TCP initiator's `Transport` asks for (#10).
+    pub fn read_into(&mut self, out: &mut [u8]) -> Result<(), String> {
+        let n = out.len();
         let mut got = 0;
         let limit = Duration::from_secs(self.secs as u64);
         let mut last = net()?.clock.now();
@@ -1070,7 +1078,7 @@ impl TcpSocket {
                 return Err(format!("receive timed out ({got} of {n} bytes)"));
             }
         }
-        Ok(out)
+        Ok(())
     }
 
     /// Read until the peer closes, or `limit` bytes. Used for one HTTP

@@ -101,6 +101,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ca88d725a0a943b096803bd34e73a4437208b6077654cc4ecb2947a5f91618d"
 
 [[package]]
+name = "nvme-tcp-initiator"
+version = "0.1.0"
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.107"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -163,6 +167,7 @@ name = "stormbootx"
 version = "0.24.0"
 dependencies = [
  "ed25519-compact",
+ "nvme-tcp-initiator",
  "smoltcp",
  "uefi",
  "uefi-raw",

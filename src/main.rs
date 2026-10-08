@@ -691,7 +691,7 @@ fn run() -> Result<(), String> {
     );
     uefi::println!("attaching   : {hostnqn}");
 
-    let ns = nvme::Namespace::attach(
+    let ns = nvme::attach(
         attach.address,
         attach.port,
         &attach.nqn,

@@ -1,0 +1,10 @@
+[package]
+name = "nvme-tcp-initiator"
+description = "Synchronous NVMe/TCP initiator for boot loaders, over any byte stream (no_std + alloc)"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+# No dependencies, on purpose: stormbootx (UEFI) and stormboot4bios (legacy
+# BIOS) both link it, and each brings its own TCP/IP and its own clock.
+[dependencies]

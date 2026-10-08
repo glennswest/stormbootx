@@ -277,7 +277,7 @@ given back on the fall-through.
    (stormblock#253): after `synced` it does not step the clock again (unless
    the clock reads before the image was built, or `rd.stormblock.ntp=always`),
    and it records how the clock was set in `/run/stormblock/clock`.
-6. **Attach** (`src/nvme.rs`). The host NQN is
+6. **Attach** (`src/nvme.rs`, over `crates/nvme-tcp-initiator`). The host NQN is
    `nqn.2026-09.lo.storm:host-<name>`, so the target knows which machine is
    connecting: the engine's name for the machine from the claim reply
    (`mac-<hex>` for one it booted as the default), else the DNS name, else the
@@ -578,7 +578,17 @@ nothing and hand down `StormBootClock = unsynced`.
 
 ## The NVMe/TCP initiator
 
-`src/nvme.rs` was ported from sbregistry's host initiator.
+The initiator is its own crate, `crates/nvme-tcp-initiator` (#10): `no_std`
+with `alloc`, no dependencies, over any byte stream. It was ported from
+sbregistry's host initiator, and stormboot4bios (the legacy-BIOS loader) links
+the same code rather than a third copy. A loader gives it a `Transport`
+(`send_all`, `recv_exact`, and the path's MTU if it knows it) and a
+`Platform` (open a connection to the portal, wait some milliseconds).
+`src/nvme.rs` is stormbootx's: its smoltcp `TcpSocket` and `boot::stall`.
+`cargo test -p nvme-tcp-initiator` runs the crate on the host against an
+in-memory controller that refuses a command without PSDT=01b and an admin
+command before `CC.EN`. It answers in several C2HData PDUs and asks for
+write data by R2T.
 
 - It speaks ICReq/ICResp, then Fabrics Connect on the admin and I/O queues,
   then Property Get/Set, `CC.EN`, and Identify for the controller and the
@@ -723,6 +733,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   rustc --edition 2021 --test src/sntp.rs -o t/sntp-test && ./t/sntp-test && \
   rustc --edition 2021 --test src/manifest.rs -o t/manifest-test && ./t/manifest-test && \
   rustc --edition 2021 --test src/installconf.rs -o t/installconf-test && ./t/installconf-test && \
+  cargo test -p nvme-tcp-initiator && \
   R=${CARGO_TARGET_DIR:-target}/x86_64-unknown-uefi/release && \
   tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi && \
   tests/net-ovmf.sh $R/stormbootx.efi $R/tcp4probe.efi && \
