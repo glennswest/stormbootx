@@ -1255,7 +1255,7 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       bind under OVMF. Left: stormnic-virtio#1's pvetest1/2 boot.
 
 - [ ] **#69 — stormnic-igb, a Rust i350/i210/i211/82576/82580 UEFI driver
-      (P2, owner). Waiting on the owner (2026-10-06, `needs-owner`)** for one
+      (P3, owner). Blocked on stormnic-igb#1 (2026-10-08, P3).** The owner (2026-10-07) had the repo created and **paused**, drivers at low priority; its first issue is P3, and this item is moved behind it. History: was waiting on the owner (2026-10-06) for one
       thing: the master creating `glennswest/stormnic-igb` (as for
       stormnic-virtio, #75). Verification needs no test machine. dev's QEMU
       10.1.5 has `-device igb` (82576, `8086:10c9`), and OVMF has no igb
@@ -1267,7 +1267,7 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       `-device igb`.
 
 - [ ] **#70 — stormnic-e1000e, a Rust 82574L/82579/I217–I219 UEFI driver
-      (P2, owner). Waiting on the owner (2026-10-06, `needs-owner`)** for the
+      (P3, owner). Blocked on stormnic-e1000e#1 (2026-10-08, P3).** The owner (2026-10-07) had the repo created and **paused**, drivers at low priority; its first issue is P3, and this item is moved behind it. History: was waiting on the owner (2026-10-06) for the
       master to create `glennswest/stormnic-e1000e` (as for stormnic-virtio,
       #75). Verified in a VM: dev's QEMU has `-device e1000e` (82574L,
       `8086:10d3`), and OVMF has no e1000e driver of its own. The issue's
@@ -1277,7 +1277,7 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       `-device e1000e`.
 
 - [ ] **#71 — stormnic-i40e, a Rust X710/XL710/XXV710/X722 UEFI driver
-      (P2, owner). Waiting on the owner (2026-10-06, `needs-owner`).** Same
+      (P3, owner). Blocked on stormnic-i40e#1 (2026-10-08, P3).** The owner (2026-10-07) had the repo created and **paused**, drivers at low priority; its first issue is P3, and this item is moved behind it. History: was waiting on the owner (2026-10-06).** Same
       pair of questions as #74: the master creates `glennswest/stormnic-i40e`
       (as for stormnic-virtio, #75), and which machine to verify on. QEMU
       emulates no i40e part, and no registered test machine has one (the
@@ -1286,8 +1286,15 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       104e/104f, 101f and 37ce/37cf/37d4. This repo's side, once the driver
       binds: pin it in `build-nic-drivers.sh`.
 
+- [ ] **#72 — stormnic-ice, a Rust Intel E810 UEFI driver (P3). Behind
+      #71 (2026-10-08).** The owner accepted the master's (b) on 2026-10-06:
+      write it from the datasheet and FreeBSD's BSD-3 `sys/dev/ice`, safe
+      mode with no DDP package, build-checked only and off the rustnic media
+      until it has run on a device, after #71, and not before the fleet's own
+      NICs work fully. No E810 in the fleet and no `stormnic-ice` repo yet.
+
 - [ ] **#73 — stormnic-mlx5, a Rust ConnectX-4/4 Lx/5/6/6 Dx/6 Lx UEFI
-      driver (P2, owner). Waiting on the owner (2026-10-06, `needs-owner`)**
+      driver (P3, owner). Blocked on stormnic-mlx5#1 (2026-10-08, P3).** The owner (2026-10-07) had the repo created and **paused**, drivers at low priority; its first issue is P3, and this item is moved behind it. History: was waiting on the owner (2026-10-06)
       for the master to create `glennswest/stormnic-mlx5` (as for
       stormnic-virtio, #75). The issue's seven IDs are right in pci.ids;
       ConnectX-7 (1021) and BlueField (a2d2/a2d6/a2dc) share the interface.

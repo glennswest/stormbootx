@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-10-08
+- **docs:** CLAUDE.md work plan: #69, #70, #71 and #73 wait on their paused stormnic repos' first issues (P3, owner 2026-10-07); #72 (ice) waits on #71.
+
 ## [v0.23.1] — 2026-10-08
 
 ### Fixed
