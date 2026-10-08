@@ -1701,8 +1701,8 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       the churn #11 and stormblock#119 want gone. Using the GET means the
       marker has to carry the same key (e.g. the initramfs's
       `claimed_from.volume`), which is the contract stormcos#30 has to agree.
-- [ ] **#4 (the registration half) — the firmware inventory with the
-      claim (P3). In progress 2026-10-08.** Unblocked: stormblock#177
+- [x] **#4 (the registration half) — the firmware inventory with the
+      claim (P3). Closed 2026-10-08.** Unblocked: stormblock#177
       (closed 2026-10-08, golden-stormblock-d9aa620422e3) keeps the claim
       body's `inventory` as given, a JSON object of at most 16 KiB, in the
       host's last-claim record, and drops it (never the claim) otherwise.
@@ -1713,7 +1713,15 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       `src/hardware.rs` (collection, once, at the first claim, before
       `blockio::publish`), `registry::hints`. net-ovmf's shipped boot
       requires it in the stub's claim log, and the stub checks it is an
-      object within 16 KiB as the engine does. Next: sc-build, close.
+      object within 16 KiB as the engine does. 80dc3a8. sc-build: no
+      warnings, full suite, inventory 6/6; shipped claim (512 bytes) carried
+      the virtio NIC under `Virtio Network Driver`, q35's AHCI (`Sata
+      Controller Init Driver`), the CD as `medium`, CPU and `memory 1024 MB
+      / 1 DIMM`, kept by the stub's engine rule; virtio boots
+      `stormnic-virtio.efi`, `media_driver: true`; noesp listed the local
+      virtio-scsi controller and disk and not the attached namespace. **Not
+      run:** a real engine storing it (golden-stormblock-d9aa620422e3 on
+      forge), a machine with a BMC (Type 38), metal.
 
 - [ ] #2 — self-update of the boot media (P3). **Superseded by #83
       (v0.13.0).** stormbootx has no golden and
