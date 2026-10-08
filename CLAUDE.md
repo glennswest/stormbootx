@@ -1273,8 +1273,8 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       piped stdin, which marp-cli reads as a second markdown, and `-o` then
       refuses two inputs (#112).
 
-- [ ] **#10 — extract the NVMe/TCP initiator into a transport-generic
-      `no_std` crate (P3, for stormboot4bios). In progress 2026-10-08.**
+- [x] **#10 — extract the NVMe/TCP initiator into a transport-generic
+      `no_std` crate (P3, for stormboot4bios). Closed 2026-10-08.**
       `crates/nvme-tcp-initiator` (workspace member, `no_std` + `alloc`, no
       dependencies): the whole of `nvme.rs` over a `Transport` (`send_all`,
       `recv_exact`, `link_mtu`) and a `Platform` (`connect`, `stall_ms`),
@@ -1283,6 +1283,11 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       `src/nvme.rs` becomes the glue (`TcpSocket` as the transport,
       `boot::stall`). Behaviour unchanged; net-ovmf is the acceptance test.
       The claim stays in `registry.rs`/`universal.rs` (the issue's "could").
+      e5407fa. sc-build: no warnings, the full suite, the crate's 7 host
+      tests, net-ovmf's 96 MiB reads on every boot, repro (`--locked`, so the
+      hand-edited lock holds). A/B in one job, the shipped boot alternating
+      78aa826's binary and e5407fa's: old 104–116 MiB/s, new 108–118.
+      stormboot4bios (no repo yet) links it as a git path dependency.
 
 - [x] **#83 — self-update of the boot media (USB stick / local ESP) from
       the current golden (P2, owner 2026-10-02). Closed 2026-10-02.** The
