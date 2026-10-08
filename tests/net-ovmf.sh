@@ -687,6 +687,7 @@ for kb in 64 128 192 256; do
     len=$(stat -c %s "$f"); sha=$(sha256sum "$f" | cut -d' ' -f1)
     n=$(( (len + 767) / 768 ))
     BOOT_IC="$f" boot "ic$kb" "$host_cpu" "" ok good "install cfg : " "is there a TCP/IP stack in this firmware"
+    [[ -z "${NET_ONLY:-}" || "$NET_ONLY" == "ic$kb" ]] || continue
     if grep -qF "install cfg : $len bytes reassembled from $n chunk(s), length and sha256 match" "$W/ic$kb.txt"; then
         say "[ic$kb] SIZE RESULT: $kb KiB ($len bytes, $n chunks) handed down and reassembled"
     elif grep -qF "install cfg : NOT HANDED DOWN: the firmware's volatile variable store is full" "$W/ic$kb.txt"; then
