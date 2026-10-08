@@ -48,9 +48,12 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
 
 `tests/update-ovmf.sh` (#83) must stay last: it rebuilds `stormbootx.efi`
 with an Ed25519 test key compiled in (`STORMBOOTX_UPDATE_TEST_KEY`) and boots
-a writable GPT medium on a USB stick ten times through
+a writable GPT medium on a USB stick eleven times through
 `tests/update-boots.sh`, sourced by `net-ovmf.sh` for its stubs (#89):
-stormcentral's real serial-1 manifest (`tests/fixtures/`) verifies; bad
+stormcentral's real serial-1 manifest (`tests/fixtures/`, v0.14.0) verifies
+and is declined as older than the running version, writing only `min = 1`,
+then "declined here before" (#96); test releases carry the running version
+with a `-test` suffix; bad
 signature refused; serial 5 written, restarted, trial passed on the attach;
 serial 5 `current`; serial 6 refused as another machine's canary, then taken
 as this one's, retiring a driver; serial 7 refused for room; serial 8 (a
@@ -351,7 +354,11 @@ These have each cost a debugging session. Do not "simplify" them away.
 - **A serial never goes down on a medium, and a failed one is never retried
   there.** A stick that falls back after a trial would otherwise take the same
   release again on its next boot and loop. The fix for a bad release is a
-  new serial.
+  new serial. **Nor does the version** (#96): a serial newer than the
+  medium's can still carry an older release than the running binary (a
+  stick written from today's build, an old promotion), and the serial alone
+  once rewrote a v0.15.0 stick to v0.14.0. A deliberate rollback says
+  `downgrade true`.
 - **The trial is counted at start, before anything that could hang.** A new
   set that hangs in the NIC driver or the network never reaches the code that
   would notice; counting first means the third power cycle puts the old set

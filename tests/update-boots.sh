@@ -13,9 +13,11 @@
 # then on the disk itself (mtools):
 #
 #   real      stormcentral's own promotion (tests/fixtures, serial 1, hex
-#             signature): verifies against the release key, and the first
-#             file fetch 404s here, so nothing is written. Its claim names
-#             the agent with no update serial (#90)
+#             signature): verifies against the release key; it is v0.14.0,
+#             older than this binary, so it is declined and only `min = 1`
+#             is written (#96). Its claim names the agent with no update
+#             serial (#90)
+#   realagain the same: "declined here before", nothing new written
 #   badsig    serial 5 signed with another key: refused, nothing written
 #   update    serial 5 signed: five files differ (two new, one a "driver"
 #             that is not a PE image), written, restart; the new binary's
@@ -89,7 +91,7 @@ release() {
     [[ -n $big ]] && head -c "$big" /dev/zero > "$r/stormboot/big.bin"
     {
         echo "stormbootx-manifest 1"
-        echo "version 0.13.0-test"
+        echo "version $TV"
         echo "commit test$serial"
         echo "golden golden-stormbootx-test-$serial"
         echo "serial $serial"
@@ -150,6 +152,9 @@ uboot() {
         if [[ "$want" == stub:* ]]; then
             grep -qF -- "${want#stub:}" "$W/stub.log" && say "[$name] stub saw: ${want#stub:}" \
                 || { say "[$name] stub missing: ${want#stub:}"; fail=1; }
+        elif [[ "$want" == not-stub:* ]]; then
+            grep -qF -- "${want#not-stub:}" "$W/stub.log" && { say "[$name] stub unexpectedly saw: ${want#not-stub:}"; fail=1; } \
+                || say "[$name] stub never saw, as it should be: ${want#not-stub:}"
         elif [[ "$want" == not:* ]]; then
             grep -qF -- "${want#not:}" "$txt" && { say "[$name] unexpected: ${want#not:}"; fail=1; } \
                 || say "[$name] absent, as it should be: ${want#not:}"
@@ -165,25 +170,35 @@ uboot() {
     fi
 }
 
+# Test releases are the running version with a build suffix: a new serial of
+# the same release, which the version check (#96) takes.
+TV="$VERSION-test"
 cp "$EFI" "$W/A.efi"
 attached=("blockio     : published on handle" "is there a TCP/IP stack in this firmware")
 FIX="$ROOT/tests/fixtures"
-no_state() { on_disk /stormboot/state >/dev/null && die "[disk] a refused release wrote a state file" || true; }
 
 # stormcentral's own promotion, its signature as stormcentral serves it (hex).
-# The binary must believe it (release key, not the test key) and go on to the
-# files, which this stub does not serve: nothing is written.
+# The binary must believe it (release key, not the test key). It is serial 1
+# = v0.14.0, older than this binary, so it is declined (#96): nothing is
+# fetched or written but the floor, `min = 1`, in the state file.
 rm -rf "$W/serve"; mkdir -p "$W/serve"
 cp "$FIX/stormcentral-rustnic-serial1.manifest" "$W/serve/current"
 cp "$FIX/stormcentral-rustnic-serial1.sig" "$W/serve/current.sig"
 uboot real "${attached[@]}" \
-    "update      : $URL/files/EFI/BOOT/BOOTX64.EFI answered HTTP 404" \
+    "update      : current (running v$VERSION; serial 1 offers v0.14.0, which is older); not taken" \
     "stub:GET /api/v1/boothelpers/stormbootx-test/current.sig" \
     "stub:\"commit\":\"update-test\"}" \
     "not:does not verify" \
-    "not:signed manifest refused"
+    "not:signed manifest refused" \
+    "not-stub:GET /api/v1/boothelpers/stormbootx-test/files/"
 same /EFI/BOOT/BOOTX64.EFI "$W/A.efi"
-no_state
+state_has "serial = 0"
+state_has "min = 1"
+# Again: declined before, without a second write.
+uboot realagain "${attached[@]}" \
+    "update      : current (running v$VERSION; serial 1 offers v0.14.0, declined here before)"
+same /EFI/BOOT/BOOTX64.EFI "$W/A.efi"
+state_has "min = 1"
 
 release 5 "$W/other.pem" driver
 # Two keys: stormcentral's release key (#86) and the test key.
@@ -191,13 +206,14 @@ uboot badsig "${attached[@]}" \
     "update      : a TEST key is compiled in" \
     "update      : the manifest at $URL does not verify against the 2 compiled-in key(s); nothing taken" \
     "stub:GET /api/v1/boothelpers/stormbootx-test/current.sig" \
-    "not:-> v0.13.0-test"
+    "not:-> v$TV"
 same /EFI/BOOT/BOOTX64.EFI "$W/A.efi"
-no_state
+state_has "serial = 0"
+state_has "min = 1"
 
 release 5 "$UPDATE_KEY" driver
 uboot update "${attached[@]}" \
-    "-> v0.13.0-test (golden-stormbootx-test-5, serial 5), 5 file(s)" \
+    "-> v$TV (golden-stormbootx-test-5, serial 5), 5 file(s)" \
     "; restarting into it" \
     "update      : serial 5 on trial, start 1 of 2; it must reach an attach" \
     "retire.efi not started: LoadImage" \
@@ -216,7 +232,7 @@ state_has "serial = 5"
 state_has "min = 5"
 
 uboot current "${attached[@]}" \
-    "update      : current (serial 5, v0.13.0-test)" \
+    "update      : current (serial 5, v$TV)" \
     "handed down : StormBootUpdate = serial:5  (attributes 0x6)" \
     "stub:\"update_serial\":5,\"update\":\"serial:5\"}" \
     "not:restarting into it" \
@@ -234,7 +250,7 @@ state_has "serial = 5"
 
 release 6 "$UPDATE_KEY" canary=52:54:00:00:00:01 canary=$MAC
 uboot canary "${attached[@]}" \
-    "-> v0.13.0-test (golden-stormbootx-test-6, serial 6), 4 file(s)" \
+    "-> v$TV (golden-stormbootx-test-6, serial 6), 4 file(s)" \
     ", 1 driver(s) retired; restarting into it" \
     "update      : serial 6 on trial, start 1 of 2; it must reach an attach" \
     "update      : serial 6 passed its trial (attached); it stays" \
@@ -261,7 +277,7 @@ state_has "serial = 6"
 
 release 8 "$UPDATE_KEY" bad
 uboot bad1 \
-    "-> v0.13.0-test (golden-stormbootx-test-8, serial 8), 4 file(s)" \
+    "-> v$TV (golden-stormbootx-test-8, serial 8), 4 file(s)" \
     "update      : serial 8 on trial, start 1 of 2; it must reach an attach" \
     "no network boot: " \
     "not:passed its trial"

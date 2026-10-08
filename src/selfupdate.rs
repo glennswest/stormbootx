@@ -348,6 +348,12 @@ fn try_update(mac: Option<&str>) -> Result<(), String> {
 
     match manifest::verdict(m.serial, &state, nv_min(), m.for_machine(mac)) {
         Verdict::Current => return Err(format!("current (serial {}, v{})", m.serial, m.version)),
+        Verdict::Older { have } if have == m.serial && state.serial != have => {
+            return Err(format!(
+                "current (running v{running}; serial {} offers v{}, declined here before)",
+                m.serial, m.version
+            ))
+        }
         Verdict::Older { have } => {
             return Err(format!("current (serial {have} here; {url} offers serial {}, which is older)", m.serial))
         }
@@ -366,6 +372,28 @@ fn try_update(mac: Option<&str>) -> Result<(), String> {
         }
         Verdict::InTrial => return Err("a trial is running".to_string()),
         Verdict::Update => {}
+    }
+    // A newer serial is not a newer release (#96): a medium written from a
+    // newer build than the promotion keeps what it runs. The serial becomes
+    // its floor (`min`), so it is not asked again and the next promotion is.
+    match manifest::version_ok(m.version, running, m.downgrade) {
+        manifest::Version::Ok => {}
+        manifest::Version::Older => {
+            vol.write_state(&State { min: state.min.max(m.serial), ..state })?;
+            return Err(format!(
+                "current (running v{running}; serial {} offers v{}, which is older); not taken",
+                m.serial, m.version
+            ));
+        }
+        manifest::Version::Unreadable => {
+            return Err(format!(
+                "serial {} names version {:?}, which is not MAJOR.MINOR.PATCH; nothing taken",
+                m.serial, m.version
+            ))
+        }
+    }
+    if m.downgrade && manifest::version_ok(m.version, running, false) == manifest::Version::Older {
+        uefi::println!("update      : serial {} is a deliberate rollback to v{} (downgrade true)", m.serial, m.version);
     }
 
     // What differs from the medium, fetched and checked against the signed

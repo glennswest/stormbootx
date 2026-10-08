@@ -24,6 +24,12 @@
 //!   medium never takes a serial at or below one it has run, or one that
 //!   failed its trial on it, so a captured old manifest cannot be replayed to
 //!   downgrade a fleet. A deliberate rollback is a new serial.
+//! - `version` is the release's stormbootx version. A medium never takes one
+//!   older than the binary it is running (semver, `version_ok`, #96): a stick
+//!   written from a newer build than the promotion would otherwise update
+//!   itself backwards on its first boot. It declines the serial and records
+//!   it as its floor, so the next promotion is still judged. A deliberate
+//!   rollback says `downgrade true`.
 //! - `canary` lines, when there are any, name the only machines (by MAC) that
 //!   take this serial.
 //! - `file` paths are relative to the medium's root, with `/`. Only
@@ -110,6 +116,9 @@ pub struct Manifest<'a> {
     pub commit: &'a str,
     pub golden: &'a str,
     pub serial: u64,
+    /// `downgrade true`: a deliberate rollback, taken even when `version` is
+    /// older than the running binary's (#96).
+    pub downgrade: bool,
     files: [Entry<'a>; MAX_FILES],
     n_files: usize,
     canaries: [&'a str; MAX_CANARIES],
@@ -182,6 +191,7 @@ pub fn parse(bytes: &[u8]) -> Result<Manifest<'_>, Bad> {
         commit: "",
         golden: "",
         serial: 0,
+        downgrade: false,
         files: [NO_ENTRY; MAX_FILES],
         n_files: 0,
         canaries: [""; MAX_CANARIES],
@@ -195,6 +205,7 @@ pub fn parse(bytes: &[u8]) -> Result<Manifest<'_>, Bad> {
             "version" => m.version = rest,
             "commit" => m.commit = rest,
             "golden" => m.golden = rest,
+            "downgrade" => m.downgrade = rest == "true",
             "serial" => m.serial = rest.parse().map_err(|_| Bad::NoSerial)?,
             "canary" => {
                 if m.n_canaries == MAX_CANARIES {
@@ -473,6 +484,35 @@ pub fn verdict(serial: u64, s: &State, nv_min: u64, canary: bool) -> Verdict {
     Verdict::Update
 }
 
+/// What the offered version is, against the running binary's (#96).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Version {
+    /// The same or newer, or older with `downgrade true`: take it.
+    Ok,
+    /// Older than what is running: decline, and keep its serial as the floor.
+    Older,
+    /// Not `MAJOR.MINOR.PATCH`: nothing can be said, so nothing is taken.
+    Unreadable,
+}
+
+/// `MAJOR.MINOR.PATCH`, with any `-pre` or `+build` suffix ignored: two
+/// builds of one release are the same version here.
+pub fn semver(v: &str) -> Option<(u64, u64, u64)> {
+    let core = v.split(['-', '+']).next()?;
+    let mut p = core.split('.');
+    let out = (p.next()?.parse().ok()?, p.next()?.parse().ok()?, p.next()?.parse().ok()?);
+    p.next().is_none().then_some(out)
+}
+
+/// Is `offered` a version this binary (`running`) may update to?
+pub fn version_ok(offered: &str, running: &str, downgrade: bool) -> Version {
+    match (semver(offered), semver(running)) {
+        (Some(o), Some(r)) if o < r && !downgrade => Version::Older,
+        (Some(_), Some(_)) => Version::Ok,
+        _ => Version::Unreadable,
+    }
+}
+
 /// An HTTP/1.1 response: status, and the body with chunking undone in place.
 /// `None` for anything that is not one, or a body shorter than its
 /// Content-Length (a connection that dropped).
@@ -727,6 +767,34 @@ mod tests {
         assert_eq!(verdict(10, &fresh, 9, true), Verdict::Update);
         let trial = State { trial: Some((7, 1)), ..s };
         assert_eq!(verdict(8, &trial, 0, true), Verdict::InTrial);
+    }
+
+    #[test]
+    fn an_older_version_is_never_taken_unless_it_says_downgrade() {
+        // #96: a v0.15.0 stick and stormcentral's serial 1 = v0.14.0.
+        assert_eq!(version_ok("0.14.0", "0.15.0", false), Version::Older);
+        assert_eq!(version_ok("0.14.0", "0.15.0", true), Version::Ok);
+        assert_eq!(version_ok("0.15.0", "0.15.0", false), Version::Ok, "a new serial of the same release");
+        assert_eq!(version_ok("0.16.0", "0.15.0", false), Version::Ok);
+        assert_eq!(version_ok("0.9.9", "0.10.0", false), Version::Older, "numbers, not text");
+        assert_eq!(version_ok("1.0.0", "0.23.0", false), Version::Ok);
+        // A build suffix is the same release.
+        assert_eq!(version_ok("0.23.0-test", "0.23.0", false), Version::Ok);
+        assert_eq!(version_ok("0.22.9-test", "0.23.0", false), Version::Older);
+        // Nothing to compare: nothing taken.
+        assert_eq!(version_ok("0.14", "0.15.0", false), Version::Unreadable);
+        assert_eq!(version_ok("v0.14.0", "0.15.0", false), Version::Unreadable);
+        assert_eq!(version_ok("0.14.0.1", "0.15.0", false), Version::Unreadable);
+    }
+
+    #[test]
+    fn downgrade_is_read_from_the_manifest() {
+        let base = "stormbootx-manifest 1\nversion 0.14.0\nserial 3\nfile 0000000000000000000000000000000000000000000000000000000000000000 1 EFI/BOOT/BOOTX64.EFI\n";
+        assert!(!parse(base.as_bytes()).unwrap().downgrade);
+        let roll = [base, "downgrade true\n"].concat();
+        assert!(parse(roll.as_bytes()).unwrap().downgrade);
+        let not = [base, "downgrade yes\n"].concat();
+        assert!(!parse(not.as_bytes()).unwrap().downgrade, "only `true` rolls back");
     }
 
     #[test]

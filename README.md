@@ -400,6 +400,7 @@ stormcentral#279.
   golden golden-stormbootx-rustnic-0123456789abcdef
   serial 42
   canary 52:54:00:12:34:56          (optional, repeatable: only these MACs)
+  downgrade true                    (optional: a deliberate rollback, #96)
   file <sha256> <size> EFI/BOOT/BOOTX64.EFI
   file <sha256> <size> stormboot/stormboot.conf
   file <sha256> <size> stormboot/drivers/stormnic-ixgbe.efi
@@ -423,7 +424,14 @@ stormcentral#279.
 - **Never backwards.** The serial must be above every serial the medium has
   carried, at or above `StormBootMinSerial` (the machine's highest passed
   trial), and above any serial that failed its trial on this medium. A
-  rollback is a new, higher serial.
+  rollback is a new, higher serial. And the `version` must not be older
+  than the running binary's (semver; a `-pre`/`+build` suffix is ignored),
+  or a stick written from a newer build than the promotion would update
+  itself backwards on its first boot (#96). Such a serial is declined and
+  becomes the medium's floor (`min`), so the next promotion is still
+  judged: `update : current (running v0.23.0; serial 1 offers v0.14.0,
+  which is older); not taken`. A deliberate rollback to an older version
+  says `downgrade true` in the manifest.
 - **A/B.** Only the files that differ are fetched. Each is written as
   `*.new`; then the current file becomes `*.prev` and the new one takes its
   name, the bootloader last; a loadable driver the release no longer carries
