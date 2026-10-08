@@ -645,6 +645,7 @@ others.
 | `local_when_bootable` | `false` | `true`: `auto` and every doubt boot a local disk whose ESP carries `BOOTX64.EFI` instead of claiming (#3). Off until intents work on forge |
 | `esp` | `auto` | who reads the attached ESP (#37): `auto` (firmware, then stormbootx), `firmware`, or `stormbootx` |
 | `rng` | `firmware` | the first entropy source tried (#56): `firmware`, `cpu` (skip `EFI_RNG`) or `jitter` (skip both); `build-boot-agent.sh --rng` |
+| `nic_verbose` | `false` | `true`: the stormnic drivers print their whole bring-up trace instead of one line per NIC (#80). stormbootx sets the volatile `StormnicVerbose` variable (GUID `ce1479a2-eab9-4176-b0ad-c909ea5b8e0b`, `BOOTSERVICE_ACCESS`, one byte `01`) before it loads `\stormboot\drivers`; gone at the next reset, never in NVRAM. For debugging a machine without a rebuild; no golden sets it. `build-boot-agent.sh --nic-verbose`. From the EFI shell instead: `setvar StormnicVerbose -guid ce1479a2-eab9-4176-b0ad-c909ea5b8e0b -bs =01` |
 | `prefer_media_drivers` | none | media driver families that take their NICs from the firmware's own driver (#108): `virtio` (stormnic-virtio over OVMF's VirtioNetDxe). Set on the rustnic media; without it the platform's drivers win. `build-boot-agent.sh --prefer-media-drivers` |
 | `media` | none | the media's label, printed under the banner (`media : fw`); written by the golden build, `build-boot-agent.sh --media` |
 | `fec` | none | **recovery sticks only**: write this FEC and warm-reset |

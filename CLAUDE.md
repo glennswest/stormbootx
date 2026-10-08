@@ -160,7 +160,7 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/snpwatch.rs` | which driver is under each SNP (named before the first call), and a `TPL_NOTIFY` timer that names an SNP call that has not returned (#88) |
 | `src/entropy.rs` | randomness for the ISN, DHCP xid and ports: firmware `EFI_RNG`, then RDSEED/RDRAND (RNDR on aarch64), then jitter through SHA-256; never fails |
 | `src/tcp4.rs` | tcp4probe only since #56: a blocking socket over the firmware's TCP4 |
-| `src/drivers.rs` | load NIC drivers from `\stormboot\drivers` on the media (#26), after the platform's own bind; `take_over` gives a `prefer_media_drivers` family its NICs (#108) |
+| `src/drivers.rs` | load NIC drivers from `\stormboot\drivers` on the media (#26), after the platform's own bind; `take_over` gives a `prefer_media_drivers` family its NICs (#108); `nic_verbose` sets `StormnicVerbose` before the drivers load (#80) |
 | `src/dhcp4.rs` | tcp4probe only since #56: DHCP through the firmware's `EFI_DHCP4` |
 | `src/nvme.rs` | the NVMe/TCP initiator |
 | `src/handoff.rs` | `StormBootTag`/`StormBootHostNqn`, volatile EFI variables naming the machine to Linux's initramfs (#76, stormblock#249); `StormBootClock` (#77); `StormBootUpdate` (#83); `StormBootInstallConfig` + chunks (#79) |
@@ -513,6 +513,14 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       `golden-nic-drivers-6b2fa462d870`. **Left:**
       stormnic-virtio#1's pvetest1/2 boot of the rustnic media (pve's OVMF,
       the iPXE option ROM, a real release).
+
+- [ ] **#80 (with #102) — `nic_verbose` in stormboot.conf sets
+      `StormnicVerbose` before the stormnic drivers load (P3). In progress
+      2026-10-08.** All three pinned drivers read that one variable at their
+      entry point. The mlx4 `speed`/`autoneg` keys are out: ConnectX-3 can't
+      force a speed on the blades' firmware (stormnic-mlx4#20). Test: a
+      verbose virtio boot under OVMF shows the driver's trace; the quiet one
+      doesn't.
 
 - [ ] **#93 — how large an install-config.yaml real variable stores take
       (P3). This repo's side done 2026-10-08; the metal boots are the

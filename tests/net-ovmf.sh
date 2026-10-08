@@ -398,6 +398,8 @@ BOOT_INTENT=
 # properties (disable-legacy=on: a modern-only 1af4:1041).
 BOOT_DRIVERS=
 BOOT_PREFER=
+# BOOT_NIC_VERBOSE=1 (#80) writes `nic_verbose = true` on the media.
+BOOT_NIC_VERBOSE=
 # BOOT_IC (#93): an install-config.yaml of another size for this boot's ESP.
 BOOT_IC=
 BOOT_NICDEV=
@@ -414,6 +416,7 @@ boot() {
     [[ -n "$rng" ]] && args+=(--rng "$rng")
     [[ -n "$BOOT_DRIVERS" ]] && args+=(--drivers "$BOOT_DRIVERS")
     [[ -n "$BOOT_PREFER" ]] && args+=(--prefer-media-drivers "$BOOT_PREFER")
+    [[ -n "$BOOT_NIC_VERBOSE" ]] && args+=(--nic-verbose)
     # The shipped boot's medium names a self-update (#83), which an ISO must
     # skip as read-only; the other names none.
     [[ $name == shipped ]] && args+=(--update "http://10.0.2.2:$PORT/api/v1/boothelpers/stormbootx-test")
@@ -615,6 +618,7 @@ if [[ -n "${VIRTIO_EFI:-}" ]]; then
         "nic 0: leased 10.0.2.15/24 gw 10.0.2.2"
         "not:given back to"
         "not:would not let go"
+        "not:stormnic drivers verbose"
     )
     BOOT_DRIVERS="$W/vdrv" BOOT_PREFER=virtio \
     boot virtio "$host_cpu" "" ok good "${virtio[@]}" " 1af4:1000: " \
@@ -624,6 +628,17 @@ if [[ -n "${VIRTIO_EFI:-}" ]]; then
     BOOT_DRIVERS="$W/vdrv" BOOT_PREFER=virtio BOOT_NICDEV=disable-legacy=on,disable-modern=off \
     STOP_AT="engine      : stormblock 19.4.0" BOOT_SETTLE=1 \
     boot virtio-modern "$host_cpu" "" 404 good "${virtio[@]}" " 1af4:1041: "
+    # The quiet trace stays out of the boot above; nic_verbose brings it back
+    # (#80): StormnicVerbose is set before the driver loads.
+    grep -qF ": Supported" "$W/virtio.txt" && die "[virtio] a quiet boot printed the driver's trace"
+    BOOT_DRIVERS="$W/vdrv" BOOT_PREFER=virtio BOOT_NIC_VERBOSE=1 \
+    STOP_AT="engine      : stormblock 19.4.0" BOOT_SETTLE=1 \
+    boot virtio-verbose "$host_cpu" "" 404 good \
+        "drivers     : stormnic drivers verbose (nic_verbose in " \
+        "StormnicVerbose set until reset)" \
+        ": Supported" \
+        "; stormnic-virtio.efi drives it" \
+        "stormnic-virtio 0.1.0: "
     BOOT_DRIVERS="$W/vdrv" STOP_AT="engine      : stormblock 19.4.0" BOOT_SETTLE=1 \
     boot virtio-kept "$host_cpu" "" 404 good \
         "stormnic-virtio.efi started" \

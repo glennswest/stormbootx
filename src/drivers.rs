@@ -49,6 +49,7 @@ use uefi::boot::{self, LoadImageSource, SearchType};
 use uefi::proto::device_path::build::{self, DevicePathBuilder};
 use uefi::proto::BootPolicy;
 use uefi::{guid, CStr16, Guid, Status};
+use uefi::runtime::{VariableAttributes, VariableVendor};
 use uefi_raw::table::boot::BootServices;
 use uefi_raw::Boolean;
 
@@ -113,6 +114,10 @@ pub fn load_from_media() -> Vec<Loaded> {
     let t0 = now_secs();
     uefi::println!("drivers     : {} on the media in {DRIVERS_DIR}", names.len());
 
+    // The stormnic drivers read `StormnicVerbose` once, at their entry point,
+    // so it is set before any of them is loaded (#80, #102).
+    nic_verbose();
+
     // The platform's own drivers first (see the module comment).
     uefi::println!("    binding the platform's own drivers first");
     let _ = crate::net::connect_all();
@@ -146,6 +151,30 @@ pub fn load_from_media() -> Vec<Loaded> {
         take_over(&out, t0);
     }
     out
+}
+
+/// `StormnicVerbose`, the switch every stormnic driver reads (vendor GUID
+/// `ce1479a2-eab9-4176-b0ad-c909ea5b8e0b`, one byte, non-zero: print the whole
+/// bring-up trace). Set from `nic_verbose = true` in `stormboot.conf`,
+/// `BOOTSERVICE_ACCESS` only, so it is never written to NVRAM and is gone at
+/// the next reset. One an operator set from the shell is left as it is.
+const STORMNIC_VENDOR: Guid = guid!("ce1479a2-eab9-4176-b0ad-c909ea5b8e0b");
+
+fn nic_verbose() {
+    let name = uefi::cstr16!("StormnicVerbose");
+    let vendor = VariableVendor(STORMNIC_VENDOR);
+    let mut buf = [0u8; 8];
+    let already = matches!(uefi::runtime::get_variable(name, &vendor, &mut buf), Ok((d, _)) if d.first().is_some_and(|&b| b != 0));
+    if !crate::config::stated_nic_verbose() {
+        if already {
+            uefi::println!("drivers     : stormnic drivers verbose (StormnicVerbose was already set)");
+        }
+        return;
+    }
+    match uefi::runtime::set_variable(name, &vendor, VariableAttributes::BOOTSERVICE_ACCESS, &[1]) {
+        Ok(()) => uefi::println!("drivers     : stormnic drivers verbose (nic_verbose in {}; StormnicVerbose set until reset)", crate::config::CONF_PATH),
+        Err(e) => uefi::println!("drivers     : nic_verbose asked for, but StormnicVerbose was refused ({:?}); the drivers stay quiet", e.status()),
+    }
 }
 
 /// Give the NICs of each family `prefer_media_drivers` names to the media's

@@ -48,6 +48,7 @@ NTP=""
 MEDIA=""
 RNG=""
 PREFER=""
+NIC_VERBOSE=""
 UPDATE=""
 TREE=""
 
@@ -71,6 +72,8 @@ Options:
                    in option 42; default pool.ntp.org (#77)
   --portal ADDR    NVMe/TCP portal, with --pin (default 192.168.31.202)
   --engine ADDR    the portal and engine host, claim still on (tests/net-ovmf.sh)
+  --nic-verbose    the stormnic drivers print their whole bring-up trace
+                   (`nic_verbose = true`, #80); a debugging medium, never a golden
   --prefer-media-drivers FAMILIES
                    these media drivers take their NICs from the firmware's
                    driver (#108): comma-separated, today only `virtio`
@@ -104,6 +107,7 @@ while [[ $# -gt 0 ]]; do
         --engine) PORTAL="$2"; shift 2 ;;
         --rng)    RNG="$2"; shift 2 ;;
         --prefer-media-drivers) PREFER="$2"; shift 2 ;;
+        --nic-verbose) NIC_VERBOSE=1; shift ;;
         --update) UPDATE="$2"; shift 2 ;;
         --tree)   TREE="$2"; shift 2 ;;
         --port)   PORT="$2"; shift 2 ;;
@@ -247,6 +251,16 @@ if [[ -n "$RNG" ]]; then
 
 # The first entropy source tried; the ones above it are skipped.
 rng      = $RNG
+CONF
+fi
+
+# The stormnic drivers' full trace (#80, #102). Absent on every golden.
+if [[ -n "$NIC_VERBOSE" ]]; then
+    [[ -n "$DRIVERS" ]] || die "--nic-verbose needs --drivers"
+    cat >> "$WORK/stormboot.conf" <<CONF
+
+# The stormnic drivers print their whole bring-up trace (StormnicVerbose).
+nic_verbose = true
 CONF
 fi
 

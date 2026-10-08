@@ -220,6 +220,16 @@ pub fn stated_rng() -> crate::entropy::Start {
         .unwrap_or(crate::entropy::Start::Firmware)
 }
 
+/// `nic_verbose = true` in the config file (#80, #102): the stormnic drivers
+/// print their whole bring-up trace instead of one line per NIC. Off on
+/// every golden; set on a medium to debug a machine without a rebuild.
+pub fn stated_nic_verbose() -> bool {
+    matches!(
+        conf_text().and_then(|t| field(&t, "nic_verbose")).as_deref(),
+        Some("true" | "on" | "yes" | "1")
+    )
+}
+
 /// `prefer_media_drivers = virtio` in the config file (#108): the families of
 /// media driver that take their NICs from the firmware's own driver
 /// (`drivers::take_over`). Comma- or space-separated, lower-cased. Empty on
