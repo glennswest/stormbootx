@@ -15,7 +15,7 @@ paginate: true
 
 **A UEFI boot agent that attaches a machine's image over NVMe/TCP and boots it.**
 
-v0.23.1 (2026-10-08) · `x86_64-unknown-uefi` · `no_std` · ~320 KB
+v0.24.0 (2026-10-08) · `x86_64-unknown-uefi` · `no_std` · ~320 KB
 
 No kernel, no initramfs, no PXE, no TFTP. It carries its own TCP/IP (smoltcp
 on the NIC driver's SNP), so it needs no network stack from the firmware.
@@ -260,7 +260,7 @@ smoltcp, through stormuefi to a running stormcos (#56, #68).
 
 ## Status
 
-- **v0.23.1**, running on metal since 2026-09-05.
+- **v0.24.0**, running on metal since 2026-09-05.
 - Intents (#11) and universal boot (#15) are in the binary and tested
   under OVMF against a stub engine, and inert until the engine serves
   them: forge runs stormblock 13.7.0 (2026-10-06), so every

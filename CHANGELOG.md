@@ -3,17 +3,25 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
-### 2026-10-08
-- **feat:** `nic_verbose = true` in `stormboot.conf` (`build-boot-agent.sh --nic-verbose`) turns on every stormnic driver's full bring-up trace (#80, #102). stormbootx sets the volatile `StormnicVerbose` variable (stormnic GUID `ce1479a2-…`, `BOOTSERVICE_ACCESS`, `01`) before it loads `\stormboot\drivers`, and says so. One already set from the EFI shell is left alone and named. No golden sets it. The mlx4 speed/autoneg keys the issue also asked for are dropped: the blades' ConnectX-3 firmware can't force a speed (stormnic-mlx4#20). `tests/net-ovmf.sh`'s `virtio-verbose` boot requires the driver's trace with the key; the quiet `virtio` boot must not print it.
-- **docs:** CLAUDE.md: render the deck with `< /dev/null`; on build VMs marp-cli read the piped stdin as a second markdown (#112).
-- **docs:** `StormBootClock` has a reader: stormblock's initramfs skips its own NTP step after `synced` (stormblock#253); README, CLAUDE.md, `clock.rs` and `handoff.rs` said stormcos#213. `docs/presentation.md`'s relationships slide says `group: boot` (the project's group, as `stormcentral check` prints it), and names the component kinds (`media`, `tree`) (#82).
-- **docs:** CLAUDE.md work plan: #89's metal run waits on #92 (a promotion newer than the stick); #92 and stormcentral#459 told to promote v0.23.1.
-- **docs:** README: the variable store is the install-config's real limit; OVMF's takes 256 KiB, and what a full store prints (#93).
-- **test:** under OVMF every install-config size up to storminstall's 256 KiB cap hands down and reassembles (64/128/192/256 KiB; 342 chunks at 256), so `tests/net-ovmf.sh` now requires it (#93).
-- **docs:** CLAUDE.md work plan: #96 closed; v0.23.1 goldens.
-- **fix:** a refused install-config chunk now says the firmware's volatile variable store is full, how many bytes fit and the size this firmware takes (`install cfg : NOT HANDED DOWN: …`), so a node that booted without its config is visible (#93).
-- **test:** `tests/net-ovmf.sh` hands down 64, 128, 192 and 256 KiB `install-config.yaml` files and reports which ones OVMF's volatile variable store takes; a refused one must be handed down not at all (#93).
-- **docs:** CLAUDE.md work plan: #69, #70, #71 and #73 wait on their paused stormnic repos' first issues (P3, owner 2026-10-07); #72 (ice) waits on #71.
+## [v0.24.0] — 2026-10-08
+
+### Added
+- `nic_verbose = true` in `stormboot.conf` (`build-boot-agent.sh --nic-verbose`) turns on every stormnic driver's full bring-up trace (#80, #102). stormbootx sets the volatile `StormnicVerbose` variable (stormnic GUID `ce1479a2-…`, `BOOTSERVICE_ACCESS`, `01`) before it loads `\stormboot\drivers`, and says so. One already set from the EFI shell is left alone and named. No golden sets it. The mlx4 speed/autoneg keys the issue also asked for are dropped: the blades' ConnectX-3 firmware can't force a speed (stormnic-mlx4#20). `tests/net-ovmf.sh`'s `virtio-verbose` boot requires the driver's trace with the key; the quiet `virtio` boot must not print it.
+
+### Fixed
+- a refused install-config chunk now says the firmware's volatile variable store is full, how many bytes fit and the size this firmware takes (`install cfg : NOT HANDED DOWN: …`), so a node that booted without its config is visible (#93).
+
+### Changed
+- under OVMF every install-config size up to storminstall's 256 KiB cap hands down and reassembles (64/128/192/256 KiB; 342 chunks at 256), so `tests/net-ovmf.sh` now requires it (#93).
+- `tests/net-ovmf.sh` hands down 64, 128, 192 and 256 KiB `install-config.yaml` files and reports which ones OVMF's volatile variable store takes; a refused one must be handed down not at all (#93).
+
+### Documentation
+- CLAUDE.md: render the deck with `< /dev/null`; on build VMs marp-cli read the piped stdin as a second markdown (#112).
+- `StormBootClock` has a reader: stormblock's initramfs skips its own NTP step after `synced` (stormblock#253); README, CLAUDE.md, `clock.rs` and `handoff.rs` said stormcos#213. `docs/presentation.md`'s relationships slide says `group: boot` (the project's group, as `stormcentral check` prints it), and names the component kinds (`media`, `tree`) (#82).
+- CLAUDE.md work plan: #89's metal run waits on #92 (a promotion newer than the stick); #92 and stormcentral#459 told to promote v0.23.1.
+- README: the variable store is the install-config's real limit; OVMF's takes 256 KiB, and what a full store prints (#93).
+- CLAUDE.md work plan: #96 closed; v0.23.1 goldens.
+- CLAUDE.md work plan: #69, #70, #71 and #73 wait on their paused stormnic repos' first issues (P3, owner 2026-10-07); #72 (ice) waits on #71.
 
 ## [v0.23.1] — 2026-10-08
 
