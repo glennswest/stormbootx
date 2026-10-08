@@ -371,6 +371,14 @@ console prints `install cfg : none on the media (…)`, or `handoff :
 StormBootInstallConfig (<length> bytes in <N> chunk(s)) = v1:…`, and never the
 content: it carries the pull secret and the API token. An empty file, one over
 256 KiB, or one the variable store can't hold is reported and not handed down.
+A firmware's volatile variable store is a fixed size, so the store is the
+real limit (#93). Fedora's OVMF takes every size up to 256 KiB (342 chunks;
+`tests/net-ovmf.sh` hands down 64, 128, 192 and 256 KiB). Real firmware is
+not measured yet. Where the store fills, the console says so and how much
+fit: `install cfg : NOT HANDED DOWN: the firmware's volatile variable store
+is full (OUT_OF_RESOURCES on chunk 87 of 342); 66048 of 262144 bytes fit, so
+this firmware takes a file of at most about 64 KiB. The node boots without
+its install-config.yaml`.
 
 The variables are world-readable through efivarfs once Linux is up, so the
 initramfs deletes them after copying (stormblock's side). The copy is made

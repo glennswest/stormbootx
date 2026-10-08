@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-08
+- **docs:** README: the variable store is the install-config's real limit; OVMF's takes 256 KiB, and what a full store prints (#93).
 - **test:** under OVMF every install-config size up to storminstall's 256 KiB cap hands down and reassembles (64/128/192/256 KiB; 342 chunks at 256), so `tests/net-ovmf.sh` now requires it (#93).
 - **docs:** CLAUDE.md work plan: #96 closed; v0.23.1 goldens.
 - **fix:** a refused install-config chunk now says the firmware's volatile variable store is full, how many bytes fit and the size this firmware takes (`install cfg : NOT HANDED DOWN: …`), so a node that booted without its config is visible (#93).
