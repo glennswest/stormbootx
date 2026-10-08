@@ -1705,15 +1705,16 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       the churn #11 and stormblock#119 want gone. Using the GET means the
       marker has to carry the same key (e.g. the initramfs's
       `claimed_from.volume`), which is the contract stormcos#30 has to agree.
-- [ ] **#17 — the old sbregistry `/v1/clones/claim` path sends no
-      credential and speaks plain HTTP (P3). In progress 2026-10-08.** The
+- [x] **#17 — the old sbregistry `/v1/clones/claim` path sends no
+      credential and speaks plain HTTP (P3). Closed 2026-10-08.** The
       path was compiled out (`USE_REGISTRY = false`) since the boothost claim
       replaced it, and the node registry goes to TLS with auth
       (stormcos#355): making it work would mean HTTPS with node-CA
       verification and a credential in firmware, for a path nothing runs.
       Removed instead, as DNS discovery was (#1): `registry::claim`/`existing`
       and `main.rs`'s `USE_REGISTRY`, `REGISTRY_*`, `GOLDEN`. Recoverable from
-      history. Next: sc-build (no behaviour change), close.
+      history. fd7c370; sc-build: no warnings, the full suite (every boot
+      claims `boothost/…` as before).
 
 - [x] **#25 — mlxfec: a ConnectX-3 is a ConnectX with no FEC, not
       "unknown" (P3). Closed 2026-10-08.** server1 printed `15b3:1003
