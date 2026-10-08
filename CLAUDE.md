@@ -1062,6 +1062,15 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       the ESP golden, stormcentral#215). **Not seen:** a blade's SOL
       capture past stormbootx (the capture drops: stormcentral#220/#499).
 
+- [ ] **#67 — `esp.rs` reads a FAT32-labelled ESP with a FAT16 cluster
+      count (P3, from #37). In progress 2026-10-08.** pvetest1's 11.53 ESP
+      (`mkfs.fat -F 32`, 16,384 clusters at 4096-byte sectors) was refused
+      as `a FAT12/16 with no root directory`. Linux decides FAT32 by
+      `BPB_FATSz16 == 0`; `Fat::mount` now does too, and the cluster count
+      only separates 12 from 16. Host test
+      `fat32_with_a_fat16_cluster_count` (64 MiB `-F 32 -S 4096`). Next:
+      sc-build, then close.
+
 - [ ] **#37 — boot a 4096-byte ESP on firmware whose FAT can't (P0, owner
       2026-09-29). In progress.** Volumes stay 4K. server1's console (#33)
       shows Aptio 4's FAT *mounting* the attached 4K ESP (an SFS was found)

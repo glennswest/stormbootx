@@ -248,7 +248,7 @@ smoltcp, through stormuefi to a running stormcos (#56, #68).
 
 | | What | Waiting on |
 |---|---|---|
-| #37 | which reader loads the X9's 4K ESP; `esp.rs` hardening (#67) | the SOL capture (stormcentral#220) |
+| #37 | which reader loads the X9's 4K ESP; `esp.rs` reads a small FAT32 (#67) | the SOL capture (stormcentral#220) |
 | stormblock#204 | a DNS name the engine hasn't seen reaches its host (#23 is closed) | stormblock |
 | #69–#75 | more Rust NIC drivers (iPXE retired from every medium, #91) | each driver written and proven on metal |
 | #4 | report inventory before any OS | decision #20 |

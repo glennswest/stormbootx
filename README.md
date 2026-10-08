@@ -319,7 +319,9 @@ given back on the fall-through.
    4 mounts one and then answers `NOT_FOUND` for a file that is there. If
    step 8 loads nothing, stormbootx reads the GPT (CRC-checked), finds the
    ESP, reads `BOOTX64.EFI` from its FAT12/16/32 at any sector size from 512
-   to 4096, and `LoadImage`s the bytes from the buffer, with the device path
+   to 4096 (a boot sector with no 16-bit FAT size is FAT32 whatever its
+   cluster count, as Linux mounts it, #67), and `LoadImage`s the bytes from
+   the buffer, with the device path
    `Vendor(disk)/HD(n,GPT,…)/\EFI\BOOT\BOOTX64.EFI`. The console says
    `boot : the firmware did not load it (…); reading the ESP here`.
    stormuefi needs nothing more: it reads its pallets through whole-disk
@@ -976,7 +978,7 @@ Open issues:
 
 | Issue | What |
 |---|---|
-| #37 | X9 blades on a 4096-byte namespace: server1 boots 11.56; which reader loaded it is still open; #67 hardens `esp.rs` |
+| #37 | X9 blades on a 4096-byte namespace: server1 boots 11.56; which reader loaded it is still open; `esp.rs` reads a small FAT32 as Linux does (#67) |
 | #36 | the golden media's pinned fallback (nsid 2) |
 | #69–#75, #80 | more Rust NIC drivers (iPXE is gone from every medium and golden, #91; the X9 blades boot the rustnic media) |
 | #83 | self-update: in the binary, tested under OVMF, stormcentral's key compiled in (#86); no medium updates until stormcentral promotes a golden (`stormcentral stormbootx promote`) |

@@ -10,9 +10,11 @@
 //!
 //! So when the firmware cannot load the bootloader, stormbootx reads it here:
 //! the GPT (CRC-checked), the EFI System Partition, and FAT12/16/32 at any
-//! sector size from 512 to 4096, with 8.3 and long names. `blockio.rs` then
-//! hands the bytes to `LoadImage`. Nothing is written. It needs no firmware
-//! protocol at all, so a firmware's FAT bugs stop mattering.
+//! sector size from 512 to 4096, with 8.3 and long names. A boot sector with
+//! no 16-bit FAT size is FAT32 whatever its cluster count, as Linux reads it
+//! (#67). `blockio.rs` then hands the bytes to `LoadImage`. Nothing is
+//! written. It needs no firmware protocol at all, so a firmware's FAT bugs
+//! stop mattering.
 //!
 //! What it does not do: install `EFI_SIMPLE_FILE_SYSTEM_PROTOCOL`. The image
 //! it starts (stormuefi) reads its pallets through whole-disk BlockIO and
@@ -266,9 +268,15 @@ impl Fat {
             return Err(Error::NotFat("the volume is larger than its partition"));
         }
         let clusters = (total - meta) / spc;
-        // The width follows from the cluster count, as the specification (and
-        // EDK2) decide it, never from the label in the boot sector.
-        let kind = if clusters < 4085 {
+        // A boot sector with no 16-bit FAT size is a FAT32 one, whatever the
+        // cluster count says: Linux decides that way (`fat_length == 0`), so
+        // `mkfs.fat -F 32` makes, and Linux mounts, FAT32s of under 65,525
+        // clusters (pvetest1's 11.53 ESP: 16,384 at 4096-byte sectors, #67).
+        // Otherwise the width follows from the cluster count, as the
+        // specification decides it, never from the label's text.
+        let kind = if fat16_size == 0 {
+            32
+        } else if clusters < 4085 {
             12
         } else if clusters < 65525 {
             16
@@ -849,6 +857,14 @@ mod tests {
     fn fat16_4k_sectors_with_bigger_clusters() {
         let mut img = image("16-4k-c", 4096, 4096, 16, 128, 4);
         check(&mut img, 16, 4096);
+    }
+
+    #[test]
+    fn fat32_with_a_fat16_cluster_count() {
+        // pvetest1's 11.53 ESP (#67): `mkfs.fat -F 32` at 4096-byte sectors,
+        // 64 MiB, so 16,384 clusters. Linux mounts it as FAT32, and so must this.
+        let mut img = image("32-4k-small", 4096, 4096, 32, 64, 1);
+        check(&mut img, 32, 4096);
     }
 
     #[test]
