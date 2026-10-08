@@ -310,32 +310,46 @@ struct PciIoHead {
     get_location: unsafe extern "efiapi" fn(*mut PciIoHead, *mut usize, *mut usize, *mut usize, *mut usize) -> Status,
 }
 
+/// A PCI function's location (`seg:bus:dev.fn`), (vendor, device) and its
+/// class register (class, subclass, interface, revision from the top byte
+/// down), read through its PCI I/O. Also the inventory's (#4).
+pub(crate) fn pci_info(h: uefi_raw::Handle) -> Option<(String, (u16, u16), u32)> {
+    let io = crate::net::handle_protocol(h, &PCI_IO)? as *mut PciIoHead;
+    let (mut id, mut class) = (0u32, 0u32);
+    // Width 2: 32-bit config reads.
+    let ok = unsafe {
+        ((*io).pci_read)(io, 2, 0, 1, &mut id as *mut u32 as *mut c_void) == Status::SUCCESS
+            && ((*io).pci_read)(io, 2, 8, 1, &mut class as *mut u32 as *mut c_void) == Status::SUCCESS
+    };
+    if !ok {
+        return None;
+    }
+    let (mut seg, mut bus, mut d, mut f) = (0usize, 0usize, 0usize, 0usize);
+    let at = match unsafe { ((*io).get_location)(io, &mut seg, &mut bus, &mut d, &mut f) } {
+        Status::SUCCESS => format!("{seg:04x}:{bus:02x}:{d:02x}.{f}"),
+        _ => String::from("pci ?"),
+    };
+    Some((at, (id as u16, (id >> 16) as u16), class))
+}
+
+/// Every PCI function: (handle, location, (vendor, device), class register).
+pub(crate) fn pci_functions() -> Vec<(uefi_raw::Handle, String, (u16, u16), u32)> {
+    let Ok(handles) = boot::locate_handle_buffer(SearchType::ByProtocol(&PCI_IO)) else { return Vec::new() };
+    handles
+        .iter()
+        .map(|h| h.as_ptr())
+        .filter_map(|h| pci_info(h).map(|(at, dev, class)| (h, at, dev, class)))
+        .collect()
+}
+
 /// The network functions (class 02) with one of `ids`: (handle,
 /// `seg:bus:dev.fn`, (vendor, device)).
 fn network_functions(ids: &[(u16, u16)]) -> Vec<(uefi_raw::Handle, String, (u16, u16))> {
-    let mut out = Vec::new();
-    let Ok(handles) = boot::locate_handle_buffer(SearchType::ByProtocol(&PCI_IO)) else { return out };
-    for h in handles.iter().map(|h| h.as_ptr()) {
-        let Some(io) = crate::net::handle_protocol(h, &PCI_IO) else { continue };
-        let io = io as *mut PciIoHead;
-        let (mut id, mut class) = (0u32, 0u32);
-        // Width 2: 32-bit config reads.
-        let ok = unsafe {
-            ((*io).pci_read)(io, 2, 0, 1, &mut id as *mut u32 as *mut c_void) == Status::SUCCESS
-                && ((*io).pci_read)(io, 2, 8, 1, &mut class as *mut u32 as *mut c_void) == Status::SUCCESS
-        };
-        let dev = (id as u16, (id >> 16) as u16);
-        if !ok || class >> 24 != 2 || !ids.contains(&dev) {
-            continue;
-        }
-        let (mut seg, mut bus, mut d, mut f) = (0usize, 0usize, 0usize, 0usize);
-        let at = match unsafe { ((*io).get_location)(io, &mut seg, &mut bus, &mut d, &mut f) } {
-            Status::SUCCESS => format!("{seg:04x}:{bus:02x}:{d:02x}.{f}"),
-            _ => String::from("pci ?"),
-        };
-        out.push((h, at, dev));
-    }
-    out
+    pci_functions()
+        .into_iter()
+        .filter(|(_, _, dev, class)| class >> 24 == 2 && ids.contains(dev))
+        .map(|(h, at, dev, _)| (h, at, dev))
+        .collect()
 }
 
 /// Seconds since midnight from the RTC: coarse, but a hang is measured in

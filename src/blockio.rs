@@ -506,6 +506,18 @@ pub fn stale() -> usize {
         .count()
 }
 
+/// Whether `h` is a disk a stormbootx published (its device path starts with
+/// our vendor node): never the machine's own hardware (#4).
+pub fn is_published(h: uefi_raw::Handle) -> bool {
+    device_path_of(h)
+        .and_then(|dp| dp.node_iter().next())
+        .is_some_and(|n| {
+            n.device_type() == uefi::proto::device_path::DeviceType::HARDWARE
+                && n.sub_type() == uefi::proto::device_path::DeviceSubType::HARDWARE_VENDOR
+                && n.data().get(..16) == Some(&DISK_DP_GUID.to_bytes()[..])
+        })
+}
+
 /// The vendor GUID naming a disk this binary published. Not an architectural
 /// constant — just a unique value so the device path is well-formed and so
 /// chain-loading can tell our ESP from a local one.

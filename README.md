@@ -189,10 +189,10 @@ given back on the fall-through.
    best name first:
 
    ```
-   POST …/api/v1/synonyms/boothost/<stated name>/claim   body {"agent":{…}}
-   POST …/api/v1/synonyms/boothost/<DNS name>/claim      body {"agent":{…},"mac":"…","serial":"…"}
-   POST …/api/v1/synonyms/boothost/default/claim         body {"agent":{…},"mac":"…","serial":"…"}
-   POST …/api/v1/synonyms/boothost/<serial>/claim        body {"agent":{…}}
+   POST …/api/v1/synonyms/boothost/<stated name>/claim   body {"agent":{…},"inventory":{…}}
+   POST …/api/v1/synonyms/boothost/<DNS name>/claim      body {"agent":{…},"inventory":{…},"mac":"…","serial":"…"}
+   POST …/api/v1/synonyms/boothost/default/claim         body {"agent":{…},"inventory":{…},"mac":"…","serial":"…"}
+   POST …/api/v1/synonyms/boothost/<serial>/claim        body {"agent":{…},"inventory":{…}}
    ```
 
    Every claim names the boot agent (#90, stormcentral#286), so stormcentral
@@ -209,8 +209,37 @@ given back on the fall-through.
    medium's `media =` label, `update_serial` the self-update serial of the
    files on the medium (absent when no update wrote them), and `update` the
    `StormBootUpdate` value at claim time (`serial:<n>`, `trial:<n>:<start>`,
-   `failed:<n>`; absent when unset). The engine ignores fields it does not
-   know; keeping it on the host's claim record is stormblock#177.
+   `failed:<n>`; absent when unset). The engine keeps it on the host's
+   last-claim record (stormblock#177).
+
+   Every claim also carries the **firmware inventory** (#4, `src/inventory.rs`
+   and `src/hardware.rs`): what the firmware sees that a BMC can't say (the
+   owner's choice on #20). That is:
+   - each NIC's MAC as firmware sees it, whether it has link, and which
+     driver bound it, with `media_driver` true for a stormnic driver off the
+     media, plus its PCI location and ID;
+   - every mass-storage controller (PCI class 01) and its driver, if any;
+   - every whole disk with a BlockIO, the boot medium marked.
+
+   With no BMC (no SMBIOS Type 38 or 42: pve VMs, homelab boxes) it also
+   sends CPU and memory from SMBIOS Types 4 and 17, which stormipmi reads
+   over Redfish otherwise. It is collected once, at the first claim, before
+   anything is attached, so the namespace this boot attaches is never in it,
+   and the console says `inventory : N NIC(s), …; B bytes with the claim`.
+   The engine keeps it beside `agent` and drops it, never the claim, if it
+   is not a JSON object or is over 16 KiB; it is cut to 15 KiB here (disks
+   last, the rest counted in `disks_omitted`):
+
+   ```
+   "inventory": {"v":1,"bmc":false,
+     "nics":[{"mac":"52:54:00:12:34:56","link":true,"driver":"Virtio Network Driver",
+              "media_driver":false,"pci":"0000:00:02.0","id":"1af4:1000"}],
+     "storage":[{"pci":"0000:00:1f.2","id":"8086:2922","class":"01:06:01","driver":"…"}],
+     "disks":[{"path":"PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)","blocks":2604,
+               "block_size":2048,"removable":true,"medium":true}],
+     "cpu":{"model":"…","sockets":1,"cores":1,"threads":1,"max_mhz":2000},
+     "memory":{"mb":1024,"dimms":1}}
+   ```
 
    A stated name is the only one tried. Otherwise a 404 moves on to the next
    line, and any other failure falls back to the resolved target. The DNS
@@ -733,6 +762,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   rustc --edition 2021 --test src/sntp.rs -o t/sntp-test && ./t/sntp-test && \
   rustc --edition 2021 --test src/manifest.rs -o t/manifest-test && ./t/manifest-test && \
   rustc --edition 2021 --test src/installconf.rs -o t/installconf-test && ./t/installconf-test && \
+  rustc --edition 2021 --test src/inventory.rs -o t/inventory-test && ./t/inventory-test && \
   cargo test -p nvme-tcp-initiator && \
   R=${CARGO_TARGET_DIR:-target}/x86_64-unknown-uefi/release && \
   tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi && \
@@ -745,7 +775,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
 ```
 
 That builds `stormbootx.efi`, `tcp4probe.efi` and `espprobe.efi`, and runs the
-eight host test suites. Then it boots espprobe under OVMF (`tests/esp-ovmf.sh`),
+nine host test suites and the initiator crate's. Then it boots espprobe under OVMF (`tests/esp-ovmf.sh`),
 and stormbootx itself against the stub engine and NVMe/TCP target
 (`tests/net-ovmf.sh`). Last, it builds an ISO and boots its `startup.nsh`
 from an EFI Shell (`tests/shell-ovmf.sh`, #60), once with the old EDK shell
@@ -766,7 +796,7 @@ the path. `REPRO_RAW=1 tests/repro.sh` shows it.
 
 There is no host target and no `cargo test`. `src/sha256.rs`,
 `src/intent.rs`, `src/universal.rs`, `src/dnsname.rs`, `src/esp.rs`,
-`src/sntp.rs`, `src/manifest.rs` and `src/installconf.rs` are the exceptions: each uses only
+`src/sntp.rs`, `src/manifest.rs`, `src/installconf.rs` and `src/inventory.rs` are the exceptions: each uses only
 `core` and names no `crate::` item, so each compiles as its own crate with
 `rustc --test`. `esp.rs`'s tests build their images with `mkfs.fat` and
 mtools, which must be on the `PATH`.

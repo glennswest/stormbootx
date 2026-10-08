@@ -166,6 +166,41 @@ fn table() -> Option<*const u8> {
     (!table.is_null()).then_some(table as *const u8)
 }
 
+/// The whole structure table as bytes, for `inventory::parse_smbios` (#4):
+/// its length is the entry point's (SMBIOS 3: the maximum size at 0x0C;
+/// 2.x: the table length at 0x16), capped at 1 MiB.
+pub fn table_bytes() -> Option<&'static [u8]> {
+    let st = uefi::table::system_table_raw()?;
+    let entries = unsafe {
+        let st = st.as_ref();
+        core::slice::from_raw_parts(st.configuration_table, st.number_of_configuration_table_entries)
+    };
+    let mut legacy = None;
+    for e in entries {
+        let p = e.vendor_table as *const u8;
+        if p.is_null() {
+            continue;
+        }
+        unsafe {
+            if e.vendor_guid == SMBIOS3_GUID && core::slice::from_raw_parts(p, 5) == b"_SM3_" {
+                let len = (p.add(0x0C) as *const u32).read_unaligned() as usize;
+                let at = (p.add(0x10) as *const u64).read_unaligned() as *const u8;
+                if !at.is_null() && len > 0 {
+                    return Some(core::slice::from_raw_parts(at, len.min(1 << 20)));
+                }
+            }
+            if e.vendor_guid == SMBIOS_GUID && core::slice::from_raw_parts(p, 4) == b"_SM_" {
+                let len = (p.add(0x16) as *const u16).read_unaligned() as usize;
+                let at = (p.add(0x18) as *const u32).read_unaligned() as usize as *const u8;
+                if !at.is_null() && len > 0 {
+                    legacy = Some(core::slice::from_raw_parts(at, len));
+                }
+            }
+        }
+    }
+    legacy
+}
+
 /// `_SM3_` entry point: the structure table address is a 64-bit field at 0x10.
 unsafe fn smbios3_table(entry: *const u8) -> *const u8 {
     if entry.is_null() || core::slice::from_raw_parts(entry, 5) != b"_SM3_" {

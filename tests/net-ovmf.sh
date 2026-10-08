@@ -27,7 +27,9 @@
 #     `StormBootClock = unsynced`.
 #
 # Seven boots, and three more with stormnic-virtio (#108, below):
-#   1. as shipped: `rng : firmware` or `rdrand`;
+#   1. as shipped: `rng : firmware` or `rdrand`; every claim carries the
+#      firmware inventory (#4): the virtio NIC and its driver, q35's AHCI,
+#      the CD as the medium, and CPU and memory (QEMU has no BMC);
 #   2. the entropy fallback: `rng = cpu` on the media masks the firmware's
 #      EFI_RNG, and the CPU is started without RDRAND and RDSEED, so the
 #      boot must say `rng : jitter` and still lease, connect and fetch. This
@@ -152,6 +154,17 @@ class H(http.server.BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(n).decode(errors="replace")
         log.write("POST %s %s\n" % (self.path, body))
+        # What the engine keeps (stormblock#177): `inventory` (#4) only as a
+        # JSON object of at most 16 KiB. Said here on the bytes as sent.
+        if self.path.endswith("/claim"):
+            try:
+                inv = json.loads(body).get("inventory")
+                if isinstance(inv, dict) and len(json.dumps(inv, separators=(",", ":"))) <= 16384:
+                    log.write("inventory kept: an object of %d keys\n" % len(inv))
+                else:
+                    log.write("inventory NOT kept: %r\n" % type(inv))
+            except ValueError as e:
+                log.write("claim body is NOT JSON: %s\n" % e)
         # claim.ok present: the default claim names this machine `stubhost`
         # and attaches the NVMe stub, the shape stormblock's claim reply has.
         # claim.new present (#15): a machine the engine has never seen, so it
@@ -542,6 +555,17 @@ boot shipped "$host_cpu" "" 404 good "${common[@]}" "rng         : " \
     "rtc         : 2031-05-04 03:0" \
     "update      : the boot medium is read-only (an ISO or virtual media); not updated" \
     "stub:\"media\":\"agent test\"}" \
+    "inventory   : 1 NIC(s), " \
+    "no BMC (CPU and memory sent)" \
+    "stub:\"inventory\":{\"v\":1,\"bmc\":false,\"nics\":[{\"mac\":\"52:54:00:12:34:56\",\"link\":true,\"driver\":\"Virtio Network Driver\",\"media_driver\":false,\"pci\":\"0000:00:" \
+    "stub:\"id\":\"1af4:1000\"}]" \
+    "stub:{\"pci\":\"0000:00:1f.2\",\"id\":\"8086:2922\",\"class\":\"01:06:01\"" \
+    "stub:\"removable\":true,\"medium\":true}" \
+    "stub:\"cpu\":{\"model\":" \
+    "stub:\"memory\":{\"mb\":1024,\"dimms\":1}}" \
+    "stub:inventory kept: an object of " \
+    "not-stub:NOT kept" \
+    "not-stub:NOT JSON" \
     "install cfg : none on the media (\\stormboot\\install-config.yaml)" \
     "not:handed down : StormBootInstallConfig"
 grep -q "rng         : jitter" "$W/shipped.txt" && say "note: the shipped boot fell back to jitter"
@@ -662,6 +686,7 @@ if [[ -n "${VIRTIO_EFI:-}" ]]; then
     BOOT_DRIVERS="$W/vdrv" BOOT_PREFER=virtio \
     boot virtio "$host_cpu" "" ok good "${virtio[@]}" " 1af4:1000: " \
         "booting stubhost's image" \
+        "stub:\"media_driver\":true" \
         "blockio     : 96 MiB read in all" \
         "is there a TCP/IP stack in this firmware"
     BOOT_DRIVERS="$W/vdrv" BOOT_PREFER=virtio BOOT_NICDEV=disable-legacy=on,disable-modern=off \

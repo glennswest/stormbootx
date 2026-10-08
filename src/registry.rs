@@ -196,9 +196,16 @@ pub fn claim_boothost(
     attach_from(body).map_err(|e| (status, e))
 }
 
-/// `{"mac": …, "serial": …, "agent": {…}}`, the MAC and serial when known.
+/// `{"agent": {…}, "inventory": {…}, "mac": …, "serial": …}`, the MAC and
+/// serial when known. The inventory (#4, #20) is what the firmware sees that a
+/// BMC can't say; the engine keeps both objects in the host's last-claim
+/// record (stormblock#177) and drops either if it is over 16 KiB, never the
+/// claim.
 fn hints(mac: Option<&str>, serial: Option<&str>) -> String {
-    let mut fields = vec![format!("\"agent\":{}", agent())];
+    let mut fields = vec![
+        format!("\"agent\":{}", agent()),
+        format!("\"inventory\":{}", crate::hardware::json()),
+    ];
     if let Some(m) = mac {
         fields.push(format!("\"mac\":\"{}\"", json_str(m)));
     }

@@ -104,6 +104,22 @@ pub fn driver_of(snp: uefi_raw::Handle) -> Option<String> {
     (!names.is_empty()).then(|| names.join(" + "))
 }
 
+/// The driver bound to a PCI function, by name: whoever opened its PCI I/O
+/// `BY_DRIVER` (#4, the storage controllers in the inventory).
+pub fn pci_driver(pci: uefi_raw::Handle) -> Option<String> {
+    let bs = bs()?;
+    let mut names: Vec<String> = Vec::new();
+    for (guid, e) in opens(bs, pci) {
+        if guid == PCI_IO && e.attributes & BY_DRIVER != 0 {
+            let n = name_of(e.agent_handle).unwrap_or_else(|| format!("driver handle {:p}", e.agent_handle));
+            if !names.contains(&n) {
+                names.push(n);
+            }
+        }
+    }
+    (!names.is_empty()).then(|| names.join(" + "))
+}
+
 /// Whether the handle's device path ends in a MAC node (messaging, subtype
 /// 11): a NIC driver's child, not the controller.
 fn ends_in_mac(h: uefi_raw::Handle) -> bool {

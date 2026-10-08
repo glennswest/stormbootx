@@ -22,7 +22,7 @@ scratch files go in `tmp/`.
 Push first, then `sc-build` from this checkout. It builds the pushed commit
 on dev.g8.lo as `stormbuild`. There is no checkout on dev, and no `ssh root@`.
 The plain `cargo build && cargo test` default does not suit a `no_std` UEFI
-crate, so name the command. This builds the three binaries, runs the eight
+crate, so name the command. This builds the three binaries, runs the nine
 host suites and the initiator crate's tests, boots `espprobe` and stormbootx under OVMF, boots an ISO's
 `startup.nsh` from two EFI Shells, and runs the self-update's boots:
 
@@ -36,6 +36,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   rustc --edition 2021 --test src/sntp.rs -o t/sntp-test && ./t/sntp-test && \
   rustc --edition 2021 --test src/manifest.rs -o t/manifest-test && ./t/manifest-test && \
   rustc --edition 2021 --test src/installconf.rs -o t/installconf-test && ./t/installconf-test && \
+  rustc --edition 2021 --test src/inventory.rs -o t/inventory-test && ./t/inventory-test && \
   cargo test -p nvme-tcp-initiator && \
   R=${CARGO_TARGET_DIR:-target}/x86_64-unknown-uefi/release && \
   tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi && \
@@ -130,6 +131,9 @@ the sixth: the SNTP packet, the reply checks and the UTC calendar.
 file, start/serial decisions and HTTP framing. `src/installconf.rs` (#79) is
 the eighth: `install-config.yaml`'s chunk variables and header; tcp4probe
 includes it and `sha256.rs` by `#[path]` to read the hand-down back.
+`src/inventory.rs` (#4) is the ninth: the firmware inventory sent with the
+claim, its SMBIOS parse (BMC, CPU, memory) and its JSON under the engine's
+16 KiB; it alone carries `extern crate alloc` (it builds strings).
 
 `Cargo.lock` is tracked, as it should be for anything that produces a binary.
 Without it every build resolved fresh, and this is a firmware binary whose
@@ -181,6 +185,8 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/sntp.rs` | SNTP request and reply checks, NTP era → Unix, the UTC calendar (core-only, host-tested) |
 | `src/blockio.rs` | publish the namespace as a block device, then chain-load its `BOOTX64.EFI` (the firmware's FAT, then `esp.rs`) |
 | `src/intent.rs` | the boot intent (`install`/`local`/`auto`) read before the claim; every doubt is `auto` |
+| `src/inventory.rs` | the firmware inventory with the claim (#4, #20): SMBIOS Type 4/17/38/42, the JSON and its budget (core-only, host-tested) |
+| `src/hardware.rs` | what the inventory is collected from: the stack's NICs and their drivers, PCI class 01, BlockIO disks, the SMBIOS table; once, before anything is attached |
 | `src/registry.rs` | read the intent; claim `boothost/<tag>`, or `boothost/default` by MAC, every claim naming the agent (#90); read the engine's version; also the old sbregistry `/v1/clones/claim` path, compiled out by `USE_REGISTRY = false` |
 | `src/dnsname.rs` | the machine's DNS name (#23): DHCP options 12/15/6, PTR query and answer over DNS/TCP |
 | `src/universal.rs` | universal boot (#15): is the engine new enough, which MAC is the machine's, what host the reply named; which SMBIOS serial is a placeholder (#7, matches stormipmi) |
@@ -1695,20 +1701,20 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       the churn #11 and stormblock#119 want gone. Using the GET means the
       marker has to carry the same key (e.g. the initramfs's
       `claimed_from.volume`), which is the contract stormcos#30 has to agree.
-- [ ] #4 (the registration half) — reporting this machine's inventory back.
-      Everything wanted is reachable before any OS: MACs from
-      `EFI_SIMPLE_NETWORK`, memory/CPU/chassis from SMBIOS types 17/16/4/3,
-      storage from `EFI_BLOCK_IO`, controllers from `EFI_PCI_IO` class `0x01`.
-      Two constraints: collect it **before** `blockio::publish`, or the machine
-      reports the namespace it just attached as its own hardware; and `BLOCK_IO`
-      only shows what firmware bound a driver for, so the PCI scan is needed as
-      well as, not instead of. Blocked on the payload shape. **P3
-      (2026-09-27 validation):** stormipmi now reads CPU and memory over
-      Redfish for machines with a BMC, and the report's home is stormipmi's
-      machine record or stormblock#177's claim record, not a `BootHost`
-      (stormnetboot#8 is no longer on the path). Whether firmware
-      registration is still wanted beyond machines without a BMC is an
-      owner call.
+- [ ] **#4 (the registration half) — the firmware inventory with the
+      claim (P3). In progress 2026-10-08.** Unblocked: stormblock#177
+      (closed 2026-10-08, golden-stormblock-d9aa620422e3) keeps the claim
+      body's `inventory` as given, a JSON object of at most 16 KiB, in the
+      host's last-claim record, and drops it (never the claim) otherwise.
+      Scope is the owner's #20 option 2: firmware MACs and which driver bound
+      each NIC, storage controllers and disks UEFI sees; CPU and memory too
+      when there is no BMC (no SMBIOS Type 38/42). `src/inventory.rs`
+      (core-only: SMBIOS parse, JSON, 15 KiB budget, host tests),
+      `src/hardware.rs` (collection, once, at the first claim, before
+      `blockio::publish`), `registry::hints`. net-ovmf's shipped boot
+      requires it in the stub's claim log, and the stub checks it is an
+      object within 16 KiB as the engine does. Next: sc-build, close.
+
 - [ ] #2 — self-update of the boot media (P3). **Superseded by #83
       (v0.13.0).** stormbootx has no golden and
       nothing publishes `stormbootx.efi`, so there is not yet an artifact for a
