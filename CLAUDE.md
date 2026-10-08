@@ -1071,19 +1071,26 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       the ESP golden, stormcentral#215). **Not seen:** a blade's SOL
       capture past stormbootx (the capture drops: stormcentral#220/#499).
 
-- [ ] **#42 — a read-only filesystem on the bridged ESP (P3). In progress
+- [x] **#42 — a read-only filesystem on the bridged ESP (P3). Closed
       2026-10-08.** When the bridge (#37) starts `BOOTX64.EFI` from a
-      buffer, no `EFI_SIMPLE_FILE_SYSTEM` serves its ESP, so shim
-      (`grubx64.efi`) and systemd-boot (loader entries) find nothing on
-      Aptio 4. Plan: (1) `esp.rs`: directory listing, ranged reads with a
-      cluster hint, lookup from a directory, attributes and times (host
-      tests); (2) `src/espfs.rs`: read-only SFS/File (Write/Delete/SetInfo/
-      Flush `WRITE_PROTECTED`), installed on the ESP's `HD()` child after
-      the firmware's FAT is disconnected from it (or a new handle with that
-      path), uninstalled before `blockio::withdraw`; (3) `bridge_boot` and
-      espprobe install it before starting the loader; (4) esp-ovmf: the
-      payload (tcp4probe) lists, reads and seeks through its own
-      `DeviceHandle`'s SFS and reads a loader entry.
+      buffer, no `EFI_SIMPLE_FILE_SYSTEM` served its ESP, so shim
+      (`grubx64.efi`) and systemd-boot (loader entries) would find nothing
+      on Aptio 4. `src/espfs.rs`: read-only SFS/File over `esp.rs`
+      (Write/SetInfo/opens for writing `WRITE_PROTECTED`, Delete warns),
+      installed on the ESP's `HD()` partition handle after disconnecting the
+      firmware's FAT (or a new handle with that path), and the image is
+      loaded under it so it is the `DeviceHandle`; `blockio::withdraw` takes
+      it back first. `esp.rs` gained listings, `read_at` with a cluster
+      hint, `lookup_in`, attributes/times and the label (host-tested on
+      every FAT variant). a57f92f..9d6554e. sc-build of 9d6554e: no
+      warnings, full suite; esp-ovmf (espprobe: our filesystem replaced
+      OVMF's FAT and was the image's DeviceHandle; tcp4probe listed, read
+      with matching sha256, sought, read a loader entry relatively, was
+      refused a create; withdrawn) and net-ovmf's new `bridge` boot (`esp =
+      stormbootx` on the NVMe-attached image: the same, with the 96 MiB
+      BOOTX64.EFI). **Not run:** Aptio 4 itself (whether its FAT comes off
+      the partition handle), and a real shim or systemd-boot. The `nolease`
+      PEI hang seen on the way is #124. Ships with the next release.
 
 - [x] **#53 — stormbootx.efi is not reproducible across build
       directories (P3). Closed 2026-10-08.** Two goldens from one
