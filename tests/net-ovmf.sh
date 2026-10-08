@@ -46,6 +46,9 @@
 #   6. the boot intent (#11): the stub engine says `local` for this MAC,
 #      and the boot must fall through with no claim POST (boot 2 is told
 #      `install` and claims);
+#   (#42) `bridge`: `esp = stormbootx` on the media, so stormbootx reads the
+#      attached ESP itself, puts its read-only filesystem on the ESP's
+#      partition handle, and the payload must find it as its own volume;
 #   7. a fall-through gives the NIC back (#68): the firmware's own IPv4
 #      stack is on (with a virtio-rng, which its drivers need), the claim
 #      404s and the medium names no fallback namespace, as the goldens don't
@@ -401,6 +404,8 @@ BOOT_DRIVERS=
 BOOT_PREFER=
 # BOOT_NIC_VERBOSE=1 (#80) writes `nic_verbose = true` on the media.
 BOOT_NIC_VERBOSE=
+# BOOT_ESP (#42) is the medium's `esp =`: `stormbootx` runs the bridge.
+BOOT_ESP=
 # BOOT_NOFALLBACK=1 (#36) builds the medium as the goldens are: no nqn/nsid.
 BOOT_NOFALLBACK=
 # BOOT_IC (#93): an install-config.yaml of another size for this boot's ESP.
@@ -422,6 +427,7 @@ boot() {
     [[ -n "$BOOT_DRIVERS" ]] && args+=(--drivers "$BOOT_DRIVERS")
     [[ -n "$BOOT_PREFER" ]] && args+=(--prefer-media-drivers "$BOOT_PREFER")
     [[ -n "$BOOT_NIC_VERBOSE" ]] && args+=(--nic-verbose)
+    [[ -n "$BOOT_ESP" ]] && args+=(--esp "$BOOT_ESP")
     if [[ -n "$BOOT_NOFALLBACK" ]]; then args+=(--no-fallback); else args+=(--nsid 1); fi
     # The shipped boot's medium names a self-update (#83), which an ISO must
     # skip as read-only; the other names none.
@@ -586,6 +592,23 @@ boot noesp "$host_cpu" "" 404 good \
     "not:handle(s) an earlier start published are still installed" \
     "not:X64 Exception" \
     "not:!!!!"
+
+# #42: the bridge on the attached image. With `esp = stormbootx` the
+# firmware's FAT is not asked: stormbootx reads the ESP over NVMe/TCP, puts
+# its own read-only filesystem on the ESP's partition handle in place of
+# OVMF's FAT, and starts the 96 MiB BOOTX64.EFI under it. The payload must
+# find that filesystem as its own volume, read-only, and be refused a write.
+BOOT_ESP=stormbootx \
+boot bridge "$host_cpu" "" ok good \
+    "boot        : the firmware did not load it (esp = stormbootx); reading the ESP here" \
+    "esp fs      : read-only filesystem on the ESP's partition handle, the firmware's FAT disconnected from it" \
+    "boot        : starting \\EFI\\BOOT\\BOOTX64.EFI from the attached image (read by stormbootx)" \
+    "boot fs     : " \
+    ", read-only, label " \
+    'boot fs     : \EFI\BOOT lists . | .. | BOOTX64.EFI' \
+    "boot fs     : BOOTX64.EFI is 100663296 bytes; not hashed here" \
+    "boot fs     : create refused (WRITE_PROTECTED)" \
+    "is there a TCP/IP stack in this firmware"
 
 # #88: a NIC nothing answers. The boot must say so once a second (link, DHCP
 # out and in, frames in) instead of sitting silent until the engine's 30 s

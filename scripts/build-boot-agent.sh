@@ -48,6 +48,7 @@ DNS=""
 NTP=""
 MEDIA=""
 RNG=""
+ESP_READER=""
 PREFER=""
 NIC_VERBOSE=""
 UPDATE=""
@@ -78,6 +79,9 @@ Options:
   --prefer-media-drivers FAMILIES
                    these media drivers take their NICs from the firmware's
                    driver (#108): comma-separated, today only `virtio`
+  --esp READER     who reads the attached ESP (#37): auto (default),
+                   firmware or stormbootx (the bridge and its filesystem, #42;
+                   tests/net-ovmf.sh)
   --rng FIRST      the first entropy source tried: firmware (default), cpu or
                    jitter (#56); the ones above it are skipped
   --update URL     where the medium updates itself from (#83):
@@ -109,6 +113,7 @@ while [[ $# -gt 0 ]]; do
         --portal) PORTAL="$2"; PIN="yes"; shift 2 ;;
         --engine) PORTAL="$2"; shift 2 ;;
         --rng)    RNG="$2"; shift 2 ;;
+        --esp)    ESP_READER="$2"; shift 2 ;;
         --prefer-media-drivers) PREFER="$2"; shift 2 ;;
         --nic-verbose) NIC_VERBOSE=1; shift ;;
         --update) UPDATE="$2"; shift 2 ;;
@@ -277,6 +282,18 @@ if [[ -n "$RNG" ]]; then
 
 # The first entropy source tried; the ones above it are skipped.
 rng      = $RNG
+CONF
+fi
+
+# Who reads the attached ESP (#37). Absent on ordinary media: the firmware,
+# then stormbootx. The OVMF test states `stormbootx` to run the bridge.
+if [[ -n "$ESP_READER" ]]; then
+    [[ "$ESP_READER" == auto || "$ESP_READER" == firmware || "$ESP_READER" == stormbootx ]] \
+        || die "--esp: auto, firmware or stormbootx"
+    cat >> "$WORK/stormboot.conf" <<CONF
+
+# Who reads the attached image's ESP.
+esp      = $ESP_READER
 CONF
 fi
 
