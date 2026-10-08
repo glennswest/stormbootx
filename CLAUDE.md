@@ -1271,8 +1271,16 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       piped stdin, which marp-cli reads as a second markdown, and `-o` then
       refuses two inputs (#112).
 
-- [ ] #10 — extract `nvme.rs` (and the claim) into a transport-generic
-      `no_std` crate. Prerequisite for stormboot4bios.
+- [ ] **#10 — extract the NVMe/TCP initiator into a transport-generic
+      `no_std` crate (P3, for stormboot4bios). In progress 2026-10-08.**
+      `crates/nvme-tcp-initiator` (workspace member, `no_std` + `alloc`, no
+      dependencies): the whole of `nvme.rs` over a `Transport` (`send_all`,
+      `recv_exact`, `link_mtu`) and a `Platform` (`connect`, `stall_ms`),
+      with host tests against an in-memory fake controller that refuses a
+      command without PSDT=01b and an admin command before CC.EN.
+      `src/nvme.rs` becomes the glue (`TcpSocket` as the transport,
+      `boot::stall`). Behaviour unchanged; net-ovmf is the acceptance test.
+      The claim stays in `registry.rs`/`universal.rs` (the issue's "could").
 
 - [x] **#83 — self-update of the boot media (USB stick / local ESP) from
       the current golden (P2, owner 2026-10-02). Closed 2026-10-02.** The
