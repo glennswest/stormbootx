@@ -43,8 +43,16 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   scripts/build-boot-agent.sh --iso --binary $R/stormbootx.efi --media shelltest --output $PWD/t/s.iso && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso old "media       : shelltest" && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso ovmf "media       : shelltest" && \
+  tests/repro.sh && \
   tests/update-ovmf.sh $R/tcp4probe.efi'
 ```
+
+`tests/repro.sh` (#53) builds `stormbootx.efi` from two paths with two
+`CARGO_HOME`s and requires the same bytes: `build.rs` links with `/Brepro`
+and `/DEBUG:NONE` (lld-link's time stamp and PDB GUID), and
+`scripts/cargo-repro.sh` remaps the checkout, target dir and `CARGO_HOME`
+out of panic locations. Goldens and `build-boot-agent.sh` build through it;
+any new build of a shipped `.efi` must too.
 
 `tests/update-ovmf.sh` (#83) must stay last: it rebuilds `stormbootx.efi`
 with an Ed25519 test key compiled in (`STORMBOOTX_UPDATE_TEST_KEY`) and boots
@@ -1068,9 +1076,12 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       CARGO_HOME's paths in panic locations. `tests/repro.sh` builds from two
       paths with two CARGO_HOMEs and compares (`REPRO_RAW=1`: plain cargo, to
       show the leak); `scripts/cargo-repro.sh` is cargo with
-      `--remap-path-prefix` for the three. Next: confirm the cause in
-      sc-build, route build-golden.sh and build-boot-agent.sh through it, add
-      repro.sh to the sc-build command, close.
+      `--remap-path-prefix` for the three. Found in sc-build: the
+      `TimeDateStamp` was the link's wall-clock time, a PDB's CodeView GUID
+      was hashed from object paths (`build.rs`: `/Brepro`, `/DEBUG:NONE`),
+      and the `uefi` crate's CARGO_HOME path sat in a panic string (the
+      wrapper). Goldens and build-boot-agent.sh build through the wrapper;
+      repro.sh is in the sc-build command. Next: full sc-build, close.
 
 - [x] **#36 — the golden media name no fallback namespace (P3). Closed
       2026-10-08.** Every golden carried `build-boot-agent.sh`'s

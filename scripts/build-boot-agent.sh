@@ -157,7 +157,7 @@ STORMBOOTX_BUILD="$(git -C "$(dirname "$0")/.." rev-parse --short HEAD 2>/dev/nu
 export STORMBOOTX_BUILD
 
     say "building $WANT for x86_64-unknown-uefi"
-    ( cd "$ROOT" && cargo build --locked --release --target x86_64-unknown-uefi --bin "$WANT" )
+    ( cd "$ROOT" && scripts/cargo-repro.sh build --locked --release --target x86_64-unknown-uefi --bin "$WANT" )
     BIN="${CARGO_TARGET_DIR:-$ROOT/target}/x86_64-unknown-uefi/release/$WANT.efi"
 fi
 [[ -f "$BIN" ]] || die "no $WANT.efi at $BIN"

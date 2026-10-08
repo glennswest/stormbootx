@@ -715,6 +715,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   scripts/build-boot-agent.sh --iso --binary $R/stormbootx.efi --media shelltest --output $PWD/t/s.iso && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso old "media       : shelltest" && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso ovmf "media       : shelltest" && \
+  tests/repro.sh && \
   tests/update-ovmf.sh $R/tcp4probe.efi'
 ```
 
@@ -726,6 +727,18 @@ from an EFI Shell (`tests/shell-ovmf.sh`, #60), once with the old EDK shell
 and once with OVMF's own. `tests/update-ovmf.sh` (#83) runs last, because it
 rebuilds `stormbootx.efi` with a test key: ten self-update boots off a
 writable USB stick (*Self-update*).
+`tests/repro.sh` (#53) builds `stormbootx.efi` twice, from two copies of
+the commit at different paths with two `CARGO_HOME`s, and requires the same
+bytes. Two things made one commit give two digests in two goldens: lld-link
+wrote the link time into the PE `TimeDateStamp` and a PDB's CodeView GUID
+into a debug record (`build.rs` links with `/Brepro` and `/DEBUG:NONE`, for
+every build), and panic locations carry the `uefi` crate's source path under
+`CARGO_HOME`. `scripts/cargo-repro.sh` is cargo with `--remap-path-prefix`
+for the checkout, the target dir and `CARGO_HOME`; `deploy/build-golden.sh`
+and `build-boot-agent.sh` build through it, so a golden's `stormbootx.efi`
+is the same wherever its drive mounts. A plain `cargo build` still carries
+the path. `REPRO_RAW=1 tests/repro.sh` shows it.
+
 There is no host target and no `cargo test`. `src/sha256.rs`,
 `src/intent.rs`, `src/universal.rs`, `src/dnsname.rs`, `src/esp.rs`,
 `src/sntp.rs`, `src/manifest.rs` and `src/installconf.rs` are the exceptions: each uses only

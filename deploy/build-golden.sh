@@ -68,6 +68,10 @@
 #   STORMNIC-SOURCE.txt     each Rust driver's commit and digest
 #   SHA256SUMS, BUILD
 #   No iPXE, in this golden or any other (owner on #81; #91).
+#
+# Every .efi of ours is built through scripts/cargo-repro.sh (#53), so one
+# commit gives the same bytes in every golden whatever path its build drive
+# mounts at; tests/repro.sh proves it.
 set -euo pipefail
 
 say() { printf '==> %s\n' "$*"; }
@@ -167,7 +171,7 @@ nic-drivers)
     ;;
 stormbootx)
     say "building stormbootx and tcp4probe for x86_64-unknown-uefi"
-    ( cd "$ROOT" && cargo build --locked --release --target x86_64-unknown-uefi )
+    ( cd "$ROOT" && scripts/cargo-repro.sh build --locked --release --target x86_64-unknown-uefi )
     REL="${CARGO_TARGET_DIR:-$ROOT/target}/x86_64-unknown-uefi/release"
     mkdir -p "$OUT/bin" "$OUT/boot"
     cp "$REL/stormbootx.efi" "$REL/tcp4probe.efi" "$OUT/bin/"
@@ -192,7 +196,7 @@ stormbootx)
 stormbootx-rustnic)
     [[ -z "$DRIVERS" ]] || die "$GOLDEN builds its own drivers from the commit's pins; no --drivers"
     say "building stormbootx for x86_64-unknown-uefi"
-    ( cd "$ROOT" && cargo build --locked --release --target x86_64-unknown-uefi --bin stormbootx )
+    ( cd "$ROOT" && scripts/cargo-repro.sh build --locked --release --target x86_64-unknown-uefi --bin stormbootx )
     REL="${CARGO_TARGET_DIR:-$ROOT/target}/x86_64-unknown-uefi/release"
     mkdir -p "$OUT/bin" "$OUT/boot"
     cp "$REL/stormbootx.efi" "$OUT/bin/"
@@ -213,7 +217,7 @@ stormnic = $(cat "$WORK/drivers/STORMNIC-SOURCE.txt")"
 stormbootx-disk|stormbootx-rustnic-disk)
     [[ -z "$DRIVERS" ]] || die "$GOLDEN takes no --drivers"
     say "building stormbootx for x86_64-unknown-uefi"
-    ( cd "$ROOT" && cargo build --locked --release --target x86_64-unknown-uefi --bin stormbootx )
+    ( cd "$ROOT" && scripts/cargo-repro.sh build --locked --release --target x86_64-unknown-uefi --bin stormbootx )
     REL="${CARGO_TARGET_DIR:-$ROOT/target}/x86_64-unknown-uefi/release"
     cp "$REL/stormbootx.efi" "$WORK/stormbootx.efi"
     mkdir -p "$OUT/boot"

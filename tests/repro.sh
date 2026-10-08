@@ -2,6 +2,8 @@
 # Is stormbootx.efi the same bytes wherever it is built? (#53)
 #
 #   tests/repro.sh [BIN]     (default stormbootx)
+#   GOLDEN_EFI=t/g/bin/stormbootx.efi tests/repro.sh
+#                            … and a golden built in the checkout must match
 #
 # Two goldens built from one commit carried two different stormbootx.efi
 # digests, because every build gets a fresh drive: the checkout, the target
@@ -24,7 +26,8 @@ die() { say "FAIL: $*"; exit 1; }
 
 W="$(mktemp -d)"
 trap 'rm -rf "$W"' EXIT
-STAMP="$(git -C "$ROOT" rev-parse --short HEAD)"
+# The stamp build-golden.sh gives a golden, so GOLDEN_EFI can be compared.
+STAMP="$(git -C "$ROOT" rev-parse HEAD | cut -c1-7)"
 CARGO="$(command -v cargo)"
 
 build() {
@@ -63,4 +66,9 @@ if [[ "$da" != "$db" ]]; then
     die "$BIN.efi depends on where it was built"
 fi
 grep -aqF "$W" "$A" && die "$BIN.efi carries the build directory's path"
-say "PASS: $BIN.efi is the same bytes from two build directories and two CARGO_HOMEs"
+if [[ -n "${GOLDEN_EFI:-}" ]]; then
+    dg=$(sha256sum < "$GOLDEN_EFI" | cut -d' ' -f1)
+    say "$GOLDEN_EFI  $dg"
+    [[ "$dg" == "$da" ]] || die "$GOLDEN_EFI is not the bytes built here"
+fi
+say "PASS: $BIN.efi is the same bytes from two build directories and two CARGO_HOMEs${GOLDEN_EFI:+, and $GOLDEN_EFI too}"
