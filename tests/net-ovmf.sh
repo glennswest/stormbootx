@@ -630,15 +630,20 @@ if [[ -n "${VIRTIO_EFI:-}" ]]; then
     boot virtio-modern "$host_cpu" "" 404 good "${virtio[@]}" " 1af4:1041: "
     # The quiet trace stays out of the boot above; nic_verbose brings it back
     # (#80): StormnicVerbose is set before the driver loads.
-    grep -qF ": Supported" "$W/virtio.txt" && die "[virtio] a quiet boot printed the driver's trace"
+    # The driver's trace lines start `stormnic-virtio: `; its one quiet line is
+    # `stormnic-virtio 0.1.0: …` (and OVMF's debug port has `…: Supported` of
+    # its own).
+    grep -qE "stormnic-virtio: .*: Supported" "$W/virtio.txt" && die "[virtio] a quiet boot printed the driver's trace"
     BOOT_DRIVERS="$W/vdrv" BOOT_PREFER=virtio BOOT_NIC_VERBOSE=1 \
     STOP_AT="engine      : stormblock 19.4.0" BOOT_SETTLE=1 \
     boot virtio-verbose "$host_cpu" "" 404 good \
         "drivers     : stormnic drivers verbose (nic_verbose in " \
         "StormnicVerbose set until reset)" \
-        ": Supported" \
         "; stormnic-virtio.efi drives it" \
         "stormnic-virtio 0.1.0: "
+    grep -qE "stormnic-virtio: .*: Supported" "$W/virtio-verbose.txt" \
+        && say "[virtio-verbose] found the driver's trace: $(grep -E 'stormnic-virtio: .*: Supported' "$W/virtio-verbose.txt" | head -1)" \
+        || die "[virtio-verbose] nic_verbose set, but the driver printed no trace"
     BOOT_DRIVERS="$W/vdrv" STOP_AT="engine      : stormblock 19.4.0" BOOT_SETTLE=1 \
     boot virtio-kept "$host_cpu" "" 404 good \
         "stormnic-virtio.efi started" \
