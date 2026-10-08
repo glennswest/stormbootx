@@ -408,6 +408,8 @@ BOOT_IC=
 BOOT_NICDEV=
 boot() {
     local name=$1 cpu=$2 rng=$3 claim=$4 ntp=$5; shift 5
+    # NET_ONLY=<name>: run that boot alone (a rerun of one failure).
+    [[ -z "${NET_ONLY:-}" || "$NET_ONLY" == "$name" ]] || return 0
     rm -f "$W/claim.ok" "$W/claim.new" "$W/ntp.bad" "$W/intent"
     [[ $claim == ok ]] && : > "$W/claim.ok"
     [[ $claim == new ]] && : > "$W/claim.new"
@@ -460,7 +462,11 @@ boot() {
             && { sleep "$BOOT_SETTLE"; break; }
         sleep 1; t=$((t + 1))
     done
+    local how="stopped at its stop line"
+    kill -0 "$qemu" 2>/dev/null || how="qemu exited by itself"
+    (( t < LIMIT )) || how="ran the whole ${LIMIT}s"
     kill "$qemu" 2>/dev/null; wait "$qemu" 2>/dev/null || true
+    say "[$name] $how after ${t}s"
     # The firmware's debug port is read too: an exception dump may go there.
     cat "$log" "$W/$name.debug" 2>/dev/null | tr -d '\r' | sed 's/\x1b\[[0-9;]*[A-Za-z]//g' > "$txt"
     say "[$name] console:"
