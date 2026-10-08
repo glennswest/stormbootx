@@ -203,6 +203,83 @@ pub struct Entry {
     pub first_cluster: u32,
     pub size: u32,
     pub dir: bool,
+    /// The FAT attribute byte (read-only 0x01, hidden 0x02, system 0x04,
+    /// directory 0x10, archive 0x20).
+    pub attr: u8,
+    /// FAT `[date, time]` words, as stored; zero when unset.
+    pub created: [u16; 2],
+    pub accessed: u16,
+    pub modified: [u16; 2],
+}
+
+impl Entry {
+    /// The root directory, which has no entry of its own.
+    pub const ROOT: Entry = Entry {
+        first_cluster: 0,
+        size: 0,
+        dir: true,
+        attr: 0x10,
+        created: [0, 0],
+        accessed: 0,
+        modified: [0, 0],
+    };
+
+    fn from_raw(e: &[u8; 32], fat32: bool) -> Entry {
+        let hi = if fat32 { (le16(e, 20) as u32) << 16 } else { 0 };
+        Entry {
+            first_cluster: hi | le16(e, 26) as u32,
+            size: le32(e, 28),
+            dir: e[11] & 0x10 != 0,
+            attr: e[11],
+            created: [le16(e, 16), le16(e, 14)],
+            accessed: le16(e, 18),
+            modified: [le16(e, 24), le16(e, 22)],
+        }
+    }
+}
+
+/// One entry of a directory listing: what `Fat::lookup` would find, and its
+/// name, the long one when it has one and the 8.3 one (with the NT case
+/// flags) when not.
+#[derive(Clone)]
+pub struct Listed {
+    pub entry: Entry,
+    short: [u8; 11],
+    long: bool,
+    units: [u16; 260],
+    len: usize,
+}
+
+impl Listed {
+    /// The name in UCS-2, no terminator.
+    pub fn name(&self) -> &[u16] {
+        &self.units[..self.len]
+    }
+
+    fn matches(&self, short: Option<[u8; 11]>, name: &str) -> bool {
+        short.map_or(false, |s| s == self.short) || (self.long && lfn_eq(self.name(), name))
+    }
+}
+
+/// Where a directory listing has got to. Cloned to look ahead without moving.
+#[derive(Clone)]
+pub struct DirCursor {
+    dir: DirRef,
+    cluster: u32,
+    at: u64,
+    end: u64,
+    steps: u32,
+    done: bool,
+    lfn: Lfn,
+}
+
+/// Where in its chain the last read of a file ended, so the next read at or
+/// after it does not walk the chain from the start. `Hint::default()` knows
+/// nothing; one hint belongs to one file.
+#[derive(Clone, Copy, Default)]
+pub struct Hint {
+    index: u32,
+    cluster: u32,
 }
 
 #[derive(Clone, Copy)]
@@ -224,6 +301,7 @@ pub struct Fat {
     root_cluster: u32,
     data_at: u64,
     clusters: u32,
+    label: [u8; 11],
     fat_cache: Cache,
     dir_cache: Cache,
 }
@@ -300,6 +378,12 @@ impl Fat {
             }
             (0, 0)
         };
+        // The label of the extended BPB (signature 0x29), if it has one.
+        let (sig, at) = if kind == 32 { (66, 71) } else { (38, 43) };
+        let mut label = [b' '; 11];
+        if b[sig] == 0x29 {
+            label.copy_from_slice(&b[at..at + 11]);
+        }
         let root_at = base + (reserved + nfats * fat_size) * bps;
         let root_len = root_sectors * bps;
         let fat = Fat {
@@ -313,6 +397,7 @@ impl Fat {
             root_cluster,
             data_at: root_at + root_len,
             clusters: clusters as u32,
+            label,
             fat_cache: Cache::new(),
             dir_cache: Cache::new(),
         };
@@ -330,6 +415,26 @@ impl Fat {
     /// Bytes per sector, from the boot sector.
     pub fn sector_size(&self) -> u32 {
         self.sector as u32
+    }
+
+    /// Bytes per cluster.
+    pub fn cluster_size(&self) -> u32 {
+        self.cluster as u32
+    }
+
+    /// The data area's size in bytes.
+    pub fn volume_bytes(&self) -> u64 {
+        self.clusters as u64 * self.cluster
+    }
+
+    /// The boot sector's volume label, trailing spaces dropped; empty for
+    /// none or `NO NAME`.
+    pub fn label(&self) -> &[u8] {
+        let n = self.label.iter().rposition(|&c| c != b' ').map_or(0, |i| i + 1);
+        match &self.label[..n] {
+            b"NO NAME" => &[],
+            l => l,
+        }
     }
 
     fn valid(&self, c: u32) -> bool {
@@ -392,11 +497,22 @@ impl Fat {
         Ok(Some(v))
     }
 
-    /// The entry called `name` in `dir`.
-    fn find_in<D: Disk>(&mut self, disk: &mut D, dir: DirRef, name: &str) -> Result<Entry, Error> {
-        let short = short_name(name);
-        let mut lfn = Lfn::new();
-        let (mut cluster, mut at, mut end) = match dir {
+    fn dir_ref(&self, dir: &Entry) -> DirRef {
+        // `..` of a first-level directory names the root as cluster 0.
+        match dir.first_cluster {
+            0 if self.kind == 32 => DirRef::Chain(self.root_cluster),
+            0 => DirRef::Root,
+            c => DirRef::Chain(c),
+        }
+    }
+
+    /// A listing of `dir` from its first entry.
+    pub fn open_dir(&self, dir: &Entry) -> Result<DirCursor, Error> {
+        if !dir.dir {
+            return Err(Error::NotFound);
+        }
+        let d = self.dir_ref(dir);
+        let (cluster, at, end) = match d {
             DirRef::Root => (0, self.root_at, self.root_at + self.root_len),
             DirRef::Chain(c) => {
                 if !self.valid(c) {
@@ -405,78 +521,212 @@ impl Fat {
                 (c, self.cluster_at(c), self.cluster_at(c) + self.cluster)
             }
         };
-        let mut steps = 0u32;
+        Ok(DirCursor { dir: d, cluster, at, end, steps: 0, done: false, lfn: Lfn::new() })
+    }
+
+    /// The next entry of a listing, as it is on the disk (with `.` and `..`
+    /// in a subdirectory); `None` at the end. Deleted entries, volume labels
+    /// and the long-name parts are not entries.
+    pub fn next_entry<D: Disk>(&mut self, disk: &mut D, c: &mut DirCursor) -> Result<Option<Listed>, Error> {
         loop {
-            if at >= end {
-                let DirRef::Chain(_) = dir else { return Err(Error::NotFound) };
-                match self.next(disk, cluster)? {
-                    None => return Err(Error::NotFound),
+            if c.done {
+                return Ok(None);
+            }
+            if c.at >= c.end {
+                let DirRef::Chain(_) = c.dir else {
+                    c.done = true;
+                    return Ok(None);
+                };
+                match self.next(disk, c.cluster)? {
+                    None => {
+                        c.done = true;
+                        return Ok(None);
+                    }
                     Some(n) => {
-                        steps += 1;
-                        if steps > self.clusters {
+                        c.steps += 1;
+                        if c.steps > self.clusters {
                             return Err(Error::Corrupt("a directory's chain loops"));
                         }
-                        cluster = n;
-                        at = self.cluster_at(n);
-                        end = at + self.cluster;
+                        c.cluster = n;
+                        c.at = self.cluster_at(n);
+                        c.end = c.at + self.cluster;
                     }
                 }
             }
             let mut e = [0u8; 32];
-            Self::cached(disk, &mut self.dir_cache, self.base, self.sector, at, &mut e)?;
-            at += 32;
+            Self::cached(disk, &mut self.dir_cache, self.base, self.sector, c.at, &mut e)?;
+            c.at += 32;
             match e[0] {
-                0x00 => return Err(Error::NotFound),
+                0x00 => {
+                    c.done = true;
+                    return Ok(None);
+                }
                 0xE5 => {
-                    lfn.reset();
+                    c.lfn.reset();
                     continue;
                 }
                 _ => {}
             }
             let attr = e[11];
             if attr & 0x3F == 0x0F {
-                lfn.push(&e);
+                c.lfn.push(&e);
                 continue;
             }
             if attr & 0x08 != 0 {
                 // A volume label.
-                lfn.reset();
+                c.lfn.reset();
                 continue;
             }
-            let mut sfn = [0u8; 11];
-            sfn.copy_from_slice(&e[0..11]);
-            if sfn[0] == 0x05 {
-                sfn[0] = 0xE5;
+            let mut short = [0u8; 11];
+            short.copy_from_slice(&e[0..11]);
+            if short[0] == 0x05 {
+                short[0] = 0xE5;
             }
-            let long = lfn.name(checksum(&e[0..11]));
-            let hit = short.map_or(false, |s| s == sfn) || long.map_or(false, |l| lfn_eq(l, name));
-            lfn.reset();
-            if hit {
-                let hi = if self.kind == 32 { (le16(&e, 20) as u32) << 16 } else { 0 };
-                return Ok(Entry {
-                    first_cluster: hi | le16(&e, 26) as u32,
-                    size: le32(&e, 28),
-                    dir: attr & 0x10 != 0,
-                });
+            let mut out = Listed {
+                entry: Entry::from_raw(&e, self.kind == 32),
+                short,
+                long: false,
+                units: [0; 260],
+                len: 0,
+            };
+            if let Some(l) = c.lfn.name(checksum(&e[0..11])) {
+                out.units[..l.len()].copy_from_slice(l);
+                out.len = l.len();
+                out.long = true;
+            } else {
+                // 8.3, with Windows NT's lower-case flags for each half.
+                let half = |part: &[u8], lower: bool, units: &mut [u16; 260], len: &mut usize| {
+                    let n = part.iter().rposition(|&ch| ch != b' ').map_or(0, |i| i + 1);
+                    for &ch in &part[..n] {
+                        let ch = if lower { ch.to_ascii_lowercase() } else { ch };
+                        units[*len] = ch as u16;
+                        *len += 1;
+                    }
+                };
+                half(&short[0..8], e[12] & 0x08 != 0, &mut out.units, &mut out.len);
+                if short[8..11] != *b"   " {
+                    out.units[out.len] = b'.' as u16;
+                    out.len += 1;
+                    half(&short[8..11], e[12] & 0x10 != 0, &mut out.units, &mut out.len);
+                }
+            }
+            c.lfn.reset();
+            return Ok(Some(out));
+        }
+    }
+
+    /// The entry called `name` in `dir`.
+    fn find_in<D: Disk>(&mut self, disk: &mut D, dir: &Entry, name: &str) -> Result<Entry, Error> {
+        let short = short_name(name);
+        let mut c = self.open_dir(dir)?;
+        while let Some(l) = self.next_entry(disk, &mut c)? {
+            if l.matches(short, name) {
+                return Ok(l.entry);
             }
         }
+        Err(Error::NotFound)
     }
 
     /// Walk `path` from the root. `\` and `/` both separate, case is ignored
     /// (ASCII), and empty components are skipped.
     pub fn lookup<D: Disk>(&mut self, disk: &mut D, path: &str) -> Result<Entry, Error> {
-        let root = if self.kind == 32 { DirRef::Chain(self.root_cluster) } else { DirRef::Root };
-        let mut cur = Entry { first_cluster: 0, size: 0, dir: true };
-        let mut dir = root;
-        for part in path.split(['\\', '/']).filter(|p| !p.is_empty()) {
+        self.lookup_in(disk, &Entry::ROOT, path)
+    }
+
+    /// `lookup`, starting at the directory `from` (the root if the path
+    /// starts with a separator). `.` stays where it is.
+    pub fn lookup_in<D: Disk>(&mut self, disk: &mut D, from: &Entry, path: &str) -> Result<Entry, Error> {
+        let mut cur = if path.starts_with(['\\', '/']) { Entry::ROOT } else { *from };
+        for part in path.split(['\\', '/']).filter(|p| !p.is_empty() && *p != ".") {
             if !cur.dir {
                 return Err(Error::NotFound);
             }
-            cur = self.find_in(disk, dir, part)?;
-            // `..` of a first-level directory names the root as cluster 0.
-            dir = if cur.first_cluster == 0 { root } else { DirRef::Chain(cur.first_cluster) };
+            cur = self.find_in(disk, &cur, part)?;
+            if cur.dir && cur.first_cluster == 0 {
+                cur = Entry::ROOT;
+            }
         }
         Ok(cur)
+    }
+
+    /// Up to `out.len()` bytes of `file` from byte `pos`: how many were read,
+    /// 0 at or past the end. `hint` carries where the last read ended, so
+    /// reading a file front to back walks its chain once. Runs of
+    /// consecutive clusters go in one read.
+    pub fn read_at<D: Disk>(
+        &mut self,
+        disk: &mut D,
+        file: &Entry,
+        pos: u64,
+        out: &mut [u8],
+        hint: &mut Hint,
+    ) -> Result<usize, Error> {
+        if file.dir {
+            return Err(Error::NotAFile);
+        }
+        let size = file.size as u64;
+        if pos >= size || out.is_empty() {
+            return Ok(0);
+        }
+        let want = (out.len() as u64).min(size - pos);
+        let target = (pos / self.cluster) as u32;
+        let (mut idx, mut c) = if hint.cluster != 0 && hint.index <= target {
+            (hint.index, hint.cluster)
+        } else {
+            if !self.valid(file.first_cluster) {
+                return Err(Error::Corrupt("a file starts outside the volume"));
+            }
+            (0, file.first_cluster)
+        };
+        let mut steps = 0u32;
+        let limit = self.clusters;
+        let step = |steps: &mut u32| {
+            *steps += 1;
+            if *steps > limit {
+                Err(Error::Corrupt("a file's chain loops"))
+            } else {
+                Ok(())
+            }
+        };
+        while idx < target {
+            c = self.next(disk, c)?.ok_or(Error::Corrupt("a file's chain ends before the file does"))?;
+            idx += 1;
+            step(&mut steps)?;
+        }
+        let mut done = 0u64;
+        loop {
+            let off = pos + done - idx as u64 * self.cluster;
+            let start = c;
+            let mut span = self.cluster - off;
+            let mut after = None;
+            while span < want - done {
+                match self.next(disk, c)? {
+                    Some(n) if n == c + 1 => {
+                        c = n;
+                        idx += 1;
+                        span += self.cluster;
+                        step(&mut steps)?;
+                    }
+                    Some(n) => {
+                        after = Some(n);
+                        break;
+                    }
+                    None => return Err(Error::Corrupt("a file's chain ends before the file does")),
+                }
+            }
+            let n = span.min(want - done);
+            if !disk.read(self.cluster_at(start) + off, &mut out[done as usize..(done + n) as usize]) {
+                return Err(Error::Io);
+            }
+            done += n;
+            if done >= want {
+                *hint = Hint { index: idx, cluster: c };
+                return Ok(want as usize);
+            }
+            c = after.ok_or(Error::Corrupt("a file's chain ends before the file does"))?;
+            idx += 1;
+            step(&mut steps)?;
+        }
     }
 
     /// Read the whole of a file `lookup` found into `out`, which must be
@@ -582,6 +832,7 @@ fn lfn_eq(long: &[u16], name: &str) -> bool {
 }
 
 /// A long name being assembled from its entries, which come last part first.
+#[derive(Clone)]
 struct Lfn {
     units: [u16; 260],
     parts: u8,
@@ -838,6 +1089,81 @@ mod tests {
         assert_eq!(fat.read_file(&mut img.disk, &dir, &mut []), Err(Error::NotAFile));
         // `..` of a first-level directory is the root.
         assert!(fat.lookup(&mut img.disk, "\\EFI\\..\\deep\\er").unwrap().dir);
+        check_fs(&mut fat, img);
+    }
+
+    fn names(fat: &mut Fat, disk: &mut TestDisk, path: &str) -> Vec<String> {
+        let d = fat.lookup(disk, path).unwrap();
+        let mut c = fat.open_dir(&d).unwrap();
+        let mut v = Vec::new();
+        while let Some(l) = fat.next_entry(disk, &mut c).unwrap() {
+            v.push(String::from_utf16(l.name()).unwrap());
+        }
+        v
+    }
+
+    fn has(list: &[String], want: &str) -> bool {
+        list.iter().any(|n| n.eq_ignore_ascii_case(want))
+    }
+
+    /// What `espfs.rs` serves a bootloader through (#42): listings, reads at
+    /// any position in any size, lookups from a directory, and each entry's
+    /// attributes and times.
+    fn check_fs(fat: &mut Fat, img: &mut Image) {
+        assert_eq!(fat.label(), b"TESTESP");
+        let root = names(fat, &mut img.disk, "\\");
+        for want in ["EFI", "deep", "empty.txt", "frag.bin", "pin.bin", "filler00.x", "filler69.x"] {
+            assert!(has(&root, want), "{want} is not listed in the root: {root:?}");
+        }
+        assert!(!has(&root, "hole1.bin"), "a deleted file is listed");
+        assert!(!has(&root, "TESTESP"), "the volume label is listed");
+        assert_eq!(root.len(), 5 + 70, "{root:?}");
+        let boot = names(fat, &mut img.disk, "\\EFI\\BOOT");
+        assert_eq!(boot.len(), 4, "{boot:?}");
+        assert_eq!(&boot[..2], &[".", ".."]);
+        assert!(has(&boot, "BOOTX64.EFI"));
+        // A long name comes back as written, case and spaces kept.
+        assert!(boot.iter().any(|n| n == "a rather long file name.txt"), "{boot:?}");
+
+        // Relative to a directory, absolute from one, and `.`.
+        let efi = fat.lookup(&mut img.disk, "\\EFI").unwrap();
+        let want = fat.lookup(&mut img.disk, "\\EFI\\BOOT\\BOOTX64.EFI").unwrap();
+        assert_eq!(fat.lookup_in(&mut img.disk, &efi, "BOOT\\BOOTX64.EFI").unwrap(), want);
+        assert_eq!(fat.lookup_in(&mut img.disk, &efi, ".\\BOOT\\.\\bootx64.efi").unwrap(), want);
+        assert!(fat.lookup_in(&mut img.disk, &efi, "\\deep\\er").unwrap().dir);
+        assert_eq!(fat.lookup_in(&mut img.disk, &efi, "deep"), Err(Error::NotFound));
+        assert_eq!(fat.lookup_in(&mut img.disk, &efi, "..").unwrap(), Entry::ROOT);
+        assert!(efi.dir && efi.attr & 0x10 != 0);
+        assert!(want.attr & 0x10 == 0 && want.modified[0] != 0, "{want:?}");
+
+        // Front to back in an odd size with one hint, then backwards and
+        // across the fragment with the same hint.
+        for (name, bytes) in img.files.clone() {
+            let e = fat.lookup(&mut img.disk, name).unwrap();
+            let mut hint = Hint::default();
+            let mut got = Vec::new();
+            let mut buf = vec![0u8; 1237];
+            loop {
+                let n = fat.read_at(&mut img.disk, &e, got.len() as u64, &mut buf, &mut hint).unwrap();
+                if n == 0 {
+                    break;
+                }
+                got.extend_from_slice(&buf[..n]);
+            }
+            assert!(got == bytes, "{name}: read_at front to back differs");
+            let len = bytes.len() as u64;
+            for pos in [len.saturating_sub(1), 0, len / 2, len / 3, len.saturating_sub(5000)] {
+                let mut b = vec![0u8; 3000];
+                let n = fat.read_at(&mut img.disk, &e, pos, &mut b, &mut hint).unwrap();
+                let end = (pos as usize + 3000).min(bytes.len());
+                let from = (pos as usize).min(bytes.len());
+                assert_eq!(n, end - from, "{name} at {pos}");
+                assert!(b[..n] == bytes[from..end], "{name} at {pos}: the bytes differ");
+            }
+            assert_eq!(fat.read_at(&mut img.disk, &e, len, &mut buf, &mut hint), Ok(0));
+            assert_eq!(fat.read_at(&mut img.disk, &e, len + 9, &mut buf, &mut hint), Ok(0));
+        }
+        assert_eq!(fat.read_at(&mut img.disk, &efi, 0, &mut [0u8; 4], &mut Hint::default()), Err(Error::NotAFile));
     }
 
     #[test]
