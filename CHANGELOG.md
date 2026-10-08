@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-08
+- **refactor:** removed the old sbregistry `/v1/clones/claim` path (#17): `registry::claim`/`registry::existing` and `main.rs`'s `USE_REGISTRY`, `REGISTRY_IP`/`PORT`/`HOST` and `GOLDEN`. It was compiled out since the boothost claim replaced it, sent no credential, and spoke plain HTTP to a node registry moving to TLS with auth (stormcos#355). No behaviour changes: every boot already claimed the engine's `boothost/<name>`.
 - **docs:** CLAUDE.md work plan: #25 closed (sc-build of 3be647a passing).
 - **fix:** the FEC report knows a ConnectX-3 (#25). A ConnectX-3 or -3 Pro (15b3:1003/1007, the X9 blades' 10/40G card) was "not a ConnectX physical function this code knows", followed by "no ConnectX on the bus"; it now says `ConnectX-3 (15b3:1003): no FEC to report (10/40G, no RS-FEC)`, and "no ConnectX on the bus" is printed only when no Mellanox function was seen. New core-only `src/connectx.rs` (the id tables, from `mlxfec::KNOWN`, with host tests).
 - **docs:** CLAUDE.md work plan: #4 closed (sc-build of 80dc3a8 passing).

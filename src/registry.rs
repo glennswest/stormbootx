@@ -5,8 +5,10 @@
 //! `claim_default` claims `boothost/default` by MAC for a machine nothing has
 //! named (#15, see `universal.rs`). `engine_version` reads the public health
 //! endpoint, which is how the last of those knows it is safe to make.
-//! `claim` and `existing` are the old sbregistry `/v1/clones/claim` path,
-//! compiled out by `USE_REGISTRY = false` in `main.rs`.
+//! The old sbregistry `/v1/clones/claim` path is gone (#17): it was compiled
+//! out from the day the boothost claim replaced it, and the node registry it
+//! spoke to moves to TLS with auth (stormcos#355), which plain HTTP from
+//! firmware could never meet. It is in the history before #17.
 //!
 //! HTTP is spoken directly over TCP4 rather than through EFI_HTTP_PROTOCOL.
 //! One request is a hundred lines; EFI_HTTP is a whole driver stack that
@@ -341,52 +343,11 @@ pub fn boot_intent(
     Ok((status, body.to_string()))
 }
 
-/// Claim an image for this machine.
-///
-/// The service tag is the `consumer`, which is exactly what that field is for
-/// — sbregistry sets it late precisely so a warm clone can be bound to whoever
-/// turns out to need it. It also makes `GET /v1/clones?consumer=<tag>` the
-/// answer to "what is this machine booting?".
-pub fn claim(
-    server: [u8; 4],
-    port: u16,
-    host: &str,
-    golden: &str,
-    service_tag: &str,
-) -> Result<Attach, String> {
-    let body = format!("{{\"golden\":\"{golden}\",\"consumer\":\"{service_tag}\"}}");
-    let response = request(server, port, host, "POST", "/v1/clones/claim", Some(&body))?;
-    let (status, body) = split_response(&response)?;
-    if !(200..300).contains(&status) {
-        return Err(format!("claim returned HTTP {status}: {}", body.trim()));
-    }
-    attach_from(body)
-}
-
-/// Look for a clone this machine already holds, so a reboot reattaches the
-/// same volume instead of minting another.
-pub fn existing(
-    server: [u8; 4],
-    port: u16,
-    host: &str,
-    service_tag: &str,
-) -> Result<Option<Attach>, String> {
-    let path = format!("/v1/clones?consumer={service_tag}");
-    let response = request(server, port, host, "GET", &path, None)?;
-    let (status, body) = split_response(&response)?;
-    if !(200..300).contains(&status) {
-        return Err(format!("lookup returned HTTP {status}"));
-    }
-    if body.trim() == "[]" || body.trim().is_empty() {
-        return Ok(None);
-    }
-    attach_from(body).map(Some)
-}
-
 /// Read an attach out of a response, in either spelling.
 ///
-/// sbregistry answers `address`/`port`; stormblock answers `traddr`/`trsvcid`
-/// inside an `addresses` array (`mgmt/api/v1.rs`, `AttachInfo::NvmeTcp`). Both
+/// The engine's boothost claim has answered `address`/`port`, and stormblock
+/// also answers `traddr`/`trsvcid` inside an `addresses` array (`mgmt/api/v1.rs`,
+/// `AttachInfo::NvmeTcp`). Both
 /// are accepted rather than one being chosen, because the alternative is a
 /// boot path that fails on a field name — and the two ends of this are moving
 /// independently right now.

@@ -999,9 +999,11 @@ bytes are its `boot/<name>.iso`.
 
 ## In the code, not active
 
-- `registry::claim` / `registry::existing`: the older sbregistry
-  `/v1/clones/claim` path at `sbregistry.gt.lo:5100`, behind
-  `USE_REGISTRY = false` in `main.rs`.
+The older sbregistry `/v1/clones/claim` path is no longer here (#17): it was
+compiled out from the day the boothost claim replaced it, and it spoke plain
+HTTP with no credential to a node registry that is moving to TLS with auth
+(stormcos#355). It is in the history before #17.
+
 - `config::render` / `config::write_file` and the `stamp` key: the first
   self-update plan (#2), superseded by #83, which writes through its own
   `selfupdate.rs`.

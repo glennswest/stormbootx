@@ -86,21 +86,6 @@ use alloc::vec::Vec;
 
 use uefi::prelude::*;
 
-/// Where sbregistry lives, for the old `/v1/clones/claim` path. Compiled out
-/// by `USE_REGISTRY = false`; the live path is the boothost claim below.
-const REGISTRY_IP: [u8; 4] = [192, 168, 200, 22];
-const REGISTRY_PORT: u16 = 5100;
-const REGISTRY_HOST: &str = "sbregistry.gt.lo:5100";
-
-/// The golden to claim when this machine has no clone yet.
-const GOLDEN: &str = "stormcos-edge";
-
-/// Take the old sbregistry path instead of the engine's boothost claim.
-///
-/// Off. The engine's `boothost/<tag>` claim, which mints a per-machine clone,
-/// replaced it, and is what runs when this is `false` (step 3). Kept because
-/// the code is small and is the only record of the sbregistry contract.
-const USE_REGISTRY: bool = false;
 
 /// The floor: what to attach when the config file says nothing.
 ///
@@ -336,22 +321,7 @@ fn run() -> Result<(), String> {
     // The name the claim was made on, as the engine knows it (#76): the
     // reply's host when it named one, else the name claimed. `None` when
     // nothing was claimed.
-    let (attach, claimed_name) = if USE_REGISTRY {
-        // Reuse a clone this machine already holds, so a reboot reattaches the
-        // same volume rather than minting another.
-        uefi::println!("registry    : {REGISTRY_HOST}");
-        let a = match registry::existing(REGISTRY_IP, REGISTRY_PORT, REGISTRY_HOST, &tag)? {
-            Some(a) => {
-                uefi::println!("  reattaching the clone already bound to {tag}");
-                a
-            }
-            None => {
-                uefi::println!("  no clone for {tag}; claiming from golden {GOLDEN}");
-                registry::claim(REGISTRY_IP, REGISTRY_PORT, REGISTRY_HOST, GOLDEN, &tag)?
-            }
-        };
-        (a, Some(tag.clone()))
-    } else {
+    let (attach, claimed_name) = {
         // Where to attach: the config file, else the compiled floor. Nothing
         // on the network is asked for this — the portal is an appliance
         // address, and the question worth asking is answered below.
