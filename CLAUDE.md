@@ -1062,14 +1062,23 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       the ESP golden, stormcentral#215). **Not seen:** a blade's SOL
       capture past stormbootx (the capture drops: stormcentral#220/#499).
 
-- [ ] **#36 — the golden media name no fallback namespace (P3). In
-      progress 2026-10-08.** Every golden carried `build-boot-agent.sh`'s
+- [x] **#36 — the golden media name no fallback namespace (P3). Closed
+      2026-10-08.** Every golden carried `build-boot-agent.sh`'s
       default nsid 2, a 32 MB namespace with no ESP on forge, so every
       unnamed boot attached it for nothing. `fallback = none`
       (`--no-fallback`) falls straight through instead; every golden writes
       it and `build-golden.sh` refuses a tree naming `nqn`/`nsid`. With no
       attach coming, a self-update trial counts the engine's answer as good.
-      net-ovmf's `release` boot is built that way. Next: sc-build, then close.
+      net-ovmf's `release` boot is built that way. b2f6517. sc-build: no
+      warnings, suites, espprobe, net-ovmf (`release`: `fallback : none …`,
+      `no network boot: no claim gave this machine an image …`, no
+      `attaching`, NIC given back, PXE after), both shells; the fw golden
+      tree's conf has `fallback = none` and no nqn/nsid, and its ISO and the
+      rustnic-disk image booted under OVMF (`NIC=virtio`) printed the
+      `fallback` line; update-ovmf. (#115 was the first run's media-ovmf
+      check without a NIC, which stops before the line.) **Not run:** the
+      trial marked good by the engine's answer with no fallback. Ships with
+      the next release.
 
 - [x] **#67 — `esp.rs` reads a FAT32-labelled ESP with a FAT16 cluster
       count (P3, from #37). Closed 2026-10-08.** pvetest1's 11.53 ESP

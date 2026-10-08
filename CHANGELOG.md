@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-08
+- **docs:** CLAUDE.md work plan: #36 closed (sc-build of b2f6517 passing).
 - **fix:** the golden media name no fallback namespace (#36). `fallback = none` in `stormboot.conf` (`build-boot-agent.sh --no-fallback`) makes a boot that no claim gives an image fall straight through to the local disk, with nothing attached, and say so (`fallback : none …`, `no network boot: no claim gave this machine an image, and the media names no fallback`). Every golden writes it, and `build-golden.sh` refuses a media tree that names `nqn`/`nsid`. Before this, every golden carried the script's default `nqn.2026-09.lo.g16:stormcos` nsid 2, a 32 MB namespace with no ESP on forge, so every unnamed boot attached it and fell through anyway. With no attach coming, a medium on self-update trial counts the engine's answer as good. Media without the key keep the old fallback. `tests/net-ovmf.sh`'s `release` boot is built that way.
 - **docs:** CLAUDE.md work plan: #80/#102 closed; v0.24.0 goldens.
 - **docs:** CLAUDE.md work plan: #67 closed (sc-build of 71ed9fb passing).
