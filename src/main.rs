@@ -353,6 +353,9 @@ fn run() -> Result<(), String> {
         // address, and the question worth asking is answered below.
         let cfg = config::resolve(&DEFAULTS);
         uefi::println!("target      : {}", cfg.source);
+        if !cfg.fallback {
+            uefi::println!("fallback    : none (a claim that finds nothing falls through to the local disk)");
+        }
 
         // Resolution says *where*; the claim says *which*. Which image this
         // machine runs is a fleet decision that lives next to the images, as a
@@ -361,9 +364,11 @@ fn run() -> Result<(), String> {
         // nothing on the media has to change. The engine's API is the same host
         // as the portal: one serves the bytes, the other says which bytes.
         //
-        // Falling back rather than failing is the whole rule here. A machine
-        // with no synonym yet, or an engine that is down, still boots what
-        // resolution produced — an image nobody has assigned beats no image.
+        // Falling back rather than failing is the rule here, unless the media
+        // says `fallback = none` (the goldens, #36): then a machine with no
+        // synonym yet, or an engine that is down, falls through to the local
+        // disk instead of attaching a namespace nobody assigned it.
+        let mut engine_answered = false;
         let claimed = if cfg.claim {
             let [a, b, c, d] = cfg.portal;
             let host = format!("{a}.{b}.{c}.{d}:{}", cfg.api_port);
@@ -376,6 +381,7 @@ fn run() -> Result<(), String> {
             // before stormblock#200 would give them all one, so anything but
             // a version after 19.3.0 is "no".
             let (version, iface) = registry::engine_version(cfg.portal, cfg.api_port, &host);
+            engine_answered = version.is_ok();
             let default_mac = if stated.is_none() { mac.map(|(m, _)| m).zip(mac_colon.clone()) } else { None };
             let universal = match &version {
                 Ok(v) if universal::supports_default_claim(v) => {
@@ -617,6 +623,18 @@ fn run() -> Result<(), String> {
             Some((a, name)) => {
                 let name = a.host.clone().unwrap_or(name);
                 (a, Some(name))
+            }
+            None if !cfg.fallback => {
+                // The engine answered, so a medium on trial (#83) has done
+                // what it can: no attach is coming for a machine nothing
+                // names, and that must not count against the new set.
+                if engine_answered {
+                    selfupdate::mark_good("the engine answered; no fallback to attach");
+                }
+                handoff::set_tag(stated.as_deref().or(dns.as_ref().map(|(_, h, _)| h.as_str())));
+                return Err(String::from(
+                    "no claim gave this machine an image, and the media names no fallback (fallback = none)",
+                ));
             }
             None => (
                 registry::Attach {

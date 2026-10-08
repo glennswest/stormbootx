@@ -39,6 +39,7 @@ OUTDIR="$(cd "$(dirname "$0")/.." && pwd)/tmp/images"
 OUTPUT=""
 BIN=""
 PIN="no"
+NOFALLBACK=""
 PROBE="no"
 ISO="no"
 FEC=""
@@ -86,6 +87,8 @@ Options:
   --port N         portal port (default 4420)
   --nqn NQN        subsystem NQN (default nqn.2026-09.lo.g16:stormcos)
   --nsid N         namespace (default 2)
+  --no-fallback    no nqn/nsid: a claim that finds nothing falls straight
+                   through to the local disk (`fallback = none`, #36; the goldens)
   --size MIB       ESP size (default 4; mkfs.fat picks FAT12/16 by size)
   --binary PATH    prebuilt .efi (default: build it)
   --output PATH    image path (default tmp/images/stormbootx.img in the checkout)
@@ -113,6 +116,7 @@ while [[ $# -gt 0 ]]; do
         --port)   PORT="$2"; shift 2 ;;
         --nqn)    NQN="$2"; shift 2 ;;
         --nsid)   NSID="$2"; shift 2 ;;
+        --no-fallback) NOFALLBACK=1; shift ;;
         --size)   ESP_MIB="$2"; shift 2 ;;
         --binary) BIN="$2"; shift 2 ;;
         --output) OUTPUT="$2"; shift 2 ;;
@@ -120,6 +124,8 @@ while [[ $# -gt 0 ]]; do
         *) die "unknown argument: $1 (--help for usage)" ;;
     esac
 done
+
+[[ -z "$NOFALLBACK" || "$PIN" == "no" ]] || die "--no-fallback and --pin: a pinned stick's namespace is its only target"
 
 if [[ "$ISO" == "yes" ]]; then
     OUTPUT="${OUTPUT:-$OUTDIR/stormbootx.iso}"
@@ -177,6 +183,26 @@ portal = $PORTAL
 port   = $PORT
 nqn    = $NQN
 nsid   = $NSID
+CONF
+elif [[ -n "$NOFALLBACK" ]]; then
+    cat > "$WORK/stormboot.conf" <<CONF
+# stormbootx — the portal is an appliance address, the image is this machine's.
+#
+# Nothing here says which image to boot. That is a fleet decision and it lives
+# next to the images: this machine's boothost synonym on the engine, claimed
+# at $PORTAL:$API_PORT as boothost/default by its MAC (or by service tag on an
+# engine older than stormblock#200), in one request that answers with a
+# copy-on-write clone and the address, NQN and NSID reaching it. Moving this machine to another
+# version is a PUT on its name — this stick does not change.
+#
+# No fallback (#36): a machine no claim gives an image to boots its local
+# disk. This medium names no namespace, so one golden boots every machine.
+#
+portal   = $PORTAL
+port     = $PORT
+api_port = $API_PORT
+claim    = yes
+fallback = none
 CONF
 else
     cat > "$WORK/stormboot.conf" <<CONF
@@ -399,7 +425,11 @@ elif [[ "$PIN" == "yes" ]]; then
 else
     say "portal  $PORTAL:$PORT  (named, no DNS)"
     say "image   claimed as boothost/default by MAC at $PORTAL:$API_PORT (by service tag on older engines)"
-    say "        falling back to $NQN?nsid=$NSID if the claim cannot be reached"
+    if [[ -n "$NOFALLBACK" ]]; then
+        say "        no fallback: a claim that finds nothing boots the local disk"
+    else
+        say "        falling back to $NQN?nsid=$NSID if the claim cannot be reached"
+    fi
 fi
 cat <<EOF
 

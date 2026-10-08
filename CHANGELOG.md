@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-08
+- **fix:** the golden media name no fallback namespace (#36). `fallback = none` in `stormboot.conf` (`build-boot-agent.sh --no-fallback`) makes a boot that no claim gives an image fall straight through to the local disk, with nothing attached, and say so (`fallback : none …`, `no network boot: no claim gave this machine an image, and the media names no fallback`). Every golden writes it, and `build-golden.sh` refuses a media tree that names `nqn`/`nsid`. Before this, every golden carried the script's default `nqn.2026-09.lo.g16:stormcos` nsid 2, a 32 MB namespace with no ESP on forge, so every unnamed boot attached it and fell through anyway. With no attach coming, a medium on self-update trial counts the engine's answer as good. Media without the key keep the old fallback. `tests/net-ovmf.sh`'s `release` boot is built that way.
 - **docs:** CLAUDE.md work plan: #80/#102 closed; v0.24.0 goldens.
 - **docs:** CLAUDE.md work plan: #67 closed (sc-build of 71ed9fb passing).
 - **fix:** `esp.rs` reads a FAT32-labelled ESP whose cluster count says FAT16 as FAT32, as Linux does (`BPB_FATSz16 == 0` decides). pvetest1's 11.53 ESP (`mkfs.fat -F 32`, 16,384 clusters at 4096-byte sectors) was refused as `a FAT12/16 with no root directory`, so the #37 bridge was stricter than Linux. New host test `fat32_with_a_fat16_cluster_count` (#67).

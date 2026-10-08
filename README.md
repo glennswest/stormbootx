@@ -220,7 +220,12 @@ given back on the fall-through.
    The reply supplies the address, port, NQN and NSID. Both `address`/`port`
    and `traddr`/`trsvcid` spellings are accepted, with port defaulting to
    4420 and NSID to 1. Any claim failure falls back to the conf's own
-   `nqn`/`nsid` rather than failing.
+   `nqn`/`nsid` rather than failing, unless the medium says `fallback =
+   none`. Every golden does (#36), so a machine no claim gives an image
+   attaches nothing and boots its local disk (`no network boot: no claim
+   gave this machine an image, and the media names no fallback`). The
+   fallback they used to carry, nsid 2 on forge, was a 32 MB namespace with
+   no ESP: every unnamed boot attached it and fell through anyway.
 
    **Universal boot: one medium for every machine** (#15, stormblock#200).
    A machine whose media states no name, and whose DNS name the engine does
@@ -639,6 +644,7 @@ others.
 | `port` | `4420` | NVMe/TCP port |
 | `nqn` | `nqn.2026-09.lo.g16:stormcos` | subsystem NQN if the claim fails or is off |
 | `nsid` | `2` | namespace if the claim fails or is off |
+| `fallback` | on | `none` (or `no`/`off`/`false`/`0`): no `nqn`/`nsid` is attached when no claim answers; the boot falls through to the local disk (#36). Every golden writes it; `build-boot-agent.sh --no-fallback` |
 | `api_port` | `9090` | engine API port on the portal host |
 | `claim` | `yes` | `no` / `false` / `0` / `off` skips the claim |
 | `name` (or `tag`) | none (DNS name, then MAC, then SMBIOS) | states the identity; the only name claimed |
@@ -766,6 +772,7 @@ drive and is deleted with it. Nothing is left on the build box.
 ```bash
 ./scripts/build-boot-agent.sh                    # one stick for every machine
 ./scripts/build-boot-agent.sh --iso              # same, as an ISO
+./scripts/build-boot-agent.sh --iso --no-fallback  # as the goldens: no fallback namespace (#36)
 ./scripts/build-boot-agent.sh --pin --portal 192.168.31.202 \
     --nqn nqn.2026-09.lo.g16:stormcos --nsid 2   # one fixed namespace, no claim
 ./scripts/build-boot-agent.sh --probe            # boots tcp4probe instead
@@ -979,7 +986,6 @@ Open issues:
 | Issue | What |
 |---|---|
 | #37 | X9 blades on a 4096-byte namespace: server1 boots 11.56; which reader loaded it is still open; `esp.rs` reads a small FAT32 as Linux does (#67) |
-| #36 | the golden media's pinned fallback (nsid 2) |
 | #69–#75, #80 | more Rust NIC drivers (iPXE is gone from every medium and golden, #91; the X9 blades boot the rustnic media) |
 | #83 | self-update: in the binary, tested under OVMF, stormcentral's key compiled in (#86); no medium updates until stormcentral promotes a golden (`stormcentral stormbootx promote`) |
 | #4, #10, #14 | inventory; the shared initiator; test containers |

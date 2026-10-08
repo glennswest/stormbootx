@@ -1062,6 +1062,15 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       the ESP golden, stormcentral#215). **Not seen:** a blade's SOL
       capture past stormbootx (the capture drops: stormcentral#220/#499).
 
+- [ ] **#36 — the golden media name no fallback namespace (P3). In
+      progress 2026-10-08.** Every golden carried `build-boot-agent.sh`'s
+      default nsid 2, a 32 MB namespace with no ESP on forge, so every
+      unnamed boot attached it for nothing. `fallback = none`
+      (`--no-fallback`) falls straight through instead; every golden writes
+      it and `build-golden.sh` refuses a tree naming `nqn`/`nsid`. With no
+      attach coming, a self-update trial counts the engine's answer as good.
+      net-ovmf's `release` boot is built that way. Next: sc-build, then close.
+
 - [x] **#67 — `esp.rs` reads a FAT32-labelled ESP with a FAT16 cluster
       count (P3, from #37). Closed 2026-10-08.** pvetest1's 11.53 ESP
       (`mkfs.fat -F 32`, 16,384 clusters at 4096-byte sectors) was refused

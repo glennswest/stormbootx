@@ -21,7 +21,8 @@
 //! This answers *where* only. **Which image** a machine boots is not here and
 //! is not on the media at all: it is a `boothost/<service tag>` synonym on the
 //! engine, claimed at boot — see `registry.rs`. `nqn` and `nsid` here are the
-//! fallback for a claim that cannot be reached.
+//! fallback for a claim that cannot be reached, and `fallback = none` says
+//! there is none (#36).
 //!
 //! There was a third source — DNS SRV/TXT discovery of the portal. It was
 //! removed rather than left switched off. It made sense while the portal was
@@ -83,6 +84,10 @@ pub struct Config {
     /// whatever `nqn`/`nsid` resolution produced, which is what a stick pinned
     /// to one namespace wants.
     pub claim: bool,
+    /// Whether `nqn`/`nsid` are attached when no claim answers. `fallback =
+    /// none` (the golden media, #36) falls straight through to the local disk
+    /// instead: a namespace nobody assigned is not an image to boot.
+    pub fallback: bool,
     /// The machine's identity, stated rather than discovered.
     ///
     /// Discovery is a convenience for a machine nobody has told; a machine
@@ -370,6 +375,7 @@ pub fn resolve(d: &Defaults) -> Config {
         api_port: d.api_port,
         tag: None,
         claim: true,
+        fallback: true,
         stamp: None,
         source: "compiled defaults".to_string(),
     };
@@ -396,6 +402,12 @@ pub fn resolve(d: &Defaults) -> Config {
     // image it runs, so a stick that says nothing should still ask.
     if let Some(v) = file.and_then(|t| field(t, "claim")) {
         cfg.claim = !matches!(v.as_str(), "no" | "false" | "0" | "off");
+    }
+
+    // `none` (or `no`/`off`/`false`/`0`) and nothing else turns it off, so
+    // a medium that says nothing keeps the compiled floor's fallback.
+    if let Some(v) = file.and_then(|t| field(t, "fallback")) {
+        cfg.fallback = !matches!(v.as_str(), "none" | "no" | "false" | "0" | "off");
     }
 
     if let Some(p) = pinned {

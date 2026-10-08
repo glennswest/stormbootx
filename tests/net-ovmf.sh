@@ -48,7 +48,8 @@
 #      `install` and claims);
 #   7. a fall-through gives the NIC back (#68): the firmware's own IPv4
 #      stack is on (with a virtio-rng, which its drivers need), the claim
-#      404s and the media's NVMe port is dead, so stormbootx falls through
+#      404s and the medium names no fallback namespace, as the goldens don't
+#      (#36), so stormbootx falls through with nothing attached
 #      and must say `1 of 1 NIC(s) given back`; the next boot option, the
 #      firmware's PXE on the same NIC, must then lease from slirp and start
 #      the payload over TFTP.
@@ -400,6 +401,8 @@ BOOT_DRIVERS=
 BOOT_PREFER=
 # BOOT_NIC_VERBOSE=1 (#80) writes `nic_verbose = true` on the media.
 BOOT_NIC_VERBOSE=
+# BOOT_NOFALLBACK=1 (#36) builds the medium as the goldens are: no nqn/nsid.
+BOOT_NOFALLBACK=
 # BOOT_IC (#93): an install-config.yaml of another size for this boot's ESP.
 BOOT_IC=
 BOOT_NICDEV=
@@ -412,11 +415,12 @@ boot() {
     [[ $ntp == bad ]] && : > "$W/ntp.bad"
     local iso="$W/$name.iso" log="$W/$name.serial" txt="$W/$name.txt"
     local args=(--iso --binary "$EFI" --engine 10.0.2.2 --api-port "$PORT" --port "${BOOT_PORT:-$NVME_PORT}"
-                --nsid 1 --ntp "10.0.2.2:$NTP_PORT" --output "$iso")
+                --ntp "10.0.2.2:$NTP_PORT" --output "$iso")
     [[ -n "$rng" ]] && args+=(--rng "$rng")
     [[ -n "$BOOT_DRIVERS" ]] && args+=(--drivers "$BOOT_DRIVERS")
     [[ -n "$BOOT_PREFER" ]] && args+=(--prefer-media-drivers "$BOOT_PREFER")
     [[ -n "$BOOT_NIC_VERBOSE" ]] && args+=(--nic-verbose)
+    if [[ -n "$BOOT_NOFALLBACK" ]]; then args+=(--no-fallback); else args+=(--nsid 1); fi
     # The shipped boot's medium names a self-update (#83), which an ISO must
     # skip as read-only; the other names none.
     [[ $name == shipped ]] && args+=(--update "http://10.0.2.2:$PORT/api/v1/boothelpers/stormbootx-test")
@@ -682,13 +686,18 @@ done
 
 # #68: a fall-through gives the NICs back. The firmware's own IPv4 stack is
 # on, so stormbootx's exclusive SNP open first takes the NIC from the
-# firmware's MNP; the claim 404s and the media's NVMe port is dead, so it
+# firmware's MNP; the claim 404s and the media names no fallback, so it
 # falls through, and the next boot option is the firmware's PXE on that
 # NIC, which must lease and TFTP the payload, which then starts.
-BOOT_PORT=9 BOOT_PXE=1 WAIT_FOR="is there a TCP/IP stack in this firmware" BOOT_SETTLE=3 \
+# The medium is built as the goldens are (#36): no fallback namespace, so
+# the 404 alone falls through, with nothing attached.
+BOOT_NOFALLBACK=1 BOOT_PXE=1 WAIT_FOR="is there a TCP/IP stack in this firmware" BOOT_SETTLE=3 \
 boot release "$host_cpu" "" 404 good \
     "tcp4        : smoltcp over SNP (nic " \
-    "no network boot: " \
+    "fallback    : none (a claim that finds nothing falls through to the local disk)" \
+    "no network boot: no claim gave this machine an image, and the media names no fallback (fallback = none)" \
+    "not:attaching   : " \
+    "not:blockio     : published on handle" \
     "net         : 1 of 1 NIC(s) given back to the firmware (exclusive SNP closed, reconnected)" \
     "is there a TCP/IP stack in this firmware" \
     "not:SNP not closed"
