@@ -514,13 +514,22 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       stormnic-virtio#1's pvetest1/2 boot of the rustnic media (pve's OVMF,
       the iPXE option ROM, a real release).
 
-- [ ] **#80 (with #102) — `nic_verbose` in stormboot.conf sets
-      `StormnicVerbose` before the stormnic drivers load (P3). In progress
+- [x] **#80 (with #102) — `nic_verbose` in stormboot.conf sets
+      `StormnicVerbose` before the stormnic drivers load (P3). Closed
       2026-10-08.** All three pinned drivers read that one variable at their
-      entry point. The mlx4 `speed`/`autoneg` keys are out: ConnectX-3 can't
-      force a speed on the blades' firmware (stormnic-mlx4#20). Test: a
-      verbose virtio boot under OVMF shows the driver's trace; the quiet one
-      doesn't.
+      entry point; stormbootx sets it (`BOOTSERVICE_ACCESS`, `01`) in
+      `drivers::load_from_media` before the first driver loads, and leaves a
+      shell-set one alone. The mlx4 `speed`/`autoneg` keys are out:
+      ConnectX-3 can't force a speed on the blades' firmware
+      (stormnic-mlx4#20). 285b5d0 + 3198a5f. sc-build of 3198a5f: suites,
+      espprobe, both shells, update-ovmf, net-ovmf with the virtio boots;
+      `virtio-verbose` printed `drivers : stormnic drivers verbose
+      (nic_verbose in \stormboot\stormboot.conf; StormnicVerbose set until
+      reset)` and the driver's `stormnic-virtio: 0000:00:02.0 1af4:1000
+      virtio-net (transitional): Supported`; the quiet `virtio` boot printed
+      no trace. Released **v0.24.0** (3403380, `--locked`, net-ovmf PASS).
+      Goldens `golden-stormbootx-3b4015176f51d889`,
+      `golden-stormbootx-rustnic-720fb6e3f8846531`.
 
 - [ ] **#93 — how large an install-config.yaml real variable stores take
       (P3). This repo's side done 2026-10-08; the metal boots are the

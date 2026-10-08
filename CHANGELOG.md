@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-10-08
+- **docs:** CLAUDE.md work plan: #80/#102 closed; v0.24.0 goldens.
+
 ## [v0.24.0] — 2026-10-08
 
 ### Added
