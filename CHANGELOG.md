@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-08
+- **docs:** CLAUDE.md: render the deck with `< /dev/null`; on build VMs marp-cli read the piped stdin as a second markdown (#112).
 - **docs:** `StormBootClock` has a reader: stormblock's initramfs skips its own NTP step after `synced` (stormblock#253); README, CLAUDE.md, `clock.rs` and `handoff.rs` said stormcos#213. `docs/presentation.md`'s relationships slide says `group: boot` (the project's group, as `stormcentral check` prints it), and names the component kinds (`media`, `tree`) (#82).
 - **docs:** CLAUDE.md work plan: #89's metal run waits on #92 (a promotion newer than the stick); #92 and stormcentral#459 told to promote v0.23.1.
 - **docs:** README: the variable store is the install-config's real limit; OVMF's takes 256 KiB, and what a full store prints (#93).

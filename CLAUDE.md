@@ -1172,6 +1172,10 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       drifted; sc-build built the binary (152,064 bytes, as the title says),
       passed all four host suites and rendered the deck with marp-cli.
       Slide 2 matches `stormcentral check`. Keep it current with the code.
+      Render it in sc-build with stdin closed: `npx -y @marp-team/marp-cli@latest
+      docs/presentation.md -o t/p.html < /dev/null`. Build VMs give a job a
+      piped stdin, which marp-cli reads as a second markdown, and `-o` then
+      refuses two inputs (#112).
 
 - [ ] #10 — extract `nvme.rs` (and the claim) into a transport-generic
       `no_std` crate. Prerequisite for stormboot4bios.
