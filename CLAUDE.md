@@ -515,13 +515,15 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       the iPXE option ROM, a real release).
 
 - [ ] **#93 — how large an install-config.yaml real variable stores take
-      (P3). In progress 2026-10-08.** 256 KiB (`installconf::MAX`,
-      storminstall's cap) is 342 volatile chunks; a firmware's volatile store
-      is a fixed size. Plan: (1) `net-ovmf.sh` hands down 64/128/192/256 KiB
-      and reports which reassemble; (3) the refused-chunk line says the store
-      is full and how much fit; (2) if 256 KiB doesn't fit, agree a lower cap
-      with storminstall. The metal boots (X9, R230, ~64 KiB) are the
-      master's.
+      (P3). This repo's side done 2026-10-08; the metal boots are the
+      master's.** Under OVMF every size up to storminstall's 256 KiB cap
+      reassembles (64/128/192/256 KiB, 342 chunks at 256; sc-build of
+      2fd47d1), and `net-ovmf.sh` requires it. A refused chunk prints
+      `install cfg : NOT HANDED DOWN: the firmware's volatile variable store
+      is full (…); N of M bytes fit …` (f1a8470). No lower cap is needed on
+      OVMF's evidence. Left: the X9 and the R230 each booted once with a
+      ~64 KiB file (asked on #93); a `NOT HANDED DOWN` there means agreeing a
+      cap with storminstall.
 
 - [x] **#96 — the self-update took an older version onto a fresh medium
       (P3). Closed 2026-10-08.** The serial alone decided, so a v0.15.0 stick
