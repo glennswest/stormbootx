@@ -1070,6 +1070,20 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       the ESP golden, stormcentral#215). **Not seen:** a blade's SOL
       capture past stormbootx (the capture drops: stormcentral#220/#499).
 
+- [ ] **#42 — a read-only filesystem on the bridged ESP (P3). In progress
+      2026-10-08.** When the bridge (#37) starts `BOOTX64.EFI` from a
+      buffer, no `EFI_SIMPLE_FILE_SYSTEM` serves its ESP, so shim
+      (`grubx64.efi`) and systemd-boot (loader entries) find nothing on
+      Aptio 4. Plan: (1) `esp.rs`: directory listing, ranged reads with a
+      cluster hint, lookup from a directory, attributes and times (host
+      tests); (2) `src/espfs.rs`: read-only SFS/File (Write/Delete/SetInfo/
+      Flush `WRITE_PROTECTED`), installed on the ESP's `HD()` child after
+      the firmware's FAT is disconnected from it (or a new handle with that
+      path), uninstalled before `blockio::withdraw`; (3) `bridge_boot` and
+      espprobe install it before starting the loader; (4) esp-ovmf: the
+      payload (tcp4probe) lists, reads and seeks through its own
+      `DeviceHandle`'s SFS and reads a loader entry.
+
 - [x] **#53 — stormbootx.efi is not reproducible across build
       directories (P3). Closed 2026-10-08.** Two goldens from one
       commit, two digests. Suspected: the checkout's, target dir's and
