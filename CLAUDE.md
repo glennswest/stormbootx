@@ -182,8 +182,9 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/registry.rs` | read the intent; claim `boothost/<tag>`, or `boothost/default` by MAC, every claim naming the agent (#90); read the engine's version; also the old sbregistry `/v1/clones/claim` path, compiled out by `USE_REGISTRY = false` |
 | `src/dnsname.rs` | the machine's DNS name (#23): DHCP options 12/15/6, PTR query and answer over DNS/TCP |
 | `src/universal.rs` | universal boot (#15): is the engine new enough, which MAC is the machine's, what host the reply named; which SMBIOS serial is a placeholder (#7, matches stormipmi) |
-| `src/esp.rs` | the attached ESP read without the firmware's FAT (#37): GPT, FAT12/16/32 at 512..4096-byte sectors |
-| `src/espboot.rs` | read `BOOTX64.EFI` through `esp.rs` and `LoadImage` it from the buffer |
+| `src/esp.rs` | the attached ESP read without the firmware's FAT (#37): GPT, FAT12/16/32 at 512..4096-byte sectors; listings, reads at any position and lookups from a directory for `espfs.rs` (#42) |
+| `src/espboot.rs` | read `BOOTX64.EFI` through `esp.rs` and `LoadImage` it from the buffer, under the ESP's path |
+| `src/espfs.rs` | a read-only `EFI_SIMPLE_FILE_SYSTEM` over `esp.rs` on the bridged ESP's partition handle (#42), so the bootloader opens its other files; `withdraw` before the disk goes |
 | `src/espprobe.rs` | third binary: who can read a 4K ESP; booted under OVMF by `tests/esp-ovmf.sh` |
 | `src/sha256.rs` | the digest, because `EFI_HASH2` is optional |
 | `src/config.rs` | the target, read from the media rather than compiled in; `local.conf` read before `stormboot.conf` (#83) |

@@ -330,9 +330,17 @@ given back on the fall-through.
    `Vendor(disk)/HD(n,GPT,…)/\EFI\BOOT\BOOTX64.EFI`. The console says
    `boot : the firmware did not load it (…); reading the ESP here`.
    stormuefi needs nothing more: it reads its pallets through whole-disk
-   BlockIO and parses the GPT itself. No filesystem protocol is installed, so
-   a bootloader that opens further files on its own ESP (GRUB, shim) would
-   not find them this way. `esp = firmware` / `esp = stormbootx` picks one
+   BlockIO and parses the GPT itself. Any other bootloader opens more files
+   on its ESP (shim's `grubx64.efi`, systemd-boot's loader entries) through
+   the `SimpleFileSystem` on its `DeviceHandle`, so the bridge puts up its
+   own (#42, `src/espfs.rs`). This read-only `EFI_SIMPLE_FILE_SYSTEM` over
+   `esp.rs` goes on the ESP's partition handle, after the firmware's FAT is
+   disconnected from it (or on a new handle with that path, if the
+   partition driver made none). The image is loaded under that path, so it
+   becomes the image's `DeviceHandle`. The console says `esp fs : read-only
+   filesystem on the ESP's partition handle, the firmware's FAT disconnected
+   from it`. Writes, `SetInfo` and `Delete` answer `WRITE_PROTECTED`, and
+   `blockio::withdraw` takes it back first. `esp = firmware` / `esp = stormbootx` picks one
    reader alone. It is read at start-up with the rest of `stormboot.conf`:
    nothing on the media is opened once an image is attached (#46).
 10. **Report the bootloader's reads (#46).** While the image's bootloader
@@ -687,9 +695,15 @@ A third binary, `src/espprobe.rs` (#37). It connects every controller, then
 for each whole disk except the one it booted from whose GPT has an ESP, it
 reports whether the firmware's FAT loads `\EFI\BOOT\BOOTX64.EFI`, reads the
 file with `esp.rs`, and starts it from the buffer with `espboot.rs`, the same
-code stormbootx falls back to. Then it powers off. `tests/esp-ovmf.sh` boots
-it under OVMF against a 4096-byte virtio disk carrying a 4096-byte-sector
-FAT16 ESP, and passes only if the payload it starts prints.
+code stormbootx falls back to, under the bridge's own read-only filesystem
+(`espfs.rs`, #42), which must be the started image's `DeviceHandle`. Then it
+takes the filesystem back and powers off. `tests/esp-ovmf.sh` boots it under
+OVMF against a 4096-byte virtio disk carrying a 4096-byte-sector FAT16 ESP.
+The payload is tcp4probe, whose `boot fs :` lines do what shim or
+systemd-boot would: list `\EFI\BOOT`, read and seek `BOOTX64.EFI` (its
+sha256 must match), read a loader entry by a relative path, and be refused
+a write. tcp4probe prints those lines on every boot, so on metal they show
+what a bootloader there would find on its own volume.
 
 ## Build
 
