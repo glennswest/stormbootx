@@ -635,8 +635,10 @@ else
 fi
 
 # #93: how large an install-config.yaml OVMF's volatile variable store takes.
-# Each size is handed down in 768-byte chunks and the payload reassembles it;
-# a store that is full must say how much fit and hand down nothing.
+# Each size is handed down in 768-byte chunks and the payload reassembles it.
+# Measured 2026-10-08: OVMF takes every size up to storminstall's 256 KiB cap
+# (342 chunks), so each must reassemble here. A store that is full on other
+# firmware says how much fit and hands down nothing.
 for kb in 64 128 192 256; do
     f="$W/ic-$kb.yaml"
     # Written whole, then cut to size: a `| head -c` would close the pipe on
@@ -652,8 +654,7 @@ for kb in 64 128 192 256; do
     if grep -qF "install cfg : $len bytes reassembled from $n chunk(s), length and sha256 match" "$W/ic$kb.txt"; then
         say "[ic$kb] SIZE RESULT: $kb KiB ($len bytes, $n chunks) handed down and reassembled"
     elif grep -qF "install cfg : NOT HANDED DOWN: the firmware's volatile variable store is full" "$W/ic$kb.txt"; then
-        say "[ic$kb] SIZE RESULT: $kb KiB refused: $(grep -F 'NOT HANDED DOWN' "$W/ic$kb.txt" | head -1)"
-        grep -qF "handed down : StormBootInstallConfig" "$W/ic$kb.txt" && die "[ic$kb] a refused file was handed down"
+        die "[ic$kb] OVMF took 256 KiB on 2026-10-08 and now refuses $kb KiB: $(grep -F 'NOT HANDED DOWN' "$W/ic$kb.txt" | head -1)"
     else
         die "[ic$kb] neither reassembled nor refused: $(grep -F 'install cfg' "$W/ic$kb.txt" | tr '\n' ' ')"
     fi
