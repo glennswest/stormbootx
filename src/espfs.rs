@@ -213,7 +213,7 @@ unsafe extern "efiapi" fn close(this: *mut FileProtocolV1) -> Status {
 }
 
 unsafe extern "efiapi" fn delete(this: *mut FileProtocolV1) -> Status {
-    close(this);
+    let _ = close(this);
     Status::WARN_DELETE_FAILURE
 }
 
@@ -541,7 +541,9 @@ pub fn withdraw() -> usize {
     n
 }
 
-/// Whether `h` carries a filesystem this image installed.
+/// Whether `h` carries a filesystem this image installed. espprobe's check
+/// that `LoadImage` made it the image's `DeviceHandle`.
+#[allow(dead_code)]
 #[allow(static_mut_refs)]
 pub fn is_ours(h: Handle) -> bool {
     unsafe { INSTALLED.iter().any(|i| i.handle == h && handle_protocol(h, &SimpleFileSystemProtocol::GUID) == Some(i.sfs)) }
