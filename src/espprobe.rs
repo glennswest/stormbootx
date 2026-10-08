@@ -26,6 +26,9 @@ mod esp;
 #[allow(dead_code)]
 #[path = "espboot.rs"]
 mod espboot;
+// The read-only filesystem the bridge puts over the ESP (#42).
+#[path = "espfs.rs"]
+mod espfs;
 
 use alloc::format;
 use alloc::string::String;
@@ -124,10 +127,33 @@ fn probe() -> Result<(), String> {
             loader.sector
         );
         uefi::println!("  firmware  : {}", firmware_loads(dp));
-        let image = espboot::load(dp, &loader).map_err(|e| format!("stormbootx's load: {e}"))?;
+        // What the bridge does next (#42): its own read-only filesystem on
+        // the ESP, in place of the firmware's FAT, and the image loaded under
+        // its path so LoadImage makes it the image's DeviceHandle.
+        let (fs, how) = espfs::install(h.as_ptr(), dp, &loader.partition).map_err(|e| format!("espfs: {e}"))?;
+        uefi::println!("  esp fs    : read-only filesystem {how}");
+        let fs_path = Handle::from_ptr(fs).and_then(path_of).ok_or("the filesystem's handle has no device path")?;
+        let image = espboot::load(fs_path, &loader).map_err(|e| format!("stormbootx's load: {e}"))?;
+        let device = unsafe {
+            boot::open_protocol::<LoadedImage>(
+                OpenProtocolParams { handle: image, agent: boot::image_handle(), controller: None },
+                OpenProtocolAttributes::GetProtocol,
+            )
+        }
+        .map_err(|e| format!("the loaded image's LoadedImage: {e:?}"))?
+        .device();
+        if device.map(|d| d.as_ptr()) != Some(fs) || !espfs::is_ours(fs) {
+            return Err(String::from("the loaded image's DeviceHandle is not stormbootx's filesystem"));
+        }
+        uefi::println!("  esp fs    : it is the loaded image's DeviceHandle");
         uefi::println!("  stormbootx: loaded from the buffer; starting it");
         let status = boot::start_image(image);
         uefi::println!("  started   : the image ran and came back ({status:?})");
+        let n = espfs::withdraw();
+        if n != 1 {
+            return Err(format!("espfs::withdraw took back {n} filesystem(s), not 1"));
+        }
+        uefi::println!("  esp fs    : withdrawn");
         started = true;
     }
     if started {

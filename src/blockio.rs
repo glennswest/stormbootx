@@ -440,6 +440,12 @@ pub fn publish(ns: Namespace) -> Result<uefi_raw::Handle, String> {
 #[allow(static_mut_refs)]
 pub fn withdraw() -> Option<Result<(), String>> {
     let (handle, proto, dp) = unsafe { PUBLISHED.take() }?;
+    // The ESP's filesystem first (#42): it sits on the disk's partition
+    // handle, which would otherwise survive the disconnect carrying it.
+    let fs = crate::espfs::withdraw();
+    if fs > 0 {
+        uefi::println!("esp fs      : {fs} filesystem(s) withdrawn");
+    }
     let result = unsafe {
         let bs = uefi::table::system_table_raw()
             .and_then(|st| st.as_ref().boot_services.as_ref())
@@ -638,7 +644,24 @@ fn bridge_boot(disk: uefi_raw::Handle) -> Result<(), String> {
         loader.fat_bits,
         loader.sector
     );
-    crate::espboot::start(our_dp, &loader)
+    // A read-only filesystem over the ESP where the bootloader will look for
+    // its other files (#42): shim's grubx64.efi, systemd-boot's entries.
+    // stormuefi needs none, so a failure here is said and the boot goes on.
+    let fs_path = match crate::espfs::install(disk, our_dp, &loader.partition) {
+        Ok((h, how)) => {
+            uefi::println!("esp fs      : read-only filesystem {how}");
+            device_path_of(h)
+        }
+        Err(e) => {
+            uefi::println!("esp fs      : none ({e}); a bootloader that opens other files on its ESP will not find them");
+            None
+        }
+    };
+    let esp_path = match fs_path {
+        Some(p) => p.to_boxed(),
+        None => crate::espboot::partition_path(our_dp, &loader.partition)?,
+    };
+    crate::espboot::start(&esp_path, &loader)
 }
 
 /// The attached namespace as an `esp::Disk`: any byte range, read as whole

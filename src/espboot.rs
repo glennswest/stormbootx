@@ -86,11 +86,8 @@ pub fn find<D: esp::Disk>(disk: &mut D, block_size: u32) -> Result<(esp::Partiti
     Ok((partition, fat.kind(), entry.size))
 }
 
-/// `LoadImage` the bytes. `disk` is the device path of the whole disk they
-/// were read from; the image's path is that, the ESP's `HD()` node and the
-/// file, so it names where the bytes came from.
-pub fn load(disk: &DevicePath, b: &Bootloader) -> Result<Handle, String> {
-    let p = &b.partition;
+/// The ESP's own device path: the disk's, and the ESP's `HD()` node.
+pub fn partition_path(disk: &DevicePath, p: &esp::Partition) -> Result<alloc::boxed::Box<DevicePath>, String> {
     let mut buf = Vec::new();
     let mut builder = DevicePathBuilder::with_vec(&mut buf);
     for node in disk.node_iter() {
@@ -104,7 +101,23 @@ pub fn load(disk: &DevicePath, b: &Bootloader) -> Result<Handle, String> {
             partition_signature: PartitionSignature::Guid(Guid::from_bytes(p.guid)),
             partition_format: PartitionFormat::GPT,
         })
-        .and_then(|b| b.push(&build::media::FilePath { path_name: cstr16!("\\EFI\\BOOT\\BOOTX64.EFI") }))
+        .and_then(|b| b.finalize())
+        .map_err(|e| format!("device path: {e:?}"))?;
+    Ok(path.to_boxed())
+}
+
+/// `LoadImage` the bytes under `esp` (the ESP's device path) and the file,
+/// so the image's path names where they came from. When a filesystem
+/// carries that path (`espfs.rs`, #42), `LoadImage` makes it the image's
+/// `DeviceHandle`, which is where a bootloader opens its other files.
+pub fn load(esp: &DevicePath, b: &Bootloader) -> Result<Handle, String> {
+    let mut buf = Vec::new();
+    let mut builder = DevicePathBuilder::with_vec(&mut buf);
+    for node in esp.node_iter() {
+        builder = builder.push(&node).map_err(|e| format!("device path: {e:?}"))?;
+    }
+    let path = builder
+        .push(&build::media::FilePath { path_name: cstr16!("\\EFI\\BOOT\\BOOTX64.EFI") })
         .and_then(|b| b.finalize())
         .map_err(|e| format!("device path: {e:?}"))?;
 
@@ -117,8 +130,8 @@ pub fn load(disk: &DevicePath, b: &Bootloader) -> Result<Handle, String> {
 
 /// `load`, then `StartImage`. Only returns on failure, or when the started
 /// image exits.
-pub fn start(disk: &DevicePath, b: &Bootloader) -> Result<(), String> {
-    let image = load(disk, b)?;
+pub fn start(esp: &DevicePath, b: &Bootloader) -> Result<(), String> {
+    let image = load(esp, b)?;
     uefi::println!("boot        : starting {BOOTLOADER} from the attached image (read by stormbootx)");
     match boot::start_image(image) {
         Ok(()) => Err(String::from("the image's bootloader exited")),

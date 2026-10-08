@@ -60,6 +60,7 @@ mod drivers;
 mod entropy;
 mod esp;
 mod espboot;
+mod espfs;
 mod handoff;
 mod installconf;
 mod intent;

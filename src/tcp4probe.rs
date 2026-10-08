@@ -154,6 +154,147 @@ fn install_config(vendor: &uefi::runtime::VariableVendor) {
     );
 }
 
+/// What a bootloader sees of the volume it was loaded from, through the
+/// `SimpleFileSystem` on its `DeviceHandle` (#42): shim opens `grubx64.efi`
+/// there, systemd-boot its loader entries. On an ESP stormbootx read itself,
+/// that filesystem is stormbootx's (`espfs.rs`); `tests/esp-ovmf.sh` checks
+/// every line.
+fn boot_fs() {
+    use alloc::format;
+    use alloc::string::String;
+    use alloc::vec::Vec;
+    use uefi::cstr16;
+    use uefi::proto::media::file::{File, FileAttribute, FileInfo, FileMode, FileSystemInfo};
+
+    let mut fs = match boot::get_image_file_system(boot::image_handle()) {
+        Ok(fs) => fs,
+        Err(e) => {
+            uefi::println!("boot fs     : none on this image's DeviceHandle ({:?})", e.status());
+            return;
+        }
+    };
+    let mut root = match fs.open_volume() {
+        Ok(r) => r,
+        Err(e) => {
+            uefi::println!("boot fs     : OpenVolume failed ({:?})", e.status());
+            return;
+        }
+    };
+    let read_only = match root.get_boxed_info::<FileSystemInfo>() {
+        Ok(i) => {
+            uefi::println!(
+                "boot fs     : {} bytes, {}, label \"{}\", {}-byte blocks",
+                i.volume_size(),
+                if i.read_only() { "read-only" } else { "writable" },
+                i.volume_label(),
+                i.block_size()
+            );
+            i.read_only()
+        }
+        Err(e) => {
+            uefi::println!("boot fs     : GetInfo(FileSystemInfo) failed ({:?})", e.status());
+            false
+        }
+    };
+
+    // A listing, the way a loader looks for what to load.
+    match root.open(cstr16!("\\EFI\\BOOT"), FileMode::Read, FileAttribute::empty()).map(|h| h.into_directory()) {
+        Ok(Some(mut dir)) => {
+            let mut names: Vec<String> = Vec::new();
+            loop {
+                match dir.read_entry_boxed() {
+                    Ok(Some(info)) => names.push(format!("{}", info.file_name())),
+                    Ok(None) => break,
+                    Err(e) => {
+                        names.push(format!("<{:?}>", e.status()));
+                        break;
+                    }
+                }
+            }
+            uefi::println!("boot fs     : \\EFI\\BOOT lists {}", names.join(" | "));
+        }
+        Ok(None) => uefi::println!("boot fs     : \\EFI\\BOOT is not a directory"),
+        Err(e) => uefi::println!("boot fs     : no \\EFI\\BOOT ({:?})", e.status()),
+    }
+
+    // The bootloader itself, read in an odd size, then sought into.
+    match root
+        .open(cstr16!("\\EFI\\BOOT\\BOOTX64.EFI"), FileMode::Read, FileAttribute::empty())
+        .map(|h| h.into_regular_file())
+    {
+        Ok(Some(mut f)) => {
+            let size = f.get_boxed_info::<FileInfo>().map(|i| i.file_size()).unwrap_or(0);
+            if size > 8 << 20 {
+                uefi::println!("boot fs     : BOOTX64.EFI is {size} bytes; not hashed here");
+            } else {
+                let mut hash = sha256::Sha256::new();
+                let mut buf = alloc::vec![0u8; 7919];
+                let mut total = 0u64;
+                let mut mid = [0u8; 64];
+                let half = size / 2;
+                loop {
+                    match f.read(&mut buf) {
+                        Ok(0) => break,
+                        Ok(n) => {
+                            for (i, &b) in buf[..n].iter().enumerate() {
+                                let at = total + i as u64;
+                                if at >= half && at < half + 64 {
+                                    mid[(at - half) as usize] = b;
+                                }
+                            }
+                            hash.update(&buf[..n]);
+                            total += n as u64;
+                        }
+                        Err(e) => {
+                            uefi::println!("boot fs     : Read failed at {total} ({:?})", e.status());
+                            return;
+                        }
+                    }
+                }
+                let hex = hash.finalize().to_hex();
+                uefi::println!(
+                    "boot fs     : BOOTX64.EFI {total} bytes, sha256 {}",
+                    core::str::from_utf8(&hex).unwrap_or("?")
+                );
+                let mut again = [0u8; 64];
+                let n = (size - half).min(64) as usize;
+                let seek = f.set_position(half).is_ok()
+                    && f.read(&mut again[..n]).is_ok_and(|got| got == n)
+                    && again[..n] == mid[..n]
+                    && f.set_position(u64::MAX).is_ok()
+                    && f.get_position().is_ok_and(|p| p == size)
+                    && f.read(&mut again).is_ok_and(|got| got == 0);
+                uefi::println!("boot fs     : seek {}", if seek { "ok" } else { "WRONG" });
+            }
+        }
+        Ok(None) => uefi::println!("boot fs     : BOOTX64.EFI is a directory"),
+        Err(e) => uefi::println!("boot fs     : BOOTX64.EFI does not open ({:?})", e.status()),
+    }
+
+    // A systemd-boot loader entry, opened relative to a directory.
+    if let Ok(Some(mut loader)) =
+        root.open(cstr16!("loader"), FileMode::Read, FileAttribute::empty()).map(|h| h.into_directory())
+    {
+        let entry = loader
+            .open(cstr16!("entries\\stormbootx-test.conf"), FileMode::Read, FileAttribute::empty())
+            .map(|h| h.into_regular_file());
+        if let Ok(Some(mut e)) = entry {
+            let mut buf = [0u8; 256];
+            let n = e.read(&mut buf).unwrap_or(0);
+            let text = core::str::from_utf8(&buf[..n]).unwrap_or("?");
+            uefi::println!("boot fs     : loader entry: {}", text.lines().next().unwrap_or(""));
+        }
+    }
+
+    // A volume that says it is read-only must refuse a write.
+    if read_only {
+        match root.open(cstr16!("\\written.txt"), FileMode::CreateReadWrite, FileAttribute::empty()) {
+            Ok(_) => uefi::println!("boot fs     : a read-only volume let a file be created"),
+            Err(e) => uefi::println!("boot fs     : create refused ({:?})", e.status()),
+        }
+    }
+}
+
 #[entry]
 fn main() -> Status {
     uefi::helpers::init().unwrap();
@@ -171,6 +312,7 @@ fn main() -> Status {
     }
     uefi::println!("============================================================");
     handed_down();
+    boot_fs();
     // What the RTC reads, as the next stage will read it (#77: stormbootx may
     // have set it from NTP).
     match uefi::runtime::get_time() {

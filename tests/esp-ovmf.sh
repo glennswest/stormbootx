@@ -5,10 +5,13 @@
 #
 #   tests/esp-ovmf.sh ESPPROBE.efi PAYLOAD.efi
 #
-# PAYLOAD is any EFI application that prints; the sc-build command uses
-# tcp4probe.efi and looks for its banner. espprobe starts it from the bytes
-# esp.rs read (espboot.rs, the code stormbootx falls back to), then prints
-# `espprobe: PASS` and powers the VM off.
+# PAYLOAD is tcp4probe.efi in the sc-build command. espprobe starts it from
+# the bytes esp.rs read (espboot.rs, the code stormbootx falls back to),
+# under stormbootx's own read-only filesystem on the ESP (espfs.rs, #42), in
+# place of OVMF's FAT. The payload then does what shim or systemd-boot would
+# through its DeviceHandle: lists \EFI\BOOT, reads and seeks BOOTX64.EFI
+# (its digest must match), reads a loader entry, and is refused a write.
+# espprobe takes the filesystem back, prints `espprobe: PASS` and powers off.
 #
 # Needs qemu-system-x86_64, OVMF, mkfs.fat, mtools, sfdisk and python3. KVM is
 # used when /dev/kvm is writable, TCG otherwise. Unprivileged; everything is
@@ -45,8 +48,14 @@ dd if="$W/stick-esp.img" of="$W/stick.img" bs=1M seek=1 conv=notrunc status=none
 
 # The disk under test: 4096-byte blocks, a 64 MiB FAT16 at 4096-byte sectors.
 mkfs.fat -C -S 4096 -F 16 -s 1 -n RELEASE "$W/esp4k.img" 65536 >/dev/null
-mmd -i "$W/esp4k.img" ::/EFI ::/EFI/BOOT
+mmd -i "$W/esp4k.img" ::/EFI ::/EFI/BOOT ::/loader ::/loader/entries
 mcopy -i "$W/esp4k.img" "$PAYLOAD" ::/EFI/BOOT/BOOTX64.EFI
+# A systemd-boot loader entry: a file a bootloader opens through its
+# DeviceHandle's filesystem, which is stormbootx's here (#42).
+printf 'title stormbootx #42 loader entry\nlinux /vmlinuz\n' > "$W/entry.conf"
+mcopy -i "$W/esp4k.img" "$W/entry.conf" ::/loader/entries/stormbootx-test.conf
+PAYLOAD_SHA=$(sha256sum < "$PAYLOAD" | cut -d' ' -f1)
+PAYLOAD_LEN=$(stat -c %s "$PAYLOAD")
 python3 - "$W/esp4k.img" "$W/disk4k.img" <<'PY'
 import struct, sys, uuid, zlib
 esp, out = sys.argv[1], sys.argv[2]
@@ -96,7 +105,7 @@ timeout 600 qemu-system-x86_64 -machine q35,accel=$ACCEL -m 512 -display none -n
 
 # The console, without OVMF's escape sequences.
 sed -e 's/\x1b\[[0-9;?]*[A-Za-z]//g' -e 's/\r//g' "$W/serial.log" | grep -v '^\s*$' > "$W/console.txt" || true
-grep -E 'espprobe|disk  |stormbootx:|local     :|firmware  :|started   :|TCP/IP stack' "$W/console.txt" || true
+grep -E 'espprobe|disk  |stormbootx:|local     :|firmware  :|started   :|esp fs|boot fs|TCP/IP stack' "$W/console.txt" || true
 
 ok=yes
 grep -q 'x 4096 bytes' "$W/console.txt" || { say "no 4096-byte disk was seen"; ok=no; }
@@ -105,6 +114,20 @@ grep -q 'local     : ESP partition' "$W/console.txt" || { say "espboot::find (wh
 grep -q 'loaded from the buffer' "$W/console.txt" || { say "LoadImage from the buffer failed"; ok=no; }
 grep -q 'is there a TCP/IP stack in this firmware' "$W/console.txt" || { say "the payload never printed"; ok=no; }
 grep -q 'espprobe: PASS' "$W/console.txt" || { say "espprobe did not pass"; ok=no; }
+# #42: stormbootx's filesystem replaced the firmware's FAT on the ESP, became
+# the started image's DeviceHandle, and served it what a bootloader asks.
+for want in \
+    "esp fs    : read-only filesystem on the ESP's partition handle, the firmware's FAT disconnected from it" \
+    "esp fs    : it is the loaded image's DeviceHandle" \
+    ' bytes, read-only, label "RELEASE", 4096-byte blocks' \
+    'boot fs     : \EFI\BOOT lists . | .. | BOOTX64.EFI' \
+    "boot fs     : BOOTX64.EFI $PAYLOAD_LEN bytes, sha256 $PAYLOAD_SHA" \
+    'boot fs     : seek ok' \
+    'boot fs     : loader entry: title stormbootx #42 loader entry' \
+    'boot fs     : create refused (WRITE_PROTECTED)' \
+    'esp fs    : withdrawn'; do
+    grep -qF -- "$want" "$W/console.txt" || { say "missing: $want"; ok=no; }
+done
 if [[ "$ok" != yes ]]; then
     say "console:"; tail -60 "$W/console.txt"
     die "the 4K ESP was not booted through stormbootx's reader"
