@@ -1070,8 +1070,8 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       the ESP golden, stormcentral#215). **Not seen:** a blade's SOL
       capture past stormbootx (the capture drops: stormcentral#220/#499).
 
-- [ ] **#53 — stormbootx.efi is not reproducible across build
-      directories (P3). In progress 2026-10-08.** Two goldens from one
+- [x] **#53 — stormbootx.efi is not reproducible across build
+      directories (P3). Closed 2026-10-08.** Two goldens from one
       commit, two digests. Suspected: the checkout's, target dir's and
       CARGO_HOME's paths in panic locations. `tests/repro.sh` builds from two
       paths with two CARGO_HOMEs and compares (`REPRO_RAW=1`: plain cargo, to
@@ -1081,7 +1081,12 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       was hashed from object paths (`build.rs`: `/Brepro`, `/DEBUG:NONE`),
       and the `uefi` crate's CARGO_HOME path sat in a panic string (the
       wrapper). Goldens and build-boot-agent.sh build through the wrapper;
-      repro.sh is in the sc-build command. Next: full sc-build, close.
+      repro.sh is in the sc-build command. sc-build of 123528a: no
+      warnings, the full suite, `repro: PASS` (stormbootx.efi 335,360 bytes,
+      `538f157d…` from both paths), and the `stormbootx` and
+      `stormbootx-rustnic` goldens built in the job carried that same
+      digest; the fw golden ISO booted under OVMF. tcp4probe also matched
+      (b6770a6..). Ships with the next release; goldens before it differ.
 
 - [x] **#36 — the golden media name no fallback namespace (P3). Closed
       2026-10-08.** Every golden carried `build-boot-agent.sh`'s
