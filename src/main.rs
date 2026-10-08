@@ -55,6 +55,7 @@ extern crate alloc;
 mod blockio;
 mod clock;
 mod config;
+mod connectx;
 mod dnsname;
 mod drivers;
 mod entropy;

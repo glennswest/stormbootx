@@ -121,7 +121,9 @@ given back on the fall-through.
 3. **NIC FEC report** (`src/mlxfec.rs`). It prints every ConnectX port's
    current and next-boot FEC, read only. If `fec =` is set in the conf, it
    writes that value and warm-resets once. The next boot then finds nothing to
-   change.
+   change. A ConnectX-3 or -3 Pro (the X9 blades', 10/40G) has no FEC setting
+   and says `ConnectX-3 (15b3:1003): no FEC to report`. "no ConnectX on the
+   bus" means no Mellanox function at all (#25, `src/connectx.rs`).
 4. **NIC drivers from the media, then the network** (`drivers::load_from_media`,
    `net::up`, #56). Any `*.efi` in `\stormboot\drivers` is started first (see
    *The network path*). Then every `EFI_SIMPLE_NETWORK` handle is opened and
@@ -763,6 +765,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   rustc --edition 2021 --test src/manifest.rs -o t/manifest-test && ./t/manifest-test && \
   rustc --edition 2021 --test src/installconf.rs -o t/installconf-test && ./t/installconf-test && \
   rustc --edition 2021 --test src/inventory.rs -o t/inventory-test && ./t/inventory-test && \
+  rustc --edition 2021 --test src/connectx.rs -o t/connectx-test && ./t/connectx-test && \
   cargo test -p nvme-tcp-initiator && \
   R=${CARGO_TARGET_DIR:-target}/x86_64-unknown-uefi/release && \
   tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi && \
@@ -775,7 +778,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
 ```
 
 That builds `stormbootx.efi`, `tcp4probe.efi` and `espprobe.efi`, and runs the
-nine host test suites and the initiator crate's. Then it boots espprobe under OVMF (`tests/esp-ovmf.sh`),
+ten host test suites and the initiator crate's. Then it boots espprobe under OVMF (`tests/esp-ovmf.sh`),
 and stormbootx itself against the stub engine and NVMe/TCP target
 (`tests/net-ovmf.sh`). Last, it builds an ISO and boots its `startup.nsh`
 from an EFI Shell (`tests/shell-ovmf.sh`, #60), once with the old EDK shell
@@ -796,7 +799,7 @@ the path. `REPRO_RAW=1 tests/repro.sh` shows it.
 
 There is no host target and no `cargo test`. `src/sha256.rs`,
 `src/intent.rs`, `src/universal.rs`, `src/dnsname.rs`, `src/esp.rs`,
-`src/sntp.rs`, `src/manifest.rs`, `src/installconf.rs` and `src/inventory.rs` are the exceptions: each uses only
+`src/sntp.rs`, `src/manifest.rs`, `src/installconf.rs`, `src/inventory.rs` and `src/connectx.rs` are the exceptions: each uses only
 `core` and names no `crate::` item, so each compiles as its own crate with
 `rustc --test`. `esp.rs`'s tests build their images with `mkfs.fat` and
 mtools, which must be on the `PATH`.

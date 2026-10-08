@@ -556,6 +556,8 @@ boot shipped "$host_cpu" "" 404 good "${common[@]}" "rng         : " \
     "update      : the boot medium is read-only (an ISO or virtual media); not updated" \
     "stub:\"media\":\"agent test\"}" \
     "inventory   : 1 NIC(s), " \
+    "  no ConnectX on the bus" \
+    "not:no FEC to report" \
     "no BMC (CPU and memory sent)" \
     "stub:\"inventory\":{\"v\":1,\"bmc\":false,\"nics\":[{\"mac\":\"52:54:00:12:34:56\",\"link\":true,\"driver\":\"Virtio Network Driver\",\"media_driver\":false,\"pci\":\"0000:00:" \
     "stub:\"id\":\"1af4:1000\"}]" \

@@ -56,20 +56,9 @@ use uefi::boot::{self, OpenProtocolAttributes, OpenProtocolParams, SearchType};
 use uefi::proto::pci::PciIoAddress;
 use uefi::proto::pci::root_bridge::PciRootBridgeIo;
 
-const VENDOR_MELLANOX: u16 = 0x15b3;
+use crate::connectx;
 
-/// Physical-function ids this code is willing to touch (mtcr_ul_com.c:3263).
-/// Virtual functions are deliberately absent: they have no NV configuration.
-const KNOWN: &[(u16, &str)] = &[
-    (0x1013, "ConnectX-4"),
-    (0x1015, "ConnectX-4 Lx"),
-    (0x1017, "ConnectX-5"),
-    (0x1019, "ConnectX-5 Ex"),
-    (0x101b, "ConnectX-6"),
-    (0x101d, "ConnectX-6 Dx"),
-    (0x101f, "ConnectX-6 Lx"),
-    (0x1021, "ConnectX-7"),
-];
+const VENDOR_MELLANOX: u16 = 0x15b3;
 
 /// Where firmware says whether it is ready for an ICMD, by hardware id
 /// (mtcr_ul_icmd_cif.c:63-68, 1258-1336). The id is CR space 0xf0014 [15:0].
@@ -665,6 +654,8 @@ fn find_vsc(br: &mut PciRootBridgeIo, addr: PciIoAddress) -> Result<u8, String> 
 /// line per card is the only record a firmware boot leaves.
 pub fn apply(want: Option<Fec>) -> Summary {
     let mut sum = Summary::default();
+    // Mellanox functions seen at all: "no ConnectX" only when none (#25).
+    let mut seen = 0usize;
     let Ok(handles) = boot::locate_handle_buffer(SearchType::ByProtocol(&PciRootBridgeIo::GUID))
     else {
         uefi::println!("  no PCI root bridge — nothing to look at");
@@ -689,10 +680,18 @@ pub fn apply(want: Option<Fec>) -> Summary {
             continue;
         };
         for (addr, device) in mellanox_functions(&mut bridge) {
+            seen += 1;
             let loc = format!("{:02x}:{:02x}.{}", addr.bus, addr.dev, addr.fun);
-            let Some((_, model)) = KNOWN.iter().find(|(id, _)| *id == device) else {
-                uefi::println!("  {loc}  15b3:{device:04x}  not a ConnectX physical function this code knows — skipped");
-                continue;
+            let model = match connectx::kind(device) {
+                connectx::Kind::Fec(model) => model,
+                connectx::Kind::NoFec(model) => {
+                    uefi::println!("  {loc}  {model} (15b3:{device:04x}): no FEC to report (10/40G, no RS-FEC)");
+                    continue;
+                }
+                connectx::Kind::Unknown => {
+                    uefi::println!("  {loc}  15b3:{device:04x}  not a ConnectX physical function this code knows — skipped");
+                    continue;
+                }
             };
             sum.cards += 1;
             match one_card(&mut bridge, addr, model, &loc, want, &mut sum) {
@@ -704,8 +703,8 @@ pub fn apply(want: Option<Fec>) -> Summary {
             }
         }
     }
-    if sum.cards == 0 {
-        uefi::println!("  no ConnectX on the bus");
+    if let Some(line) = connectx::closing_line(seen) {
+        uefi::println!("  {line}");
     }
     sum
 }
@@ -735,7 +734,7 @@ pub fn connectx_devfns() -> Vec<(u8, u8)> {
             continue;
         };
         for (addr, device) in mellanox_functions(&mut bridge) {
-            if KNOWN.iter().any(|(id, _)| *id == device) {
+            if matches!(connectx::kind(device), connectx::Kind::Fec(_)) {
                 out.push((addr.dev, addr.fun));
             }
         }

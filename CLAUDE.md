@@ -22,7 +22,7 @@ scratch files go in `tmp/`.
 Push first, then `sc-build` from this checkout. It builds the pushed commit
 on dev.g8.lo as `stormbuild`. There is no checkout on dev, and no `ssh root@`.
 The plain `cargo build && cargo test` default does not suit a `no_std` UEFI
-crate, so name the command. This builds the three binaries, runs the nine
+crate, so name the command. This builds the three binaries, runs the ten
 host suites and the initiator crate's tests, boots `espprobe` and stormbootx under OVMF, boots an ISO's
 `startup.nsh` from two EFI Shells, and runs the self-update's boots:
 
@@ -37,6 +37,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   rustc --edition 2021 --test src/manifest.rs -o t/manifest-test && ./t/manifest-test && \
   rustc --edition 2021 --test src/installconf.rs -o t/installconf-test && ./t/installconf-test && \
   rustc --edition 2021 --test src/inventory.rs -o t/inventory-test && ./t/inventory-test && \
+  rustc --edition 2021 --test src/connectx.rs -o t/connectx-test && ./t/connectx-test && \
   cargo test -p nvme-tcp-initiator && \
   R=${CARGO_TARGET_DIR:-target}/x86_64-unknown-uefi/release && \
   tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi && \
@@ -134,6 +135,8 @@ includes it and `sha256.rs` by `#[path]` to read the hand-down back.
 `src/inventory.rs` (#4) is the ninth: the firmware inventory sent with the
 claim, its SMBIOS parse (BMC, CPU, memory) and its JSON under the engine's
 16 KiB; it alone carries `extern crate alloc` (it builds strings).
+`src/connectx.rs` (#25) is the tenth: which Mellanox ids `mlxfec` reads
+FEC from, which are ConnectX-3s with none, and when "no ConnectX" is true.
 
 `Cargo.lock` is tracked, as it should be for anything that produces a binary.
 Without it every build resolved fresh, and this is a firmware binary whose
@@ -197,6 +200,7 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/sha256.rs` | the digest, because `EFI_HASH2` is optional |
 | `src/config.rs` | the target, read from the media rather than compiled in; `local.conf` read before `stormboot.conf` (#83) |
 | `src/shell.rs` | timed, never-forced failure console before the fall-through |
+| `src/connectx.rs` | which Mellanox ids have a FEC to read, which are ConnectX-3s with none (#25), and the scan's closing line (core-only, host-tested) |
 | `src/mlxfec.rs` | ConnectX FEC NV read; write only on a `fec =` recovery stick |
 | `src/tcp4probe.rs` | second binary: does this machine's firmware carry TCP4? |
 
@@ -1701,6 +1705,15 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       the churn #11 and stormblock#119 want gone. Using the GET means the
       marker has to carry the same key (e.g. the initramfs's
       `claimed_from.volume`), which is the contract stormcos#30 has to agree.
+- [ ] **#25 — mlxfec: a ConnectX-3 is a ConnectX with no FEC, not
+      "unknown" (P3). In progress 2026-10-08.** server1 printed `15b3:1003
+      not a ConnectX physical function this code knows — skipped` then `no
+      ConnectX on the bus`. `src/connectx.rs` (core-only): ids with FEC (was
+      `mlxfec::KNOWN`), ConnectX-3/-3 Pro (1003/1007) without, and "no
+      ConnectX" only when no Mellanox function was seen. QEMU emulates no
+      ConnectX and can't fake a 15b3 id, so the ConnectX-3 line is host-tested
+      and the metal line is the next blade boot. Next: sc-build, close.
+
 - [x] **#4 (the registration half) — the firmware inventory with the
       claim (P3). Closed 2026-10-08.** Unblocked: stormblock#177
       (closed 2026-10-08, golden-stormblock-d9aa620422e3) keeps the claim
