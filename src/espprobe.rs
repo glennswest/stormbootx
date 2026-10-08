@@ -132,7 +132,9 @@ fn probe() -> Result<(), String> {
         // its path so LoadImage makes it the image's DeviceHandle.
         let (fs, how) = espfs::install(h.as_ptr(), dp, &loader.partition).map_err(|e| format!("espfs: {e}"))?;
         uefi::println!("  esp fs    : read-only filesystem {how}");
-        let fs_path = Handle::from_ptr(fs).and_then(path_of).ok_or("the filesystem's handle has no device path")?;
+        let fs_path = unsafe { Handle::from_ptr(fs) }
+            .and_then(path_of)
+            .ok_or("the filesystem's handle has no device path")?;
         let image = espboot::load(fs_path, &loader).map_err(|e| format!("stormbootx's load: {e}"))?;
         let device = unsafe {
             boot::open_protocol::<LoadedImage>(

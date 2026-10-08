@@ -430,7 +430,8 @@ pub fn install(disk: Handle, disk_path: &DevicePath, p: &esp::Partition) -> Resu
     let bio = handle_protocol(disk, &BlockIoProtocol::GUID).ok_or("the disk has no BlockIO")? as *const BlockIoProtocol;
     let media = unsafe { &*(*bio).media };
     let mut d = RawDisk { bio, media_id: media.media_id, block: media.block_size as u64, bounce: Vec::new() };
-    let fat = esp::Fat::mount(&mut d, p.first_lba * d.block, p.blocks() * d.block)
+    let block = d.block;
+    let fat = esp::Fat::mount(&mut d, p.first_lba * block, p.blocks() * block)
         .map_err(|e| format!("could not mount the ESP: {}", e.describe()))?;
     let vol = Box::into_raw(Box::new(Volume {
         proto: SimpleFileSystemProtocol { revision: 0x0001_0000, open_volume },
