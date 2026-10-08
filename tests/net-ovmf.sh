@@ -639,9 +639,13 @@ fi
 # a store that is full must say how much fit and hand down nothing.
 for kb in 64 128 192 256; do
     f="$W/ic-$kb.yaml"
+    # Written whole, then cut to size: a `| head -c` would close the pipe on
+    # its writer, which pipefail turns into a failed test (#111).
+    head -c $((kb * 1024)) /dev/urandom > "$f.raw"
     { printf 'apiVersion: v1\nmetadata:\n  name: size-%s\nfiller: |\n' "$kb"
-      head -c $((kb * 1024)) /dev/urandom | base64 -w 76 | sed 's/^/  /'
-    } | head -c $((kb * 1024)) > "$f"
+      base64 -w 76 < "$f.raw" | sed 's/^/  /'
+    } > "$f"
+    truncate -s $((kb * 1024)) "$f"
     len=$(stat -c %s "$f"); sha=$(sha256sum "$f" | cut -d' ' -f1)
     n=$(( (len + 767) / 768 ))
     BOOT_IC="$f" boot "ic$kb" "$host_cpu" "" ok good "install cfg : " "is there a TCP/IP stack in this firmware"
