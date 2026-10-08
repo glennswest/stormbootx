@@ -375,7 +375,7 @@ A firmware's volatile variable store is a fixed size, so the store is the
 real limit (#93). Fedora's OVMF takes every size up to 256 KiB (342 chunks;
 `tests/net-ovmf.sh` hands down 64, 128, 192 and 256 KiB). Real firmware is
 not measured yet. Where the store fills, the console says so and how much
-fit: `install cfg : NOT HANDED DOWN: the firmware's volatile variable store
+fit, for example `install cfg : NOT HANDED DOWN: the firmware's volatile variable store
 is full (OUT_OF_RESOURCES on chunk 87 of 342); 66048 of 262144 bytes fit, so
 this firmware takes a file of at most about 64 KiB. The node boots without
 its install-config.yaml`.
