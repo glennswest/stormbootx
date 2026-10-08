@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-08
+- **docs:** CLAUDE.md work plan: #84 (arm64 media) waits on the owner (separate boot helper or same media) and on stormcentral#604 (aarch64 toolchain and QEMU on the build template).
 - **docs:** CLAUDE.md work plan: #17 closed (sc-build of fd7c370 passing).
 - **refactor:** removed the old sbregistry `/v1/clones/claim` path (#17): `registry::claim`/`registry::existing` and `main.rs`'s `USE_REGISTRY`, `REGISTRY_IP`/`PORT`/`HOST` and `GOLDEN`. It was compiled out since the boothost claim replaced it, sent no credential, and spoke plain HTTP to a node registry moving to TLS with auth (stormcos#355). No behaviour changes: every boot already claimed the engine's `boothost/<name>`.
 - **docs:** CLAUDE.md work plan: #25 closed (sc-build of 3be647a passing).

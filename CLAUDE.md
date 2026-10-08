@@ -1705,6 +1705,17 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       the churn #11 and stormblock#119 want gone. Using the GET means the
       marker has to carry the same key (e.g. the initramfs's
       `claimed_from.volume`), which is the contract stormcos#30 has to agree.
+- [ ] **#84 — arm64 boot media (`BOOTAA64.EFI`, storminstall#1) (P3).
+      Waiting on the owner and on stormcentral#604 (2026-10-08).** Asked on
+      #84 (`needs-owner`): a separate `stormbootx-arm64` boot helper
+      (recommended: its own golden, `"arch": "arm64"` in the manifest row
+      storminstall picks by, firmware drivers only since stormnic is x86) or
+      `BOOTAA64.EFI` on the same media. Either way the build VM template has
+      no `aarch64-unknown-uefi` target, `qemu-system-aarch64` or AAVMF
+      (stormcentral#604). The port itself is small: `net.rs`, `blockio.rs`
+      and `snpwatch.rs` read the x86 TSC (`entropy.rs` already has aarch64's
+      CNTVCT/RNDR); nothing else names x86.
+
 - [x] **#17 — the old sbregistry `/v1/clones/claim` path sends no
       credential and speaks plain HTTP (P3). Closed 2026-10-08.** The
       path was compiled out (`USE_REGISTRY = false`) since the boothost claim
