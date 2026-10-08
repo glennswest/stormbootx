@@ -3,12 +3,14 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
-### 2026-10-08
-- **fix:** the self-update never takes an older release than the running binary (#96). A signed manifest whose `version` is older (semver, `-pre`/`+build` ignored) than `CARGO_PKG_VERSION` is declined with `update : current (running vX; serial N offers vY, which is older); not taken`, and its serial becomes the medium's floor (`min`), so the next promotion is still judged. Before, the serial alone decided, and a v0.15.0 stick would have rewritten itself to stormcentral's serial 1 = v0.14.0 on its first boot. `downgrade true` in the manifest allows a deliberate rollback. `manifest::{version_ok, semver}` and the `downgrade` key, with host tests. `tests/update-boots.sh` boots stormcentral's real serial-1 manifest twice: declined as older, then "declined here before". Test releases now carry the running version with a `-test` suffix.
+## [v0.23.1] — 2026-10-08
 
-### 2026-10-07
-- **docs:** CLAUDE.md work plan: #107 is the master's blade boot (v0.23.0's rustnic golden named on the issue).
-- **docs:** CLAUDE.md work plan: v0.23.0 goldens (#108).
+### Fixed
+- the self-update never takes an older release than the running binary (#96). A signed manifest whose `version` is older (semver, `-pre`/`+build` ignored) than `CARGO_PKG_VERSION` is declined with `update : current (running vX; serial N offers vY, which is older); not taken`, and its serial becomes the medium's floor (`min`), so the next promotion is still judged. Before, the serial alone decided, and a v0.15.0 stick would have rewritten itself to stormcentral's serial 1 = v0.14.0 on its first boot. `downgrade true` in the manifest allows a deliberate rollback. `manifest::{version_ok, semver}` and the `downgrade` key, with host tests. `tests/update-boots.sh` boots stormcentral's real serial-1 manifest twice: declined as older, then "declined here before". Test releases now carry the running version with a `-test` suffix.
+
+### Documentation
+- CLAUDE.md work plan: #107 is the master's blade boot (v0.23.0's rustnic golden named on the issue).
+- CLAUDE.md work plan: v0.23.0 goldens (#108).
 
 ## [v0.23.0] — 2026-10-07
 
