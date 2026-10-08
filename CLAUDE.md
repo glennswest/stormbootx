@@ -523,6 +523,21 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       with storminstall. The metal boots (X9, R230, ~64 KiB) are the
       master's.
 
+- [x] **#96 — the self-update took an older version onto a fresh medium
+      (P3). Closed 2026-10-08.** The serial alone decided, so a v0.15.0 stick
+      would take stormcentral's serial 1 = v0.14.0. `manifest::version_ok`
+      (semver, `-pre`/`+build` ignored) refuses an older `version` than the
+      running binary unless the manifest says `downgrade true`, and the serial
+      becomes the medium's floor (`min`). d0c074f, released **v0.23.1**
+      (8ad0656). sc-build of d0c074f: suites (manifest 13), espprobe,
+      net-ovmf (with virtio), both shells, update-ovmf's eleven boots: `real`
+      (stormcentral's serial 1, v0.14.0) printed `current (running v0.23.0;
+      serial 1 offers v0.14.0, which is older); not taken`, fetched no file,
+      wrote only `min = 1`; `realagain` `declined here before`; the
+      same-version test releases taken as before. The tag built `--locked`
+      and passed update-ovmf. Goldens `golden-stormbootx-58f58fe342157790`
+      and `golden-stormbootx-rustnic-4b1e6fb0f12b7c5a` (f1a8470).
+
 - [ ] **#107 — boot an X9 blade on the stormnic-ixgbe 728b328 media to
       check stormnic-ixgbe#22 (P2). The master's (2026-10-07).** The
       master answered that blade boots are its job: after 06:00 CDT it swaps
