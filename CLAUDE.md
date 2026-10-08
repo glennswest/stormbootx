@@ -1705,14 +1705,18 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       the churn #11 and stormblock#119 want gone. Using the GET means the
       marker has to carry the same key (e.g. the initramfs's
       `claimed_from.volume`), which is the contract stormcos#30 has to agree.
-- [ ] **#25 — mlxfec: a ConnectX-3 is a ConnectX with no FEC, not
-      "unknown" (P3). In progress 2026-10-08.** server1 printed `15b3:1003
+- [x] **#25 — mlxfec: a ConnectX-3 is a ConnectX with no FEC, not
+      "unknown" (P3). Closed 2026-10-08.** server1 printed `15b3:1003
       not a ConnectX physical function this code knows — skipped` then `no
       ConnectX on the bus`. `src/connectx.rs` (core-only): ids with FEC (was
       `mlxfec::KNOWN`), ConnectX-3/-3 Pro (1003/1007) without, and "no
       ConnectX" only when no Mellanox function was seen. QEMU emulates no
       ConnectX and can't fake a 15b3 id, so the ConnectX-3 line is host-tested
-      and the metal line is the next blade boot. Next: sc-build, close.
+      and the metal line is the next blade boot. 3be647a. sc-build: no
+      warnings, full suite, connectx 4/4; OVMF (no Mellanox) still printed
+      `no ConnectX on the bus` and no `no FEC to report`. **Not run:** an X9
+      blade, which should print `05:00.0  ConnectX-3 (15b3:1003): no FEC to
+      report (10/40G, no RS-FEC)` and no "no ConnectX" line.
 
 - [x] **#4 (the registration half) — the firmware inventory with the
       claim (P3). Closed 2026-10-08.** Unblocked: stormblock#177
