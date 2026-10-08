@@ -4,6 +4,8 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-08
+- **fix:** a refused install-config chunk now says the firmware's volatile variable store is full, how many bytes fit and the size this firmware takes (`install cfg : NOT HANDED DOWN: …`), so a node that booted without its config is visible (#93).
+- **test:** `tests/net-ovmf.sh` hands down 64, 128, 192 and 256 KiB `install-config.yaml` files and reports which ones OVMF's volatile variable store takes; a refused one must be handed down not at all (#93).
 - **docs:** CLAUDE.md work plan: #69, #70, #71 and #73 wait on their paused stormnic repos' first issues (P3, owner 2026-10-07); #72 (ice) waits on #71.
 
 ## [v0.23.1] — 2026-10-08

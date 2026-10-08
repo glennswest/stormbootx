@@ -356,7 +356,8 @@ IC="$W/install-config.yaml"
 } > "$IC"
 IC_LEN=$(stat -c %s "$IC")
 IC_SHA=$(sha256sum "$IC" | cut -d' ' -f1)
-write_install_config() { # ISO
+write_install_config() { # ISO [FILE]
+    local file=${2:-$IC}
     local off
     off=$(python3 - "$1" <<'PY'
 import struct, sys
@@ -369,8 +370,8 @@ for i in range(4):
 PY
 )
     [[ -n "$off" ]] || die "no 0xEF partition in $1's MBR"
-    mcopy -o -i "$1@@$off" "$IC" ::/stormboot/install-config.yaml || die "could not write install-config.yaml into $1"
-    say "install-config.yaml ($IC_LEN bytes, sha256 $IC_SHA) written to the ESP at byte $off"
+    mcopy -o -i "$1@@$off" "$file" ::/stormboot/install-config.yaml || die "could not write install-config.yaml into $1"
+    say "install-config.yaml ($(stat -c %s "$file") bytes, sha256 $(sha256sum "$file" | cut -d' ' -f1)) written to the ESP at byte $off"
 }
 
 # boot NAME CPU RNG CLAIM NTP EXPECTED...   (CLAIM: 404, ok or new; NTP: good or bad)
@@ -397,6 +398,8 @@ BOOT_INTENT=
 # properties (disable-legacy=on: a modern-only 1af4:1041).
 BOOT_DRIVERS=
 BOOT_PREFER=
+# BOOT_IC (#93): an install-config.yaml of another size for this boot's ESP.
+BOOT_IC=
 BOOT_NICDEV=
 boot() {
     local name=$1 cpu=$2 rng=$3 claim=$4 ntp=$5; shift 5
@@ -418,6 +421,7 @@ boot() {
     [[ $name == shipped ]] && args+=(--media "agent test")
     "$ROOT/scripts/build-boot-agent.sh" "${args[@]}" >/dev/null
     [[ $name == jitter ]] && write_install_config "$iso"
+    [[ -n "$BOOT_IC" ]] && write_install_config "$iso" "$BOOT_IC"
     cp "$OVMF_VARS" "$W/$name.vars"
     : > "$W/stub.log"
     : > "$W/ntp.log"
@@ -629,6 +633,27 @@ if [[ -n "${VIRTIO_EFI:-}" ]]; then
 else
     say "note: VIRTIO_EFI not set; the stormnic-virtio boots (#108) are skipped"
 fi
+
+# #93: how large an install-config.yaml OVMF's volatile variable store takes.
+# Each size is handed down in 768-byte chunks and the payload reassembles it;
+# a store that is full must say how much fit and hand down nothing.
+for kb in 64 128 192 256; do
+    f="$W/ic-$kb.yaml"
+    { printf 'apiVersion: v1\nmetadata:\n  name: size-%s\nfiller: |\n' "$kb"
+      head -c $((kb * 1024)) /dev/urandom | base64 -w 76 | sed 's/^/  /'
+    } | head -c $((kb * 1024)) > "$f"
+    len=$(stat -c %s "$f"); sha=$(sha256sum "$f" | cut -d' ' -f1)
+    n=$(( (len + 767) / 768 ))
+    BOOT_IC="$f" boot "ic$kb" "$host_cpu" "" ok good "install cfg : " "is there a TCP/IP stack in this firmware"
+    if grep -qF "install cfg : $len bytes reassembled from $n chunk(s), length and sha256 match" "$W/ic$kb.txt"; then
+        say "[ic$kb] SIZE RESULT: $kb KiB ($len bytes, $n chunks) handed down and reassembled"
+    elif grep -qF "install cfg : NOT HANDED DOWN: the firmware's volatile variable store is full" "$W/ic$kb.txt"; then
+        say "[ic$kb] SIZE RESULT: $kb KiB refused: $(grep -F 'NOT HANDED DOWN' "$W/ic$kb.txt" | head -1)"
+        grep -qF "handed down : StormBootInstallConfig" "$W/ic$kb.txt" && die "[ic$kb] a refused file was handed down"
+    else
+        die "[ic$kb] neither reassembled nor refused: $(grep -F 'install cfg' "$W/ic$kb.txt" | tr '\n' ' ')"
+    fi
+done
 
 # #68: a fall-through gives the NICs back. The firmware's own IPv4 stack is
 # on, so stormbootx's exclusive SNP open first takes the NIC from the

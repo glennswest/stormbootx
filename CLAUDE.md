@@ -514,6 +514,15 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       stormnic-virtio#1's pvetest1/2 boot of the rustnic media (pve's OVMF,
       the iPXE option ROM, a real release).
 
+- [ ] **#93 — how large an install-config.yaml real variable stores take
+      (P3). In progress 2026-10-08.** 256 KiB (`installconf::MAX`,
+      storminstall's cap) is 342 volatile chunks; a firmware's volatile store
+      is a fixed size. Plan: (1) `net-ovmf.sh` hands down 64/128/192/256 KiB
+      and reports which reassemble; (3) the refused-chunk line says the store
+      is full and how much fit; (2) if 256 KiB doesn't fit, agree a lower cap
+      with storminstall. The metal boots (X9, R230, ~64 KiB) are the
+      master's.
+
 - [ ] **#107 — boot an X9 blade on the stormnic-ixgbe 728b328 media to
       check stormnic-ixgbe#22 (P2). The master's (2026-10-07).** The
       master answered that blade boots are its job: after 06:00 CDT it swaps

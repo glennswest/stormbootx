@@ -110,10 +110,15 @@ pub fn set_install_config() {
             return;
         };
         if let Err(e) = uefi::runtime::set_variable(var, &VENDOR, attrs, chunk) {
+            // Say how much fit: a node that boots without its config must be
+            // visible, and the number is this firmware's limit (#93).
             uefi::println!(
-                "install cfg : not handed down: chunk {i} of {n} refused ({:?}); the firmware's variable store is too small for {} bytes",
+                "install cfg : NOT HANDED DOWN: the firmware's volatile variable store is full ({:?} on chunk {} of {n}); {} of {} bytes fit, so this firmware takes a file of at most about {} KiB. The node boots without its install-config.yaml",
                 e.status(),
-                body.len()
+                i + 1,
+                i * installconf::CHUNK,
+                body.len(),
+                i * installconf::CHUNK / 1024
             );
             for j in 0..i {
                 let mut name = [0u8; 40];
