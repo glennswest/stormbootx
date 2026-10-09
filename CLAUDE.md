@@ -1520,7 +1520,13 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       serial 2. That also ends #96's downgrade for v0.15–v0.17 sticks.
       Nothing in this repo changes for it.
 
-- [ ] #14 — test containers (short/medium/long). **Blocked on
+- [ ] #14 — test containers (short/medium/long). **Moved to
+      stormbootx-test#1 (2026-10-09).** The owner's rule (stormcentral#601,
+      2026-10-08): a project's suites live in its own `<project>-test` repo
+      with its own session. `stormcentral project spawn-test stormbootx`
+      made `glennswest/stormbootx-test`; its #1 (P1) carries this, with the
+      design below posted there, and #14 is proposed after it. Nothing goes
+      in a `test/` here. Was: **blocked on
       stormcentral#133 alone (2026-10-06, #95).** No decision is left: the
       owner answered #22 on 2026-10-02 ("Use a real stormblock engine on a
       node to test"), so the test uses the node's own engine. stormcentral#74

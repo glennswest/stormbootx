@@ -1084,7 +1084,7 @@ Open issues:
 | #93 | install-config sizes on real firmware variable stores |
 | #100, #99 | boot time: one NVMe/TCP command in flight (~46 MiB/s on metal); mlxfec's wait on a parked cap9 lock |
 | #69–#74 | more Rust NIC drivers, paused by the owner at P3 (each behind its repo's first issue); #131 a `prefer_media_drivers` for mlx5 |
-| #14 | test containers, behind stormcentral#133 (a test's engine token) |
+| #14 | test containers: moved to glennswest/stormbootx-test#1 (stormcentral#601); its engine token is stormcentral#133 |
 | #84 | arm64 media: an owner decision and stormcentral#604 |
 | #110 | the claim over HTTPS against a fleet CA (stormcos#35) |
 
