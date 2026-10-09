@@ -784,6 +784,8 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso old "media       : shelltest" && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso ovmf "media       : shelltest" && \
   tests/repro.sh && \
+  deploy/build-golden.sh stormbootx-arm64 $PWD/t/arm && \
+  EFI_NAME=BOOTAA64.EFI tests/iso-layout.sh t/arm/boot/stormbootx-arm64.iso && \
   tests/update-ovmf.sh $R/tcp4probe.efi'
 ```
 

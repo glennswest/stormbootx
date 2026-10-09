@@ -47,8 +47,15 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso old "media       : shelltest" && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso ovmf "media       : shelltest" && \
   tests/repro.sh && \
+  deploy/build-golden.sh stormbootx-arm64 $PWD/t/arm && \
+  EFI_NAME=BOOTAA64.EFI tests/iso-layout.sh t/arm/boot/stormbootx-arm64.iso && \
   tests/update-ovmf.sh $R/tcp4probe.efi'
 ```
+
+`deploy/build-golden.sh stormbootx-arm64` (#84) builds the agent for
+`aarch64-unknown-uefi` (adding the std with rustup until stormcentral#604)
+and lays its ISO down with `BOOTAA64.EFI`; `iso-layout.sh` checks it. Nothing
+boots it yet: there is no `qemu-system-aarch64` or AAVMF on the template.
 
 `tests/repro.sh` (#53) builds `stormbootx.efi` from two paths with two
 `CARGO_HOME`s and requires the same bytes: `build.rs` links with `/Brepro`
@@ -1729,26 +1736,25 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       marker has to carry the same key (e.g. the initramfs's
       `claimed_from.volume`), which is the contract stormcos#30 has to agree.
 - [ ] **#84 — arm64 boot media (`BOOTAA64.EFI`, storminstall#1) (P3).
-      In progress 2026-10-09.** Owner's decision (2026-10-09, the master's
-      recommendation): a separate **`stormbootx-arm64`** boot helper, its own
-      golden, `\EFI\BOOT\BOOTAA64.EFI` + `\stormboot\`, firmware drivers
-      only (no arm64 rustnic), `"arch": "arm64"` in its manifest row. An arm64
-      failure never holds up the x86 goldens. Plan:
-      1. the port: the three TSC reads (`net.rs`, `blockio.rs`,
-         `snpwatch.rs`) go through `entropy::ticks()` (TSC / CNTVCT_EL0,
-         calibrated against `Stall` as before); the bootloader path per arch
-         (`espboot::BOOTLOADER`, `manifest::BOOTLOADER`, `selfupdate`,
-         `blockio`'s chain-load);
-      2. media: `build-boot-agent.sh --arch arm64` (BOOTAA64.EFI, a
-         `startup.nsh` that looks for it), `build-golden.sh stormbootx-arm64`;
-      3. sc-build compiles `--target aarch64-unknown-uefi` (`rustup target
-         add` in the job until stormcentral#604 bakes it into the template)
-         and builds the arm64 golden tree;
-      4. **after stormcentral#604** (qemu-system-aarch64, AAVMF): boot the
-         arm64 ISO under AAVMF (net-ovmf's stubs), then `component add
-         stormbootx-arm64 --kind media` and its golden. Close then.
-      The attached image's `BOOTAA64.EFI` (stormuefi on arm64) is not this
-      repo's.
+      Built 2026-10-09; the boot waits on stormcentral#604.** Owner's
+      decision (2026-10-09, the master's recommendation): a separate
+      **`stormbootx-arm64`** boot helper, its own golden, firmware drivers
+      only (no arm64 rustnic), `"arch": "arm64"` in its manifest row.
+      Done: 5a23953 (`entropy::ticks()`: TSC / CNTVCT_EL0 for the three TSC
+      reads; the bootloader path per arch in `espboot`, `manifest`,
+      `selfupdate`, `blockio`), 0d4810d (no aarch64 warning), a291da0
+      (`build-boot-agent.sh --arch arm64`, PE machine checked;
+      `build-golden.sh stormbootx-arm64`; `iso-layout.sh` `EFI_NAME`).
+      sc-build of a291da0 (job 31563659b1, exit 0): the full x86 suite
+      unchanged (net-ovmf, shells, repro, update-ovmf), all three binaries
+      built for aarch64 with no warning (`PE32+ … ARM64`), an x86 binary
+      refused by `--arch arm64` (`PE machine 0x8664`), the arm64 golden tree
+      (`media/EFI/BOOT/BOOTAA64.EFI`, startup.nsh looking for it, no
+      drivers) and its ISO `iso-layout` PASS. **Left, after
+      stormcentral#604** (qemu-system-aarch64, AAVMF): boot the arm64 ISO
+      under AAVMF against net-ovmf's stubs, then `component add
+      stormbootx-arm64 --kind media` and its golden. The attached image's
+      `BOOTAA64.EFI` (stormuefi on arm64) is not this repo's.
 
 - [x] **#17 — the old sbregistry `/v1/clones/claim` path sends no
       credential and speaks plain HTTP (P3). Closed 2026-10-08.** The
