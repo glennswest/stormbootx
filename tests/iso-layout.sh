@@ -9,7 +9,8 @@
 #   - a UEFI El Torito boot image, /esp.img;
 #   - an MBR partition of type 0xef and a GPT entry, both mapping /esp.img;
 #   - that ESP at FAT12 with 2 KiB clusters (mkfs.fat's geometry at 4 MiB),
-#     carrying \EFI\BOOT\BOOTX64.EFI;
+#     carrying \EFI\BOOT\BOOTX64.EFI (EFI_NAME=BOOTAA64.EFI for an arm64
+#     medium, #84);
 #   - \stormboot\stormboot.conf on that ESP naming the stormbootx on it
 #     (#94): `version = VERSION` (default: this checkout's Cargo.toml) and a
 #     `commit =` line, which storminstall reads to refuse old media.
@@ -23,6 +24,7 @@ say() { printf 'iso-layout: %s\n' "$*"; }
 W=$(mktemp -d "${TMPDIR:-/tmp}/iso-layout.XXXXXX")
 trap 'rm -rf "$W"' EXIT
 
+EFI_NAME=${EFI_NAME:-BOOTX64.EFI}
 VERSION=${VERSION:-$(sed -n 's/^version *= *"\([^"]*\)".*/\1/p' "$(dirname "$0")/../Cargo.toml" | head -1)}
 
 fail=0
@@ -51,8 +53,8 @@ for iso in "$@"; do
     fsck.fat -v -n "$W/esp.img" > "$W/fsck" 2>&1 || true
     check "ESP is FAT12" grep -q '12 bit entries' "$W/fsck"
     check "ESP has 2048-byte clusters" grep -qE '^ +2048 bytes per cluster' "$W/fsck"
-    check "ESP carries \\EFI\\BOOT\\BOOTX64.EFI" \
-        mdir -i "$W/esp.img" ::/EFI/BOOT/BOOTX64.EFI
+    check "ESP carries \\EFI\\BOOT\\$EFI_NAME" \
+        mdir -i "$W/esp.img" "::/EFI/BOOT/$EFI_NAME"
     mtype -i "$W/esp.img" ::/stormboot/stormboot.conf 2>/dev/null | tr -d '\r' > "$W/conf" || true
     check "stormboot.conf names version $VERSION" grep -qE "^version += +${VERSION//./\\.}\$" "$W/conf"
     check "stormboot.conf names a commit" grep -qE '^commit += +[^ ]+$' "$W/conf"

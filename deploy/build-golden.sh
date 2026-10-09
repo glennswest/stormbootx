@@ -5,6 +5,7 @@
 #   deploy/build-golden.sh stormbootx-rustnic OUT
 #   deploy/build-golden.sh stormbootx-disk OUT
 #   deploy/build-golden.sh stormbootx-rustnic-disk OUT
+#   deploy/build-golden.sh stormbootx-arm64   OUT
 #   deploy/build-golden.sh nic-drivers        OUT
 #
 # Everything is a golden (owner, 2026-09-28; #21, stormcentral#126): the boot
@@ -62,6 +63,20 @@
 #   stick takes the same signed promotion as the ISO, whose media/ tree is
 #   the same files.
 #
+# stormbootx-arm64 golden (#84, owner 2026-10-09): the fw medium for arm64
+# hosts, its own golden so an arm64 failure never holds up the x86 ones:
+#   bin/stormbootx.efi            the agent built for aarch64-unknown-uefi
+#   boot/stormbootx-arm64.iso     \EFI\BOOT\BOOTAA64.EFI, \stormboot\ (the
+#                                 install-config slot, #79), startup.nsh
+#   media/, media.files           as above (#83), BOOTAA64.EFI in place of
+#                                 BOOTX64.EFI; `update =` its own boothelper
+#   SHA256SUMS, BUILD
+#
+#   No NIC drivers: the stormnic drivers are x86 builds, so every NIC is the
+#   firmware's own (`media : fw arm64`). No tcp4probe ISO and no disk image
+#   yet. Until stormcentral#604 bakes the target into the build template,
+#   the aarch64 std is added with rustup when it is missing.
+#
 # nic-drivers golden (an EFI boothelper; no medium takes it as an input since
 # #52):
 #   bin/stormnic-ixgbe.efi, bin/stormnic-mlx4.efi
@@ -79,7 +94,7 @@ say() { printf '==> %s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
 GOLDEN="${1:-}"; OUT="${2:-}"
-[[ -n "$GOLDEN" && -n "$OUT" ]] || die "usage: $0 stormbootx|stormbootx-rustnic|stormbootx-disk|stormbootx-rustnic-disk|nic-drivers OUT [--drivers DIR]"
+[[ -n "$GOLDEN" && -n "$OUT" ]] || die "usage: $0 stormbootx|stormbootx-rustnic|stormbootx-disk|stormbootx-rustnic-disk|stormbootx-arm64|nic-drivers OUT [--drivers DIR]"
 shift 2
 DRIVERS=""
 while [[ $# -gt 0 ]]; do
@@ -149,6 +164,16 @@ rustnic_drivers() {
     cp "$WORK/drivers/"*.efi "$WORK/drivers/STORMNIC-SOURCE.txt" "$WORK/media-drivers/"
     pin() { sed -n "s/^$1=\"\(.......\).*\"/\1/p" "$ROOT/scripts/build-nic-drivers.sh"; }
     RUSTNIC_LABEL="rustnic ixgbe@$(pin STORMNIC_IXGBE_REF) mlx4@$(pin STORMNIC_MLX4_REF) virtio@$(pin STORMNIC_VIRTIO_REF)"
+}
+
+# The aarch64 std, from rustup when the toolchain lacks it (#84; the build
+# template gets it with stormcentral#604, and then this does nothing).
+aarch64_target() {
+    local t=aarch64-unknown-uefi
+    [[ -d "$(rustc --print sysroot)/lib/rustlib/$t" ]] && return
+    command -v rustup >/dev/null || die "no $t std and no rustup to add it (stormcentral#604)"
+    say "adding the $t std with rustup (until stormcentral#604)"
+    rustup target add "$t" >/dev/null
 }
 
 # A disk golden holds the image and nothing else.
@@ -239,7 +264,26 @@ stormnic = $(cat "$WORK/drivers/STORMNIC-SOURCE.txt")"
     seal "$note
 image    = boot/$GOLDEN.img (GPT, 64 MiB FAT ESP at 512-byte sectors; dd it whole onto a stick)"
     ;;
+stormbootx-arm64)
+    [[ -z "$DRIVERS" ]] || die "$GOLDEN carries no NIC drivers (the stormnic drivers are x86); no --drivers"
+    aarch64_target
+    say "building stormbootx for aarch64-unknown-uefi"
+    ( cd "$ROOT" && scripts/cargo-repro.sh build --locked --release --target aarch64-unknown-uefi --bin stormbootx )
+    REL="${CARGO_TARGET_DIR:-$ROOT/target}/aarch64-unknown-uefi/release"
+    mkdir -p "$OUT/bin" "$OUT/boot"
+    cp "$REL/stormbootx.efi" "$OUT/bin/"
+    "$ROOT/scripts/build-boot-agent.sh" --iso --arch arm64 --binary "$OUT/bin/stormbootx.efi" \
+        --dns 192.168.31.252 --no-fallback --media "fw arm64" \
+        --update "$(update_url stormbootx-arm64)" --tree "$OUT/media" \
+        --output "$OUT/boot/stormbootx-arm64.iso"
+    media_files
+    [[ -f "$OUT/media/EFI/BOOT/BOOTAA64.EFI" && ! -e "$OUT/media/EFI/BOOT/BOOTX64.EFI" ]] \
+        || die "the arm64 medium must carry BOOTAA64.EFI and no BOOTX64.EFI"
+    [[ ! -e "$OUT/media/stormboot/drivers" ]] || die "NIC drivers reached the arm64 medium"
+    seal "arch     = arm64 (aarch64-unknown-uefi, \\EFI\\BOOT\\BOOTAA64.EFI)
+drivers  = none (the firmware's own)"
+    ;;
 *)
-    die "no golden $GOLDEN (stormbootx, stormbootx-rustnic, stormbootx-disk, stormbootx-rustnic-disk or nic-drivers)"
+    die "no golden $GOLDEN (stormbootx, stormbootx-rustnic, stormbootx-disk, stormbootx-rustnic-disk, stormbootx-arm64 or nic-drivers)"
     ;;
 esac
