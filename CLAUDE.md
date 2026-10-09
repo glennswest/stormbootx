@@ -584,7 +584,10 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       minismbd's rustnic ISO and boots server1, then posts the SOL line.
       Told on #107 that v0.23.0's `golden-stormbootx-rustnic-4c485750874d219a`
       supersedes 0585a520 (same ixgbe/mlx4 pins). Not done by 06:33 CDT
-      (server1/4/7 idle, no new SOL log). Nothing in this repo is left: on
+      (server1/4/7 idle, no new SOL log). Still not done 2026-10-09 14:34Z:
+      the newest blade console (server3-20261009-120846) is stormbootx
+      0.12.0, `media : rustnic ixgbe@563ea8d`, old per-step lines; handed
+      off with `stormcentral shipped` (the pins ship in v0.23.0+). Nothing in this repo is left: on
       the boot, check for exactly one `stormnic-ixgbe 0.1.0: 0000:03:00.0 …
       link up 10000 Mb/s, SNP installed` line after `starting
       stormnic-ixgbe.efi` and none of the per-step lines, then close.
