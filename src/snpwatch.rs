@@ -298,7 +298,7 @@ static CALL: AtomicU8 = AtomicU8::new(0);
 static NIC: AtomicUsize = AtomicUsize::new(0);
 static SINCE: AtomicU64 = AtomicU64::new(0);
 static TOLD: AtomicU64 = AtomicU64::new(0);
-/// TSC ticks per millisecond, from `net.rs`'s calibration. 0 until `arm`.
+/// Cycle-counter ticks per millisecond, from `net.rs`'s calibration. 0 until `arm`.
 static PER_MS: AtomicU64 = AtomicU64::new(0);
 static EVENT: AtomicPtr<c_void> = AtomicPtr::new(ptr::null_mut());
 
@@ -313,7 +313,7 @@ const FIRST: u64 = 5;
 const AGAIN: u64 = 30;
 
 fn rdtsc() -> u64 {
-    unsafe { core::arch::x86_64::_rdtsc() }
+    crate::entropy::ticks()
 }
 
 fn secs_since(start: u64) -> u64 {

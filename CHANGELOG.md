@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-09
+- **feat:** stormbootx compiles for `aarch64-unknown-uefi` (#84). The three TSC reads (`net.rs`'s clock, `blockio.rs`'s read timing, `snpwatch.rs`'s hang watch) go through `entropy::ticks()`, the TSC on x86_64 and CNTVCT_EL0 on aarch64, still calibrated against `Stall`. The bootloader path is the architecture's removable-media path: `espboot::BOOTLOADER`/`BOOTLOADER16`, `manifest::BOOTLOADER` and the self-update's `BOOT_PATH` are `\EFI\BOOT\BOOTAA64.EFI` on arm64, so an arm64 medium chain-loads the attached image's `BOOTAA64.EFI` and takes only a manifest that carries one. x86 behaviour is unchanged.
 - **docs:** CLAUDE.md work plan: #14's suites move to the new `stormbootx-test` repo (stormcentral#601; spawned 2026-10-09, its #1 carries them).
 - **docs:** CLAUDE.md work plan: #93's metal boots not run yet (no hardware console has carried an install-config.yaml); handed off to the master.
 - **docs:** CLAUDE.md work plan: #107 still unbooted on 2026-10-09 (server3's console that day is v0.12.0 media); handed off as shipped in v0.23.0+'s rustnic golden, the blade boot is the master's.

@@ -60,8 +60,8 @@ use crate::{clock, config, handoff, net, sha256};
 /// The medium's update state.
 pub const STATE_PATH: &str = r"\stormboot\state";
 
-/// The bootloader, which is this binary.
-const BOOT_PATH: &str = r"\EFI\BOOT\BOOTX64.EFI";
+/// The bootloader, which is this binary (`BOOTAA64.EFI` on arm64, #84).
+const BOOT_PATH: &str = crate::espboot::BOOTLOADER;
 
 /// The serial on trial in this boot, 0 for none.
 static TRIAL: AtomicU64 = AtomicU64::new(0);

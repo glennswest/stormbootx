@@ -34,8 +34,8 @@
 //!   take this serial.
 //! - `file` paths are relative to the medium's root, with `/`. Only
 //!   `startup.nsh`, `EFI/BOOT/*` and `stormboot/*` (not `state` or
-//!   `local.conf`, which are the medium's own), and `BOOTX64.EFI` must be
-//!   there.
+//!   `local.conf`, which are the medium's own), and the architecture's
+//!   bootloader (`BOOTX64.EFI`, `BOOTAA64.EFI` on arm64) must be there.
 //! - Unknown keys are ignored, so a later stormcentral can add one. A key that
 //!   changes what a medium must do comes with a new format number, which this
 //!   refuses.
@@ -80,8 +80,18 @@ pub const MAX_MANIFEST: usize = 16 << 10;
 /// Starts a new set gets to reach an attach before it is put back.
 pub const TRIAL_STARTS: u32 = 2;
 
-/// The bootloader every manifest must carry.
+/// The bootloader every manifest must carry: this architecture's
+/// removable-media path (#84). An arm64 medium's manifest names
+/// `BOOTAA64.EFI`, so an x86 manifest is refused there and the reverse.
+#[cfg(not(target_arch = "aarch64"))]
 pub const BOOTLOADER: &str = "EFI/BOOT/BOOTX64.EFI";
+#[cfg(target_arch = "aarch64")]
+pub const BOOTLOADER: &str = "EFI/BOOT/BOOTAA64.EFI";
+
+#[cfg(not(target_arch = "aarch64"))]
+const NO_BOOTLOADER: &str = "no EFI/BOOT/BOOTX64.EFI";
+#[cfg(target_arch = "aarch64")]
+const NO_BOOTLOADER: &str = "no EFI/BOOT/BOOTAA64.EFI";
 
 /// stormcentral's release keys, current and next: the Ed25519 public halves
 /// a manifest's signature must verify against (stormcentral#279, #86). The
@@ -174,7 +184,7 @@ impl Bad {
             Bad::Duplicate => "a file is named twice",
             Bad::TooMany => "too many files or canaries",
             Bad::TooBig => "a file or the whole update is too big",
-            Bad::NoBootloader => "no EFI/BOOT/BOOTX64.EFI",
+            Bad::NoBootloader => NO_BOOTLOADER,
         }
     }
 }

@@ -32,7 +32,8 @@
 //!   firmware's `EFI_RNG`, the CPU (RDSEED/RDRAND), or cycle-counter jitter.
 //!   Nothing is installed as `EFI_RNG`, so the next stage (the Linux EFI stub
 //!   seeds its RNG from that protocol) never finds a weak one left behind.
-//! - **Time** is the TSC, calibrated against `Stall` at bring-up. There is no
+//! - **Time** is the cycle counter (the TSC, CNTVCT_EL0 on aarch64, #84),
+//!   calibrated against `Stall` at bring-up. There is no
 //!   timer protocol to depend on, and every loop here polls anyway.
 //!
 //! EFI boot services run on one thread and nothing here is reentrant: a
@@ -159,10 +160,11 @@ fn ip_text(a: [u8; 4]) -> String {
 // ---------------------------------------------------------------- time, seed
 
 fn rdtsc() -> u64 {
-    unsafe { core::arch::x86_64::_rdtsc() }
+    crate::entropy::ticks()
 }
 
-/// The TSC, counted in microseconds from bring-up.
+/// The cycle counter (TSC, or CNTVCT on aarch64), counted in microseconds
+/// from bring-up.
 struct Clock {
     base: u64,
     per_ms: u64,
@@ -170,7 +172,8 @@ struct Clock {
 
 impl Clock {
     /// Calibrated against 20 ms of `Stall`. The TSC is invariant on every
-    /// server this boots (and under KVM); the error of one calibration only
+    /// server this boots (and under KVM), and CNTVCT is fixed-rate by the
+    /// architecture; the error of one calibration only
     /// stretches or shrinks the timeouts a little.
     fn calibrate() -> Self {
         let a = rdtsc();

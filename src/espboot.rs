@@ -1,6 +1,7 @@
 //! Start an ESP's bootloader without the firmware's FAT driver (#37).
 //!
-//! `esp.rs` finds and reads `\EFI\BOOT\BOOTX64.EFI` through any `esp::Disk`,
+//! `esp.rs` finds and reads `\EFI\BOOT\BOOTX64.EFI` (`BOOTAA64.EFI` on
+//! arm64, #84) through any `esp::Disk`,
 //! and this hands the bytes to `LoadImage` from a buffer with a device path
 //! that names where they came from: the disk, the ESP's `HD()` node, and the
 //! file. Shared by `blockio.rs` (the attached namespace, and the local disks
@@ -17,12 +18,22 @@ use uefi::proto::device_path::build::{self, DevicePathBuilder};
 use uefi::proto::device_path::media::{PartitionFormat, PartitionSignature};
 use uefi::proto::device_path::DevicePath;
 use uefi::proto::media::block::BlockIO;
-use uefi::{cstr16, Guid, Handle};
+use uefi::{cstr16, CStr16, Guid, Handle};
 
 use crate::esp;
 
-/// The path every bootable ESP carries.
+/// The path every bootable ESP carries: the UEFI removable-media path of
+/// the architecture this was built for (#84).
+#[cfg(target_arch = "x86_64")]
 pub const BOOTLOADER: &str = "\\EFI\\BOOT\\BOOTX64.EFI";
+#[cfg(target_arch = "aarch64")]
+pub const BOOTLOADER: &str = "\\EFI\\BOOT\\BOOTAA64.EFI";
+
+/// `BOOTLOADER` as UCS-2, for device paths.
+#[cfg(target_arch = "x86_64")]
+pub const BOOTLOADER16: &CStr16 = cstr16!("\\EFI\\BOOT\\BOOTX64.EFI");
+#[cfg(target_arch = "aarch64")]
+pub const BOOTLOADER16: &CStr16 = cstr16!("\\EFI\\BOOT\\BOOTAA64.EFI");
 
 /// A firmware BlockIO as an `esp::Disk`.
 pub struct BlockDisk<'a> {
@@ -117,7 +128,7 @@ pub fn load(esp: &DevicePath, b: &Bootloader) -> Result<Handle, String> {
         builder = builder.push(&node).map_err(|e| format!("device path: {e:?}"))?;
     }
     let path = builder
-        .push(&build::media::FilePath { path_name: cstr16!("\\EFI\\BOOT\\BOOTX64.EFI") })
+        .push(&build::media::FilePath { path_name: BOOTLOADER16 })
         .and_then(|b| b.finalize())
         .map_err(|e| format!("device path: {e:?}"))?;
 

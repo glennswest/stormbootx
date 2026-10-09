@@ -164,6 +164,14 @@ fn firmware(buf: &mut [u8]) -> bool {
 
 // ------------------------------------------------------------------ the CPU
 
+/// The CPU's free-running counter: the TSC on x86_64, CNTVCT_EL0 on aarch64
+/// (#84). Every user calibrates it against `Stall`, so its rate is never
+/// assumed. `net.rs`'s clock, `blockio.rs`'s read timing and `snpwatch.rs`'s
+/// hang watch read it here, so a new architecture is one arm of `cpu`.
+pub fn ticks() -> u64 {
+    cpu::counter()
+}
+
 #[cfg(target_arch = "x86_64")]
 mod cpu {
     use super::Source;

@@ -26,7 +26,7 @@ use uefi::proto::BootPolicy;
 use uefi::proto::device_path::DevicePath;
 use uefi::proto::device_path::build::{self, DevicePathBuilder};
 use uefi::proto::media::fs::SimpleFileSystem;
-use uefi::{Handle, Identify, cstr16, guid};
+use uefi::{Handle, Identify, guid};
 use uefi::Status;
 use uefi_raw::protocol::block::{BlockIoMedia, BlockIoProtocol};
 use uefi_raw::Boolean;
@@ -87,11 +87,10 @@ const REPORT_EVERY: u64 = 64 << 20;
 const SLOW_READ_MS: u64 = 2000;
 
 fn tsc() -> u64 {
-    // SAFETY: RDTSC has no preconditions on x86_64.
-    unsafe { core::arch::x86_64::_rdtsc() }
+    crate::entropy::ticks()
 }
 
-/// Calibrate the TSC against `Stall`. Once, at publish.
+/// Calibrate the cycle counter against `Stall`. Once, at publish.
 fn calibrate_reads() {
     let t0 = tsc();
     boot::stall(core::time::Duration::from_millis(10));
@@ -584,7 +583,7 @@ fn firmware_boot(disk: uefi_raw::Handle) -> Result<Loaded, String> {
         .next()
         .ok_or("attached disk device path is empty")?;
 
-    let file = cstr16!("\\EFI\\BOOT\\BOOTX64.EFI");
+    let file = crate::espboot::BOOTLOADER16;
     let mut fbuf = alloc::vec::Vec::new();
     let file_path = DevicePathBuilder::with_vec(&mut fbuf)
         .push(&build::media::FilePath { path_name: file })
@@ -622,13 +621,13 @@ fn firmware_boot(disk: uefi_raw::Handle) -> Result<Loaded, String> {
             },
         ) {
             Ok(loaded) => {
-                uefi::println!("boot        : starting \\EFI\\BOOT\\BOOTX64.EFI from the attached image");
+                uefi::println!("boot        : starting {} from the attached image", crate::espboot::BOOTLOADER);
                 return Ok(Loaded::Ran(match boot::start_image(loaded) {
                     Ok(()) => String::from("the image's bootloader exited"),
                     Err(e) => format!("the image's bootloader returned {e:?}"),
                 }));
             }
-            Err(e) => last = Some(format!("load of BOOTX64.EFI failed: {e:?}")),
+            Err(e) => last = Some(format!("load of {} failed: {e:?}", crate::espboot::BOOTLOADER)),
         }
     }
     Ok(Loaded::Not(last.unwrap_or_else(|| {
