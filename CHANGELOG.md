@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-10-09
+- **docs:** refreshed from the code since 2026-10-02. README: the sc-build command builds stormnic-virtio and runs net-ovmf's virtio boots (as CLAUDE.md's); net-ovmf's boots listed (was "twice"); `build-nic-drivers.sh` builds ixgbe, mlx4 and virtio by default and the `nic-drivers` golden carries all three; every `build-boot-agent.sh` flag named; `cargo test -p nvme-tcp-initiator` is the one host `cargo test`; stormboot4bios links the initiator crate (#10 done); #37's "which reader" answered (the X9's own FAT loads the FAT16 4K ESP); status v0.24.0 with eight fixes awaiting v0.25.0 (#128) and a current open-issue table; component kinds (`nic-drivers` tree, `-disk` goldens unregistered, stormcentral#190). docs/presentation.md: inventory, the initiator crate, espfs, self-update, install-config and the newer conf keys; ten host suites with current counts plus repro and update-ovmf; three Rust drivers; the planned table and status. CLAUDE.md work plan (#129): #37, #46 and #2 closed, #33 points at #37's answer, #74 behind stormnic-realtek#1 at P3. `build-golden.sh`'s header names stormnic-virtio on the rustnic media.
+
 ### 2026-10-08
 - **docs:** CLAUDE.md work plan: #84 (arm64 media) waits on the owner (separate boot helper or same media) and on stormcentral#604 (aarch64 toolchain and QEMU on the build template).
 - **docs:** CLAUDE.md work plan: #17 closed (sc-build of fd7c370 passing).

@@ -38,9 +38,10 @@
 # stormbootx-rustnic golden (#45): the same agent with the Rust NIC drivers,
 # for machines whose firmware has no UEFI driver for their NICs (the X9 blades):
 #   bin/stormbootx.efi
-#   boot/stormbootx-rustnic.iso   carries stormnic-ixgbe.efi (STORMNIC_IXGBE_REF)
-#                                 and stormnic-mlx4.efi (STORMNIC_MLX4_REF, #34),
-#                                 and no iPXE NIC driver
+#   boot/stormbootx-rustnic.iso   carries stormnic-ixgbe.efi (STORMNIC_IXGBE_REF),
+#                                 stormnic-mlx4.efi (STORMNIC_MLX4_REF, #34) and
+#                                 stormnic-virtio.efi (STORMNIC_VIRTIO_REF, #108,
+#                                 with prefer_media_drivers = virtio), and no iPXE
 #   media/, media.files           as above (#83)
 #   SHA256SUMS, BUILD
 #

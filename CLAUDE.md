@@ -11,7 +11,7 @@ needs from the firmware's network side is a NIC driver's `EFI_SIMPLE_NETWORK`.
 is **stormuefi**, which selects, verifies and boots a pallet off that disk and
 has no network code at all. A node booting from its own drive runs stormuefi
 alone. Legacy BIOS is **stormboot4bios** (planned, own repo; both stages in one
-loader, and #10 is its prerequisite here).
+loader; it will link `crates/nvme-tcp-initiator`, #10).
 
 Read the cross-project rules in `../CLAUDE.md` first — in particular **build
 with `sc-build` after pushing, never on this VM and never as root**, and
@@ -1039,8 +1039,11 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       `golden-nic-drivers-5b867545c91e`. Left for the master: boot server1
       on the rustnic golden for stormnic-mlx4#1/#2/#3's SOL lines.
 
-- [ ] **#46 — v0.5.1 media hangs on the R230 inside stormuefi's initramfs
-      read (P0, 2026-09-29). In progress.** C2NR0Q2 on golden 206d57c3
+- [x] **#46 — v0.5.1 media hangs on the R230 inside stormuefi's initramfs
+      read (P0, 2026-09-29). Closed, validated by the master on C2NR0Q2:**
+      v0.7.0's fix (`esp =` read at start-up) held, and every C2NR0Q2
+      capture 2026-10-03..05 on v0.14.0 reached `STARTING KERNEL` with
+      `blockio` at 45–53 MiB/s; that speed is #100. History: C2NR0Q2 on golden 206d57c3
       (b693698) stopped at stormuefi's `initrd … raw bytes (no filesystem)`
       for 16+ min; 74a242a6 (a709f9f) booted the same release. That line is
       printed in stormuefi's `handoff::load` *before* the initramfs is read,
@@ -1076,7 +1079,7 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       The NOT_FOUND was 11.50's FAT32-labelled ESP (FAT16 by cluster count),
       fixed in stormcos#188; server1 booted 11.56 from a 4096-byte namespace
       on v0.7.0 media (2026-09-30), with #37's `esp.rs` bridge behind the
-      firmware. Which reader loaded it stays on #37. The console is not
+      firmware. Which reader loaded it: the firmware's FAT (#37's close). The console is not
       stormbootx's: stormcos 2628cb2 names `console=ttyS1,115200` before
       `ttyS0` on every node (stormcos#220, shipped with its next release),
       and stormuefi v0.9.0 puts the SPCR port last (stormuefi#23, ships with
@@ -1151,8 +1154,13 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       test passes), espprobe, net-ovmf, both shells, update-ovmf. No release
       yet: it ships with the next one.
 
-- [ ] **#37 — boot a 4096-byte ESP on firmware whose FAT can't (P0, owner
-      2026-09-29). In progress.** Volumes stay 4K. server1's console (#33)
+- [x] **#37 — boot a 4096-byte ESP on firmware whose FAT can't (P0, owner
+      2026-09-29). Closed, validated by the master:** server1 and pvetest1
+      boot 4096-byte clones. **Which reader:** on the X9 blades the
+      firmware's own FAT loads `BOOTX64.EFI` from the FAT16 4K ESP (70
+      `boot : starting \EFI\BOOT\BOOTX64.EFI from the attached image`
+      lines in server1's SOL log, none read by stormbootx); the bridge is
+      the fallback. History: Volumes stay 4K. server1's console (#33)
       shows Aptio 4's FAT *mounting* the attached 4K ESP (an SFS was found)
       and then `LoadImage` NOT_FOUND, so the firmware's FAT misreads a
       4096-byte-sector FAT. A 512e shim would still give that driver a BPB
@@ -1457,7 +1465,10 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       `build-nic-drivers.sh`.
 
 - [ ] **#74 — stormnic-realtek, a Rust RTL8111/8168, 8125, 8126 UEFI
-      driver (P2, owner). Waiting on the owner (2026-10-06, `needs-owner`).**
+      driver (P3, owner). Blocked on stormnic-realtek#1 (2026-10-09, P3).**
+      The owner (2026-10-07) had the repo created and **paused**, drivers at
+      low priority; moved behind its first issue as #69–#73 were (#129).
+      History: was waiting on the owner (2026-10-06, `needs-owner`).
       The repo doesn't exist. On #75 the owner agreed that the master creates
       each `stormnic-*` repo and registers it with its own session. Asked on
       #74: do the same for `glennswest/stormnic-realtek`, and which machine
@@ -1762,7 +1773,7 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       run:** a real engine storing it (golden-stormblock-d9aa620422e3 on
       forge), a machine with a BMC (Type 38), metal.
 
-- [ ] #2 — self-update of the boot media (P3). **Superseded by #83
+- [x] #2 — self-update of the boot media (P3). **Closed, superseded by #83
       (v0.13.0).** stormbootx has no golden and
       nothing publishes `stormbootx.efi`, so there is not yet an artifact for a
       controlled digest to name. SHA-256 is done; what is left is
@@ -1774,7 +1785,8 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ## Status
 
-v0.24.0. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
+v0.24.0, with #4, #10, #17, #25, #36, #42, #53 and #67 on `main` for
+v0.25.0 (#128). **First complete NVMe/TCP attach on real hardware: 2026-09-05**
 (and the same day, the full chain: chain-load into stormuefi and a running
 stormcos kernel), on a
 Dell PowerEdge R230 (service tag C2NR0Q2) booting the agent over iDRAC virtual

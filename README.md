@@ -38,8 +38,8 @@ attached clone    stormuefi    pallets → select → verify → kernel + initra
 | from its own drive | not involved | boots the kernel out of it |
 
 Legacy-BIOS machines are served by neither. That is the planned
-**stormboot4bios**, and #10 (extracting the initiator) is its prerequisite
-here.
+**stormboot4bios**, which will link this repo's
+`crates/nvme-tcp-initiator` (#10).
 
 ## What it touches at boot
 
@@ -600,12 +600,21 @@ each NIC's SNP instead:
 Under OVMF with no firmware network stack, `tests/net-ovmf.sh` leases from
 QEMU's slirp, reads a stub engine, and attaches a stub NVMe/TCP target at
 4096-byte blocks. The firmware's FAT reads a 96 MiB `BOOTX64.EFI` through the
-published BlockIO (about 120 MiB/s, KVM) and starts it. It runs once as
-shipped, and once with the firmware RNG and RDRAND/RDSEED masked, which must
-print `rng : jitter`. A stub SNTP server answers both (#77): on the first boot
-with a time in 2031, which stormbootx must set and the payload must read back
-from the RTC; on the second as an unsynchronised server, which must set
-nothing and hand down `StormBootClock = unsynced`.
+published BlockIO (about 105–120 MiB/s, KVM) and starts it. Its boots
+(`NET_ONLY=<name>` runs one):
+
+| boot | must show |
+|---|---|
+| `shipped` | `rng : firmware`/`rdrand`; every claim carries `agent` and the firmware inventory (#4, #90); a stub SNTP server's 2031 time set in the RTC and read back by the payload (#77); a 2 KiB `install-config.yaml` handed down and reassembled (#79); the ISO's `update =` skipped as read-only (#83) |
+| `jitter` | firmware RNG and RDRAND/RDSEED masked: `rng : jitter`; told `install`, claims the default and hands down `StormBootTag = stubhost` (#76); an unsynchronised SNTP answer sets nothing (`StormBootClock = unsynced`) |
+| `newhost` | no name from DHCP or PTR: claims `boothost/default` by MAC and boots as `mac-525400123456` (#15) |
+| `noesp` | an attach that boots nothing: `blockio : withdrawn`, one local disk counted, no CPU exception in BDS after (#54) |
+| `nolease` | a NIC on a dead hub: one `waiting for a lease` line a second (#88) |
+| `intent` | told `local`: no claim POST, nothing attached (#11) |
+| `bridge` | `esp = stormbootx`: the payload starts from stormbootx's own read of the ESP and finds the read-only filesystem as its volume (#42) |
+| `ic64` … `ic256` | install-configs of 64, 128, 192 and 256 KiB, each reassembled by the payload (#93) |
+| `release` | no fallback namespace and the claim 404s: falls through, gives the NIC back, and the firmware's PXE on it boots the payload (#36, #68) |
+| `virtio`, `virtio-modern`, `virtio-kept`, `virtio-verbose` | with `VIRTIO_EFI`: `prefer_media_drivers = virtio` takes a transitional and a modern-only virtio-net NIC for stormnic-virtio and attaches over it; without the key the firmware keeps it; `nic_verbose` prints the driver's trace (#108, #80) |
 
 ## The NVMe/TCP initiator
 
@@ -769,7 +778,8 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   cargo test -p nvme-tcp-initiator && \
   R=${CARGO_TARGET_DIR:-target}/x86_64-unknown-uefi/release && \
   tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi && \
-  tests/net-ovmf.sh $R/stormbootx.efi $R/tcp4probe.efi && \
+  STORMNIC_DRIVERS=virtio scripts/build-nic-drivers.sh $PWD/t/nd && \
+  VIRTIO_EFI=t/nd/stormnic-virtio.efi tests/net-ovmf.sh $R/stormbootx.efi $R/tcp4probe.efi && \
   scripts/build-boot-agent.sh --iso --binary $R/stormbootx.efi --media shelltest --output $PWD/t/s.iso && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso old "media       : shelltest" && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso ovmf "media       : shelltest" && \
@@ -780,7 +790,8 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
 That builds `stormbootx.efi`, `tcp4probe.efi` and `espprobe.efi`, and runs the
 ten host test suites and the initiator crate's. Then it boots espprobe under OVMF (`tests/esp-ovmf.sh`),
 and stormbootx itself against the stub engine and NVMe/TCP target
-(`tests/net-ovmf.sh`). Last, it builds an ISO and boots its `startup.nsh`
+(`tests/net-ovmf.sh`, with stormnic-virtio built in the job for its
+`prefer_media_drivers` boots). Last, it builds an ISO and boots its `startup.nsh`
 from an EFI Shell (`tests/shell-ovmf.sh`, #60), once with the old EDK shell
 and once with OVMF's own. `tests/update-ovmf.sh` (#83) runs last, because it
 rebuilds `stormbootx.efi` with a test key: ten self-update boots off a
@@ -797,7 +808,9 @@ and `build-boot-agent.sh` build through it, so a golden's `stormbootx.efi`
 is the same wherever its drive mounts. A plain `cargo build` still carries
 the path. `REPRO_RAW=1 tests/repro.sh` shows it.
 
-There is no host target and no `cargo test`. `src/sha256.rs`,
+The binary has no host target, so a plain `cargo test` does not apply;
+`cargo test -p nvme-tcp-initiator` runs the one host-built crate (#10).
+`src/sha256.rs`,
 `src/intent.rs`, `src/universal.rs`, `src/dnsname.rs`, `src/esp.rs`,
 `src/sntp.rs`, `src/manifest.rs`, `src/installconf.rs`, `src/inventory.rs` and `src/connectx.rs` are the exceptions: each uses only
 `core` and names no `crate::` item, so each compiles as its own crate with
@@ -856,16 +869,20 @@ drive and is deleted with it. Nothing is left on the build box.
 
 `build-nic-drivers.sh` builds the Rust NIC drivers, each `--locked` from a
 pinned commit of its own repo: `stormnic-ixgbe.efi` (Intel 82599/X540/X552,
-`STORMNIC_IXGBE_REF`) and `stormnic-mlx4.efi` (ConnectX-3,
-`STORMNIC_MLX4_REF`), beside a `STORMNIC-SOURCE.txt` naming each commit and
-digest. `STORMNIC_DRIVERS="ixgbe"` builds one. It checks each is a PE
+`STORMNIC_IXGBE_REF`), `stormnic-mlx4.efi` (ConnectX-3,
+`STORMNIC_MLX4_REF`) and `stormnic-virtio.efi` (virtio-net, VMs only,
+`STORMNIC_VIRTIO_REF`, #108), beside a `STORMNIC-SOURCE.txt` naming each
+commit and digest. `STORMNIC_DRIVERS` (default `ixgbe mlx4 virtio`) picks
+which; `STORMNIC_DRIVERS=virtio` builds one. It checks each is a PE
 boot-service driver (subsystem 11). There is no iPXE in it, on any medium or
 in any golden (owner on #81: "I dont want the ipxe code. Move to ours."; #91,
 #52). The iPXE `intelx` driver that first got the X9 blades onto the network
 (#26) is in the history.
 
-`--help` lists the rest (`--drivers`, `--api-port`, `--port`, `--size`, `--binary`,
-`--output`).
+`--help` lists the rest: `--drivers`, `--dns`, `--ntp`, `--media`, `--rng`,
+`--esp`, `--prefer-media-drivers`, `--nic-verbose`, `--update`, `--tree`,
+`--engine` (the engine host without pinning), `--api-port`, `--port`,
+`--nqn`, `--nsid`, `--size` (ESP MiB, default 4), `--binary`, `--output`.
 
 ## Ports, health and shipping
 
@@ -900,7 +917,7 @@ does nothing else, for stormcentral to run into the volume it mounts:
 | `stormbootx-rustnic` | `bin/stormbootx.efi`, `boot/stormbootx-rustnic.iso` (BMC virtual media), `media/`, `media.files`, `SHA256SUMS`, `BUILD` |
 | `stormbootx-disk` | `boot/stormbootx-disk.img` (USB stick, the `stormbootx` medium), `SHA256SUMS`, `BUILD` |
 | `stormbootx-rustnic-disk` | `boot/stormbootx-rustnic-disk.img` (USB stick, the `stormbootx-rustnic` medium), `SHA256SUMS`, `BUILD` |
-| `nic-drivers` | `bin/stormnic-ixgbe.efi`, `bin/stormnic-mlx4.efi`, `STORMNIC-SOURCE.txt`, `SHA256SUMS`, `BUILD` (an EFI boothelper; no medium takes it as an input since #52, and it holds no iPXE since #91) |
+| `nic-drivers` | `bin/stormnic-ixgbe.efi`, `bin/stormnic-mlx4.efi`, `bin/stormnic-virtio.efi`, `STORMNIC-SOURCE.txt`, `SHA256SUMS`, `BUILD` (an EFI boothelper; no medium takes it as an input since #52, and it holds no iPXE since #91) |
 
 `media/` is the medium's files as a tree (`EFI/BOOT/BOOTX64.EFI`,
 `stormboot/stormboot.conf`, `stormboot/drivers/*`, `startup.nsh`), and
@@ -984,7 +1001,8 @@ The fw medium's `BUILD` says `drivers = none`, and a `--drivers` given to
 its boothost on the engine, so one golden boots every machine. stormbootx is
 a stormcentral component of kind `media`, and so is `stormbootx-rustnic`:
 `stormcentral component build <name>` builds each into a drive golden whose
-bytes are its `boot/<name>.iso`.
+bytes are its `boot/<name>.iso`. `nic-drivers` is a component of kind
+`tree`. The two `-disk` goldens are not registered yet (stormcentral#190).
 
 ## Firmware requirements
 
@@ -1013,7 +1031,8 @@ HTTP with no credential to a node registry that is moving to TLS with auth
 
 ## Status
 
-v0.15.1. Running on hardware since 2026-09-05. A Dell PowerEdge R230 (C2NR0Q2)
+v0.24.0, with eight fixes on `main` since (#4, #10, #17, #25, #36, #42, #53,
+#67) waiting for v0.25.0 (#128). Running on hardware since 2026-09-05. A Dell PowerEdge R230 (C2NR0Q2)
 booted the ISO over iDRAC virtual media, claimed `boothost/C2NR0Q2` and
 attached a 32 GiB 4K clone from forge over 25 GbE. The console of that first
 attach, verbatim (the build before chain-loading, ea26be1):
@@ -1045,8 +1064,11 @@ on that firmware, a 4096-byte-block namespace (#33). Volumes stay 4K (owner,
 2026-09-29), so stormbootx now reads the ESP itself when the firmware can't
 (#37). On 2026-09-30 server1 booted release 11.56 from a 4096-byte
 namespace (v0.7.0 media) once that release's ESP was FAT16 (stormcos#188),
-which closed #33. Which reader loaded `BOOTX64.EFI` there (the firmware's
-FAT or `esp.rs`) is not yet known (#37). The kernel console on the X9's SOL
+which closed #33. On the X9 blades the firmware's own FAT loads
+`BOOTX64.EFI` from that FAT16 4K ESP (the master's reading of server1's SOL
+log on #37: every boot `boot : starting \EFI\BOOT\BOOTX64.EFI from the
+attached image`, none read by stormbootx), so `esp.rs` is the fallback there,
+not the path. The kernel console on the X9's SOL
 (COM2, `ttyS1`) is not stormbootx's: the release names `console=ttyS1,115200`
 too (stormcos#220), and stormuefi ≥ 0.9.0 puts the port ACPI SPCR names last
 (stormuefi#23). The same
@@ -1058,10 +1080,13 @@ Open issues:
 
 | Issue | What |
 |---|---|
-| #37 | X9 blades on a 4096-byte namespace: server1 boots 11.56; which reader loaded it is still open; `esp.rs` reads a small FAT32 as Linux does (#67) |
-| #69–#75, #80 | more Rust NIC drivers (iPXE is gone from every medium and golden, #91; the X9 blades boot the rustnic media) |
-| #83 | self-update: in the binary, tested under OVMF, stormcentral's key compiled in (#86); no medium updates until stormcentral promotes a golden (`stormcentral stormbootx promote`) |
-| #4, #10, #14 | inventory; the shared initiator; test containers |
+| #92, #89 | self-update on metal: stormcentral serves `stormbootx-rustnic` serial 1 = v0.14.0, which every newer medium declines as older (#96); a promotion of a current release waits on stormcentral#459; nothing is promoted for `stormbootx` |
+| #93 | install-config sizes on real firmware variable stores |
+| #100, #99 | boot time: one NVMe/TCP command in flight (~46 MiB/s on metal); mlxfec's wait on a parked cap9 lock |
+| #69–#74 | more Rust NIC drivers, paused by the owner at P3 (each behind its repo's first issue); #131 a `prefer_media_drivers` for mlx5 |
+| #14 | test containers, behind stormcentral#133 (a test's engine token) |
+| #84 | arm64 media: an owner decision and stormcentral#604 |
+| #110 | the claim over HTTPS against a fleet CA (stormcos#35) |
 
 A slide deck of the above is in [`docs/presentation.md`](docs/presentation.md)
 (Marp: `npx @marp-team/marp-cli docs/presentation.md`).
