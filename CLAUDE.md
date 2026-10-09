@@ -561,7 +561,10 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       is full (…); N of M bytes fit …` (f1a8470). No lower cap is needed on
       OVMF's evidence. Left: the X9 and the R230 each booted once with a
       ~64 KiB file (asked on #93); a `NOT HANDED DOWN` there means agreeing a
-      cap with storminstall.
+      cap with storminstall. 2026-10-09: no metal boot has carried one yet
+      (C2NR0Q2 on v0.22.0 media prints `install cfg : none on the media`;
+      the blades are still on pre-0.15 media); handed off with
+      `stormcentral shipped`.
 
 - [x] **#96 — the self-update took an older version onto a fresh medium
       (P3). Closed 2026-10-08.** The serial alone decided, so a v0.15.0 stick
