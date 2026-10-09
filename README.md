@@ -917,6 +917,7 @@ does nothing else, for stormcentral to run into the volume it mounts:
 | `stormbootx-rustnic` | `bin/stormbootx.efi`, `boot/stormbootx-rustnic.iso` (BMC virtual media), `media/`, `media.files`, `SHA256SUMS`, `BUILD` |
 | `stormbootx-disk` | `boot/stormbootx-disk.img` (USB stick, the `stormbootx` medium), `SHA256SUMS`, `BUILD` |
 | `stormbootx-rustnic-disk` | `boot/stormbootx-rustnic-disk.img` (USB stick, the `stormbootx-rustnic` medium), `SHA256SUMS`, `BUILD` |
+| `stormbootx-arm64` | `bin/stormbootx.efi` (aarch64), `boot/stormbootx-arm64.iso` (`\EFI\BOOT\BOOTAA64.EFI`, the fw medium for arm64 hosts), `media/`, `media.files`, `SHA256SUMS`, `BUILD` (#84; not registered yet) |
 | `nic-drivers` | `bin/stormnic-ixgbe.efi`, `bin/stormnic-mlx4.efi`, `bin/stormnic-virtio.efi`, `STORMNIC-SOURCE.txt`, `SHA256SUMS`, `BUILD` (an EFI boothelper; no medium takes it as an input since #52, and it holds no iPXE since #91) |
 
 `media/` is the medium's files as a tree (`EFI/BOOT/BOOTX64.EFI`,
@@ -925,6 +926,22 @@ does nothing else, for stormcentral to run into the volume it mounts:
 signs and serves when it promotes the golden, for media to update themselves
 from (#83, stormcentral#279). Each medium's `stormboot.conf` carries
 `update = http://stormcentral.g8.lo/api/v1/boothelpers/<golden>`.
+
+**arm64 is its own boot helper** (#84, owner 2026-10-09). The agent
+compiles for `aarch64-unknown-uefi`: its one cycle counter is
+`entropy::ticks()` (TSC, or CNTVCT_EL0), calibrated against `Stall`, and its
+bootloader path is the architecture's removable-media path, so an arm64
+medium carries `BOOTAA64.EFI`, chain-loads the attached image's
+`BOOTAA64.EFI` and takes only a self-update manifest that names one.
+`stormbootx-arm64` is the firmware-drivers medium (`media : fw arm64`): the
+stormnic drivers are x86 builds, so there is no arm64 rustnic. It is a
+separate golden so an arm64 failure never holds up the x86 ones;
+storminstall picks it by its manifest row's `"arch": "arm64"`.
+`build-boot-agent.sh --arch arm64` lays any arm64 medium down. Until
+stormcentral#604 the build template has no aarch64 std (the build adds it
+with rustup), no `qemu-system-aarch64` and no AAVMF, so the arm64 binary is
+compiled and its medium checked (`EFI_NAME=BOOTAA64.EFI
+tests/iso-layout.sh`), but not yet booted.
 
 **The USB sticks are their own goldens** (#41, owner on #35; #97).
 `stormbootx-disk` and `stormbootx-rustnic-disk` each hold one image, a GPT
@@ -1085,7 +1102,7 @@ Open issues:
 | #100, #99 | boot time: one NVMe/TCP command in flight (~46 MiB/s on metal); mlxfec's wait on a parked cap9 lock |
 | #69–#74 | more Rust NIC drivers, paused by the owner at P3 (each behind its repo's first issue); #131 a `prefer_media_drivers` for mlx5 |
 | #14 | test containers: moved to glennswest/stormbootx-test#1 (stormcentral#601); its engine token is stormcentral#133 |
-| #84 | arm64 media: an owner decision and stormcentral#604 |
+| #84 | arm64 media: built (`stormbootx-arm64`); booting it under AAVMF and registering the golden wait on stormcentral#604 |
 | #110 | the claim over HTTPS against a fleet CA (stormcos#35) |
 
 A slide deck of the above is in [`docs/presentation.md`](docs/presentation.md)
