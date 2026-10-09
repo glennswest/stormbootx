@@ -1527,25 +1527,19 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       serial 2. That also ends #96's downgrade for v0.15–v0.17 sticks.
       Nothing in this repo changes for it.
 
-- [ ] #14 — test containers (short/medium/long). **Moved to
-      stormbootx-test#1 (2026-10-09).** The owner's rule (stormcentral#601,
-      2026-10-08): a project's suites live in its own `<project>-test` repo
-      with its own session. `stormcentral project spawn-test stormbootx`
-      made `glennswest/stormbootx-test`; its #1 (P1) carries this, with the
-      design below posted there, and #14 is proposed after it. Nothing goes
-      in a `test/` here. Was: **blocked on
-      stormcentral#133 alone (2026-10-06, #95).** No decision is left: the
-      owner answered #22 on 2026-10-02 ("Use a real stormblock engine on a
-      node to test"), so the test uses the node's own engine. stormcentral#74
-      lets a suite's `test/requires.toml` declare `privileged`, which shows
-      the container the node's `/dev/kvm`, so it runs under KVM, not TCG.
-      Since #56 no firmware TCP4 is needed, and `tests/net-ovmf.sh` already
-      runs the whole network path on Fedora's OVMF. What is missing is the
-      engine token: a test is handed no `STORM_STORMBLOCK_TOKEN`
-      (stormcentral#133), and stormblock ≥ v17 answers 401 to everything past
-      health and the claim. This repo's part, once a test can get the token:
-      `test/` with qemu and OVMF in the image, the `.efi` under test (the
-      media golden's ISO), and the node's engine.
+- [x] #14 — test containers (short/medium/long). **Closed 2026-10-09:
+      the suites are glennswest/stormbootx-test v0.1.0** (stormcentral#601:
+      a project's suites live in `<project>-test`). Its `test/`
+      (Containerfile, build.sh, check.sh, `stormbootx_test.py`, requires.toml
+      with every suite `privileged` for `/dev/kvm`) boots stormbootx under
+      qemu + OVMF in the pod from media built from the commit under test,
+      against in-pod stubs. Verified there with `sc-build test/check.sh`:
+      short 2 pass / 2 skip (a291da0), medium 16/16 in 307 s, long 3 waves
+      with no residue (ed10692). Left in that repo, not this one:
+      stormbootx-test#4 (the first run through the runner, after
+      stormcentral#657), #2 (the node's own engine, after stormcentral#133),
+      #3 (the golden ISOs). Nothing goes in a `test/` here; `tests/*.sh`
+      stay this repo's sc-build checks.
 
 - [x] #15 — **universal boot (P0, owner 2026-09-27). Closed 2026-10-06**
       after 1dc7232: `tests/net-ovmf.sh`'s `newhost` boot (no name from DHCP
