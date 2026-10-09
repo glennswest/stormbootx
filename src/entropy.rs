@@ -33,7 +33,9 @@ use crate::sha256::Sha256;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Source {
     Firmware,
+    #[cfg_attr(not(target_arch = "x86_64"), allow(dead_code))]
     Rdseed,
+    #[cfg_attr(not(target_arch = "x86_64"), allow(dead_code))]
     Rdrand,
     #[cfg_attr(not(target_arch = "aarch64"), allow(dead_code))]
     Rndr,
