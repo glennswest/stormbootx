@@ -516,6 +516,18 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
+- [ ] **#138 — the R230 hangs at the NIC FEC step (P0, 2026-10-13).**
+      v0.22.0 on C2NR0Q2 printed 02:00.0's two ports and nothing for
+      02:00.1 for 10 min (twice); an hour later it got past after a pause.
+      A good boot (`C2NR0Q2-20261008-164150.log`) spends ~4.3 s on the step,
+      ~2 s per function waiting out a parked cap9 (#99). No console of the
+      hang (screens only). Every wait in `mlxfec` counted tries, not time.
+      Fix: a real-time budget (15 s, 60 s writing) checked in every wait,
+      `releasing` lets the ICMD release run after it is spent, ICMD timeout
+      in real time, a `took N s` line per slow function and whether cap9's
+      value moved. Next: sc-build, release, and the master's next R230 boot
+      (on the v0.24.0+ stick) shows whether 02:00.1 is parked or live.
+
 - [x] **#108 (with #106, #75) — stormnic-virtio on the rustnic media,
       taking virtio-net NICs from OVMF's VirtioNetDxe (P2). Closed
       2026-10-07.** Pin stormnic-virtio 1a04808 (#75) in the default

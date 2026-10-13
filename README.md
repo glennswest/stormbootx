@@ -123,7 +123,15 @@ given back on the fall-through.
    writes that value and warm-resets once. The next boot then finds nothing to
    change. A ConnectX-3 or -3 Pro (the X9 blades', 10/40G) has no FEC setting
    and says `ConnectX-3 (15b3:1003): no FEC to report`. "no ConnectX on the
-   bus" means no Mellanox function at all (#25, `src/connectx.rs`).
+   bus" means no Mellanox function at all (#25, `src/connectx.rs`). The
+   step never holds the boot (#138): it has 15 s of real time (60 s for a
+   `fec =` write), every wait in it checks that, and a card still being read
+   when it runs out says `gave up after N s: the FEC step's 15.0 s budget is
+   spent — left as is`; any function not yet read is named and skipped. A
+   function that takes over 1 s says `took N s, M s of it waiting for the
+   cap9 semaphore`, and the cap9 line says whether the held value sat still
+   (`parked … for N s`) or moved (`held for N s, its value changing K
+   times`).
 4. **NIC drivers from the media, then the network** (`drivers::load_from_media`,
    `net::up`, #56). Any `*.efi` in `\stormboot\drivers` is started first (see
    *The network path*). Then every `EFI_SIMPLE_NETWORK` handle is opened and

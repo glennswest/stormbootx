@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-10-13
+- **fix:** the NIC FEC step can no longer hold the boot (#138, P0). The R230 (C2NR0Q2) sat after `02:00.0 … port 2` for 10 min, twice, and never claimed: the ConnectX-4 Lx's second function (02:00.1) was never reported. Every wait in `mlxfec` was bounded by a try count, not time, and each try is several config cycles plus window accesses, so a slow or contended cap9 stretched "bounded" without limit; the ICMD go-bit timeout counted only its stalls. The step now runs on a real-time budget (15 s reading, 60 s for a `fec =` write), checked in every wait: the function being read gives up with `gave up after N s: the FEC step's 15.0 s budget is spent — left as is`, any not yet read are named and skipped, and a release still runs after the budget is spent. The ICMD timeout is real time. A function over 1 s prints how long it took and how much of it was spent waiting for cap9, and the cap9 line says whether the held value sat still (parked) or kept changing (a live holder), which the next hung boot needs to tell the two apart.
+
 ### 2026-10-09
 - **docs:** #14 closed: the short, medium and long test containers are glennswest/stormbootx-test v0.1.0 (passing under `sc-build test/check.sh`); CLAUDE.md work plan and README status table updated. Its runner run, node-engine boot and golden-ISO boots are stormbootx-test#4, #2, #3.
 - **test:** the sc-build command builds the `stormbootx-arm64` golden and checks its ISO with `EFI_NAME=BOOTAA64.EFI tests/iso-layout.sh` (#84); CLAUDE.md work plan: #84 built and checked (sc-build of a291da0), the AAVMF boot and the golden's registration wait on stormcentral#604.

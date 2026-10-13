@@ -57,6 +57,7 @@ use uefi::proto::pci::PciIoAddress;
 use uefi::proto::pci::root_bridge::PciRootBridgeIo;
 
 use crate::connectx;
+use crate::entropy;
 
 const VENDOR_MELLANOX: u16 = 0x15b3;
 
@@ -81,6 +82,16 @@ const VSC_SEMAPHORE: u8 = 0x0c;
 const VSC_ADDR: u8 = 0x10; //  [29:0] address, [31] flag
 const VSC_DATA: u8 = 0x14;
 const VSC_RETRIES: u32 = 2048;
+
+/// The whole step's real-time budget (#138). A boot that reads and reports
+/// takes ~4 s on the R230 (two functions, each ~2 s waiting out a parked
+/// cap9); 15 s is room for that and never a held boot. The recovery stick's
+/// write gets longer, because it is an operator waiting at the console.
+const BUDGET_READ_MS: u64 = 15_000;
+const BUDGET_WRITE_MS: u64 = 60_000;
+/// A function that takes longer than this says how long, and how much of it
+/// was spent waiting for the window's semaphore.
+const SLOW_MS: u64 = 1_000;
 
 /// Address spaces behind the window (mtcr_com_defs.h:376-393).
 const AS_CR_SPACE: u16 = 0x2;
@@ -224,15 +235,68 @@ impl Summary {
     }
 }
 
+/// Real time for the step (#138): the CPU's counter, calibrated against
+/// `Stall`. The retry counts below bound the number of tries, not the time:
+/// every try is config cycles and a window access is several of them, so a
+/// card that answers slowly (or a semaphore someone keeps taking) stretched
+/// "bounded" into a boot that never claimed. The budget is checked in every
+/// wait, so the step ends on time whatever the card does.
+#[derive(Clone, Copy)]
+struct Clock {
+    start: u64,
+    per_ms: u64,
+    budget_ms: u64,
+}
+
+impl Clock {
+    fn calibrate(budget_ms: u64) -> Self {
+        let a = entropy::ticks();
+        boot::stall(Duration::from_millis(10));
+        let b = entropy::ticks();
+        Clock { start: b, per_ms: (b.wrapping_sub(a) / 10).max(1), budget_ms }
+    }
+
+    fn ms_since(&self, t: u64) -> u64 {
+        entropy::ticks().wrapping_sub(t) / self.per_ms
+    }
+
+    fn spent(&self) -> bool {
+        self.ms_since(self.start) > self.budget_ms
+    }
+}
+
+/// `1234` ms as `1.2 s`.
+fn secs(ms: u64) -> String {
+    format!("{}.{} s", ms / 1000, (ms % 1000) / 100)
+}
+
 /// One ConnectX function behind the VSC window.
 struct Dev<'a> {
     br: &'a mut PciRootBridgeIo,
     addr: PciIoAddress,
     vsec: u8,
     probe: u32,
+    clock: Clock,
+    /// Counter ticks spent in `vsc_lock`, for the slow-function line.
+    lock_ticks: u64,
+    /// Set while giving back what was taken: a release must run even when
+    /// the budget is spent, or the next user of the semaphore waits on us.
+    releasing: bool,
 }
 
 impl Dev<'_> {
+    /// Every wait asks this first.
+    fn in_time(&self) -> Result<(), String> {
+        if !self.releasing && self.clock.spent() {
+            return Err(format!(
+                "gave up after {}: the FEC step's {} budget is spent",
+                secs(self.clock.ms_since(self.clock.start)),
+                secs(self.clock.budget_ms)
+            ));
+        }
+        Ok(())
+    }
+
     fn cfg_read(&mut self, reg: u8) -> Result<u32, String> {
         let mut a = self.addr;
         a.reg = reg;
@@ -267,15 +331,32 @@ impl Dev<'_> {
     }
 
     fn vsc_lock(&mut self) -> Result<(), String> {
+        let t = entropy::ticks();
+        let r = self.vsc_lock_timed();
+        self.lock_ticks += entropy::ticks().wrapping_sub(t);
+        r
+    }
+
+    fn vsc_lock_timed(&mut self) -> Result<(), String> {
         // First, the cooperative path: wait for whoever holds it to release.
+        // `moved` counts the held value changing: a parked lock never moves,
+        // a live holder does (#138 asks which the R230's 02:00.1 is).
+        let t = entropy::ticks();
         let mut last = 0u32;
-        for _ in 0..VSC_RETRIES {
+        let mut moved = 0u32;
+        for i in 0..VSC_RETRIES {
+            self.in_time()?;
             if self.vsc_try_take()? {
                 return Ok(());
             }
-            last = self.cfg_read(self.vsec + VSC_SEMAPHORE)?;
+            let now = self.cfg_read(self.vsec + VSC_SEMAPHORE)?;
+            if i > 0 && now != last {
+                moved += 1;
+            }
+            last = now;
             boot::stall(Duration::from_millis(1));
         }
+        let waited = secs(self.clock.ms_since(t));
         // It never released. On this platform that is the Mellanox UEFI driver,
         // which takes cap9 at init and *parks* it for its whole lifetime to keep
         // tools out — the held value is a small init-time ticket (0x3, 0x7), not
@@ -291,12 +372,19 @@ impl Dev<'_> {
                 self.vsec
             ));
         }
-        uefi::println!(
-            "    (cap9 parked at {last:#x} by the UEFI driver — clearing and taking the window)"
-        );
+        if moved == 0 {
+            uefi::println!(
+                "    (cap9 parked at {last:#x} by the UEFI driver for {waited} — clearing and taking the window)"
+            );
+        } else {
+            uefi::println!(
+                "    (cap9 held for {waited}, its value changing {moved} times, last {last:#x} — clearing and taking the window)"
+            );
+        }
         self.cfg_write(self.vsec + VSC_SEMAPHORE, 0)?;
         boot::stall(Duration::from_millis(1));
         for _ in 0..VSC_RETRIES {
+            self.in_time()?;
             if self.vsc_try_take()? {
                 return Ok(());
             }
@@ -331,6 +419,7 @@ impl Dev<'_> {
                 return Ok(());
             }
             if i % 16 == 15 {
+                self.in_time()?;
                 boot::stall(Duration::from_millis(1));
             }
         }
@@ -381,6 +470,7 @@ impl Dev<'_> {
     fn icmd_take(&mut self) -> Result<(), String> {
         const TOKEN: u32 = 0x5b00_7fec;
         for _ in 0..256 {
+            self.in_time()?;
             self.write4(AS_SEMAPHORE, ICMD_SEM, TOKEN)?;
             if self.read4(AS_SEMAPHORE, ICMD_SEM)? == TOKEN {
                 return Ok(());
@@ -406,7 +496,9 @@ impl Dev<'_> {
         }
         self.icmd_take()?;
         let res = self.icmd_locked(opcode, buf, w, r);
+        self.releasing = true;
         self.icmd_release();
+        self.releasing = false;
         res
     }
 
@@ -424,8 +516,10 @@ impl Dev<'_> {
         }
         self.write4(AS_ICMD, ICMD_CTRL, ctrl | 1)?;
 
-        // Poll the go bit: tight at first, then a millisecond at a time.
-        let mut elapsed_ms = 0u32;
+        // Poll the go bit: tight at first, then a millisecond at a time. The
+        // timeout is real time (#138): it once counted only the stalls, not
+        // the window accesses between them.
+        let t = entropy::ticks();
         let mut i = 0u32;
         loop {
             ctrl = self.read4(AS_ICMD, ICMD_CTRL)?;
@@ -436,12 +530,13 @@ impl Dev<'_> {
                 boot::stall(Duration::from_micros(100));
             } else {
                 boot::stall(Duration::from_millis(1));
-                elapsed_ms += 1;
             }
             i += 1;
-            if elapsed_ms > ICMD_TIMEOUT_MS {
+            if self.clock.ms_since(t) > ICMD_TIMEOUT_MS {
                 return Err(String::from("command did not complete in 40 s"));
             }
+            self.in_time()
+                .map_err(|e| format!("ICMD {opcode:#06x} still running: {e}"))?;
         }
         let status = (ctrl >> 8) & 0xff;
         if status != 0 {
@@ -652,8 +747,13 @@ fn find_vsc(br: &mut PciRootBridgeIo, addr: PciIoAddress) -> Result<u8, String> 
 /// Walk the bus. Report every ConnectX port's FEC; when `want` is given, set
 /// any port whose next-boot value differs. Prints as it goes, since a console
 /// line per card is the only record a firmware boot leaves.
+///
+/// The step has a real-time budget (#138): once it is spent, the function
+/// being read gives up with a line saying so, and any not yet read are named
+/// and skipped. The boot goes on either way.
 pub fn apply(want: Option<Fec>) -> Summary {
     let mut sum = Summary::default();
+    let clock = Clock::calibrate(if want.is_some() { BUDGET_WRITE_MS } else { BUDGET_READ_MS });
     // Mellanox functions seen at all: "no ConnectX" only when none (#25).
     let mut seen = 0usize;
     let Ok(handles) = boot::locate_handle_buffer(SearchType::ByProtocol(&PciRootBridgeIo::GUID))
@@ -694,12 +794,30 @@ pub fn apply(want: Option<Fec>) -> Summary {
                 }
             };
             sum.cards += 1;
-            match one_card(&mut bridge, addr, model, &loc, want, &mut sum) {
+            if clock.spent() {
+                sum.failed += 1;
+                uefi::println!(
+                    "  {loc}  {model}: not read — the FEC step's {} budget is spent",
+                    secs(clock.budget_ms)
+                );
+                continue;
+            }
+            let t = entropy::ticks();
+            let mut lock_ms = 0u64;
+            match one_card(&mut bridge, addr, model, &loc, want, clock, &mut lock_ms, &mut sum) {
                 Ok(()) => {}
                 Err(e) => {
                     sum.failed += 1;
                     uefi::println!("  {loc}  {model}: {e} — left as is");
                 }
+            }
+            let took = clock.ms_since(t);
+            if took >= SLOW_MS {
+                uefi::println!(
+                    "  {loc}  {model}: took {}, {} of it waiting for the cap9 semaphore",
+                    secs(took),
+                    secs(lock_ms)
+                );
             }
         }
     }
@@ -742,16 +860,32 @@ pub fn connectx_devfns() -> Vec<(u8, u8)> {
     out
 }
 
+#[allow(clippy::too_many_arguments)]
 fn one_card(
     bridge: &mut PciRootBridgeIo,
     addr: PciIoAddress,
     model: &str,
     loc: &str,
     want: Option<Fec>,
+    clock: Clock,
+    lock_ms: &mut u64,
     sum: &mut Summary,
 ) -> Result<(), String> {
     let vsec = find_vsc(bridge, addr)?;
-    let mut dev = Dev { br: bridge, addr, vsec, probe: 0 };
+    let mut dev = Dev { br: bridge, addr, vsec, probe: 0, clock, lock_ticks: 0, releasing: false };
+    let r = card_fec(&mut dev, model, loc, want, sum);
+    *lock_ms = dev.lock_ticks / clock.per_ms;
+    r
+}
+
+fn card_fec(
+    dev: &mut Dev,
+    model: &str,
+    loc: &str,
+    want: Option<Fec>,
+    sum: &mut Summary,
+) -> Result<(), String> {
+    let addr = dev.addr;
     // Confirm the spaces before anything else touches the card.
     dev.vsc_lock()?;
     let spaces = [AS_CR_SPACE, AS_ICMD, AS_SEMAPHORE]
