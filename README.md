@@ -1058,8 +1058,8 @@ HTTP with no credential to a node registry that is moving to TLS with auth
 
 ## Status
 
-v0.24.0, with eight fixes on `main` since (#4, #10, #17, #25, #36, #42, #53,
-#67) waiting for v0.25.0 (#128). Running on hardware since 2026-09-05. A Dell PowerEdge R230 (C2NR0Q2)
+v0.25.0 (#128: #4, #10, #17, #25, #36, #42, #53, #67, and #138's FEC-step
+budget). Running on hardware since 2026-09-05. A Dell PowerEdge R230 (C2NR0Q2)
 booted the ISO over iDRAC virtual media, claimed `boothost/C2NR0Q2` and
 attached a 32 GiB 4K clone from forge over 25 GbE. The console of that first
 attach, verbatim (the build before chain-loading, ea26be1):
