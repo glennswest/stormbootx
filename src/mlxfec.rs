@@ -105,7 +105,7 @@ const ICMD_MAX_SIZE: u32 = 0x1000; //  AS_ICMD: mailbox capacity in bytes
 const ICMD_SYNDROME: u32 = 0x1008; //  AS_ICMD: [23:0]
 const ICMD_SEM: u32 = 0x0; //          AS_SEMAPHORE
 const ICMD_OP_ACCESS_REG: u16 = 0x9001;
-const ICMD_TIMEOUT_MS: u32 = 40_000;
+const ICMD_TIMEOUT_MS: u64 = 40_000;
 
 // --- Access-register framing (packets_layout.h, mtcr_ul_com.c:4949) ----------
 const OP_TLV_DWORDS: usize = 4; // type 1, len 4, class 1, method, register id, tid
