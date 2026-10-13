@@ -525,8 +525,16 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       Fix: a real-time budget (15 s, 60 s writing) checked in every wait,
       `releasing` lets the ICMD release run after it is spent, ICMD timeout
       in real time, a `took N s` line per slow function and whether cap9's
-      value moved. Next: sc-build, release, and the master's next R230 boot
-      (on the v0.24.0+ stick) shows whether 02:00.1 is parked or live.
+      value moved. 482efd3 + facd7a7. sc-build of 725ae01: no warnings, the
+      full suite (OVMF has no Mellanox: `no ConnectX on the bus`, boot goes
+      on). Released **v0.25.0** (c1353fc, `--locked`, net-ovmf + repro
+      PASS). Goldens `golden-stormbootx-1ecb0cbb2aa0c4df`,
+      `golden-stormbootx-rustnic-2a1fedeeef3c46a4`. Handed off (`shipped`).
+      **Not run:** the R230 itself; v0.24.0 still has the hang. Its next
+      v0.25.0 boot prints per function `took N s, M s of it waiting for the
+      cap9 semaphore` and `parked … for N s` (a still lock) or `held …, its
+      value changing K times` (a live holder: the cause to chase, likely
+      #99's early-park rule must not clear it). Clippy over the crate is #140.
 
 - [x] **#108 (with #106, #75) — stormnic-virtio on the rustnic media,
       taking virtio-net NICs from OVMF's VirtioNetDxe (P2). Closed
