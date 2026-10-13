@@ -588,7 +588,7 @@ impl<T: Transport> Namespace<T> {
         let flbas = (idns[26] & 0x0F) as usize;
         let lbads = idns[128 + flbas * 4 + 2];
         let block_size = 1u32 << lbads;
-        if block_size < 512 || block_size > 65536 {
+        if !(512..=65536).contains(&block_size) {
             return Err(format!("implausible block size {block_size} (LBADS {lbads})"));
         }
 
@@ -632,7 +632,7 @@ impl<T: Transport> Namespace<T> {
 
     pub fn read(&mut self, lba: u64, buf: &mut [u8]) -> Result<(), String> {
         let bs = self.geometry.block_size as usize;
-        if buf.len() % bs != 0 {
+        if !buf.len().is_multiple_of(bs) {
             return Err(format!("read of {} bytes is not a multiple of {bs}", buf.len()));
         }
         let mut done = 0usize;
@@ -657,7 +657,7 @@ impl<T: Transport> Namespace<T> {
 
     pub fn write(&mut self, lba: u64, data: &[u8]) -> Result<(), String> {
         let bs = self.geometry.block_size as usize;
-        if data.len() % bs != 0 {
+        if !data.len().is_multiple_of(bs) {
             return Err(format!(
                 "write of {} bytes is not a multiple of {bs}",
                 data.len()
