@@ -537,7 +537,11 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       problem and what next, drawn on the GOP consoles (a handle with GOP
       and a device path: ConSplitter's own carries GOP too, and under the
       EFI Shell it is not the system table's ConOut). `ui = log` opts out.
-      2de339f..51cefd6, released **v0.28.0**. sc-build of 51cefd6: no
+      2de339f..51cefd6, released **v0.28.0** (6926e03; the tag `--locked`
+      passed screen-ovmf and net-ovmf). Goldens
+      `golden-stormbootx-ae55323ae636285e`,
+      `golden-stormbootx-rustnic-2a35614f230e4e1d`,
+      `golden-stormbootx-rustnic-disk-4b199a2a7d7c7139`. sc-build of 51cefd6: no
       warnings, the full suite, and `tests/screen-ovmf.sh` (panel drawn,
       red failed step, F2 details, Esc back, no panel text on serial);
       no panel text in the shell boots' serial logs either. Screens in
