@@ -522,14 +522,18 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
-- [ ] **#148 — the self-update never resolved its host (P0 per the master,
+- [x] **#148 — the self-update never resolved its host (P0 per the master,
       2026-10-14).** `try_update` read the lease straight after `net::up`,
       before DHCP answered, so every named `update =` printed `no DNS server
-      … (none in the lease, no dns =)` and no stick ever self-updated.
-      Fix: `net::wait_lease` (30 s, #88's progress line) before a named
-      lookup. Test: update-boots' `named` boot. Then release, the stormbootx
-      and rustnic goldens, and the `stormbootx-rustnic-disk` stick golden
-      for the owner's Saturday re-image.
+      … (none in the lease, no dns =)` (server1, every boot) and no stick
+      ever self-updated. `net::wait_lease` (30 s, #88's progress line)
+      before a named lookup. 4d77aee, released **v0.27.0**. sc-build of
+      4d77aee: no warnings, the full suite; update-ovmf's new `named` boot
+      (`update =` naming `update.stormbootx.invalid` in `local.conf`)
+      printed `update : update.stormbootx.invalid has no address at DNS
+      server 10.0.2.3` (slirp's, from the lease) and never `none in the
+      lease`. Media before v0.27.0 need `dns =` (or `update =` by address)
+      to self-update.
 
 - [x] **#145 — the fall-through starts the local disk's bootloader itself
       (P0, stormblock#449, 2026-10-14).** server1 (X9) starts stormbootx
@@ -1863,7 +1867,7 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ## Status
 
-v0.26.0 (#145: the fall-through starts the local disk itself). v0.25.0 was #128: #4, #10, #17, #25, #36, #42, #53, #67 and #138. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
+v0.27.0 (#148: the self-update resolves its host). v0.26.0 was #145 (the fall-through starts the local disk itself); v0.25.0 was #128: #4, #10, #17, #25, #36, #42, #53, #67 and #138. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
 (and the same day, the full chain: chain-load into stormuefi and a running
 stormcos kernel), on a
 Dell PowerEdge R230 (service tag C2NR0Q2) booting the agent over iDRAC virtual
