@@ -553,7 +553,13 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       printed `update : update.stormbootx.invalid has no address at DNS
       server 10.0.2.3` (slirp's, from the lease) and never `none in the
       lease`. Media before v0.27.0 need `dns =` (or `update =` by address)
-      to self-update.
+      to self-update. The tag built `--locked` and passed update-ovmf.
+      Goldens (cc59150): `golden-stormbootx-5d22f0f6f99389fd`,
+      `golden-stormbootx-rustnic-6346d0a37fff82ed`, and the first stick
+      golden, `golden-stormbootx-rustnic-disk-83df46b52f9536ae`
+      (`stormbootx-rustnic-disk` registered 2026-10-14; stormcentral's
+      media build takes `boot/<comp>.img` since its #215), for the owner's
+      one-time re-image of the blades' sticks.
 
 - [x] **#145 — the fall-through starts the local disk's bootloader itself
       (P0, stormblock#449, 2026-10-14).** server1 (X9) starts stormbootx
