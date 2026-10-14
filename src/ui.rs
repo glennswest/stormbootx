@@ -243,9 +243,9 @@ pub fn begin() {
                 p = p.add(1);
             }
         }
-        u.steps[0].detail = format!("{s} firmware");
+        u.steps[Step::Firmware as usize].detail = format!("{s} firmware");
     }
-    u.steps[0].state = State::Done;
+    u.steps[Step::Firmware as usize].state = State::Done;
     unsafe { UI = Some(u) };
     install();
 }
@@ -264,9 +264,9 @@ fn install() {
     measure(u);
     for &s in &u.screens {
         unsafe {
-            ((*s).set_attribute)(s, NORMAL);
-            ((*s).clear_screen)(s);
-            ((*s).enable_cursor)(s, Boolean::FALSE);
+            let _ = ((*s).set_attribute)(s, NORMAL);
+            let _ = ((*s).clear_screen)(s);
+            let _ = ((*s).enable_cursor)(s, Boolean::FALSE);
         }
     }
     draw(u);
@@ -298,9 +298,9 @@ pub fn suspend() {
     crc(u.st);
     u.installed = false;
     unsafe {
-        ((*u.splitter).set_attribute)(u.splitter, NORMAL);
-        ((*u.splitter).clear_screen)(u.splitter);
-        ((*u.splitter).enable_cursor)(u.splitter, Boolean::TRUE);
+        let _ = ((*u.splitter).set_attribute)(u.splitter, NORMAL);
+        let _ = ((*u.splitter).clear_screen)(u.splitter);
+        let _ = ((*u.splitter).enable_cursor)(u.splitter, Boolean::TRUE);
     }
 }
 
@@ -349,9 +349,9 @@ fn put(u: &Ui, col: usize, row: usize, attr: usize, text: &str, width: usize) {
     let w = ucs2(&s);
     for &d in &u.screens {
         unsafe {
-            ((*d).set_attribute)(d, attr);
-            ((*d).set_cursor_position)(d, col, row);
-            ((*d).output_string)(d, w.as_ptr());
+            let _ = ((*d).set_attribute)(d, attr);
+            let _ = ((*d).set_cursor_position)(d, col, row);
+            let _ = ((*d).output_string)(d, w.as_ptr());
         }
     }
 }
@@ -721,7 +721,9 @@ pub fn take_char() -> Option<Option<char>> {
 unsafe extern "efiapi" fn out_string(_this: *mut SimpleTextOutputProtocol, s: *const Char16) -> Status {
     let Some(u) = ui() else { return Status::SUCCESS };
     for &d in &u.serials {
-        unsafe { ((*d).output_string)(d, s) };
+        unsafe {
+            let _ = ((*d).output_string)(d, s);
+        }
     }
     if s.is_null() {
         return Status::SUCCESS;
@@ -816,8 +818,8 @@ unsafe extern "efiapi" fn hook_set_mode(_this: *mut SimpleTextOutputProtocol, mo
         measure(u);
         for &s in &u.screens {
             unsafe {
-                ((*s).clear_screen)(s);
-                ((*s).enable_cursor)(s, Boolean::FALSE);
+                let _ = ((*s).clear_screen)(s);
+                let _ = ((*s).enable_cursor)(s, Boolean::FALSE);
             }
         }
         draw(u);
@@ -851,9 +853,4 @@ fn each_serial(f: impl Fn(*mut SimpleTextOutputProtocol) -> Status) {
             let _ = f(d);
         }
     }
-}
-
-/// Whether the panel is up (tests and the shell ask).
-pub fn active() -> bool {
-    ui().is_some_and(|u| u.installed)
 }

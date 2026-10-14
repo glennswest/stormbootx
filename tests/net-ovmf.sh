@@ -473,6 +473,7 @@ boot() {
         "${net[@]}" -device virtio-net-pci,netdev=n0,romfile=$nicopt${BOOT_NICDEV:+,$BOOT_NICDEV} \
         "${media[@]}" "${extra[@]}" \
         -debugcon file:"$W/$name.debug" -global isa-debugcon.iobase=0x402 \
+        -monitor unix:"$W/$name.mon",server,nowait \
         -display none -serial file:"$log" -no-reboot &
     local qemu=$! t=0
     # Stop once the payload has spoken, or at a fall-through.
@@ -482,6 +483,12 @@ boot() {
         sleep 1; t=$((t + 1))
     done
     local how="stopped at its stop line"
+    # SCREEN_PNG=1: the shipped boot's screen as the payload starts, the boot
+    # panel with every step done (#144), as a base64 PNG in the log.
+    if [[ -n "${SCREEN_PNG:-}" && $name == shipped ]] && kill -0 "$qemu" 2>/dev/null; then
+        python3 "$ROOT/tests/screen.py" dump "$W/$name.mon" "$W/$name.ppm" \
+            && say "[$name] png $(python3 "$ROOT/tests/screen.py" png "$W/$name.ppm")"
+    fi
     kill -0 "$qemu" 2>/dev/null || how="qemu exited by itself"
     (( t < LIMIT )) || how="ran the whole ${LIMIT}s"
     kill "$qemu" 2>/dev/null; wait "$qemu" 2>/dev/null || true
