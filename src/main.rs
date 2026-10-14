@@ -75,6 +75,7 @@ mod registry;
 mod selfupdate;
 mod shell;
 mod snpwatch;
+mod ui;
 mod sha256;
 mod smbios;
 mod sntp;
@@ -200,6 +201,12 @@ fn run() -> Result<(), String> {
     //     and that is all this does. See step 2b for why the one thing that
     //     did write was switched off. Nothing here is fatal; an unrecognised
     //     card is named and skipped.
+    ui::machine(&format!(
+        "{}   serial {}",
+        smbios::model().unwrap_or_else(|| String::from("unknown machine")),
+        stated.as_deref().or(serial.as_deref()).unwrap_or("none")
+    ));
+    ui::step(ui::Step::Nic, "NIC drivers and links");
     uefi::println!("nic fec     :");
     let _ = mlxfec::apply(None);
 
@@ -260,6 +267,23 @@ fn run() -> Result<(), String> {
     match (&mac_colon, mac) {
         (Some(c), Some((_, n))) => uefi::println!("mac         : {c}  (lowest of {n} NIC(s))"),
         _ => uefi::println!("mac         : none usable"),
+    }
+    {
+        let nics = net::nic_summary();
+        let up = nics.iter().filter(|n| n.2).count();
+        let first = nics.iter().find(|n| n.2).or(nics.first());
+        let detail = match first {
+            Some((h, m, _)) => format!(
+                "{} {m}{}",
+                snpwatch::driver_of(*h).unwrap_or_else(|| String::from("?")),
+                if nics.len() > 1 { format!("  ({up} of {} with link)", nics.len()) } else { String::new() }
+            ),
+            None => String::from("none"),
+        };
+        ui::done(ui::Step::Nic, &detail);
+    }
+    if !net::leased() {
+        ui::step(ui::Step::Dhcp, "waiting for a lease");
     }
 
     // 2c. The medium updates itself (#83): ask stormcentral for the current
@@ -354,8 +378,18 @@ fn run() -> Result<(), String> {
             // each machine claiming the default a clone of its own; one from
             // before stormblock#200 would give them all one, so anything but
             // a version after 19.3.0 is "no".
+            ui::step(ui::Step::Engine, &host);
             let (version, iface) = registry::engine_version(cfg.portal, cfg.api_port, &host);
             engine_answered = version.is_ok();
+            match &version {
+                Ok(v) => ui::done(ui::Step::Engine, &format!("stormblock {v} at {host}")),
+                Err(e) => {
+                    if !net::leased() {
+                        ui::fail(ui::Step::Dhcp, "no lease");
+                    }
+                    ui::fail(ui::Step::Engine, e)
+                }
+            }
             let default_mac = if stated.is_none() { mac.map(|(m, _)| m).zip(mac_colon.clone()) } else { None };
             let universal = match &version {
                 Ok(v) if universal::supports_default_claim(v) => {
@@ -383,7 +417,10 @@ fn run() -> Result<(), String> {
                 }
                 dns = iface.and_then(|i| network_name(&i));
                 match &dns {
-                    Some((full, _, from)) => uefi::println!("name        : {full}  (from {from})"),
+                    Some((full, h, from)) => {
+                        ui::name(h);
+                        uefi::println!("name        : {full}  (from {from})")
+                    }
                     None => uefi::println!("name        : none from DHCP or reverse DNS"),
                 }
             }
@@ -426,6 +463,7 @@ fn run() -> Result<(), String> {
             //     local disk; see intent.rs).
             //     Only a 404 moves on to the next name; any other answer is
             //     this machine's.
+            ui::step(ui::Step::Intent, "");
             let (intent_key, reply) = {
                 let last = intent_keys.len().saturating_sub(1);
                 let mut found = None;
@@ -483,7 +521,11 @@ fn run() -> Result<(), String> {
                         false
                     }
                 };
+            ui::done(ui::Step::Intent, &format!("{}  (under {intent_key})", chosen.name()));
             if intent::decide(chosen, local_bootable) == intent::Action::Local {
+                ui::skip(ui::Step::Claim, "nothing claimed: the intent is local");
+                ui::skip(ui::Step::Image, "");
+                ui::skip(ui::Step::Handoff, "");
                 // The engine answered: a medium on trial (#83) has reached it.
                 if matches!(said, intent::Reply::Stated(_)) {
                     selfupdate::mark_good("the engine's intent is local");
@@ -505,6 +547,7 @@ fn run() -> Result<(), String> {
             // 3c. Claim, best name first. A 404 means "not under this name",
             //     so the next one is tried; anything else falls back to the
             //     resolved target rather than guessing at another identity.
+            ui::step(ui::Step::Claim, "");
             let claim_as = |name: &str, hints: bool| {
                 uefi::println!("claim       : {}/{name} at {host}", registry::BOOTHOST_NS);
                 let (m, s) = if hints { (mac_colon.as_deref(), serial.as_deref()) } else { (None, None) };
@@ -590,12 +633,17 @@ fn run() -> Result<(), String> {
             }
         } else {
             uefi::println!("claim       : disabled by the config file");
+            ui::skip(ui::Step::Engine, "");
+            ui::skip(ui::Step::Intent, "");
+            ui::skip(ui::Step::Claim, "disabled by the config file");
             None
         };
 
         match claimed {
             Some((a, name)) => {
                 let name = a.host.clone().unwrap_or(name);
+                ui::name(&name);
+                ui::done(ui::Step::Claim, &format!("a clone of {name}'s image, nsid {}", a.nsid));
                 (a, Some(name))
             }
             None if !cfg.fallback => {
@@ -606,21 +654,29 @@ fn run() -> Result<(), String> {
                     selfupdate::mark_good("the engine answered; no fallback to attach");
                 }
                 handoff::set_tag(stated.as_deref().or(dns.as_ref().map(|(_, h, _)| h.as_str())));
+                ui::fail(ui::Step::Claim, "nothing claimed, and the media names no fallback");
+                ui::skip(ui::Step::Image, "");
+                ui::skip(ui::Step::Handoff, "");
                 return Err(String::from(
                     "no claim gave this machine an image, and the media names no fallback (fallback = none)",
                 ));
             }
-            None => (
-                registry::Attach {
-                    address: cfg.portal,
-                    port: cfg.port,
-                    nqn: cfg.nqn,
-                    nsid: cfg.nsid,
-                    host: None,
-                    provisional: false,
-                },
-                None,
-            ),
+            None => {
+                if cfg.claim {
+                    ui::done(ui::Step::Claim, &format!("none; the media's fallback, nsid {}", cfg.nsid));
+                }
+                (
+                    registry::Attach {
+                        address: cfg.portal,
+                        port: cfg.port,
+                        nqn: cfg.nqn,
+                        nsid: cfg.nsid,
+                        host: None,
+                        provisional: false,
+                    },
+                    None,
+                )
+            }
         }
     };
 
@@ -663,6 +719,7 @@ fn run() -> Result<(), String> {
             .unwrap_or(&tag)
     );
     uefi::println!("attaching   : {hostnqn}");
+    ui::step(ui::Step::Image, &format!("attaching nsid {} at {a}.{b}.{c}.{d}", attach.nsid));
 
     let ns = nvme::attach(
         attach.address,
@@ -704,6 +761,7 @@ fn run() -> Result<(), String> {
     // The host NQN the namespace is attached as, for the initramfs to attach
     // as too (#76). Only once an attach has worked under it.
     handoff::set_host_nqn(&hostnqn);
+    ui::detail(ui::Step::Image, &format!("{gib} GiB at {}-byte blocks, nsid {}", g.block_size, attach.nsid));
 
     // 5. Publish it as an ordinary disk, then boot it.
     let handle = blockio::publish(ns)?;
@@ -827,6 +885,10 @@ fn main() -> Status {
         return status;
     }
 
+    // The boot panel (#144): from here the screen shows the steps, and every
+    // line goes to the serial console (and F2). `ui = log` keeps the scroll.
+    ui::begin();
+
     // Read with the rest of the media, before anything is attached (#46).
     let local = Local { boot: config::local_boot(), reader: config::esp_reader() };
 
@@ -885,6 +947,7 @@ fn fall_through(err: &str, local: Local) -> Status {
 
     uefi::println!("");
     uefi::println!("no network boot: {err}");
+    ui::problem(err);
 
     // Offer a console before falling through. Firmware is the worst place to
     // debug blind, and every question worth asking here — what NICs are there,
@@ -895,7 +958,10 @@ fn fall_through(err: &str, local: Local) -> Status {
     // must not stop at a prompt because nobody was watching. Silence takes the
     // path it would have taken anyway.
     if shell::offer(5) {
+        // The console is interactive: the screen is the firmware's again.
+        ui::suspend();
         shell::run();
+        ui::resume();
     }
     // The local disk's OS needs the right time too (#77). Once per boot: a
     // claim that got this far has already done it. Nothing waits for a lease.
@@ -911,6 +977,7 @@ fn fall_through(err: &str, local: Local) -> Status {
             "RESULT: falling through to the local disk ({disks} found). \
              The machine boots what it already has."
         );
+        ui::next(&format!("falling through to the local disk ({disks} found)"));
         if local.boot {
             if let Err(why) = blockio::boot_local(local.reader) {
                 uefi::println!("local       : not started here ({why}); returning to what started stormbootx");
@@ -923,8 +990,11 @@ fn fall_through(err: &str, local: Local) -> Status {
             "RESULT: nothing to fall through to — this machine has no local disk \
              and nothing booted from the network."
         );
+        ui::next("nothing to fall through to: no local disk; returning to the firmware in 30 s");
         uefi::boot::stall(core::time::Duration::from_secs(30));
     }
     uefi::println!("============================================================");
+    // Whatever runs next (the boot manager, the EFI Shell) gets its screen.
+    ui::end();
     Status::ABORTED
 }
