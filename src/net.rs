@@ -432,7 +432,7 @@ impl Nic {
                 if fresh {
                     crate::ui::done_once(
                         crate::ui::Step::Dhcp,
-                        &format!("nic {} {}/{}  MTU {}", self.index, ip_text(l.address), l.prefix, self.dev.mtu),
+                        &format!("nic {} {}/{}  MTU {}", self.index, ip_text(l.address), l.prefix, self.mtu),
                     );
                     uefi::println!(
                         "      nic {}: leased {}/{}{}",

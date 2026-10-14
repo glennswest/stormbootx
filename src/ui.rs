@@ -275,11 +275,11 @@ fn install() {
 /// The system table's CRC, after its `ConOut` changed.
 fn crc(st: *mut SystemTable) {
     unsafe {
-        (*st).header.crc = 0;
+        (*st).header.crc32 = 0;
         let mut c = 0u32;
         let size = (*st).header.size as usize;
         if (bs(st).calculate_crc32)(st as *mut c_void, size, &mut c) == Status::SUCCESS {
-            (*st).header.crc = c;
+            (*st).header.crc32 = c;
         }
     }
 }
