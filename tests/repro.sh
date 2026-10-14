@@ -16,6 +16,16 @@
 # Builds through scripts/cargo-repro.sh, the one place the path remapping
 # lives. REPRO_RAW=1 builds with plain cargo instead, to show the problem.
 #
+#   REPRO_MEDIA="stormbootx stormbootx-rustnic-disk" tests/repro.sh
+#                            … and each golden built twice, from two clones
+#
+# The media goldens too (#130): each named golden is built by
+# deploy/build-golden.sh in two clones of the checkout at different paths,
+# with their own target dirs and CARGO_HOMEs, and every file of the two trees
+# (the .iso/.img, BUILD, SHA256SUMS, media/) must be the same bytes. On a
+# difference it says which files, and for an image the first bytes that
+# differ.
+#
 # Unprivileged; everything is under $TMPDIR and deleted on exit.
 set -euo pipefail
 
@@ -72,3 +82,35 @@ if [[ -n "${GOLDEN_EFI:-}" ]]; then
     [[ "$dg" == "$da" ]] || die "$GOLDEN_EFI is not the bytes built here"
 fi
 say "PASS: $BIN.efi is the same bytes from two build directories and two CARGO_HOMEs${GOLDEN_EFI:+, and $GOLDEN_EFI too}"
+
+[[ -n "${REPRO_MEDIA:-}" ]] || exit 0
+HEAD="$(git -C "$ROOT" rev-parse HEAD)"
+SIDES=("$W/m1" "$W/m2-a-much-longer-media-build-directory")
+for side in "${SIDES[@]}"; do
+    git clone -q "$ROOT" "$side/src"
+    git -C "$side/src" checkout -q --detach "$HEAD"
+done
+for g in $REPRO_MEDIA; do
+    for side in "${SIDES[@]}"; do
+        ( cd "$side/src" && env -u SOURCE_DATE_EPOCH CARGO_HOME="$side/cargo-home" \
+            CARGO_TARGET_DIR="$side/target" RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" \
+            deploy/build-golden.sh "$g" "$side/out-$g" ) >"$side/$g.log" 2>&1 \
+            || { tail -40 "$side/$g.log"; die "golden $g did not build in $side"; }
+        ( cd "$side/out-$g" && find . -type f | LC_ALL=C sort | xargs sha256sum ) > "$side/$g.sums"
+    done
+    a="${SIDES[0]}" b="${SIDES[1]}"
+    if ! diff -q "$a/$g.sums" "$b/$g.sums" >/dev/null; then
+        say "golden $g: files that differ:"
+        diff "$a/$g.sums" "$b/$g.sums" | sed 's/^/repro:   /' || true
+        for f in $(diff <(cut -c67- "$a/$g.sums") <(cut -c67- "$b/$g.sums") >/dev/null; \
+                   paste -d' ' <(cut -c1-64 "$a/$g.sums") <(cut -c1-64 "$b/$g.sums") <(cut -c67- "$a/$g.sums") \
+                   | awk '$1 != $2 {print $3}'); do
+            say "  $f: $(cmp -l "$a/out-$g/$f" "$b/out-$g/$f" 2>/dev/null | wc -l) byte(s) differ; the first:"
+            cmp -l "$a/out-$g/$f" "$b/out-$g/$f" 2>/dev/null | head -12 | sed 's/^/repro:     /' || true
+        done
+        die "golden $g depends on where (or when) it was built"
+    fi
+    say "golden $g: $(wc -l < "$a/$g.sums") files, the same bytes from both builds"
+    sed 's/^/repro:   /' "$a/$g.sums"
+done
+say "PASS: the media goldens ($REPRO_MEDIA) are the same bytes from two builds"

@@ -384,25 +384,68 @@ say "medium carries stormbootx $VERSION ($STAMP)"
 # same as Debian's efi.img. This was FAT16 at 512-byte clusters (-F 16 -s 1)
 # until #55: AMI Aptio 4 (server1, X9) read the first 12 KB of that ESP off
 # virtual media and hung at POST A2, where Debian's netinst booted.
-ESP="$WORK/esp.img"
-truncate -s "${ESP_MIB}M" "$ESP"
-mkfs.fat -n STORMBOOTX "$ESP" >/dev/null
-mmd   -i "$ESP" ::/EFI ::/EFI/BOOT ::/stormboot
-mcopy -i "$ESP" "$BIN" "::/EFI/BOOT/$EFI_NAME"
-mcopy -i "$ESP" "$WORK/stormboot.conf" ::/stormboot/stormboot.conf
 # An EFI Shell fallback starts the agent by itself (#60): a machine with no
 # boot option for this media drops to the firmware's shell, which runs
 # \startup.nsh. CRLF, as the old EDK shell's scripts are. On arm64 it looks
 # for BOOTAA64.EFI (#84).
 sed -e "s/BOOTX64\.EFI/$EFI_NAME/g" -e 's/$/\r/' "$ROOT/media/startup.nsh" > "$WORK/startup.nsh"
-mcopy -i "$ESP" "$WORK/startup.nsh" ::/startup.nsh
+
+# Reproducible media (#130): one commit, one image, byte for byte. Every date
+# on the medium is SOURCE_DATE_EPOCH (the commit's time unless the caller set
+# it), and every field a tool would make up (the FAT volume ID, the GPT GUIDs,
+# the ISO's UUID) follows from what the medium carries. The files are staged
+# with that time, so no date comes from the build box's clock.
+if [[ -z "${SOURCE_DATE_EPOCH:-}" ]]; then
+    SOURCE_DATE_EPOCH="$(git -C "$ROOT" log -1 --format=%ct 2>/dev/null || date +%s)"
+fi
+export SOURCE_DATE_EPOCH
+STAGE="$WORK/stage"
+mkdir -p "$STAGE/EFI/BOOT" "$STAGE/stormboot"
+cp "$BIN" "$STAGE/EFI/BOOT/$EFI_NAME"
+cp "$WORK/stormboot.conf" "$STAGE/stormboot/stormboot.conf"
+cp "$WORK/startup.nsh" "$STAGE/startup.nsh"
 # NIC drivers for firmware that has none of its own (#26). Loaded from the
 # volume that booted, so on an ISO it is the ESP boot image that must carry
 # them; the loose ISO9660 copy below is for reading, not for booting.
 if [[ -n "$DRIVERS" ]]; then
-    mmd -i "$ESP" ::/stormboot/drivers
-    mcopy -i "$ESP" "$DRIVERS"/* ::/stormboot/drivers/
+    mkdir -p "$STAGE/stormboot/drivers"
+    cp "$DRIVERS"/* "$STAGE/stormboot/drivers/"
 fi
+find "$STAGE" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
+# The medium's contents, names and bytes, in a fixed order: the seed of every
+# identifier below.
+SEED="$( (cd "$STAGE" && find . -type f | LC_ALL=C sort | while read -r f; do
+    printf '%s %s\n' "$(sha256sum < "$f" | cut -d' ' -f1)" "$f"; done
+    printf 'media %s %s\n' "$EFI_NAME" "$ISO") | sha256sum | cut -d' ' -f1)"
+# A GUID from the seed and a name: version 4 and RFC 4122 variant bits, as a
+# random one would carry.
+seed_guid() {
+    local h
+    h="$(printf '%s %s' "$SEED" "$1" | sha256sum | cut -c1-32)"
+    printf '%s-%s-4%s-%x%s-%s' "${h:0:8}" "${h:8:4}" "${h:13:3}" \
+        $(( (16#${h:16:1} & 3) | 8 )) "${h:17:3}" "${h:20:12}"
+}
+
+ESP="$WORK/esp.img"
+truncate -s "${ESP_MIB}M" "$ESP"
+fat=(-n STORMBOOTX -i "${SEED:0:8}")
+# dosfstools 4.2's --invariant also fixes the label entry's time.
+help="$(mkfs.fat --help 2>&1 || true)"
+[[ $help == *--invariant* ]] && fat+=(--invariant)
+mkfs.fat "${fat[@]}" "$ESP" >/dev/null
+# -m keeps each file's (staged) time; mtools takes SOURCE_DATE_EPOCH for the
+# directories it makes.
+mmd   -i "$ESP" ::/EFI ::/EFI/BOOT ::/stormboot
+mcopy -m -i "$ESP" "$STAGE/EFI/BOOT/$EFI_NAME" "::/EFI/BOOT/$EFI_NAME"
+mcopy -m -i "$ESP" "$STAGE/stormboot/stormboot.conf" ::/stormboot/stormboot.conf
+mcopy -m -i "$ESP" "$STAGE/startup.nsh" ::/startup.nsh
+if [[ -n "$DRIVERS" ]]; then
+    mmd -i "$ESP" ::/stormboot/drivers
+    (cd "$STAGE/stormboot/drivers" && LC_ALL=C ls) | while read -r f; do
+        mcopy -m -i "$ESP" "$STAGE/stormboot/drivers/$f" "::/stormboot/drivers/$f"
+    done
+fi
+touch -d "@$SOURCE_DATE_EPOCH" "$ESP"
 
 # The same files as a tree (#83): what a self-update compares and fetches.
 if [[ -n "$TREE" ]]; then
@@ -426,28 +469,25 @@ if [[ "$ISO" == "yes" ]]; then
     # conf are also laid loose in the ISO9660 tree, matching the layout the
     # first hand-built ISO used and firmware is happy to read either way.
     ISOROOT="$WORK/iso"
-    mkdir -p "$ISOROOT/EFI/BOOT" "$ISOROOT/stormboot"
-    cp "$ESP" "$ISOROOT/esp.img"
-    cp "$BIN" "$ISOROOT/EFI/BOOT/$EFI_NAME"
-    cp "$WORK/stormboot.conf" "$ISOROOT/stormboot/stormboot.conf"
-    cp "$WORK/startup.nsh" "$ISOROOT/startup.nsh"
-    if [[ -n "$DRIVERS" ]]; then
-        mkdir -p "$ISOROOT/stormboot/drivers"
-        cp "$DRIVERS"/* "$ISOROOT/stormboot/drivers/"
-    fi
+    cp -a "$STAGE" "$ISOROOT"
+    cp -p "$ESP" "$ISOROOT/esp.img"
+    find "$ISOROOT" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
     #
     # Isohybrid, the way Debian's netinst is (#55): an MBR whose partition 2
     # (type 0xef) and a GPT that both map the ESP boot image, beside the El
     # Torito catalog. Pure El Torito hung Aptio 4. The MBR template is zeros:
     # the build box has no syslinux, and this media has no BIOS boot code.
     head -c 432 /dev/zero > "$WORK/mbr.bin"
+    # SOURCE_DATE_EPOCH (exported above) fixes xorriso's volume dates, its
+    # UUID and the hybrid GPT's GUIDs; the file dates are the staged ones.
     xorriso -as mkisofs -V STORMBOOTX -isohybrid-mbr "$WORK/mbr.bin" \
         -e esp.img -no-emul-boot -isohybrid-gpt-basdat \
         -o "$OUTPUT" "$ISOROOT" >/dev/null 2>&1
 else
     truncate -s "$(( ESP_MIB + 2 ))M" "$OUTPUT"
     sfdisk --quiet --label gpt "$OUTPUT" <<EOF
-start=2048, size=$(( ESP_MIB * 2048 )), type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, name="STORMBOOTX"
+label-id: $(seed_guid disk)
+start=2048, size=$(( ESP_MIB * 2048 )), type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, uuid=$(seed_guid esp), name="STORMBOOTX"
 EOF
     dd if="$ESP" of="$OUTPUT" bs=1M seek=1 conv=notrunc status=none
 fi

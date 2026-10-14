@@ -120,7 +120,15 @@ build_stormnic() {
     git -C "$WORK/$name" checkout -q FETCH_HEAD
     lock=--locked; [[ -f "$WORK/$name/Cargo.lock" ]] || { lock=""; say "  $name has no Cargo.lock: built unlocked"; }
     # shellcheck disable=SC2086
-    ( cd "$WORK/$name" && CARGO_TARGET_DIR="$WORK/$name-target" cargo build -q --release $lock --target x86_64-unknown-uefi ) \
+    # The same bytes from every build (#130, as stormbootx's own since #53):
+    # the checkout, target dir and CARGO_HOME remapped out of panic strings,
+    # and lld-link's time stamp and PDB GUID off. RUSTFLAGS reaches only the
+    # target with --target, never a build script; no driver sets rustflags.
+    local chome="${CARGO_HOME:-$HOME/.cargo}"
+    local flags="--remap-path-prefix=$chome=/cargo --remap-path-prefix=$WORK/$name=/$name"
+    flags+=" --remap-path-prefix=$WORK/$name-target=/target -C link-arg=/Brepro -C link-arg=/DEBUG:NONE"
+    ( cd "$WORK/$name" && CARGO_TARGET_DIR="$WORK/$name-target" RUSTFLAGS="$flags" \
+        cargo build -q --release $lock --target x86_64-unknown-uefi ) \
         || die "$name did not build"
     efi="$WORK/$name-target/x86_64-unknown-uefi/release/$name.efi"
     [[ -f "$efi" ]] || die "no $name.efi at $efi"
