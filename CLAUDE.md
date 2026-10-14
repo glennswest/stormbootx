@@ -520,15 +520,23 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
-- [ ] **#145 — the fall-through starts the local disk's bootloader itself
+- [x] **#145 — the fall-through starts the local disk's bootloader itself
       (P0, stormblock#449, 2026-10-14).** server1 (X9) starts stormbootx
       from the EFI Shell's `startup.nsh`; returning `ABORTED` went back to
       the shell, which started stormbootx again, so a `local` intent never
-      booted the installed disk. Plan: `blockio::boot_local` (the disk
-      `find_local` picks, as `auto` does; firmware FAT, then `esp.rs`) at the
-      end of `fall_through`, `local_boot = firmware` to opt out;
-      `tests/shell-ovmf.sh LOCAL_EFI=` boots server1's layout under the old
-      EDK shell with tcp4probe as the disk's bootloader. Then release, goldens.
+      booted the installed disk. `blockio::boot_local` (the disk
+      `find_local` picks, as `auto` does; firmware FAT, then `esp.rs`) runs
+      at the end of `fall_through`; `local_boot = firmware` opts out.
+      915528e, released **v0.26.0** (6827cca). sc-build of 915528e: no
+      warnings, the full suite; `tests/shell-ovmf.sh LOCAL_EFI=` (the shell
+      on a removable disk, a fixed disk with tcp4probe as its BOOTX64.EFI)
+      printed `local : disk 1 (…): ESP partition 1, FAT12, …`, `boot :
+      starting \EFI\BOOT\BOOTX64.EFI from the local disk`, and tcp4probe
+      listed the local ESP. The test's stick moved from USB to a removable
+      scsi-hd (99f9e4b: OVMF once missed the USB stick); six shell boots
+      passed there. The tag built `--locked` and passed net-ovmf (its first
+      two runs hit #124's PEI hang, filed as #146, closed). **Not run:**
+      server1 itself (the master's: a v0.26.0 stick, `local` intent).
 
 - [ ] **#138 — the R230 hangs at the NIC FEC step (P0, 2026-10-13).**
       v0.22.0 on C2NR0Q2 printed 02:00.0's two ports and nothing for
