@@ -530,17 +530,20 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
-- [ ] **#144 — a clean boot screen: one panel instead of scrolling text
+- [x] **#144 — a clean boot screen: one panel instead of scrolling text
       (P1, owner 2026-10-14).** `src/ui.rs`: stormbootx's own `ConOut` in
-      the system table; every line to the serial consoles (unchanged, so
-      every test and stormcentral's consoles read the same) and to F2; the
-      header (version, name, machine, time), eight steps with state and time,
-      a progress bar for the bootloader's reads, the problem and what next,
-      drawn on the GOP consoles. `ui = log` opts out. Steps from `main.rs`,
-      DHCP from `net.rs`, reads from `blockio.rs`, the countdown from
-      `shell::offer`. `tests/screen-ovmf.sh` checks it by screendump. Then
-      screenshots (OVMF in sc-build; pve, the Dell and an X9 are the
-      master's).
+      the system table; every line to the serial consoles (unchanged) and to
+      F2; the header, eight steps with state and time, the read bar, the
+      problem and what next, drawn on the GOP consoles (a handle with GOP
+      and a device path: ConSplitter's own carries GOP too, and under the
+      EFI Shell it is not the system table's ConOut). `ui = log` opts out.
+      2de339f..51cefd6, released **v0.28.0**. sc-build of 51cefd6: no
+      warnings, the full suite, and `tests/screen-ovmf.sh` (panel drawn,
+      red failed step, F2 details, Esc back, no panel text on serial);
+      no panel text in the shell boots' serial logs either. Screens in
+      `docs/screens/`. **Not run:** pve, the Dell (iDRAC) and an X9 (AMI
+      SOL): if a BMC's redirection scrapes the screen instead of being a
+      ConOut terminal, SOL would show the panel; `ui = log` is the way out.
 
 - [x] **#148 — the self-update never resolved its host (P0 per the master,
       2026-10-14).** `try_update` read the lease straight after `net::up`,

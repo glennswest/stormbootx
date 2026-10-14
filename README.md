@@ -86,6 +86,11 @@ stormbootx clears it when it starts and draws one panel, redrawn in place
  F2: every log line  -  the serial console carries the full log
 ```
 
+Under OVMF, from `tests/screen-ovmf.sh` and net-ovmf's `shipped` boot:
+[a network boot](docs/screens/boot-panel-ovmf.png),
+[a fall-through](docs/screens/boot-panel-fallthrough-ovmf.png) and
+[F2's details](docs/screens/boot-panel-details-ovmf.png).
+
 A step is `[    ]` (not yet), `[ .. ]` (under way, yellow), `[ OK ]`
 (green), `[FAIL]` (red) or `[ -- ]` (skipped: a `local` intent claims
 nothing). On a fall-through the reason is under the steps, red when a step
