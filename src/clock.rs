@@ -54,10 +54,7 @@ pub fn sync() {
         return;
     }
     let value = match check() {
-        Ok(server) => {
-            crate::ui::synced();
-            format!("synced:{server}")
-        }
+        Ok(server) => format!("synced:{server}"),
         Err(line) => {
             uefi::println!("clock       : {line}");
             "unsynced".to_string()

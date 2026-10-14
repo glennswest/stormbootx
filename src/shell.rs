@@ -29,10 +29,7 @@ use crate::net::{self, handle_protocol, SNP};
 pub fn offer(secs: u32) -> bool {
     uefi::println!();
     uefi::println!("  press c for the network console, or wait {secs}s to continue");
-    for i in 0..(secs * 10) {
-        if i % 10 == 0 {
-            crate::ui::next(&format!("press c for the network console ({} s)", secs - i / 10));
-        }
+    for _ in 0..(secs * 10) {
         if let Some('c') | Some('C') = read_char() {
             return true;
         }
@@ -42,10 +39,6 @@ pub fn offer(secs: u32) -> bool {
 }
 
 fn read_char() -> Option<char> {
-    // With the boot panel up (#144), it reads the keys (F2 is its own).
-    if let Some(c) = crate::ui::take_char() {
-        return c;
-    }
     uefi::system::with_stdin(|stdin| match stdin.read_key() {
         Ok(Some(Key::Printable(c))) => Some(char::from(c)),
         _ => None,

@@ -204,12 +204,6 @@ pub fn local_boot() -> bool {
     !matches!(conf_text().and_then(|t| field(&t, "local_boot")).as_deref(), Some("firmware"))
 }
 
-/// `ui = log` in the config file: no boot panel (#144), the console
-/// scrolls as before. Anything else, or nothing, draws the panel on a screen.
-pub fn panel_wanted() -> bool {
-    !matches!(conf_text().and_then(|t| field(&t, "ui")).as_deref(), Some("log"))
-}
-
 /// The name stated in the config file, read on its own: `name =`, or its older
 /// spelling `tag =` (#23). `name` wins when a file has both.
 ///

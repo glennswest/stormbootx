@@ -77,11 +77,9 @@ struct ReadLog {
     ticks: u64,
     /// Bytes read in all.
     total: u64,
-    /// Ticks spent inside reads in all.
-    all_ticks: u64,
 }
 
-static mut READS: ReadLog = ReadLog { ticks_per_ms: 0, bytes: 0, ticks: 0, total: 0, all_ticks: 0 };
+static mut READS: ReadLog = ReadLog { ticks_per_ms: 0, bytes: 0, ticks: 0, total: 0 };
 
 /// A progress line per this many bytes read.
 const REPORT_EVERY: u64 = 64 << 20;
@@ -115,9 +113,6 @@ fn log_read(lba: u64, len: usize, ticks: u64, failed: Option<&str>) {
     log.bytes += len as u64;
     log.ticks += ticks;
     log.total += len as u64;
-    log.all_ticks += ticks;
-    let all_ms = if log.ticks_per_ms == 0 { 0 } else { log.all_ticks / log.ticks_per_ms };
-    crate::ui::progress(log.total, ((log.total >> 20) * 1000).checked_div(all_ms).unwrap_or(0));
     if log.bytes >= REPORT_EVERY {
         let spent = if log.ticks_per_ms == 0 { 0 } else { log.ticks / log.ticks_per_ms };
         let mib = log.bytes >> 20;
@@ -376,7 +371,6 @@ pub fn boot_local(reader: EspReader) -> Result<(), String> {
     // No espfs here: it would take the firmware's FAT off a local partition
     // for good, and stormuefi opens nothing on its ESP.
     let esp_path = crate::espboot::partition_path(disk_path, &loader.partition)?;
-    crate::ui::end();
     crate::espboot::start(&esp_path, &loader, "the local disk (read by stormbootx)")
 }
 
@@ -414,8 +408,6 @@ fn local_firmware_boot(disk_path: &DevicePath, number: u32) -> Loaded {
         ) {
             Ok(loaded) => {
                 uefi::println!("boot        : starting {} from the local disk", crate::espboot::BOOTLOADER);
-                // The local OS's bootloader gets the screen (#144).
-                crate::ui::end();
                 Loaded::Ran(match boot::start_image(loaded) {
                     Ok(()) => String::from("the local disk's bootloader exited"),
                     Err(e) => format!("the local disk's bootloader returned {e:?}"),
@@ -738,13 +730,10 @@ fn firmware_boot(disk: uefi_raw::Handle) -> Result<Loaded, String> {
         ) {
             Ok(loaded) => {
                 uefi::println!("boot        : starting {} from the attached image", crate::espboot::BOOTLOADER);
-                crate::ui::handoff(&format!("starting {}", crate::espboot::BOOTLOADER));
-                let outcome = match boot::start_image(loaded) {
+                return Ok(Loaded::Ran(match boot::start_image(loaded) {
                     Ok(()) => String::from("the image's bootloader exited"),
                     Err(e) => format!("the image's bootloader returned {e:?}"),
-                };
-                crate::ui::handed_back(&outcome);
-                return Ok(Loaded::Ran(outcome));
+                }));
             }
             Err(e) => last = Some(format!("load of {} failed: {e:?}", crate::espboot::BOOTLOADER)),
         }
@@ -791,12 +780,7 @@ fn bridge_boot(disk: uefi_raw::Handle) -> Result<(), String> {
         Some(p) => p.to_boxed(),
         None => crate::espboot::partition_path(our_dp, &loader.partition)?,
     };
-    crate::ui::handoff(&format!("starting {} (read by stormbootx)", crate::espboot::BOOTLOADER));
-    let r = crate::espboot::start(&esp_path, &loader, "the attached image (read by stormbootx)");
-    if let Err(e) = &r {
-        crate::ui::handed_back(e);
-    }
-    r
+    crate::espboot::start(&esp_path, &loader, "the attached image (read by stormbootx)")
 }
 
 /// The attached namespace as an `esp::Disk`: any byte range, read as whole
