@@ -681,7 +681,17 @@ Every error in `run()`, and a `local` intent, ends in `fall_through`:
    attached image is no longer one of them).
    - If there are any, it prints `falling through to the local disk (N found)`.
    - If there are none, it says so and waits 30 s.
-6. It returns `EFI_ABORTED`, so the boot manager tries the next boot option.
+6. With a local disk, it starts that disk's `\EFI\BOOT\BOOTX64.EFI` itself
+   (`blockio::boot_local`, #145): the first whole, non-removable disk other
+   than the boot media whose GPT ESP carries one (the disk `auto` asks about,
+   printed as `local : disk N (…)`), through the firmware's FAT, else read by
+   `esp.rs` (`esp =` applies, as for the attached image). Returning is not
+   enough: where the EFI Shell started stormbootx from `startup.nsh` (the X9
+   blades, which have no boot option for it), the shell gets control back and
+   starts stormbootx again, and the disk never boots. `local_boot = firmware`
+   skips this step.
+7. If nothing started, or what started came back, it returns `EFI_ABORTED`,
+   so the boot manager (or the shell) tries the next thing.
 
 The console (`src/shell.rs`):
 
@@ -717,6 +727,7 @@ others.
 | `dns` | none | DNS server for the PTR of the machine's own address, when its DHCP reply names none or cannot be read (#26); `build-boot-agent.sh --dns` |
 | `ntp` | none (DHCP option 42, then `pool.ntp.org`) | NTP server for the hardware clock when the lease names none: `host[:port]`, or `off` to leave the clock alone (#77); `build-boot-agent.sh --ntp` |
 | `local_when_bootable` | `false` | `true`: `auto` and every doubt boot a local disk whose ESP carries `BOOTX64.EFI` instead of claiming (#3). Off until intents work on forge |
+| `local_boot` | `stormbootx` | `firmware`: the fall-through returns to whatever started stormbootx instead of starting the local disk's `BOOTX64.EFI` itself (#145) |
 | `esp` | `auto` | who reads the attached ESP (#37): `auto` (firmware, then stormbootx), `firmware`, or `stormbootx` (the bridge and its read-only filesystem, #42); `build-boot-agent.sh --esp` |
 | `rng` | `firmware` | the first entropy source tried (#56): `firmware`, `cpu` (skip `EFI_RNG`) or `jitter` (skip both); `build-boot-agent.sh --rng` |
 | `nic_verbose` | `false` | `true`: the stormnic drivers print their whole bring-up trace instead of one line per NIC (#80). stormbootx sets the volatile `StormnicVerbose` variable (GUID `ce1479a2-eab9-4176-b0ad-c909ea5b8e0b`, `BOOTSERVICE_ACCESS`, one byte `01`) before it loads `\stormboot\drivers`; gone at the next reset, never in NVRAM. For debugging a machine without a rebuild; no golden sets it. `build-boot-agent.sh --nic-verbose`. From the EFI shell instead: `setvar StormnicVerbose -guid ce1479a2-eab9-4176-b0ad-c909ea5b8e0b -bs =01` |
@@ -791,6 +802,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   scripts/build-boot-agent.sh --iso --binary $R/stormbootx.efi --media shelltest --output $PWD/t/s.iso && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso old "media       : shelltest" && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso ovmf "media       : shelltest" && \
+  LOCAL_EFI=$R/tcp4probe.efi LIMIT=120 tests/shell-ovmf.sh t/s.iso old "from the local disk" "EFI\BOOT lists" && \
   tests/repro.sh && \
   deploy/build-golden.sh stormbootx-arm64 $PWD/t/arm && \
   EFI_NAME=BOOTAA64.EFI tests/iso-layout.sh t/arm/boot/stormbootx-arm64.iso && \

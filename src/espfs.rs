@@ -413,7 +413,7 @@ struct Installed {
 static mut INSTALLED: Vec<Installed> = Vec::new();
 
 /// Whether a device path's last node is the `HD()` of partition `number`.
-fn is_partition(dp: &DevicePath, number: u32) -> bool {
+pub fn is_partition(dp: &DevicePath, number: u32) -> bool {
     dp.node_iter().last().is_some_and(|n| {
         n.device_type() == DeviceType::MEDIA
             && n.sub_type() == DeviceSubType::MEDIA_HARD_DRIVE

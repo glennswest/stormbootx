@@ -827,12 +827,24 @@ fn main() -> Status {
         return status;
     }
 
+    // Read with the rest of the media, before anything is attached (#46).
+    let local = Local { boot: config::local_boot(), reader: config::esp_reader() };
+
     // run() hands off to the image's bootloader and does not return on
     // success; every path back here is a failure to fall through from.
     match run() {
-        Ok(()) => fall_through("attach succeeded but no bootloader started"),
-        Err(err) => fall_through(&err),
+        Ok(()) => fall_through("attach succeeded but no bootloader started", local),
+        Err(err) => fall_through(&err, local),
     }
+}
+
+/// How the fall-through boots the local disk (#145).
+#[derive(Clone, Copy)]
+struct Local {
+    /// Start its bootloader here (`local_boot`), rather than return.
+    boot: bool,
+    /// Who reads its ESP (`esp =`).
+    reader: config::EspReader,
 }
 
 /// Nothing here is fatal. Give up on the network and let the machine boot
@@ -845,10 +857,16 @@ fn main() -> Status {
 /// radius of a maintenance window on one server becomes the whole estate.
 /// Falling through costs a machine one stale boot; stopping costs the fleet.
 ///
-/// `ABORTED` rather than `SUCCESS` because it is the conventional signal to
-/// the boot manager that this option did not boot anything and the next one
-/// should be tried. It is the fall-through, not a complaint.
-fn fall_through(err: &str) -> Status {
+/// The local disk's bootloader is started here (#145): returning goes back to
+/// whatever started this image, and when that is the EFI Shell running the
+/// media's `startup.nsh` (the X9 blades), the shell starts stormbootx again
+/// instead of booting the disk. `local_boot = firmware` returns instead.
+///
+/// `ABORTED` rather than `SUCCESS` when nothing local started (or what
+/// started came back), because it is the conventional signal to the boot
+/// manager that this option did not boot anything and the next one should be
+/// tried. It is the fall-through, not a complaint.
+fn fall_through(err: &str, local: Local) -> Status {
     // The attached disk first (#54): its BlockIO lives in this image, which
     // the firmware unloads when this returns, and it is not a local disk.
     match blockio::withdraw() {
@@ -893,6 +911,11 @@ fn fall_through(err: &str) -> Status {
             "RESULT: falling through to the local disk ({disks} found). \
              The machine boots what it already has."
         );
+        if local.boot {
+            if let Err(why) = blockio::boot_local(local.reader) {
+                uefi::println!("local       : not started here ({why}); returning to what started stormbootx");
+            }
+        }
     } else {
         // Nothing to fall through to, so there is time to read this and it is
         // the one case where a human is definitely needed.

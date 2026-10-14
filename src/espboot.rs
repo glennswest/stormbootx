@@ -141,9 +141,9 @@ pub fn load(esp: &DevicePath, b: &Bootloader) -> Result<Handle, String> {
 
 /// `load`, then `StartImage`. Only returns on failure, or when the started
 /// image exits.
-pub fn start(esp: &DevicePath, b: &Bootloader) -> Result<(), String> {
+pub fn start(esp: &DevicePath, b: &Bootloader, from: &str) -> Result<(), String> {
     let image = load(esp, b)?;
-    uefi::println!("boot        : starting {BOOTLOADER} from the attached image (read by stormbootx)");
+    uefi::println!("boot        : starting {BOOTLOADER} from {from}");
     match boot::start_image(image) {
         Ok(()) => Err(String::from("the image's bootloader exited")),
         Err(e) => Err(format!("the image's bootloader returned {e:?}")),

@@ -46,6 +46,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   scripts/build-boot-agent.sh --iso --binary $R/stormbootx.efi --media shelltest --output $PWD/t/s.iso && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso old "media       : shelltest" && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso ovmf "media       : shelltest" && \
+  LOCAL_EFI=$R/tcp4probe.efi LIMIT=120 tests/shell-ovmf.sh t/s.iso old "from the local disk" "EFI\BOOT lists" && \
   tests/repro.sh && \
   deploy/build-golden.sh stormbootx-arm64 $PWD/t/arm && \
   EFI_NAME=BOOTAA64.EFI tests/iso-layout.sh t/arm/boot/stormbootx-arm64.iso && \
@@ -94,6 +95,9 @@ EFI Shell with no boot option for it, and requires its `startup.nsh` to
 start stormbootx: `old` is the EDK shell Aptio 4 carries, `ovmf` the build
 box's Shell 2.x. OVMF connects only devices in the boot order, so the test's
 CD carries a bootindex after the shell's; without it the CD is never mapped.
+With `LOCAL_EFI=FILE` (#145) the shell sits on a USB stick and a fixed disk
+carries FILE as its `BOOTX64.EFI`: the fall-through must start it (the
+command uses tcp4probe, whose `boot fs : \EFI\BOOT lists …` proves it ran).
 
 `tests/iso-layout.sh ISO …` checks an ISO is isohybrid with a FAT12 ESP,
 the layout Aptio 4 boots (#55). `tests/media-ovmf.sh ISO 'LINE' …` boots a media ISO under OVMF and requires
@@ -515,6 +519,16 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       stormblock, stormipmi and stormuefi source.
 
 ### Open, no external blocker
+
+- [ ] **#145 — the fall-through starts the local disk's bootloader itself
+      (P0, stormblock#449, 2026-10-14).** server1 (X9) starts stormbootx
+      from the EFI Shell's `startup.nsh`; returning `ABORTED` went back to
+      the shell, which started stormbootx again, so a `local` intent never
+      booted the installed disk. Plan: `blockio::boot_local` (the disk
+      `find_local` picks, as `auto` does; firmware FAT, then `esp.rs`) at the
+      end of `fall_through`, `local_boot = firmware` to opt out;
+      `tests/shell-ovmf.sh LOCAL_EFI=` boots server1's layout under the old
+      EDK shell with tcp4probe as the disk's bootloader. Then release, goldens.
 
 - [ ] **#138 — the R230 hangs at the NIC FEC step (P0, 2026-10-13).**
       v0.22.0 on C2NR0Q2 printed 02:00.0's two ports and nothing for

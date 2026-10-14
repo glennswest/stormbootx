@@ -20,6 +20,11 @@
 # console must carry; `startup.nsh: starting stormbootx from` is always
 # required too.
 #
+# LOCAL_EFI=FILE (#145) is server1's layout: the shell's disk is a USB stick
+# (removable), and a fixed virtio disk carries FILE as its ESP's
+# \EFI\BOOT\BOOTX64.EFI, the installed disk. stormbootx falls through (no
+# network) and must start that file itself rather than return to the shell.
+#
 # Needs qemu-system-x86_64, OVMF, mkfs.fat, mtools, sfdisk and curl (old).
 # Unprivileged; everything is under $TMPDIR and deleted on exit.
 set -euo pipefail
@@ -72,12 +77,36 @@ start=2048, size=16384, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B
 EOF
 dd if="$W/shell-esp.img" of="$W/shell.img" bs=1M seek=1 conv=notrunc status=none
 
+# The installed disk (#145): a GPT ESP with LOCAL_EFI as its bootloader.
+ldisk=()
+if [[ -n "${LOCAL_EFI:-}" ]]; then
+    [[ -s "$LOCAL_EFI" ]] || die "no LOCAL_EFI at $LOCAL_EFI"
+    truncate -s 8M "$W/local-esp.img"
+    mkfs.fat -n LOCALESP "$W/local-esp.img" >/dev/null
+    mmd -i "$W/local-esp.img" ::/EFI ::/EFI/BOOT
+    mcopy -i "$W/local-esp.img" "$LOCAL_EFI" ::/EFI/BOOT/BOOTX64.EFI
+    truncate -s 10M "$W/local.img"
+    sfdisk --quiet --label gpt "$W/local.img" <<EOF
+start=2048, size=16384, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B
+EOF
+    dd if="$W/local-esp.img" of="$W/local.img" bs=1M seek=1 conv=notrunc status=none
+    ldisk=(-drive if=none,id=ld,format=raw,file="$W/local.img"
+           -device virtio-blk-pci,drive=ld,addr=0x7,bootindex=2)
+fi
+
 # Mappings follow device-path order, so the PCI slot decides which is fs0.
 case "$LAYOUT" in
 cd-first) CD_ADDR=0x4; SH_ADDR=0x6 ;;
 cd-last)  CD_ADDR=0x6; SH_ADDR=0x4 ;;
 *) die "LAYOUT: cd-first or cd-last" ;;
 esac
+
+if [[ -n "${LOCAL_EFI:-}" ]]; then
+    shdev=(-device qemu-xhci,id=xhci,addr="$SH_ADDR"
+           -device usb-storage,bus=xhci.0,drive=sh,removable=on,bootindex=0)
+else
+    shdev=(-device virtio-blk-pci,drive=sh,addr="$SH_ADDR",bootindex=0)
+fi
 
 cp "$OVMF_VARS" "$W/vars.fd"
 accel=tcg
@@ -90,7 +119,7 @@ timeout "$LIMIT" qemu-system-x86_64 -machine q35,accel="$accel" -m 512 \
     -drive if=none,id=cd,media=cdrom,format=raw,readonly=on,file="$ISO" \
     -device scsi-cd,drive=cd,bus=scsi.0,bootindex=1 \
     -drive if=none,id=sh,format=raw,file="$W/shell.img" \
-    -device virtio-blk-pci,drive=sh,addr="$SH_ADDR",bootindex=0 \
+    "${shdev[@]}" "${ldisk[@]}" \
     -net none \
     -display none -serial file:"$W/serial.log" -no-reboot || true
 

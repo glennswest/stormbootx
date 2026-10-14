@@ -195,6 +195,15 @@ pub fn local_when_bootable() -> bool {
     )
 }
 
+/// `local_boot = firmware` in the config file: the fall-through returns to
+/// whatever started this image and starts nothing itself, as before #145.
+/// By default (`local_boot = stormbootx`, or nothing) the fall-through starts
+/// the local disk's bootloader, because an EFI Shell running `startup.nsh`
+/// would only start this image again. Read at start-up, like `esp =`.
+pub fn local_boot() -> bool {
+    !matches!(conf_text().and_then(|t| field(&t, "local_boot")).as_deref(), Some("firmware"))
+}
+
 /// The name stated in the config file, read on its own: `name =`, or its older
 /// spelling `tag =` (#23). `name` wins when a file has both.
 ///

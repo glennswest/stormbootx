@@ -258,6 +258,18 @@ pub fn local_disks() -> usize {
 /// ESP with BOOTX64.EFI" (#3, 2026-09-30). A disk with another OS on it
 /// boots that OS under `auto`; `install` is how it gets replaced.
 pub fn local_bootloader() -> Result<String, String> {
+    find_local().map(|l| l.found)
+}
+
+/// A local disk `find_local` found: its whole-disk handle, the ESP, and the
+/// console line naming them.
+struct LocalEsp {
+    disk: Handle,
+    partition: crate::esp::Partition,
+    found: String,
+}
+
+fn find_local() -> Result<LocalEsp, String> {
     let handles = boot::locate_handle_buffer(SearchType::ByProtocol(&BlockIO::GUID))
         .map_err(|e| format!("no block devices ({e:?})"))?;
     // The stick or virtual CD this runs off carries a BOOTX64.EFI too (this
@@ -273,6 +285,11 @@ pub fn local_bootloader() -> Result<String, String> {
         let Some(bio) = open_get::<BlockIO>(h) else { continue };
         let media = bio.media();
         if !media.is_media_present() || media.is_logical_partition() || media.is_removable_media() {
+            continue;
+        }
+        // The attached image is not a local disk (the fall-through withdraws
+        // it first; this is the belt to that).
+        if is_published(h.as_ptr()) {
             continue;
         }
         let dp = path_of(h);
@@ -292,12 +309,13 @@ pub fn local_bootloader() -> Result<String, String> {
         };
         match crate::espboot::find(&mut disk, block) {
             Ok((p, fat, bytes)) => {
-                return Ok(format!(
+                let found = format!(
                     "disk {n} ({} GiB, {block}-byte blocks): ESP partition {}, FAT{fat}, {} ({bytes} bytes)",
                     size >> 30,
                     p.number,
                     crate::espboot::BOOTLOADER
-                ));
+                );
+                return Ok(LocalEsp { disk: h, partition: p, found });
             }
             Err(e) => {
                 why.push_str(&format!("\n    disk {n} ({} GiB): {e}", size >> 30));
@@ -309,6 +327,96 @@ pub fn local_bootloader() -> Result<String, String> {
     } else {
         Err(format!("no local disk carries {}:{why}", crate::espboot::BOOTLOADER))
     }
+}
+
+/// Start the local disk's bootloader on the fall-through (#145).
+///
+/// Returning `ABORTED` hands the boot back to whatever started this image.
+/// From a boot option that is the boot manager, which tries the next one (the
+/// local disk). From the EFI Shell running the media's `startup.nsh` (the X9
+/// blades: stormbootx is not a boot option there) it is the shell, which runs
+/// `startup.nsh` again and starts stormbootx again, round and round, while a
+/// perfectly good disk waits. So the disk is started here, whoever started
+/// this: the disk `find_local` picks (the same one `auto` asks about), the
+/// firmware's FAT first, then `esp.rs`'s read of it (a 4K ESP on Aptio 4,
+/// #37), as `esp =` says.
+///
+/// Only returns when nothing started or the started image came back; the
+/// caller then returns as it did before.
+pub fn boot_local(reader: EspReader) -> Result<(), String> {
+    let local = find_local()?;
+    uefi::println!("local       : {}", local.found);
+    let disk_path = path_of(local.disk).ok_or("the local disk has no device path")?;
+    let why = match reader {
+        EspReader::Stormbootx => String::from("esp = stormbootx"),
+        _ => match local_firmware_boot(disk_path, local.partition.number) {
+            Loaded::Ran(outcome) => return Err(outcome),
+            Loaded::Not(why) if reader == EspReader::Firmware => return Err(why),
+            Loaded::Not(why) => why,
+        },
+    };
+    uefi::println!("local       : the firmware did not load it ({why}); reading the ESP here");
+    let loader = {
+        let bio = open_get::<BlockIO>(local.disk).ok_or("the local disk has no BlockIO")?;
+        let media = bio.media();
+        let block = media.block_size();
+        let mut d = crate::espboot::BlockDisk {
+            bio: &bio,
+            media_id: media.media_id(),
+            block: block as u64,
+            bounce: alloc::vec::Vec::new(),
+        };
+        crate::espboot::read(&mut d, block).map_err(|e| format!("stormbootx could not read the ESP either: {e}"))?
+    };
+    // No espfs here: it would take the firmware's FAT off a local partition
+    // for good, and stormuefi opens nothing on its ESP.
+    let esp_path = crate::espboot::partition_path(disk_path, &loader.partition)?;
+    crate::espboot::start(&esp_path, &loader, "the local disk (read by stormbootx)")
+}
+
+/// `\EFI\BOOT\BOOTX64.EFI` through the firmware's filesystem on the local
+/// disk's ESP: the filesystem whose device path is exactly the disk's and
+/// that partition's `HD()` node.
+fn local_firmware_boot(disk_path: &DevicePath, number: u32) -> Loaded {
+    let mut fbuf = alloc::vec::Vec::new();
+    let file_path = match DevicePathBuilder::with_vec(&mut fbuf)
+        .push(&build::media::FilePath { path_name: crate::espboot::BOOTLOADER16 })
+        .and_then(|b| b.finalize())
+    {
+        Ok(p) => p,
+        Err(e) => return Loaded::Not(format!("file path build failed: {e:?}")),
+    };
+    let Ok(handles) = boot::locate_handle_buffer(SearchType::ByProtocol(&SimpleFileSystem::GUID)) else {
+        return Loaded::Not(String::from("no filesystem at all"));
+    };
+    let depth = disk_path.node_iter().count();
+    for h in handles.iter() {
+        let Some(dp) = device_path_of(h.as_ptr()) else { continue };
+        if dp.node_iter().count() != depth + 1
+            || !is_prefix(disk_path, dp)
+            || !crate::espfs::is_partition(dp, number)
+        {
+            continue;
+        }
+        let full = match dp.append_path(file_path) {
+            Ok(f) => f,
+            Err(e) => return Loaded::Not(format!("append_path failed: {e:?}")),
+        };
+        return match boot::load_image(
+            boot::image_handle(),
+            LoadImageSource::FromDevicePath { device_path: &full, boot_policy: BootPolicy::ExactMatch },
+        ) {
+            Ok(loaded) => {
+                uefi::println!("boot        : starting {} from the local disk", crate::espboot::BOOTLOADER);
+                Loaded::Ran(match boot::start_image(loaded) {
+                    Ok(()) => String::from("the local disk's bootloader exited"),
+                    Err(e) => format!("the local disk's bootloader returned {e:?}"),
+                })
+            }
+            Err(e) => Loaded::Not(format!("load of {} failed: {e:?}", crate::espboot::BOOTLOADER)),
+        };
+    }
+    Loaded::Not(String::from("the firmware mounted no filesystem on its ESP"))
 }
 
 /// `OpenProtocol` with `GET_PROTOCOL`: a look, not a claim.
@@ -672,7 +780,7 @@ fn bridge_boot(disk: uefi_raw::Handle) -> Result<(), String> {
         Some(p) => p.to_boxed(),
         None => crate::espboot::partition_path(our_dp, &loader.partition)?,
     };
-    crate::espboot::start(&esp_path, &loader)
+    crate::espboot::start(&esp_path, &loader, "the attached image (read by stormbootx)")
 }
 
 /// The attached namespace as an `esp::Disk`: any byte range, read as whole

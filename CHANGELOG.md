@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-10-14
+- **fix:** the fall-through starts the local disk's `\EFI\BOOT\BOOTX64.EFI` itself (#145, P0, stormblock#449). On server1 (X9, Aptio) stormbootx is not a boot option: the EFI Shell starts it from the stick's `startup.nsh`, so a `local` intent returned to the shell, which started stormbootx again, and the installed disk never booted. `blockio::boot_local` takes the disk `auto` would find (whole, non-removable, not the boot media, a GPT ESP carrying the bootloader), loads it through the firmware's FAT, else from `esp.rs`'s read (`esp =` applies), and starts it; only if nothing starts, or it returns, does stormbootx return `ABORTED` as before. `local_boot = firmware` in `stormboot.conf` keeps the old return. `tests/shell-ovmf.sh` gains `LOCAL_EFI=FILE` (the shell on a USB stick, a fixed disk with FILE as its bootloader), and the sc-build command boots it from the old EDK shell with tcp4probe as the installed disk's bootloader.
+
 ## [v0.25.0] — 2026-10-13
 
 ### Added
