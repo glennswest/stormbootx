@@ -49,9 +49,14 @@ qemu-system-x86_64 -machine q35,accel="$accel" -m 512 \
     -display none -serial file:"$W/serial.log" -no-reboot &
 qemu=$!
 t=0
+tail_die() {
+    say "serial console (last 30 lines):"
+    tr -d '\r' < "$W/serial.log" | sed 's/\x1b\[[0-9;?]*[A-Za-z]//g' | grep -v '^\s*$' | tail -30 | sed 's/^/  | /'
+    die "$1"
+}
 until grep -q "RESULT: nothing to fall through to" "$W/serial.log" 2>/dev/null; do
-    kill -0 "$qemu" 2>/dev/null || die "qemu exited before the fall-through"
-    (( t < LIMIT )) || die "no fall-through after ${LIMIT}s"
+    kill -0 "$qemu" 2>/dev/null || tail_die "qemu exited before the fall-through"
+    (( t < LIMIT )) || tail_die "no fall-through after ${LIMIT}s"
     sleep 1; t=$((t + 1))
 done
 sleep 2
