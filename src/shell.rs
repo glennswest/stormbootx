@@ -16,6 +16,7 @@
 //! and silence takes the normal path. That is the same rule as everywhere else
 //! here: one provisioning outage must not become a fleet outage.
 
+use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
