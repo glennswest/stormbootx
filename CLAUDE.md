@@ -535,7 +535,9 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       listed the local ESP. The test's stick moved from USB to a removable
       scsi-hd (99f9e4b: OVMF once missed the USB stick); six shell boots
       passed there. The tag built `--locked` and passed net-ovmf (its first
-      two runs hit #124's PEI hang, filed as #146, closed). **Not run:**
+      two runs hit #124's PEI hang, filed as #146, closed). Goldens
+      `golden-stormbootx-fb1324a8d9650706`,
+      `golden-stormbootx-rustnic-ed63f8844ada2564`. **Not run:**
       server1 itself (the master's: a v0.26.0 stick, `local` intent).
 
 - [ ] **#138 — the R230 hangs at the NIC FEC step (P0, 2026-10-13).**
