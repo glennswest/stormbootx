@@ -3,8 +3,10 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
-### 2026-10-14
-- **feat:** a clean boot screen (#144). On a machine with a screen, stormbootx clears it and draws one panel, redrawn in place: a header (version, the machine's name, vendor/model/serial, the time and whether NTP set it), the boot's eight steps (firmware handoff, NIC up, DHCP, forge reached, boot intent, claim, image loaded, handoff), each with a state and a time, the current one highlighted, a bar with MiB read and MiB/s while the bootloader reads the image, and on a fall-through the reason in red with what happens next. Every log line still goes to the serial console as before, and to a details screen behind F2. New `src/ui.rs` puts its own `EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL` in the system table's `ConOut` and hands the screen back before the network console, a local disk's bootloader, and any return to the firmware. `ui = log` in `stormboot.conf` keeps the scrolling console. New `tests/screen-ovmf.sh` and `tests/screen.py` check it through QEMU monitor screendumps (header bar, a red failed step, F2 and Esc, no panel text in the serial log); with `SCREEN_PNG=1` it and net-ovmf's `shipped` boot print the screens as base64 PNG lines.
+## [v0.28.0] — 2026-10-14
+
+### Added
+- A clean boot screen (#144). On a machine with a screen, stormbootx clears it and draws one panel, redrawn in place: a header (version, the machine's name, vendor/model/serial, the time and whether NTP set it), the boot's eight steps (firmware handoff, NIC up, DHCP, forge reached, boot intent, claim, image loaded, handoff), each with a state and a time, the current one highlighted, a bar with MiB read and MiB/s while the bootloader reads the image, and on a fall-through the reason in red with what happens next. Every log line still goes to the serial console as before, and to a details screen behind F2. New `src/ui.rs` puts its own `EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL` in the system table's `ConOut` and hands the screen back before the network console, a local disk's bootloader, and any return to the firmware. `ui = log` in `stormboot.conf` keeps the scrolling console. New `tests/screen-ovmf.sh` and `tests/screen.py` check it through QEMU monitor screendumps (header bar, a red failed step, F2 and Esc, no panel text in the serial log); with `SCREEN_PNG=1` it and net-ovmf's `shipped` boot print the screens as base64 PNG lines.
 
 ## [v0.27.0] — 2026-10-14
 
