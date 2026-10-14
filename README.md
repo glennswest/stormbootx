@@ -854,7 +854,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso ovmf "media       : shelltest" && \
   LOCAL_EFI=$R/tcp4probe.efi LIMIT=120 tests/shell-ovmf.sh t/s.iso old "from the local disk" "EFI\BOOT lists" && \
   tests/screen-ovmf.sh t/s.iso && \
-  tests/repro.sh && \
+  REPRO_MEDIA="stormbootx stormbootx-rustnic stormbootx-disk stormbootx-rustnic-disk" tests/repro.sh && \
   deploy/build-golden.sh stormbootx-arm64 $PWD/t/arm && \
   EFI_NAME=BOOTAA64.EFI tests/iso-layout.sh t/arm/boot/stormbootx-arm64.iso && \
   tests/update-ovmf.sh $R/tcp4probe.efi'
@@ -880,6 +880,18 @@ for the checkout, the target dir and `CARGO_HOME`; `deploy/build-golden.sh`
 and `build-boot-agent.sh` build through it, so a golden's `stormbootx.efi`
 is the same wherever its drive mounts. A plain `cargo build` still carries
 the path. `REPRO_RAW=1 tests/repro.sh` shows it.
+
+With `REPRO_MEDIA` (#130) it then builds each named media golden twice,
+with `deploy/build-golden.sh` in two clones at different paths, and requires
+every file of the two trees (the `.iso`/`.img`, `media/`, `BUILD`,
+`SHA256SUMS`) to be the same bytes. `build-boot-agent.sh` dates everything
+`SOURCE_DATE_EPOCH` (the commit's time unless set) and derives every
+identifier a tool would make up from the medium's contents: the FAT volume
+ID (`mkfs.fat -i`, `--invariant`), the GPT disk and partition GUIDs
+(`label-id`/`uuid`), the file times (staged, `mcopy -m`); xorriso takes its
+dates, UUID and hybrid GPT from `SOURCE_DATE_EPOCH`. `build-nic-drivers.sh`
+builds the stormnic drivers with the paths remapped and `/Brepro`
+`/DEBUG:NONE`. So a rebuild of a commit is its golden's bytes.
 
 The binary has no host target, so a plain `cargo test` does not apply;
 `cargo test -p nvme-tcp-initiator` runs the one host-built crate (#10).

@@ -48,7 +48,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso ovmf "media       : shelltest" && \
   LOCAL_EFI=$R/tcp4probe.efi LIMIT=120 tests/shell-ovmf.sh t/s.iso old "from the local disk" "EFI\BOOT lists" && \
   tests/screen-ovmf.sh t/s.iso && \
-  tests/repro.sh && \
+  REPRO_MEDIA="stormbootx stormbootx-rustnic stormbootx-disk stormbootx-rustnic-disk" tests/repro.sh && \
   deploy/build-golden.sh stormbootx-arm64 $PWD/t/arm && \
   EFI_NAME=BOOTAA64.EFI tests/iso-layout.sh t/arm/boot/stormbootx-arm64.iso && \
   tests/update-ovmf.sh $R/tcp4probe.efi'
@@ -64,7 +64,12 @@ boots it yet: there is no `qemu-system-aarch64` or AAVMF on the template.
 and `/DEBUG:NONE` (lld-link's time stamp and PDB GUID), and
 `scripts/cargo-repro.sh` remaps the checkout, target dir and `CARGO_HOME`
 out of panic locations. Goldens and `build-boot-agent.sh` build through it;
-any new build of a shipped `.efi` must too.
+any new build of a shipped `.efi` must too. `REPRO_MEDIA` (#130) builds
+those media goldens twice, from two clones, and requires every file the
+same: `build-boot-agent.sh` takes its dates from `SOURCE_DATE_EPOCH` (the
+commit's time) and its FAT volume ID and GPT GUIDs from the medium's
+contents; the stormnic drivers build remapped with `/Brepro`. Nothing on a
+medium may come from the clock or a random number.
 
 `tests/update-ovmf.sh` (#83) must stay last: it rebuilds `stormbootx.efi`
 with an Ed25519 test key compiled in (`STORMBOOTX_UPDATE_TEST_KEY`) and boots

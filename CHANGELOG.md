@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-10-14
+- **fix:** the media goldens are bit-reproducible (#130): one commit builds the same `.iso`/`.img` bytes wherever and whenever it is built, so a rebuild can be checked against a sealed golden. `build-boot-agent.sh` stages every file at `SOURCE_DATE_EPOCH` (the commit's time unless set) and copies it with `mcopy -m`, gives `mkfs.fat` a volume ID from the medium's contents (`-i`, and `--invariant` where dosfstools has it), writes the GPT's disk and partition GUIDs from the same seed (`label-id`/`uuid`), and lets xorriso take its dates, UUID and hybrid GPT from `SOURCE_DATE_EPOCH`. `build-nic-drivers.sh` builds the stormnic drivers with their checkout, target dir and `CARGO_HOME` remapped and `/Brepro` `/DEBUG:NONE`, as stormbootx's own build has since #53. `tests/repro.sh` with `REPRO_MEDIA=<goldens>` builds each golden in two clones at different paths and requires every file the same; the sc-build command runs it for the four x86 media goldens.
+
 ## [v0.28.0] — 2026-10-14
 
 ### Added
