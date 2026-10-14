@@ -1842,7 +1842,7 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ## Status
 
-v0.25.0 (#128: #4, #10, #17, #25, #36, #42, #53, #67 and #138). **First complete NVMe/TCP attach on real hardware: 2026-09-05**
+v0.26.0 (#145: the fall-through starts the local disk itself). v0.25.0 was #128: #4, #10, #17, #25, #36, #42, #53, #67 and #138. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
 (and the same day, the full chain: chain-load into stormuefi and a running
 stormcos kernel), on a
 Dell PowerEdge R230 (service tag C2NR0Q2) booting the agent over iDRAC virtual
