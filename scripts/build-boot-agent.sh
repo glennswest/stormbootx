@@ -399,6 +399,9 @@ if [[ -z "${SOURCE_DATE_EPOCH:-}" ]]; then
     SOURCE_DATE_EPOCH="$(git -C "$ROOT" log -1 --format=%ct 2>/dev/null || date +%s)"
 fi
 export SOURCE_DATE_EPOCH
+# FAT and ISO 9660 dates are local time: the same instant is the same bytes
+# only in one zone.
+export TZ=UTC
 STAGE="$WORK/stage"
 mkdir -p "$STAGE/EFI/BOOT" "$STAGE/stormboot"
 cp "$BIN" "$STAGE/EFI/BOOT/$EFI_NAME"
@@ -411,6 +414,9 @@ if [[ -n "$DRIVERS" ]]; then
     mkdir -p "$STAGE/stormboot/drivers"
     cp "$DRIVERS"/* "$STAGE/stormboot/drivers/"
 fi
+# Modes as fixed as the times: the build's umask must not reach the ISO.
+find "$STAGE" -type d -exec chmod 755 {} +
+find "$STAGE" -type f -exec chmod 644 {} +
 find "$STAGE" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 # The medium's contents, names and bytes, in a fixed order: the seed of every
 # identifier below.
@@ -471,6 +477,7 @@ if [[ "$ISO" == "yes" ]]; then
     ISOROOT="$WORK/iso"
     cp -a "$STAGE" "$ISOROOT"
     cp -p "$ESP" "$ISOROOT/esp.img"
+    chmod 644 "$ISOROOT/esp.img"
     find "$ISOROOT" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
     #
     # Isohybrid, the way Debian's netinst is (#55): an MBR whose partition 2
@@ -480,7 +487,10 @@ if [[ "$ISO" == "yes" ]]; then
     head -c 432 /dev/zero > "$WORK/mbr.bin"
     # SOURCE_DATE_EPOCH (exported above) fixes xorriso's volume dates, its
     # UUID and the hybrid GPT's GUIDs; the file dates are the staged ones.
-    xorriso -as mkisofs -V STORMBOOTX -isohybrid-mbr "$WORK/mbr.bin" \
+    # -r: Rock Ridge with owner and group 0 and readable modes, not the build
+    # user's: a golden built by stormcentral and the same commit built in an
+    # sc-build job differed only there (#130).
+    xorriso -as mkisofs -r -V STORMBOOTX -isohybrid-mbr "$WORK/mbr.bin" \
         -e esp.img -no-emul-boot -isohybrid-gpt-basdat \
         -o "$OUTPUT" "$ISOROOT" >/dev/null 2>&1
 else

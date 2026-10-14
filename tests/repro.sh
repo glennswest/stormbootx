@@ -90,9 +90,18 @@ for side in "${SIDES[@]}"; do
     git clone -q "$ROOT" "$side/src"
     git -C "$side/src" checkout -q --detach "$HEAD"
 done
+# The second build runs as another machine's would: another umask, another
+# time zone and, where user namespaces allow, another uid (root in one). One
+# VM built two equal ISOs while stormcentral's builder built a third (#130).
+OTHER=(env -u SOURCE_DATE_EPOCH TZ=Asia/Tokyo)
+unshare -r true 2>/dev/null && OTHER=(unshare -r "${OTHER[@]}")
+say "the second build runs under: umask 077, ${OTHER[*]}"
 for g in $REPRO_MEDIA; do
     for side in "${SIDES[@]}"; do
-        ( cd "$side/src" && env -u SOURCE_DATE_EPOCH CARGO_HOME="$side/cargo-home" \
+        local_env=(env -u SOURCE_DATE_EPOCH)
+        [[ $side == "${SIDES[1]}" ]] && local_env=("${OTHER[@]}")
+        ( cd "$side/src" && { [[ $side == "${SIDES[1]}" ]] && umask 077; true; } \
+            && "${local_env[@]}" CARGO_HOME="$side/cargo-home" \
             CARGO_TARGET_DIR="$side/target" RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" \
             deploy/build-golden.sh "$g" "$side/out-$g" ) >"$side/$g.log" 2>&1 \
             || { tail -40 "$side/$g.log"; die "golden $g did not build in $side"; }
