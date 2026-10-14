@@ -784,6 +784,31 @@ pub fn leased() -> bool {
     net().is_ok_and(|n| n.nics.iter().any(|c| c.lease.is_some()))
 }
 
+/// Wait up to `secs` for some NIC to hold a lease, pumping the stack, with
+/// the #88 progress line once a second. `true` when one does. For a reader
+/// of the lease's options that runs before any connection has waited for
+/// DHCP: the self-update's DNS server (#148).
+pub fn wait_lease(secs: u32) -> bool {
+    let Ok(n) = net() else { return false };
+    let start = n.clock.now();
+    let deadline = start + Duration::from_secs(secs as u64);
+    let mut note = start + Duration::from_secs(1);
+    loop {
+        n.poll_all();
+        if n.nics.iter().any(|c| c.lease.is_some()) {
+            return true;
+        }
+        let now = n.clock.now();
+        if now >= deadline {
+            return false;
+        }
+        if now >= note {
+            uefi::println!("    waiting for a lease ({} s): {}", (now - start).secs(), n.lease_progress());
+            note = now + Duration::from_secs(1);
+        }
+    }
+}
+
 /// The DHCP reply of the NIC `udp_exchange` would use, for its options
 /// (42, 6; #77).
 pub fn leased_reply() -> Option<Vec<u8>> {

@@ -12,6 +12,8 @@
 # into the new set in the same run. Each boot is checked on the console and
 # then on the disk itself (mtools):
 #
+#   named     `update =` names a host (local.conf): the check waits for DHCP
+#             and asks the lease's DNS server (#148); .invalid never resolves
 #   real      stormcentral's own promotion (tests/fixtures, serial 1, hex
 #             signature): verifies against the release key; it is v0.14.0,
 #             older than this binary, so it is declined and only `min = 1`
@@ -176,6 +178,20 @@ TV="$VERSION-test"
 cp "$EFI" "$W/A.efi"
 attached=("blockio     : published on handle" "is there a TCP/IP stack in this firmware")
 FIX="$ROOT/tests/fixtures"
+
+# #148: `update =` names a host. It is looked up at the lease's DNS server
+# (slirp's 10.0.2.3), which needs the check to wait for DHCP: it ran before
+# any lease and printed `none in the lease` on every metal boot. A .invalid
+# name never resolves, so nothing is fetched or written. In local.conf,
+# which wins over stormboot.conf and is deleted after.
+printf 'update = http://update.stormbootx.invalid:%s/api/v1/boothelpers/stormbootx-test\r\n' "$PORT" > "$W/local.conf"
+mcopy -o -i "$IMG@@$OFF" "$W/local.conf" ::/stormboot/local.conf
+uboot named "${attached[@]}" \
+    "update      : update.stormbootx.invalid has no address at DNS server 10.0.2.3" \
+    "not:none in the lease" \
+    "not-stub:GET /api/v1/boothelpers/"
+mdel -i "$IMG@@$OFF" ::/stormboot/local.conf
+same /EFI/BOOT/BOOTX64.EFI "$W/A.efi"
 
 # stormcentral's own promotion, its signature as stormcentral serves it (hex).
 # The binary must believe it (release key, not the test key). It is serial 1

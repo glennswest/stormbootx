@@ -67,8 +67,10 @@ any new build of a shipped `.efi` must too.
 
 `tests/update-ovmf.sh` (#83) must stay last: it rebuilds `stormbootx.efi`
 with an Ed25519 test key compiled in (`STORMBOOTX_UPDATE_TEST_KEY`) and boots
-a writable GPT medium on a USB stick eleven times through
+a writable GPT medium on a USB stick twelve times through
 `tests/update-boots.sh`, sourced by `net-ovmf.sh` for its stubs (#89):
+an `update =` naming a host must be looked up at the lease's DNS server
+(#148);
 stormcentral's real serial-1 manifest (`tests/fixtures/`, v0.14.0) verifies
 and is declined as older than the running version, writing only `min = 1`,
 then "declined here before" (#96); test releases carry the running version
@@ -519,6 +521,15 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       stormblock, stormipmi and stormuefi source.
 
 ### Open, no external blocker
+
+- [ ] **#148 — the self-update never resolved its host (P0 per the master,
+      2026-10-14).** `try_update` read the lease straight after `net::up`,
+      before DHCP answered, so every named `update =` printed `no DNS server
+      … (none in the lease, no dns =)` and no stick ever self-updated.
+      Fix: `net::wait_lease` (30 s, #88's progress line) before a named
+      lookup. Test: update-boots' `named` boot. Then release, the stormbootx
+      and rustnic goldens, and the `stormbootx-rustnic-disk` stick golden
+      for the owner's Saturday re-image.
 
 - [x] **#145 — the fall-through starts the local disk's bootloader itself
       (P0, stormblock#449, 2026-10-14).** server1 (X9) starts stormbootx

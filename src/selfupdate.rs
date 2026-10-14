@@ -284,6 +284,10 @@ fn set_nv_min(serial: u64) {
 
 // ------------------------------------------------------------------- check
 
+/// How long the check waits for DHCP before giving up on a named host (#148):
+/// the claim's own connection budget, which it would otherwise spend next.
+const LEASE_SECS: u32 = 30;
+
 /// Ask for the current release and, if it is newer and verifies, write it to
 /// the medium and restart into it. Returns when there is nothing to do or it
 /// could not be done; every outcome is one console line.
@@ -320,6 +324,11 @@ fn try_update(mac: Option<&str>) -> Result<(), String> {
         return Err(format!("serial {serial} is on trial; nothing new until it ends"));
     }
 
+    // A name is looked up at the lease's DNS server, and this runs straight
+    // after `net::up`, before anything has waited for DHCP (#148).
+    if config::parse_ipv4(host).is_none() && !net::wait_lease(LEASE_SECS) {
+        return Err(format!("no lease after {LEASE_SECS} s to look up {host}; not checked"));
+    }
     let lease = net::leased_reply().unwrap_or_default();
     let addr = clock::lookup(host, &lease)?;
     let host_hdr = if port == 80 { host.to_string() } else { format!("{host}:{port}") };
