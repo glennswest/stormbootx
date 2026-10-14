@@ -62,6 +62,50 @@ until 0.9 a `STATIC` IP4 policy was switched to `DHCP` in NVRAM). The NICs are
 taken from the firmware's own stack for the boot (SNP opened exclusively) and
 given back on the fall-through.
 
+## The boot screen
+
+On a machine with a screen (GOP: a monitor, a BMC's KVM, pve's console),
+stormbootx clears it when it starts and draws one panel, redrawn in place
+(#144):
+
+```
+ stormbootx 0.28.0 (abc1234)  -  server1             2026-10-14 18:41:53 UTC (NTP)
+ Supermicro SYS-5037MR-H8TRF   serial ZM142S026113
+
+  [ OK ]  firmware handoff  American Megatrends firmware
+  [ OK ]  NIC up            stormnic-ixgbe.efi ac:1f:6b:8a:a7:9c          11.2 s
+  [ OK ]  DHCP              nic 0 192.168.16.100/20  MTU 1500               0.8 s
+  [ OK ]  forge reached     stormblock 20.0.0 at 192.168.31.202:9090        0.1 s
+  [ OK ]  boot intent       install  (under server1)                        0.0 s
+  [ OK ]  claim             a clone of server1's image, nsid 1              0.4 s
+  [ .. ]  image loaded      48 GiB at 4096-byte blocks, nsid 1              3.1 s
+  [ .. ]  handoff           <the bootloader's latest line>                  2.0 s
+
+            [#########.....................]  312 MiB read  110 MiB/s
+
+ F2: every log line  -  the serial console carries the full log
+```
+
+A step is `[    ]` (not yet), `[ .. ]` (under way, yellow), `[ OK ]`
+(green), `[FAIL]` (red) or `[ -- ]` (skipped: a `local` intent claims
+nothing). On a fall-through the reason is under the steps, red when a step
+failed, with what happens next (the console offer's countdown, the local
+disk). The bar moves while the attached image's bootloader reads; how much
+it will read is not known here.
+
+Every line the boot prints, and every line the media's NIC drivers and the
+attached image's bootloader print, still goes to the serial console exactly
+as before, and to a second screen behind **F2** (Esc or F2 again goes back).
+Nothing is mixed into the panel. How: stormbootx puts its own
+`EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL` in the system table's `ConOut`, writes
+every line to the consoles that are not a screen (a terminal on a UART, a
+BMC's serial redirection), and draws the panel on the ones that are (their
+handle carries GOP). It hands `ConOut` back, with a cleared screen, before
+the network console, a local disk's bootloader, and any return to the
+firmware or the EFI Shell. The layout fits 80x25 and uses the width of a
+larger text mode. `ui = log` in `stormboot.conf` keeps the old scrolling
+console; a machine with no screen console gets it anyway.
+
 ## What it does, step by step
 
 `src/main.rs`, `run()`:
@@ -727,6 +771,7 @@ others.
 | `dns` | none | DNS server for the PTR of the machine's own address, when its DHCP reply names none or cannot be read (#26); `build-boot-agent.sh --dns` |
 | `ntp` | none (DHCP option 42, then `pool.ntp.org`) | NTP server for the hardware clock when the lease names none: `host[:port]`, or `off` to leave the clock alone (#77); `build-boot-agent.sh --ntp` |
 | `local_when_bootable` | `false` | `true`: `auto` and every doubt boot a local disk whose ESP carries `BOOTX64.EFI` instead of claiming (#3). Off until intents work on forge |
+| `ui` | `panel` | `log`: no boot panel (#144); the screen scrolls the log as before |
 | `local_boot` | `stormbootx` | `firmware`: the fall-through returns to whatever started stormbootx instead of starting the local disk's `BOOTX64.EFI` itself (#145) |
 | `esp` | `auto` | who reads the attached ESP (#37): `auto` (firmware, then stormbootx), `firmware`, or `stormbootx` (the bridge and its read-only filesystem, #42); `build-boot-agent.sh --esp` |
 | `rng` | `firmware` | the first entropy source tried (#56): `firmware`, `cpu` (skip `EFI_RNG`) or `jitter` (skip both); `build-boot-agent.sh --rng` |
@@ -803,6 +848,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso old "media       : shelltest" && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso ovmf "media       : shelltest" && \
   LOCAL_EFI=$R/tcp4probe.efi LIMIT=120 tests/shell-ovmf.sh t/s.iso old "from the local disk" "EFI\BOOT lists" && \
+  tests/screen-ovmf.sh t/s.iso && \
   tests/repro.sh && \
   deploy/build-golden.sh stormbootx-arm64 $PWD/t/arm && \
   EFI_NAME=BOOTAA64.EFI tests/iso-layout.sh t/arm/boot/stormbootx-arm64.iso && \

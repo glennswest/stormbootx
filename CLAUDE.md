@@ -47,6 +47,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso old "media       : shelltest" && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso ovmf "media       : shelltest" && \
   LOCAL_EFI=$R/tcp4probe.efi LIMIT=120 tests/shell-ovmf.sh t/s.iso old "from the local disk" "EFI\BOOT lists" && \
+  tests/screen-ovmf.sh t/s.iso && \
   tests/repro.sh && \
   deploy/build-golden.sh stormbootx-arm64 $PWD/t/arm && \
   EFI_NAME=BOOTAA64.EFI tests/iso-layout.sh t/arm/boot/stormbootx-arm64.iso && \
@@ -100,6 +101,12 @@ CD carries a bootindex after the shell's; without it the CD is never mapped.
 With `LOCAL_EFI=FILE` (#145) the shell sits on a USB stick and a fixed disk
 carries FILE as its `BOOTX64.EFI`: the fall-through must start it (the
 command uses tcp4probe, whose `boot fs : \EFI\BOOT lists …` proves it ran).
+
+`tests/screen-ovmf.sh ISO` (#144) boots the shell test's ISO with no
+network and checks the panel through QEMU monitor screendumps
+(`tests/screen.py`): the header bar drawn, the failed step red, F2 to the
+details and Esc back, and no panel text in the serial log. `SCREEN_PNG=1`
+(it and net-ovmf's `shipped` boot) prints each dump as a base64 PNG line.
 
 `tests/iso-layout.sh ISO …` checks an ISO is isohybrid with a FAT12 ESP,
 the layout Aptio 4 boots (#55). `tests/media-ovmf.sh ISO 'LINE' …` boots a media ISO under OVMF and requires
@@ -213,6 +220,7 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/sha256.rs` | the digest, because `EFI_HASH2` is optional |
 | `src/config.rs` | the target, read from the media rather than compiled in; `local.conf` read before `stormboot.conf` (#83) |
 | `src/shell.rs` | timed, never-forced failure console before the fall-through |
+| `src/ui.rs` | the boot panel (#144): its own `ConOut` in the system table; every line to the serial consoles and F2, the steps drawn on the screen consoles; `end` hands the screen back |
 | `src/connectx.rs` | which Mellanox ids have a FEC to read, which are ConnectX-3s with none (#25), and the scan's closing line (core-only, host-tested) |
 | `src/mlxfec.rs` | ConnectX FEC NV read; write only on a `fec =` recovery stick |
 | `src/tcp4probe.rs` | second binary: does this machine's firmware carry TCP4? |
@@ -521,6 +529,18 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       stormblock, stormipmi and stormuefi source.
 
 ### Open, no external blocker
+
+- [ ] **#144 — a clean boot screen: one panel instead of scrolling text
+      (P1, owner 2026-10-14).** `src/ui.rs`: stormbootx's own `ConOut` in
+      the system table; every line to the serial consoles (unchanged, so
+      every test and stormcentral's consoles read the same) and to F2; the
+      header (version, name, machine, time), eight steps with state and time,
+      a progress bar for the bootloader's reads, the problem and what next,
+      drawn on the GOP consoles. `ui = log` opts out. Steps from `main.rs`,
+      DHCP from `net.rs`, reads from `blockio.rs`, the countdown from
+      `shell::offer`. `tests/screen-ovmf.sh` checks it by screendump. Then
+      screenshots (OVMF in sc-build; pve, the Dell and an X9 are the
+      master's).
 
 - [x] **#148 — the self-update never resolved its host (P0 per the master,
       2026-10-14).** `try_update` read the lease straight after `net::up`,
