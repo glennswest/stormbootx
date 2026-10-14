@@ -530,6 +530,17 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
+- [ ] **#130 — media goldens bit-reproducible (P1, the master 2026-10-14:
+      a test machine must boot the sealed golden's bytes, and a rebuild must
+      equal it).** Plan: `build-boot-agent.sh` takes every date from
+      `SOURCE_DATE_EPOCH` (the commit's time by default) and every random
+      field from the medium's contents: FAT volume ID (`mkfs.fat -i`,
+      `--invariant`), file times (`touch`, `mcopy -m`), GPT disk/partition
+      GUIDs (`label-id`/`uuid` in the sfdisk script), xorriso's dates and
+      UUID (`SOURCE_DATE_EPOCH`). The NIC drivers build with paths remapped
+      and `/Brepro`. `tests/repro.sh` with `REPRO_MEDIA=<goldens>` builds
+      each golden from two clones and compares every file.
+
 - [x] **#144 — a clean boot screen: one panel instead of scrolling text
       (P1, owner 2026-10-14).** `src/ui.rs`: stormbootx's own `ConOut` in
       the system table; every line to the serial consoles (unchanged) and to
