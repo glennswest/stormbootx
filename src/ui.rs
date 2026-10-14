@@ -90,6 +90,8 @@ const BAR: usize = 0x70; // black on light grey
 const SCAN_F2: u16 = 0x0C;
 const SCAN_ESC: u16 = 0x17;
 
+const DEVICE_PATH: uefi_raw::Guid = uefi_raw::guid!("09576e91-6d3f-11d2-8e39-00a0c969723b");
+
 /// Log lines kept for F2.
 const KEEP: usize = 400;
 
@@ -173,7 +175,11 @@ pub fn begin() {
     let mut serials = Vec::new();
     for h in handles.iter() {
         let raw = h.as_ptr();
-        if raw == out_handle || raw == err_handle {
+        // ConSplitter's own virtual consoles have no device path, and its
+        // ConOut carries a GOP of its own: drawing on it reaches every
+        // console, the serial one too. Under the EFI Shell the system table's
+        // ConOut is the shell's, so the splitter's is not `out_handle`.
+        if raw == out_handle || raw == err_handle || crate::net::handle_protocol(raw, &DEVICE_PATH).is_none() {
             continue;
         }
         let Some(p) = crate::net::handle_protocol(raw, &SimpleTextOutputProtocol::GUID) else { continue };
@@ -357,7 +363,11 @@ fn put(u: &Ui, col: usize, row: usize, attr: usize, text: &str, width: usize) {
 }
 
 fn secs(ms: u64) -> String {
-    format!("{}.{} s", ms / 1000, (ms % 1000) / 100)
+    if ms < 1000 {
+        format!("{ms} ms")
+    } else {
+        format!("{}.{} s", ms / 1000, (ms % 1000) / 100)
+    }
 }
 
 fn clock_text(u: &Ui) -> String {
@@ -605,6 +615,9 @@ pub fn problem(reason: &str) {
         let l = &mut u.steps[i];
         l.state = State::Failed;
         l.end = t.max(1);
+        // The reason's first clause in the step's line; all of it below.
+        let first = reason.split([':', '.']).next().unwrap_or(reason);
+        l.detail = first.chars().take(60).collect();
     }
     u.problem = Some((String::from(reason), active.is_some()));
     draw(u);
@@ -637,6 +650,16 @@ pub fn synced() {
     let Some(u) = ui() else { return };
     u.synced = true;
     draw(u);
+}
+
+/// Wait `secs` with the panel's keys read (F2), or a plain stall without it.
+pub fn wait(secs: u64) {
+    for _ in 0..secs * 10 {
+        if let Some(u) = ui() {
+            poll_keys(u);
+        }
+        boot::stall(core::time::Duration::from_millis(100));
+    }
 }
 
 /// Bytes read from the attached image in all, and the rate.

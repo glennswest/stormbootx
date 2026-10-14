@@ -761,7 +761,11 @@ fn run() -> Result<(), String> {
     // The host NQN the namespace is attached as, for the initramfs to attach
     // as too (#76). Only once an attach has worked under it.
     handoff::set_host_nqn(&hostnqn);
-    ui::detail(ui::Step::Image, &format!("{gib} GiB at {}-byte blocks, nsid {}", g.block_size, attach.nsid));
+    let size = match gib {
+        0 => format!("{} MiB", g.blocks.saturating_mul(g.block_size as u64) >> 20),
+        n => format!("{n} GiB"),
+    };
+    ui::detail(ui::Step::Image, &format!("{size} at {}-byte blocks, nsid {}", g.block_size, attach.nsid));
 
     // 5. Publish it as an ordinary disk, then boot it.
     let handle = blockio::publish(ns)?;
@@ -991,7 +995,7 @@ fn fall_through(err: &str, local: Local) -> Status {
              and nothing booted from the network."
         );
         ui::next("nothing to fall through to: no local disk; returning to the firmware in 30 s");
-        uefi::boot::stall(core::time::Duration::from_secs(30));
+        ui::wait(30);
     }
     uefi::println!("============================================================");
     // Whatever runs next (the boot manager, the EFI Shell) gets its screen.
