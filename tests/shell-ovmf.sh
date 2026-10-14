@@ -20,8 +20,8 @@
 # console must carry; `startup.nsh: starting stormbootx from` is always
 # required too.
 #
-# LOCAL_EFI=FILE (#145) is server1's layout: the shell's disk is a USB stick
-# (removable), and a fixed virtio disk carries FILE as its ESP's
+# LOCAL_EFI=FILE (#145) is server1's layout: the shell's disk is removable
+# (a stick), and a fixed virtio disk carries FILE as its ESP's
 # \EFI\BOOT\BOOTX64.EFI, the installed disk. stormbootx falls through (no
 # network) and must start that file itself rather than return to the shell.
 #
@@ -102,8 +102,10 @@ cd-last)  CD_ADDR=0x6; SH_ADDR=0x4 ;;
 esac
 
 if [[ -n "${LOCAL_EFI:-}" ]]; then
-    shdev=(-device qemu-xhci,id=xhci,addr="$SH_ADDR"
-           -device usb-storage,bus=xhci.0,drive=sh,removable=on,bootindex=0)
+    # Removable as a stick is, without USB: a USB stick was not always
+    # enumerated before BDS looked for it (Boot0002 Not Found).
+    shdev=(-device virtio-scsi-pci,id=shscsi,addr="$SH_ADDR"
+           -device scsi-hd,drive=sh,bus=shscsi.0,removable=on,bootindex=0)
 else
     shdev=(-device virtio-blk-pci,drive=sh,addr="$SH_ADDR",bootindex=0)
 fi
