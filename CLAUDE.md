@@ -68,8 +68,10 @@ any new build of a shipped `.efi` must too. `REPRO_MEDIA` (#130) builds
 those media goldens twice, from two clones, and requires every file the
 same: `build-boot-agent.sh` takes its dates from `SOURCE_DATE_EPOCH` (the
 commit's time) and its FAT volume ID and GPT GUIDs from the medium's
-contents; the stormnic drivers build remapped with `/Brepro`. Nothing on a
-medium may come from the clock or a random number.
+contents; xorriso writes Rock Ridge with owner 0 (`-r`), `TZ=UTC`; the
+stormnic drivers build remapped with `/Brepro`. The second build runs with
+umask 077, another zone and (`unshare -r`) another uid. Nothing on a medium
+may come from the clock, a random number or the build user.
 
 `tests/update-ovmf.sh` (#83) must stay last: it rebuilds `stormbootx.efi`
 with an Ed25519 test key compiled in (`STORMBOOTX_UPDATE_TEST_KEY`) and boots

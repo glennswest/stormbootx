@@ -884,12 +884,15 @@ the path. `REPRO_RAW=1 tests/repro.sh` shows it.
 With `REPRO_MEDIA` (#130) it then builds each named media golden twice,
 with `deploy/build-golden.sh` in two clones at different paths, and requires
 every file of the two trees (the `.iso`/`.img`, `media/`, `BUILD`,
-`SHA256SUMS`) to be the same bytes. `build-boot-agent.sh` dates everything
+`SHA256SUMS`) to be the same bytes; the second build runs with umask 077,
+`TZ=Asia/Tokyo` and, through `unshare -r`, another uid, as another machine's
+would. `build-boot-agent.sh` dates everything
 `SOURCE_DATE_EPOCH` (the commit's time unless set) and derives every
 identifier a tool would make up from the medium's contents: the FAT volume
 ID (`mkfs.fat -i`, `--invariant`), the GPT disk and partition GUIDs
 (`label-id`/`uuid`), the file times (staged, `mcopy -m`); xorriso takes its
-dates, UUID and hybrid GPT from `SOURCE_DATE_EPOCH`. `build-nic-drivers.sh`
+dates, UUID and hybrid GPT from `SOURCE_DATE_EPOCH`, and writes Rock Ridge
+with owner 0 (`-r`); `TZ=UTC` for both. `build-nic-drivers.sh`
 builds the stormnic drivers with the paths remapped and `/Brepro`
 `/DEBUG:NONE`. So a rebuild of a commit is its golden's bytes.
 
