@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-10-14
+- **fix:** the self-update looks up a named `update =` host at the lease's DNS server (#148). `selfupdate::try_update` read the lease straight after `net::up`, before any NIC held one, so every medium whose `update =` names a host and whose `stormboot.conf` has no `dns =` printed `update : no DNS server to look up … (none in the lease, no dns =)` and never fetched a manifest: no stick has self-updated. New `net::wait_lease` waits up to 30 s for DHCP (with #88's progress line) before a name is looked up. `tests/update-boots.sh`'s new `named` boot requires the lease's DNS server to be asked.
+
 ## [v0.26.0] — 2026-10-14
 
 ### Fixed
