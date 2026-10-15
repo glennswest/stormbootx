@@ -61,17 +61,18 @@ while :; do
     until grep -q "RESULT: nothing to fall through to" "$W/serial.log" 2>/dev/null; do
         kill -0 "$qemu" 2>/dev/null || tail_die "qemu exited before the fall-through"
         (( t < LIMIT )) || tail_die "no fall-through after ${LIMIT}s"
-        # #124: OVMF still in PEI after a minute never gets out.
-        if (( t == ${PEI_LIMIT:-60} )) && ! grep -q "DXE IPL Entry" "$W/debug.log"; then stuck=1; break; fi
+        # #124: stormbootx starts within seconds; one that has not after a
+        # minute never did.
+        if (( t == ${START_LIMIT:-60} )) && ! grep -q "NVMe/TCP boot extension" "$W/serial.log"; then stuck=1; break; fi
         sleep 1; t=$((t + 1))
     done
     [[ -z $stuck ]] && break
-    say "OVMF has not reached DXE after ${t}s (attempt $attempt): stuck in PEI (#124)"
-    say "  debug port ends: $(tail -c 400 "$W/debug.log" | tr -d '\r' | tr '\n' '|' | tail -c 240)"
+    say "stormbootx has not started after ${t}s (attempt $attempt; #124); the firmware's debug port, last 40 lines:"
+    tr -d '\r' < "$W/debug.log" | grep -v '^\s*$' | tail -40 | sed 's/^/screen-ovmf:   : /'
     say "  qemu: $(ps -o stat=,pcpu=,etimes=,wchan:32= -p "$qemu" | tr -s ' '); host load $(cut -d' ' -f1-3 /proc/loadavg)"
     "${S[@]}" hmp "$W/mon" info registers 2>&1 | grep -E "^(RIP|CR0)" | sed 's/^/screen-ovmf:   /' || true
     kill "$qemu" 2>/dev/null; wait "$qemu" 2>/dev/null || true
-    (( attempt == 1 )) || die "stuck in PEI twice"
+    (( attempt == 1 )) || die "stormbootx did not start, twice"
     attempt=2
     say "booting it once more (#124)"
 done

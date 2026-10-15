@@ -402,17 +402,18 @@ BOOT_SETTLE=2
 # STOP_AT ends a boot at a console line of its own.
 BOOT_NET=
 STOP_AT=
-# #124: seconds a boot may spend before OVMF's DXE starts.
-PEI_LIMIT=${PEI_LIMIT:-60}
+# #124: seconds a boot may take to start stormbootx (it takes a few).
+START_LIMIT=${START_LIMIT:-60}
 
-# #124: what a boot stuck in OVMF's PEI is doing, from the guest (the
-# monitor: run state, registers) and the host (the QEMU process's state, its
-# CPU use and kernel wait, the load, the memory), and where its debug port
-# stopped.
-pei_stall() {
+# #124: what a boot that never started stormbootx is doing, from the guest
+# (the monitor: run state, registers), the firmware (its debug port's last
+# lines: PEI, DXE, BDS) and the host (the QEMU process's state, its threads'
+# kernel waits, the load, the memory).
+start_stall() {
     local name=$1 qemu=$2 attempt=$3
-    say "[$name] OVMF has not reached DXE after ${PEI_LIMIT}s (attempt $attempt): stuck in PEI (#124)"
-    say "[$name]   debug port ends: $(tail -c 400 "$W/$name.debug" | tr -d '\r' | tr '\n' '|' | tail -c 240)"
+    say "[$name] stormbootx has not started after ${START_LIMIT}s (attempt $attempt; #124); the firmware $(grep -q "DXE IPL Entry" "$W/$name.debug" && echo "reached DXE" || echo "is still in PEI")"
+    say "[$name]   its debug port's last lines:"
+    tr -d '\r' < "$W/$name.debug" | grep -v '^\s*$' | tail -40 | sed "s/^/net-ovmf: [$name]   : /"
     say "[$name]   qemu: $(ps -o stat=,pcpu=,etimes=,wchan:32= -p "$qemu" 2>/dev/null | tr -s ' ')"
     local tid
     for tid in $(ls "/proc/$qemu/task" 2>/dev/null | head -8); do
@@ -507,17 +508,17 @@ boot() {
     while kill -0 "$qemu" 2>/dev/null && (( t < LIMIT )); do
         grep -qE "${WAIT_FOR:-is there a TCP/IP stack in this firmware|no network boot: ${STOP_AT:+|$STOP_AT}}" "$log" 2>/dev/null \
             && { sleep "$BOOT_SETTLE"; break; }
-        # #124: OVMF reaches DXE in seconds. One still in PEI after a minute
-        # never gets out (it ran the whole 240 s each time), so say what the
-        # guest and the host are doing, and start it once more.
-        if (( t == PEI_LIMIT )) && ! grep -q "DXE IPL Entry" "$W/$name.debug" 2>/dev/null; then
+        # #124: stormbootx starts within seconds. A boot that has not after a
+        # minute never did (it ran the whole 240 s each time), so say what the
+        # firmware, the guest and the host are doing, and start it once more.
+        if (( t == START_LIMIT )) && ! grep -q "NVMe/TCP boot extension" "$log" 2>/dev/null; then
             stuck=1
             break
         fi
         sleep 1; t=$((t + 1))
     done
     if [[ -n $stuck ]]; then
-        pei_stall "$name" "$qemu" "$attempt"
+        start_stall "$name" "$qemu" "$attempt"
         kill "$qemu" 2>/dev/null; wait "$qemu" 2>/dev/null || true
         if (( attempt == 1 )); then
             attempt=2
@@ -525,7 +526,7 @@ boot() {
             : > "$W/stub.log"; : > "$W/ntp.log"
             continue
         fi
-        say "[$name] stuck in PEI twice"
+        say "[$name] stormbootx did not start, twice"
     fi
     break
     done
@@ -568,6 +569,8 @@ boot() {
         # console is the serial log's end.
         say "[$name] serial console, last 60 lines:"
         tr -d '\r' < "$log" | sed 's/\x1b\[[0-9;?]*[A-Za-z]//g' | grep -v '^\s*$' | tail -60 | sed 's/^/  | /'
+        say "[$name] the firmware's debug port, last 40 lines (#124):"
+        tr -d '\r' < "$W/$name.debug" | grep -v '^\s*$' | tail -40 | sed 's/^/  : /'
         die "[$name] expected lines missing"
     fi
 }

@@ -4,7 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-15
-- **test:** a boot stuck in OVMF's PEI no longer fails the build by itself (#124). net-ovmf's `nolease` boot stalled in PEI on the first attempt of most full builds since 2026-10-13, running the whole 240 s with the serial console blank; 36 boots of the same QEMU and OVMF alone (dead hub, slirp, dgram) never did. net-ovmf and screen-ovmf now call a boot stuck when OVMF has not reached DXE after `PEI_LIMIT` (60) seconds, print what the guest (monitor: run state, registers) and the host (QEMU's threads and wait channels, load, available memory) are doing and where the debug port stopped, and boot it once more; a second stall fails. `tests/screen.py hmp SOCK CMD` prints a monitor command's output.
+- **test:** a boot that never starts stormbootx no longer fails the build by itself (#124). net-ovmf's `nolease` boot ran its whole 240 s with nothing on serial on the first attempt of most full builds since 2026-10-13; 36 bare OVMF boots of the same QEMU (dead hub, slirp, dgram) never did. It was read as a hang in PEI, but the console printed only its first 90 lines, which the debug port's PEI lines fill. net-ovmf and screen-ovmf now call a boot stalled when stormbootx's banner is not on serial after `START_LIMIT` (60) seconds, print the debug port's last 40 lines and what the guest (monitor: run state, registers) and the host (QEMU's threads and wait channels, load, available memory) are doing, and boot it once more; a second stall fails. A failing boot also prints the debug port's tail. `tests/screen.py hmp SOCK CMD` prints a monitor command's output.
 
 ## [v0.29.0] — 2026-10-14
 
