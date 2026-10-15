@@ -545,6 +545,16 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
       unwired MAC identity floor stated (#7). Cross-refs checked against
       stormblock, stormipmi and stormuefi source.
 
+### Release freeze (the master, 2026-10-14)
+
+**No new versions or goldens until Saturday 2026-10-17.** Everything pauses
+Thursday and Friday. On Saturday, once the hardware is cleared, the master
+promotes v0.29.0, with server1 as the first canary. server1's and server2's
+sticks already run the v0.27 binary (swapped from the running node by a pod),
+so they can take that promotion directly. Code can still be committed and
+pushed, but there is no `chore(release)`, tag or `component build` before
+then.
+
 ### Open, no external blocker
 
 - [x] **#151 — `stormbootx-stick`: a running node updates its boot stick
