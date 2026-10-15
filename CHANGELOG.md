@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-10-14
+- **feat:** `stormbootx-stick` (#151, stormcos#589): a static musl Linux binary with which a running node updates its own boot stick, no hands. It finds the stick (removable or USB, both markers on its ESP; never a disk that is mounted, held, or carries a stormblock slab), reads its `stormboot.conf`, `local.conf` and `state`, verifies stormcentral's signed manifest before parsing it, decides with the medium's own rules, and applies the update exactly as the self-update does (`*.new` read back, the trial in `state`, the bootloader swapped last, put back on failure, `name =`/`tag =` kept in `local.conf`). One line per step, `--dry-run`, and `/run/stormbootx-stick/status.json`. It shares `src/manifest.rs` and `src/sha256.rs` (and the release keys) by path; `config::field` moved there as `manifest::conf_field` so both read the media alike. New golden `stormbootx-stick` (`deploy/build-golden.sh stormbootx-stick`), and `tests/stick.sh` in the sc-build command.
+
 ## [v0.28.2] — 2026-10-14
 
 ### Fixed

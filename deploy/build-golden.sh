@@ -7,6 +7,7 @@
 #   deploy/build-golden.sh stormbootx-rustnic-disk OUT
 #   deploy/build-golden.sh stormbootx-arm64   OUT
 #   deploy/build-golden.sh nic-drivers        OUT
+#   deploy/build-golden.sh stormbootx-stick   OUT
 #
 # Everything is a golden (owner, 2026-09-28; #21, stormcentral#126): the boot
 # media is a golden, and so are the NIC drivers it carries. This script is the
@@ -15,6 +16,10 @@
 # work (stormcentral#128): no forge, no device, no stormblock tool. It leaves
 # nothing outside OUT and its own temp dirs, because nothing is kept on a
 # build box.
+#
+# stormbootx-stick golden (#151): bin/stormbootx-stick, the static musl
+# Linux binary a running node updates its boot stick with (stormcos#589),
+# with SHA256SUMS and BUILD. The release keys are the medium's.
 #
 # stormbootx golden:
 #   bin/stormbootx.efi      the agent (\EFI\BOOT\BOOTX64.EFI on the media)
@@ -283,7 +288,21 @@ stormbootx-arm64)
     seal "arch     = arm64 (aarch64-unknown-uefi, \\EFI\\BOOT\\BOOTAA64.EFI)
 drivers  = none (the firmware's own)"
     ;;
+stormbootx-stick)
+    [[ -z "$DRIVERS" ]] || die "$GOLDEN takes no --drivers"
+    t=x86_64-unknown-linux-musl
+    if [[ ! -d "$(rustc --print sysroot)/lib/rustlib/$t" ]]; then
+        command -v rustup >/dev/null || die "no $t std and no rustup to add it"
+        rustup target add "$t" >/dev/null
+    fi
+    say "building stormbootx-stick for $t"
+    ( cd "$ROOT" && scripts/cargo-repro.sh build --locked --release -p stormbootx-stick --target "$t" )
+    mkdir -p "$OUT/bin"
+    cp "${CARGO_TARGET_DIR:-$ROOT/target}/$t/release/stormbootx-stick" "$OUT/bin/"
+    seal "target   = $t (static)
+keys     = the medium's RELEASE_KEYS (src/manifest.rs)"
+    ;;
 *)
-    die "no golden $GOLDEN (stormbootx, stormbootx-rustnic, stormbootx-disk, stormbootx-rustnic-disk, stormbootx-arm64 or nic-drivers)"
+    die "no golden $GOLDEN (stormbootx, stormbootx-rustnic, stormbootx-disk, stormbootx-rustnic-disk, stormbootx-arm64, nic-drivers or stormbootx-stick)"
     ;;
 esac

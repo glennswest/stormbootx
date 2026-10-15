@@ -791,6 +791,53 @@ others.
 `\stormboot\local.conf`, when present, takes the same keys and is read first,
 so its values win. It belongs to the medium: a self-update never replaces it.
 
+## `stormbootx-stick`: a node updates its own stick
+
+A medium updates itself at boot (*Self-update*), but a stick whose updater is
+broken never can: no stick at v0.26 or older ever updated (#148), and those
+sticks still boot the node into stormcos. `stormbootx-stick` (#151,
+stormcos#589) is a static musl Linux binary the running node runs (a boot.d
+task, after the network and daily) to do what the stick's next boot would
+have done:
+
+1. **find** the stick: a removable or USB disk whose FAT ESP carries
+   `EFI/BOOT/BOOTX64.EFI` and `stormboot/` (mounted read-only to look).
+   Never a disk that is mounted (the root's, a pallet's), that something
+   holds (dm, md), or that carries a stormblock slab (`STRMSLAB` at its start
+   or at a partition's). Two sticks: neither is chosen;
+2. **read** `stormboot.conf` (`update =`, `version =`), `local.conf` and
+   `state`; `update = off` is left alone;
+3. **ask** `<update>/current` and `current.sig`, and verify the Ed25519
+   signature against the compiled-in release keys before the manifest is
+   parsed;
+4. **decide** with the medium's own rules: never backwards, never a serial
+   that failed its trial on this stick (or below `StormBootMinSerial`, read
+   from efivarfs), never during a trial, canaries only for their MACs;
+5. **apply** exactly as the self-update does: files checked against the
+   signed size and SHA-256, written as `*.new` and read back, the trial in
+   `state`, then the `*.prev` swap with the bootloader last, put back if it
+   fails; `name =`/`tag =` carried into `local.conf`. The stick's next boot
+   runs the new set on trial and puts the old one back if it never attaches;
+6. **report** one line per step, exit 0 unless something failed, and
+   `/run/stormbootx-stick/status.json` (`outcome`: `updated`, `current`,
+   `declined`, `off`, `no-stick`, `would-update`, `refused`, `error`).
+
+```
+stormbootx-stick [--dry-run] [--status FILE] [--update URL] [--mac MAC]
+                 [--esp DIR] [--sys DIR] [--proc DIR] [--dev DIR] [--efivars DIR] [--mnt DIR]
+```
+
+`--update` is used only when the stick names no `update =`. `--esp` updates
+an ESP already mounted at DIR. The roots are for tests. The manifest, the
+rules and the keys are `src/manifest.rs` and `src/sha256.rs`, included by
+path: one implementation, the medium's. Built by `deploy/build-golden.sh
+stormbootx-stick` (golden `stormbootx-stick`: `bin/stormbootx-stick`), and
+tested by `tests/stick.sh` (a test key, signed releases from a local HTTP
+stub, a directory as the ESP, and a machine of image files for the refusals).
+A stick too small to take the new set beside the old is refused for room;
+writing the signed raw disk image instead needs stormcentral to serve one
+(#154).
+
 ## `tcp4probe`
 
 A second binary, `src/tcp4probe.rs`. It reports which of the firmware's
@@ -854,6 +901,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso ovmf "media       : shelltest" && \
   LOCAL_EFI=$R/tcp4probe.efi LIMIT=120 tests/shell-ovmf.sh t/s.iso old "from the local disk" "EFI\BOOT lists" && \
   tests/screen-ovmf.sh t/s.iso && \
+  tests/stick.sh && deploy/build-golden.sh stormbootx-stick $PWD/t/stick && \
   REPRO_MEDIA="stormbootx stormbootx-rustnic stormbootx-disk stormbootx-rustnic-disk" tests/repro.sh && \
   deploy/build-golden.sh stormbootx-arm64 $PWD/t/arm && \
   EFI_NAME=BOOTAA64.EFI tests/iso-layout.sh t/arm/boot/stormbootx-arm64.iso && \

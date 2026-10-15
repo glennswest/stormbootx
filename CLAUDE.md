@@ -48,6 +48,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso ovmf "media       : shelltest" && \
   LOCAL_EFI=$R/tcp4probe.efi LIMIT=120 tests/shell-ovmf.sh t/s.iso old "from the local disk" "EFI\BOOT lists" && \
   tests/screen-ovmf.sh t/s.iso && \
+  tests/stick.sh && deploy/build-golden.sh stormbootx-stick $PWD/t/stick && \
   REPRO_MEDIA="stormbootx stormbootx-rustnic stormbootx-disk stormbootx-rustnic-disk" tests/repro.sh && \
   deploy/build-golden.sh stormbootx-arm64 $PWD/t/arm && \
   EFI_NAME=BOOTAA64.EFI tests/iso-layout.sh t/arm/boot/stormbootx-arm64.iso && \
@@ -108,6 +109,13 @@ CD carries a bootindex after the shell's; without it the CD is never mapped.
 With `LOCAL_EFI=FILE` (#145) the shell sits on a USB stick and a fixed disk
 carries FILE as its `BOOTX64.EFI`: the fall-through must start it (the
 command uses tcp4probe, whose `boot fs : \EFI\BOOT lists …` proves it ran).
+
+`tests/stick.sh` (#151) builds `stormbootx-stick` for
+`x86_64-unknown-linux-musl` with a test key and runs it against signed
+releases from a local HTTP stub: a directory as the stick's ESP (update,
+trial, failed serial, `update = off`, older, tampered and other-key
+manifests, canary, dry run) and a machine of image files for the refusals
+(fixed disk, slab, mounted, held). The mount itself needs root: not here.
 
 `tests/screen-ovmf.sh ISO` (#144) boots the shell test's ISO with no
 network and checks the panel through QEMU monitor screendumps
@@ -190,6 +198,7 @@ stormbootx --url http://stormcentral.g8.lo`.
 | File | Field |
 |---|---|
 | `Cargo.toml` | `version` |
+| `crates/stormbootx-stick/Cargo.toml` | `version` (the same) |
 | `CHANGELOG.md` | latest release heading |
 | git tag | `vX.Y.Z` |
 
@@ -227,6 +236,7 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/sha256.rs` | the digest, because `EFI_HASH2` is optional |
 | `src/config.rs` | the target, read from the media rather than compiled in; `local.conf` read before `stormboot.conf` (#83) |
 | `src/shell.rs` | timed, never-forced failure console before the fall-through |
+| `crates/stormbootx-stick` | the node's stick updater (#151): static musl Linux; `src/manifest.rs` and `src/sha256.rs` by path; find (sysfs, refusals), verify, decide, apply as `selfupdate.rs`; `tests/stick.sh` |
 | `src/ui.rs` | the boot panel (#144): its own `ConOut` in the system table; every line to the serial consoles and F2, the steps drawn on the screen consoles; `end` hands the screen back |
 | `src/connectx.rs` | which Mellanox ids have a FEC to read, which are ConnectX-3s with none (#25), and the scan's closing line (core-only, host-tested) |
 | `src/mlxfec.rs` | ConnectX FEC NV read; write only on a `fec =` recovery stick |

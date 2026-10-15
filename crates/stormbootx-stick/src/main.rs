@@ -735,7 +735,7 @@ fn update(o: &Opts, root: &Path, r: &mut Report) -> Result<(), String> {
     let free = free_space(root).unwrap_or(u64::MAX);
     if need > free.saturating_add(reclaim) {
         return Err(format!(
-            "serial {} needs {} KB and the stick has {} KB free; nothing written",
+            "serial {} needs {} KB and the stick has {} KB free; nothing written (a raw image is #154)",
             m.serial,
             kb(need),
             kb(free + reclaim)
