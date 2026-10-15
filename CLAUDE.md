@@ -537,6 +537,21 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
+- [ ] **#151 — `stormbootx-stick`: a running node updates its boot stick
+      (P1, owner via stormcos#589, 2026-10-14).** A static musl Linux binary
+      in `crates/stormbootx-stick`, sharing `src/manifest.rs` and
+      `src/sha256.rs` by `#[path]` (parse, signature, verdict, version,
+      state, `RELEASE_KEYS`). Find the stick in sysfs (removable or USB,
+      never mounted, no holders, no `STRMSLAB` at the disk's or a
+      partition's start, both markers on its ESP); verify the signed
+      manifest; apply exactly as `selfupdate.rs` (`*.new`, the trial in
+      `state`, the bootloader last, revert on failure, `name`/`tag` into
+      `local.conf`); report a line per step and a JSON status. Roots
+      (`--sys`, `--proc`, `--dev`) and `--esp DIR` make it testable without
+      root: `tests/stick.sh` against update-boots' signing and stubs. The
+      raw-image fallback needs stormcentral to serve a signed disk image:
+      filed there, not built here.
+
 - [x] **#130 — media goldens bit-reproducible (P1, the master 2026-10-14:
       a test machine must boot the sealed golden's bytes, and a rebuild must
       equal it).** `build-boot-agent.sh`: dates from `SOURCE_DATE_EPOCH`
