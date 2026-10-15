@@ -3,8 +3,10 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
-### 2026-10-14
-- **fix:** the ISO goldens are the same bytes on every machine too (#130). v0.28.1's `.img` golden equalled an sc-build rebuild, but its two ISOs did not: Rock Ridge recorded the build user's uid (stormcentral's builder vs sc-build's `stormbuild`). xorriso now writes `-r` (owner and group 0, readable modes), the staged files' modes are fixed, and `build-boot-agent.sh` exports `TZ=UTC` (FAT and ISO 9660 dates are local time). `tests/repro.sh`'s second media build runs as another machine's would: umask 077, `TZ=Asia/Tokyo` and, through `unshare -r`, another uid; without `-r` it reports the ISOs' uid bytes (`353 3` against `0 0`).
+## [v0.28.2] — 2026-10-14
+
+### Fixed
+- The ISO goldens are the same bytes on every machine too (#130). v0.28.1's `.img` golden equalled an sc-build rebuild, but its two ISOs did not: Rock Ridge recorded the build user's uid (stormcentral's builder vs sc-build's `stormbuild`). xorriso now writes `-r` (owner and group 0, readable modes), the staged files' modes are fixed, and `build-boot-agent.sh` exports `TZ=UTC` (FAT and ISO 9660 dates are local time). `tests/repro.sh`'s second media build runs as another machine's would: umask 077, `TZ=Asia/Tokyo` and, through `unshare -r`, another uid; without `-r` it reports the ISOs' uid bytes (`353 3` against `0 0`).
 
 ## [v0.28.1] — 2026-10-14
 
