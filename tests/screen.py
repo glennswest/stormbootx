@@ -28,7 +28,14 @@ HEADER_PX = 19  # a text row: EDK2's GraphicsConsole cell is 8x19
 def monitor(sock, cmd):
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.settimeout(10)
-    s.connect(sock)
+    for _ in range(50):  # QEMU makes the socket a moment after it starts
+        try:
+            s.connect(sock)
+            break
+        except (FileNotFoundError, ConnectionRefusedError):
+            time.sleep(0.1)
+    else:
+        s.connect(sock)
     time.sleep(0.3)
     s.recv(65536)  # the banner
     s.sendall((cmd + "\n").encode())
@@ -89,7 +96,8 @@ def main():
     if cmd == "hmp":
         text = monitor(sys.argv[2], " ".join(sys.argv[3:]))
         for line in text.replace("\r", "").splitlines():
-            if line.strip() and not line.startswith("(qemu)"):
+            # The monitor echoes what was typed, with terminal escapes.
+            if line.strip() and not line.startswith("(qemu)") and "\x1b" not in line:
                 print(line)
         return 0
     if cmd == "panel":
