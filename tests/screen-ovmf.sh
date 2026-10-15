@@ -68,7 +68,7 @@ while :; do
     done
     [[ -z $stuck ]] && break
     say "stormbootx has not started after ${t}s (attempt $attempt; #124); the firmware's debug port, last 40 lines:"
-    tr -d '\r' < "$W/debug.log" | grep -v '^\s*$' | tail -40 | sed 's/^/screen-ovmf:   : /'
+    { tr -d '\r' < "$W/debug.log" | grep -v '^\s*$' | tail -40 | sed 's/^/screen-ovmf:   : /'; } || true
     say "  qemu: $(ps -o stat=,pcpu=,etimes=,wchan:32= -p "$qemu" | tr -s ' '); host load $(cut -d' ' -f1-3 /proc/loadavg)"
     "${S[@]}" hmp "$W/mon" info registers 2>&1 | grep -E "^(RIP|CR0)" | sed 's/^/screen-ovmf:   /' || true
     kill "$qemu" 2>/dev/null; wait "$qemu" 2>/dev/null || true

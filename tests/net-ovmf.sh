@@ -413,7 +413,7 @@ start_stall() {
     local name=$1 qemu=$2 attempt=$3
     say "[$name] stormbootx has not started after ${START_LIMIT}s (attempt $attempt; #124); the firmware $(grep -q "DXE IPL Entry" "$W/$name.debug" && echo "reached DXE" || echo "is still in PEI")"
     say "[$name]   its debug port's last lines:"
-    tr -d '\r' < "$W/$name.debug" | grep -v '^\s*$' | tail -40 | sed "s/^/net-ovmf: [$name]   : /"
+    { tr -d '\r' < "$W/$name.debug" | grep -v '^\s*$' | tail -40 | sed "s/^/net-ovmf: [$name]   : /"; } || true
     say "[$name]   qemu: $(ps -o stat=,pcpu=,etimes=,wchan:32= -p "$qemu" 2>/dev/null | tr -s ' ')"
     local tid
     for tid in $(ls "/proc/$qemu/task" 2>/dev/null | head -8); do
@@ -570,7 +570,7 @@ boot() {
         say "[$name] serial console, last 60 lines:"
         tr -d '\r' < "$log" | sed 's/\x1b\[[0-9;?]*[A-Za-z]//g' | grep -v '^\s*$' | tail -60 | sed 's/^/  | /'
         say "[$name] the firmware's debug port, last 40 lines (#124):"
-        tr -d '\r' < "$W/$name.debug" | grep -v '^\s*$' | tail -40 | sed 's/^/  : /'
+        { tr -d '\r' < "$W/$name.debug" | grep -v '^\s*$' | tail -40 | sed 's/^/  : /'; } || true
         die "[$name] expected lines missing"
     fi
 }
