@@ -537,16 +537,21 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
-- [ ] **#130 — media goldens bit-reproducible (P1, the master 2026-10-14:
+- [x] **#130 — media goldens bit-reproducible (P1, the master 2026-10-14:
       a test machine must boot the sealed golden's bytes, and a rebuild must
-      equal it).** Plan: `build-boot-agent.sh` takes every date from
-      `SOURCE_DATE_EPOCH` (the commit's time by default) and every random
-      field from the medium's contents: FAT volume ID (`mkfs.fat -i`,
-      `--invariant`), file times (`touch`, `mcopy -m`), GPT disk/partition
-      GUIDs (`label-id`/`uuid` in the sfdisk script), xorriso's dates and
-      UUID (`SOURCE_DATE_EPOCH`). The NIC drivers build with paths remapped
-      and `/Brepro`. `tests/repro.sh` with `REPRO_MEDIA=<goldens>` builds
-      each golden from two clones and compares every file.
+      equal it).** `build-boot-agent.sh`: dates from `SOURCE_DATE_EPOCH`
+      (the commit's time), `TZ=UTC`, staged files at fixed times and modes
+      (`mcopy -m`), FAT volume ID and GPT GUIDs from the medium's contents,
+      xorriso `-r` (Rock Ridge owner 0: v0.28.1's ISOs carried the build
+      user's uid). Drivers remapped with `/Brepro`. `tests/repro.sh`
+      `REPRO_MEDIA` (in the sc-build command) builds the four x86 media
+      goldens twice, the second with umask 077, another zone and another
+      uid. 70e01ac + c65f19c, released **v0.28.2** (c5126a6). Goldens
+      `golden-stormbootx-393f42916cee624f`,
+      `golden-stormbootx-rustnic-ba58dbdb8aa6a192`,
+      `golden-stormbootx-rustnic-disk-91dae88b73017989`; an independent
+      sc-build of the tag produced all three byte for byte (sha256 =
+      device_sha256).
 
 - [x] **#144 — a clean boot screen: one panel instead of scrolling text
       (P1, owner 2026-10-14).** `src/ui.rs`: stormbootx's own `ConOut` in
