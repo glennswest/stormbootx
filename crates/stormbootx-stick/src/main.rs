@@ -206,7 +206,11 @@ fn main() {
     let ok = match run(&o, &mut r) {
         Ok(()) => true,
         Err(e) => {
-            r.outcome = "error";
+            // A refusal (a bad signature, a file that does not match) keeps
+            // its own outcome; anything else is an error.
+            if r.outcome != "refused" {
+                r.outcome = "error";
+            }
             r.say("failed", e);
             false
         }
