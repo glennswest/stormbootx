@@ -105,11 +105,13 @@ A boot that has not started stormbootx (its banner on serial) after
 `START_LIMIT` (60) seconds never does (#124): net-ovmf and screen-ovmf print
 the firmware's debug port's last 40 lines, what the guest (monitor: status,
 RIP) and the host (QEMU's threads and wait channels, load, memory) are
-doing, then boot it once more; only a second stall fails. Nearly every
-stall was net-ovmf's `nolease` boot, right after `bridge`'s 96 MiB read, and
-36 bare OVMF boots never stalled. It is not PEI: the console showed only
-the first 90 lines, which the debug port's PEI lines fill. A failing boot
-now prints the debug port's tail too.
+doing, then boot it once more; only a second stall fails. The stall it
+caught (2026-10-15, screen-ovmf) was OVMF in DXE looping ATAPI PACKET
+commands at q35's emulated ATA CD (`-cdrom`), QEMU at 96% CPU; so the
+tests attach the ISO as a `scsi-cd` on virtio-scsi with a bootindex, as
+shell-ovmf always has (it never stalled). It was not PEI: the console
+showed only its first 90 lines, which the debug port's PEI lines fill. A
+failing boot prints the debug port's tail too. Never `-cdrom` in a test.
 
 `tests/shell-ovmf.sh ISO old|ovmf 'LINE' …` (#60) boots an ISO from an
 EFI Shell with no boot option for it, and requires its `startup.nsh` to

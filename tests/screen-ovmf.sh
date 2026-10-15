@@ -52,7 +52,8 @@ while :; do
     qemu-system-x86_64 -machine q35,accel="$accel" -m 512 \
         -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
         -drive if=pflash,format=raw,file="$W/vars.fd" \
-        -cdrom "$ISO" -boot d -net none \
+        -device virtio-scsi-pci,id=cdscsi -device scsi-cd,drive=cd0,bus=cdscsi.0,bootindex=0 \
+        -drive if=none,id=cd0,media=cdrom,format=raw,readonly=on,file="$ISO" -net none \
         -monitor unix:"$W/mon",server,nowait \
         -debugcon file:"$W/debug.log" -global isa-debugcon.iobase=0x402 \
         -display none -serial file:"$W/serial.log" -no-reboot &
@@ -71,7 +72,7 @@ while :; do
     { tr -d '\r' < "$W/debug.log" | grep -v '^\s*$' | tail -40 | sed 's/^/screen-ovmf:   : /'; } || true
     say "  qemu: $(ps -o stat=,pcpu=,etimes=,wchan:32= -p "$qemu" | tr -s ' '); host load $(cut -d' ' -f1-3 /proc/loadavg)"
     "${S[@]}" hmp "$W/mon" info registers 2>&1 | grep -E "^(RIP|CR0)" | sed 's/^/screen-ovmf:   /' || true
-    kill "$qemu" 2>/dev/null; wait "$qemu" 2>/dev/null || true
+    kill "$qemu" 2>/dev/null || true; wait "$qemu" 2>/dev/null || true
     (( attempt == 1 )) || die "stormbootx did not start, twice"
     attempt=2
     say "booting it once more (#124)"
@@ -85,7 +86,7 @@ sleep 2
 "${S[@]}" key "$W/mon" esc
 sleep 2
 "${S[@]}" dump "$W/mon" "$W/back.ppm"
-kill "$qemu" 2>/dev/null; wait "$qemu" 2>/dev/null || true
+kill "$qemu" 2>/dev/null || true; wait "$qemu" 2>/dev/null || true
 
 tr -d '\r' < "$W/serial.log" | sed 's/\x1b\[[0-9;?]*[A-Za-z]//g' > "$W/console.txt"
 fail=0

@@ -28,8 +28,8 @@
 #
 # Seven boots, and three more with stormnic-virtio (#108, below):
 #   1. as shipped: `rng : firmware` or `rdrand`; every claim carries the
-#      firmware inventory (#4): the virtio NIC and its driver, q35's AHCI,
-#      the CD as the medium, and CPU and memory (QEMU has no BMC);
+#      firmware inventory (#4): the virtio NIC and its driver, q35's AHCI
+#      and the CD's virtio-scsi, the CD as the medium, and CPU and memory (QEMU has no BMC);
 #   2. the entropy fallback: `rng = cpu` on the media masks the firmware's
 #      EFI_RNG, and the CPU is started without RDRAND and RDSEED, so the
 #      boot must say `rng : jitter` and still lease, connect and fetch. This
@@ -475,17 +475,22 @@ boot() {
     cp "$OVMF_VARS" "$W/$name.vars"
     : > "$W/stub.log"
     : > "$W/ntp.log"
-    local extra=() net=(-netdev user,id=n0) nicopt= ipv4=no media=(-cdrom "$iso" -boot d)
+    # The ISO on virtio-scsi, not -cdrom: OVMF's ATA PIO path on q35's
+    # emulated CD looped on ATAPI PACKET commands and the boot never started
+    # stormbootx (#124; shell-ovmf, on virtio-scsi, never did).
+    local extra=() net=(-netdev user,id=n0) nicopt= ipv4=no
+    local media=(-device virtio-scsi-pci,id=cdscsi
+                 -drive if=none,id=cd0,media=cdrom,format=raw,readonly=on,file="$iso"
+                 -device scsi-cd,drive=cd0,bus=cdscsi.0,bootindex=1)
     [[ $BOOT_NET == dead ]] && net=(-netdev hubport,id=n0,hubid=7)
     if [[ -n $BOOT_PXE ]]; then
         mkdir -p "$W/tftp" && cp "$PAYLOAD" "$W/tftp/payload.efi"
         net=(-netdev user,id=n0,tftp="$W/tftp",bootfile=payload.efi)
         nicopt=,bootindex=2 ipv4=yes
-        media=(-drive if=none,id=cd0,media=cdrom,format=raw,file="$iso" -device ide-cd,drive=cd0,bootindex=1)
         extra+=(-device virtio-rng-pci)
     fi
     [[ -n "$BOOT_DISK" ]] && extra+=(-device virtio-scsi-pci,id=scsi0
-        -drive if=none,id=d0,format=raw,file="$BOOT_DISK" -device scsi-hd,drive=d0,bus=scsi0.0)
+        -drive if=none,id=d0,format=raw,file="$BOOT_DISK" -device scsi-hd,drive=d0,bus=scsi0.0,bootindex=2)
     say "[$name] booting under OVMF ($accel, cpu $cpu, rng ${rng:-as shipped}, up to ${LIMIT}s)"
     local attempt=1 qemu t
     while :; do
@@ -519,7 +524,7 @@ boot() {
     done
     if [[ -n $stuck ]]; then
         start_stall "$name" "$qemu" "$attempt"
-        kill "$qemu" 2>/dev/null; wait "$qemu" 2>/dev/null || true
+        kill "$qemu" 2>/dev/null || true; wait "$qemu" 2>/dev/null || true
         if (( attempt == 1 )); then
             attempt=2
             say "[$name] booting it once more (#124)"
@@ -539,7 +544,7 @@ boot() {
     fi
     kill -0 "$qemu" 2>/dev/null || how="qemu exited by itself"
     (( t < LIMIT )) || how="ran the whole ${LIMIT}s"
-    kill "$qemu" 2>/dev/null; wait "$qemu" 2>/dev/null || true
+    kill "$qemu" 2>/dev/null || true; wait "$qemu" 2>/dev/null || true
     say "[$name] $how after ${t}s"
     # The firmware's debug port is read too: an exception dump may go there.
     cat "$log" "$W/$name.debug" 2>/dev/null | tr -d '\r' | sed 's/\x1b\[[0-9;]*[A-Za-z]//g' > "$txt"

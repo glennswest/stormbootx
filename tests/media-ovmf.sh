@@ -33,7 +33,9 @@ command -v qemu-system-x86_64 >/dev/null || die "qemu-system-x86_64 is not insta
 case $ISO in
     *.img) medium=(-drive if=none,id=stick,format=raw,file="$ISO"
                    -device qemu-xhci,id=xhci -device usb-storage,bus=xhci.0,drive=stick,removable=on,bootindex=1) ;;
-    *) medium=(-cdrom "$ISO" -boot d) ;;
+    # virtio-scsi, not -cdrom: q35's emulated ATA CD stalled OVMF (#124).
+    *) medium=(-device virtio-scsi-pci,id=cdscsi -drive if=none,id=cd0,media=cdrom,format=raw,readonly=on,file="$ISO"
+               -device scsi-cd,drive=cd0,bus=cdscsi.0,bootindex=1) ;;
 esac
 
 # NIC=virtio gives the VM one virtio-net NIC (no option ROM), so a rustnic
