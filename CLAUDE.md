@@ -101,6 +101,13 @@ ISO names an `update =`, which must be skipped as read-only (#83). With
 modern-only virtio-net NIC from OVMF's drivers and carry the claim and the
 attach over stormnic-virtio, and without the key the firmware keeps it.
 
+A boot whose OVMF has not reached DXE (`DXE IPL Entry` on the debug port)
+after `PEI_LIMIT` (60) seconds is stuck in PEI (#124): net-ovmf and
+screen-ovmf print what the guest (monitor: status, RIP) and the host (QEMU's
+threads and wait channels, load, memory) are doing, then boot it once more,
+and only a second stall fails. Every such stall was the `nolease` boot,
+right after `bridge`'s 96 MiB read, and never reproduced alone.
+
 `tests/shell-ovmf.sh ISO old|ovmf 'LINE' …` (#60) boots an ISO from an
 EFI Shell with no boot option for it, and requires its `startup.nsh` to
 start stormbootx: `old` is the EDK shell Aptio 4 carries, `ovmf` the build

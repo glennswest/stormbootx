@@ -402,6 +402,27 @@ BOOT_SETTLE=2
 # STOP_AT ends a boot at a console line of its own.
 BOOT_NET=
 STOP_AT=
+# #124: seconds a boot may spend before OVMF's DXE starts.
+PEI_LIMIT=${PEI_LIMIT:-60}
+
+# #124: what a boot stuck in OVMF's PEI is doing, from the guest (the
+# monitor: run state, registers) and the host (the QEMU process's state, its
+# CPU use and kernel wait, the load, the memory), and where its debug port
+# stopped.
+pei_stall() {
+    local name=$1 qemu=$2 attempt=$3
+    say "[$name] OVMF has not reached DXE after ${PEI_LIMIT}s (attempt $attempt): stuck in PEI (#124)"
+    say "[$name]   debug port ends: $(tail -c 400 "$W/$name.debug" | tr -d '\r' | tr '\n' '|' | tail -c 240)"
+    say "[$name]   qemu: $(ps -o stat=,pcpu=,etimes=,wchan:32= -p "$qemu" 2>/dev/null | tr -s ' ')"
+    local tid
+    for tid in $(ls "/proc/$qemu/task" 2>/dev/null | head -8); do
+        say "[$name]     thread $tid $(tr '\0' ' ' < "/proc/$qemu/task/$tid/comm" 2>/dev/null): $(cut -d' ' -f3 "/proc/$qemu/task/$tid/stat" 2>/dev/null) $(cat "/proc/$qemu/task/$tid/wchan" 2>/dev/null)"
+    done
+    say "[$name]   host: load $(cut -d' ' -f1-3 /proc/loadavg), $(free -m | awk '/^Mem:/{print $7" MB available of "$2}'), $(nproc) CPUs"
+    python3 "$ROOT/tests/screen.py" hmp "$W/$name.mon" info status 2>&1 | sed "s/^/net-ovmf: [$name]   /" || true
+    python3 "$ROOT/tests/screen.py" hmp "$W/$name.mon" info registers 2>&1 | grep -E "^(RIP|RAX|CR0|EFER)" \
+        | sed "s/^/net-ovmf: [$name]   /" || true
+}
 # BOOT_PXE=1 (#68) turns the firmware's own IPv4 stack on (its drivers need
 # an EFI_RNG, so a virtio-rng too) and makes the NIC the second boot option,
 # PXE-booting the payload over slirp's TFTP; WAIT_FOR is then the only line
@@ -465,6 +486,11 @@ boot() {
     [[ -n "$BOOT_DISK" ]] && extra+=(-device virtio-scsi-pci,id=scsi0
         -drive if=none,id=d0,format=raw,file="$BOOT_DISK" -device scsi-hd,drive=d0,bus=scsi0.0)
     say "[$name] booting under OVMF ($accel, cpu $cpu, rng ${rng:-as shipped}, up to ${LIMIT}s)"
+    local attempt=1 qemu t
+    while :; do
+    rm -f "$W/$name.mon"
+    : > "$log"; : > "$W/$name.debug"
+    cp "$OVMF_VARS" "$W/$name.vars"
     qemu-system-x86_64 -machine q35,accel="$accel" -cpu "$cpu" -m 1024 \
         -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
         -drive if=pflash,format=raw,file="$W/$name.vars" \
@@ -475,12 +501,33 @@ boot() {
         -debugcon file:"$W/$name.debug" -global isa-debugcon.iobase=0x402 \
         -monitor unix:"$W/$name.mon",server,nowait \
         -display none -serial file:"$log" -no-reboot &
-    local qemu=$! t=0
+    qemu=$! t=0
     # Stop once the payload has spoken, or at a fall-through.
+    local stuck=
     while kill -0 "$qemu" 2>/dev/null && (( t < LIMIT )); do
         grep -qE "${WAIT_FOR:-is there a TCP/IP stack in this firmware|no network boot: ${STOP_AT:+|$STOP_AT}}" "$log" 2>/dev/null \
             && { sleep "$BOOT_SETTLE"; break; }
+        # #124: OVMF reaches DXE in seconds. One still in PEI after a minute
+        # never gets out (it ran the whole 240 s each time), so say what the
+        # guest and the host are doing, and start it once more.
+        if (( t == PEI_LIMIT )) && ! grep -q "DXE IPL Entry" "$W/$name.debug" 2>/dev/null; then
+            stuck=1
+            break
+        fi
         sleep 1; t=$((t + 1))
+    done
+    if [[ -n $stuck ]]; then
+        pei_stall "$name" "$qemu" "$attempt"
+        kill "$qemu" 2>/dev/null; wait "$qemu" 2>/dev/null || true
+        if (( attempt == 1 )); then
+            attempt=2
+            say "[$name] booting it once more (#124)"
+            : > "$W/stub.log"; : > "$W/ntp.log"
+            continue
+        fi
+        say "[$name] stuck in PEI twice"
+    fi
+    break
     done
     local how="stopped at its stop line"
     # SCREEN_PNG=1: the shipped boot's screen as the payload starts, the boot

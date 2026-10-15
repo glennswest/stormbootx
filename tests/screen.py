@@ -10,6 +10,8 @@
   screen.py differ PPM PPM         different below the header row
   screen.py png PPM                one line: the dump as a base64 PNG, so a
                                    screenshot can leave a build VM in its log
+  screen.py hmp SOCK CMD...        a monitor command's output (info registers,
+                                   info status): what a stuck guest is doing
 
 Standard library only. Exit 0 when the check holds.
 """
@@ -31,11 +33,13 @@ def monitor(sock, cmd):
     s.recv(65536)  # the banner
     s.sendall((cmd + "\n").encode())
     time.sleep(1.0)
+    out = b""
     try:
-        s.recv(65536)
+        out = s.recv(1 << 20)
     except socket.timeout:
         pass
     s.close()
+    return out.decode(errors="replace")
 
 
 def read_ppm(path):
@@ -81,6 +85,12 @@ def main():
         sys.exit("no screendump")
     if cmd == "key":
         monitor(sys.argv[2], f"sendkey {sys.argv[3]}")
+        return 0
+    if cmd == "hmp":
+        text = monitor(sys.argv[2], " ".join(sys.argv[3:]))
+        for line in text.replace("\r", "").splitlines():
+            if line.strip() and not line.startswith("(qemu)"):
+                print(line)
         return 0
     if cmd == "panel":
         w, h, px = read_ppm(sys.argv[2])

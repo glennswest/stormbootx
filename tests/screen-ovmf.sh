@@ -35,29 +35,45 @@ command -v python3 >/dev/null || die "python3 is not installed"
 
 W=$(mktemp -d "${TMPDIR:-/tmp}/screen-ovmf.XXXXXX")
 trap 'kill "${qemu:-0}" 2>/dev/null || true; rm -rf "$W"' EXIT
-cp "$OVMF_VARS" "$W/vars.fd"
 accel=tcg
 [[ -w /dev/kvm ]] && accel=kvm
 S=(python3 "$HERE/screen.py")
 
-say "booting $(basename "$ISO") with no network under OVMF ($accel, up to ${LIMIT}s)"
-qemu-system-x86_64 -machine q35,accel="$accel" -m 512 \
-    -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
-    -drive if=pflash,format=raw,file="$W/vars.fd" \
-    -cdrom "$ISO" -boot d -net none \
-    -monitor unix:"$W/mon",server,nowait \
-    -display none -serial file:"$W/serial.log" -no-reboot &
-qemu=$!
-t=0
 tail_die() {
     say "serial console (last 30 lines):"
     tr -d '\r' < "$W/serial.log" | sed 's/\x1b\[[0-9;?]*[A-Za-z]//g' | grep -v '^\s*$' | tail -30 | sed 's/^/  | /'
     die "$1"
 }
-until grep -q "RESULT: nothing to fall through to" "$W/serial.log" 2>/dev/null; do
-    kill -0 "$qemu" 2>/dev/null || tail_die "qemu exited before the fall-through"
-    (( t < LIMIT )) || tail_die "no fall-through after ${LIMIT}s"
-    sleep 1; t=$((t + 1))
+attempt=1
+while :; do
+    cp "$OVMF_VARS" "$W/vars.fd"
+    rm -f "$W/mon"; : > "$W/serial.log"; : > "$W/debug.log"
+    say "booting $(basename "$ISO") with no network under OVMF ($accel, up to ${LIMIT}s)"
+    qemu-system-x86_64 -machine q35,accel="$accel" -m 512 \
+        -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
+        -drive if=pflash,format=raw,file="$W/vars.fd" \
+        -cdrom "$ISO" -boot d -net none \
+        -monitor unix:"$W/mon",server,nowait \
+        -debugcon file:"$W/debug.log" -global isa-debugcon.iobase=0x402 \
+        -display none -serial file:"$W/serial.log" -no-reboot &
+    qemu=$!
+    t=0 stuck=
+    until grep -q "RESULT: nothing to fall through to" "$W/serial.log" 2>/dev/null; do
+        kill -0 "$qemu" 2>/dev/null || tail_die "qemu exited before the fall-through"
+        (( t < LIMIT )) || tail_die "no fall-through after ${LIMIT}s"
+        # #124: OVMF still in PEI after a minute never gets out.
+        if (( t == ${PEI_LIMIT:-60} )) && ! grep -q "DXE IPL Entry" "$W/debug.log"; then stuck=1; break; fi
+        sleep 1; t=$((t + 1))
+    done
+    [[ -z $stuck ]] && break
+    say "OVMF has not reached DXE after ${t}s (attempt $attempt): stuck in PEI (#124)"
+    say "  debug port ends: $(tail -c 400 "$W/debug.log" | tr -d '\r' | tr '\n' '|' | tail -c 240)"
+    say "  qemu: $(ps -o stat=,pcpu=,etimes=,wchan:32= -p "$qemu" | tr -s ' '); host load $(cut -d' ' -f1-3 /proc/loadavg)"
+    "${S[@]}" hmp "$W/mon" info registers 2>&1 | grep -E "^(RIP|CR0)" | sed 's/^/screen-ovmf:   /' || true
+    kill "$qemu" 2>/dev/null; wait "$qemu" 2>/dev/null || true
+    (( attempt == 1 )) || die "stuck in PEI twice"
+    attempt=2
+    say "booting it once more (#124)"
 done
 sleep 2
 
