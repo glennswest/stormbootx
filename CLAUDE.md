@@ -569,6 +569,16 @@ then.
 
 ### Open, no external blocker
 
+- [x] **#124 — the OVMF tests stalled before stormbootx started (P3,
+      hitting most full builds' first attempt since 2026-10-13). Closed
+      2026-10-15.** Not PEI (net-ovmf printed only the console's first 90
+      lines). A watch (no banner after `START_LIMIT`, 60 s: the debug port's
+      tail, monitor, host state, one retry) caught one in screen-ovmf: OVMF
+      in DXE looping ATAPI PACKET commands at q35's emulated ATA CD. The
+      ISO is now a virtio-scsi `scsi-cd` with a bootindex in net-ovmf,
+      screen-ovmf and media-ovmf, as shell-ovmf always had. 2b41a99: the
+      full suite, then net-ovmf ×2 and screen-ovmf ×5 in one job, no stall.
+
 - [x] **#151 — `stormbootx-stick`: a running node updates its boot stick
       (P1, owner via stormcos#589, 2026-10-14).** `crates/stormbootx-stick`:
       static musl, `src/manifest.rs` and `src/sha256.rs` by path
