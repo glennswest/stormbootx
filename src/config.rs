@@ -357,23 +357,9 @@ pub fn list_dir(path: &str) -> Vec<String> {
 }
 
 /// Pull `key = value` out of a flat config file, ignoring comments.
+/// The parse is `manifest::conf_field`, which `stormbootx-stick` shares (#151).
 pub(crate) fn field(text: &str, key: &str) -> Option<String> {
-    for line in text.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        // Not a let-chain: this crate is edition 2021, matching stormuefi.
-        if let Some((k, v)) = line.split_once('=') {
-            if k.trim() == key {
-                let v = v.trim().trim_matches('"');
-                if !v.is_empty() {
-                    return Some(v.to_string());
-                }
-            }
-        }
-    }
-    None
+    crate::manifest::conf_field(text, key).map(String::from)
 }
 
 /// Resolve where to attach: the file, then the compiled floor.

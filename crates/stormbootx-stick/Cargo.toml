@@ -1,0 +1,16 @@
+[package]
+name = "stormbootx-stick"
+description = "Update a stormbootx boot stick from a running Linux node: the self-update's manifest, keys and rules (#151)"
+version = "0.28.2"
+edition = "2021"
+license = "MIT"
+
+# std, for Linux (static musl in the build: x86_64-unknown-linux-musl). The
+# manifest, its rules and the release keys are stormbootx's own src/manifest.rs
+# and src/sha256.rs, included by path, so the stick and the medium judge an
+# update the same way. The Ed25519 verify is the same crate and version.
+[dependencies]
+ed25519-compact = { version = "2.6", default-features = false, features = ["opt_size"] }
+
+[lints.rust]
+warnings = "deny"

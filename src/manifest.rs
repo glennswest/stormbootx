@@ -574,6 +574,28 @@ fn dechunk(buf: &mut [u8]) -> Option<usize> {
     }
 }
 
+/// `key = value` out of `stormboot.conf`/`local.conf`: the first line
+/// naming `key`, comments and blank lines skipped, quotes trimmed, an empty
+/// value not a value. `config.rs` and `stormbootx-stick` (#151) both read the
+/// media through this.
+pub fn conf_field<'t>(text: &'t str, key: &str) -> Option<&'t str> {
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some((k, v)) = line.split_once('=') {
+            if k.trim() == key {
+                let v = v.trim().trim_matches('"');
+                if !v.is_empty() {
+                    return Some(v);
+                }
+            }
+        }
+    }
+    None
+}
+
 /// `update =` from `stormboot.conf`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Setting<'a> {
@@ -608,6 +630,14 @@ pub fn setting(v: &str) -> Option<Setting<'_>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn conf_field_takes_the_first_and_skips_comments() {
+        let t = "# update = off\nname = \"server1\"\nupdate =\nupdate = http://a/b\nname = other\n";
+        assert_eq!(conf_field(t, "name"), Some("server1"));
+        assert_eq!(conf_field(t, "update"), Some("http://a/b"));
+        assert_eq!(conf_field(t, "tag"), None);
+    }
 
     fn sha(c: char) -> std::string::String {
         core::iter::repeat(c).take(64).collect()

@@ -41,8 +41,12 @@ smoltcp = { version = "0.14", default-features = false, features = ["alloc", "me
 # The initiator is its own crate so stormboot4bios can link it (#10);
 # `cargo test -p nvme-tcp-initiator` runs its host tests. A plain `cargo build`
 # here still builds stormbootx alone.
+#
+# `stormbootx-stick` (#151) is a Linux binary that updates a boot stick from
+# a running node; `cargo build -p stormbootx-stick --target
+# x86_64-unknown-linux-musl` builds it.
 [workspace]
-members = ["crates/nvme-tcp-initiator"]
+members = ["crates/nvme-tcp-initiator", "crates/stormbootx-stick"]
 
 [profile.release]
 opt-level = "z"
