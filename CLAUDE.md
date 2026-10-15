@@ -547,20 +547,23 @@ placeholder rejection, and `tag =` (#9, closed) — and it is still open.
 
 ### Open, no external blocker
 
-- [ ] **#151 — `stormbootx-stick`: a running node updates its boot stick
-      (P1, owner via stormcos#589, 2026-10-14).** A static musl Linux binary
-      in `crates/stormbootx-stick`, sharing `src/manifest.rs` and
-      `src/sha256.rs` by `#[path]` (parse, signature, verdict, version,
-      state, `RELEASE_KEYS`). Find the stick in sysfs (removable or USB,
-      never mounted, no holders, no `STRMSLAB` at the disk's or a
-      partition's start, both markers on its ESP); verify the signed
-      manifest; apply exactly as `selfupdate.rs` (`*.new`, the trial in
-      `state`, the bootloader last, revert on failure, `name`/`tag` into
-      `local.conf`); report a line per step and a JSON status. Roots
-      (`--sys`, `--proc`, `--dev`) and `--esp DIR` make it testable without
-      root: `tests/stick.sh` against update-boots' signing and stubs. The
-      raw-image fallback needs stormcentral to serve a signed disk image:
-      filed there, not built here.
+- [x] **#151 — `stormbootx-stick`: a running node updates its boot stick
+      (P1, owner via stormcos#589, 2026-10-14).** `crates/stormbootx-stick`:
+      static musl, `src/manifest.rs` and `src/sha256.rs` by path
+      (`config::field` moved there as `manifest::conf_field`). Find in sysfs
+      (removable or USB; refused when mounted, held, or carrying
+      `STRMSLAB`; both markers), verify before parsing, the medium's
+      verdict and version rules, apply as `selfupdate.rs`, a line per step
+      and `/run/stormbootx-stick/status.json`. 1c8703c..33b4c4e, released
+      **v0.29.0** (212a6b0). `tests/stick.sh` (in the sc-build command):
+      update, trial, failed, off, older, tampered, other key, canary, dry
+      run, and the refusals on a machine of image files. Goldens
+      `golden-stormbootx-stick-6c4b7eb7a196` (new component, kind tree),
+      `golden-stormbootx-e851bb29627c6408`,
+      `golden-stormbootx-rustnic-7b965157e7f6353b`,
+      `golden-stormbootx-rustnic-disk-cb6d5bfed7f3dddb`. **Not run:** the
+      vfat mount and a real USB stick (root; stormcos#589's first use on
+      server1). The raw-image fallback is #154.
 
 - [x] **#130 — media goldens bit-reproducible (P1, the master 2026-10-14:
       a test machine must boot the sealed golden's bytes, and a rebuild must
