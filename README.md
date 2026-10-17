@@ -874,9 +874,9 @@ what a bootloader there would find on its own volume.
 ## Build
 
 Never on a workstation, and never as root. Push, then run `sc-build` from the
-checkout. It fetches the pushed commit onto the build box (`dev.g8.lo`, as the
-unprivileged `stormbuild` user), builds it in a scratch directory and deletes
-it. The default `cargo build && cargo test` does not suit a `no_std` UEFI
+checkout. It fetches the pushed commit onto a fresh build VM (cloned for the job,
+as the unprivileged `stormbuild` user), builds it there and destroys the VM
+when the job ends. Nothing persists between jobs. The default `cargo build && cargo test` does not suit a `no_std` UEFI
 crate, so name the command:
 
 ```bash
@@ -986,8 +986,8 @@ EdkShellBinPkg's `Shell_Full.efi` from edk2-stable201811, fetched and checked
 against its pinned SHA-256.
 
 Output
-defaults to `tmp/images` in the checkout, which on dev is the build's own
-drive and is deleted with it. Nothing is left on the build box.
+defaults to `tmp/images` in the checkout, which in an `sc-build` is the job's own
+drive and is deleted with it. Nothing is kept.
 
 ```bash
 ./scripts/build-boot-agent.sh                    # one stick for every machine
@@ -1184,8 +1184,10 @@ HTTP with no credential to a node registry that is moving to TLS with auth
 
 ## Status
 
-v0.25.0 (#128: #4, #10, #17, #25, #36, #42, #53, #67, and #138's FEC-step
-budget). Running on hardware since 2026-09-05. A Dell PowerEdge R230 (C2NR0Q2)
+v0.29.0 (#151: `stormbootx-stick`; v0.28.x: the boot panel #144 and
+reproducible media #130; v0.27.0 #148 the self-update's lease wait; v0.26.0
+#145 the fall-through starts the local disk; v0.25.0 #138's FEC-step budget).
+The master has frozen releases until 2026-10-17, when it promotes v0.29.0. Running on hardware since 2026-09-05. A Dell PowerEdge R230 (C2NR0Q2)
 booted the ISO over iDRAC virtual media, claimed `boothost/C2NR0Q2` and
 attached a 32 GiB 4K clone from forge over 25 GbE. The console of that first
 attach, verbatim (the build before chain-loading, ea26be1):
@@ -1233,12 +1235,15 @@ Open issues:
 
 | Issue | What |
 |---|---|
-| #92, #89 | self-update on metal: stormcentral serves `stormbootx-rustnic` serial 1 = v0.14.0, which every newer medium declines as older (#96); a promotion of a current release waits on stormcentral#459; nothing is promoted for `stormbootx` |
+| #92, #89 | self-update on metal: stormcentral serves `stormbootx-rustnic` serial 1 = v0.14.0, which every newer medium declines as older (#96); the promotion of v0.29.0's rustnic golden (canary server1 first) is the master's, 2026-10-17 (#92); nothing is promoted for `stormbootx` |
 | #93 | install-config sizes on real firmware variable stores |
 | #100, #99 | boot time: one NVMe/TCP command in flight (~46 MiB/s on metal); mlxfec's wait on a parked cap9 lock |
 | #69–#74 | more Rust NIC drivers, paused by the owner at P3 (each behind its repo's first issue); #131 a `prefer_media_drivers` for mlx5 |
 | #84 | arm64 media: built (`stormbootx-arm64`); booting it under AAVMF and registering the golden wait on stormcentral#604 |
-| #110 | the claim over HTTPS against a fleet CA (stormcos#35) |
+| #138 | the R230's NIC FEC step: v0.25.0's real-time budget is released, the metal boot is not seen |
+| #154 | `stormbootx-stick` writing a signed raw disk image when a stick has no room for a file update |
+| #143 | the fall-through shows as `BdsDxe: failed to start Boot0002 … Aborted` |
+| #110 | the claim over HTTPS against a fleet CA (stormcos#35 is closed as a design; #110 is the work) |
 
 A slide deck of the above is in [`docs/presentation.md`](docs/presentation.md)
 (Marp: `npx @marp-team/marp-cli docs/presentation.md`).

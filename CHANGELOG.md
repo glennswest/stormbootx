@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-10-17
+- **docs:** README, CLAUDE.md and the deck refreshed from the code since 2026-10-09: the build runs on a fresh build VM, not dev.g8.lo (#137); Status is v0.29.0 with the freeze and the master's 2026-10-17 promotion; open-issue tables list #138, #143, #154; stormblock#204 and stormcos#35 shown as closed (#135). Every `stormboot.conf` key in the code (`ui`, `local_boot`, `esp`, `rng`, …) is in the README's table; no doc promise found that the code does not keep.
+
 ### 2026-10-15
 - **docs:** #92 handed off: stormcentral#459 is closed (a canary-only promotion needs a pve boot alone), and the promotion of v0.29.0's rustnic golden, canary server1 first, is the master's step on 2026-10-17. Nothing in this repo changes for it.
 - **test:** the OVMF tests no longer stall before stormbootx starts (#124). net-ovmf's `nolease` boot ran its whole 240 s with nothing on serial on the first attempt of most full builds since 2026-10-13. It was read as a hang in PEI, but the console printed only its first 90 lines, which the debug port's PEI lines fill. A watch for the stall (stormbootx's banner not on serial after `START_LIMIT`, 60 s) caught one in screen-ovmf and printed the debug port's tail: OVMF in DXE looping ATAPI PACKET commands at q35's emulated ATA CD (`-cdrom`), QEMU at 96% CPU. net-ovmf, screen-ovmf and media-ovmf now attach the ISO as a `scsi-cd` on virtio-scsi with a bootindex, as shell-ovmf always has, and it never stalled. The watch stays: a stall prints the debug port's last 40 lines and what the guest (monitor) and the host (QEMU's threads, load, memory) are doing, and the boot is started once more; a second stall fails. A failing boot also prints the debug port's tail, and the cleanup survives a QEMU that died (it segfaulted once under the monitor). `tests/screen.py hmp SOCK CMD` prints a monitor command's output.

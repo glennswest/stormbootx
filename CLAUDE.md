@@ -20,7 +20,7 @@ scratch files go in `tmp/`.
 ## Build
 
 Push first, then `sc-build` from this checkout. It builds the pushed commit
-on dev.g8.lo as `stormbuild`. There is no checkout on dev, and no `ssh root@`.
+on a fresh build VM as `stormbuild`. There is no checkout there, and no `ssh root@`.
 The plain `cargo build && cargo test` default does not suit a `no_std` UEFI
 crate, so name the command. This builds the three binaries, runs the ten
 host suites and the initiator crate's tests, boots `espprobe` and stormbootx under OVMF, boots an ISO's
@@ -140,11 +140,11 @@ the layout Aptio 4 boots (#55). `tests/media-ovmf.sh ISO 'LINE' …` boots a med
 console lines (#45: `media : …`); build the goldens under `t/` in the same
 job to use it. `NIC=virtio` gives it a virtio-net NIC (#108).
 
-The last line boots `espprobe` under dev's OVMF (KVM there) against a
+The last line boots `espprobe` under the build VM's OVMF (KVM there) against a
 4096-byte disk (#37). `R=` is the one place the target dir is named, and it
 reads `CARGO_TARGET_DIR` rather than assuming `target/`.
 
-Don't `ls target/...` afterwards. dev sets its own `CARGO_TARGET_DIR`, so the
+Don't `ls target/...` afterwards. the build VM sets its own `CARGO_TARGET_DIR`, so the
 `ls` fails, and sc-build files that as a `build-failure` issue (#16 was one).
 
 There is no `cargo test`: this is a `no_std` UEFI binary with no host target, so
@@ -173,7 +173,7 @@ carried there too (#24 was that). `src/dnsname.rs` (#23) is the fourth:
 DHCP option parsing and the PTR wire format, tested against microdns
 replies captured on 2026-09-27. `src/esp.rs` (#37) is the fifth: GPT and
 FAT, tested on images `mkfs.fat` and mtools build inside the test, so they
-must be on the build box's `PATH` (they are on dev). `src/sntp.rs` (#77) is
+must be on the build box's `PATH` (they are on the build VM). `src/sntp.rs` (#77) is
 the sixth: the SNTP packet, the reply checks and the UTC calendar.
 `src/manifest.rs` (#83) is the seventh: the self-update's manifest, state
 file, start/serial decisions and HTTP framing. `src/installconf.rs` (#79) is
@@ -196,10 +196,10 @@ deliberately, in its own commit, and rebuild.
 `stormboot.conf` onto a GPT `.img` (or, with `--iso`, an `.iso` instead), by
 default in `tmp/images` in the checkout. Nothing in the agent creates media.
 
-**What ships is a golden, never a file on dev** (owner, 2026-09-28, #21).
+**What ships is a golden, never a file on a build VM** (owner, 2026-09-28, #21).
 `deploy/build-golden.sh stormbootx|stormbootx-rustnic|stormbootx-disk|stormbootx-rustnic-disk|stormbootx-arm64|nic-drivers OUT` writes that golden's tree
 into OUT and nothing else (README, *How it ships*). Every build gets a fresh
-drive, and anything left on dev is deleted, so never write outside the job
+drive, and anything left on the VM is destroyed, so never write outside the job
 (no `/build/images`, no `/build/stormbuild/images`). To look at media in an
 `sc-build`, build it under `t/` and inspect it in the same job. The golden
 request, once stormbootx is a component, is `stormcentral component build
@@ -1764,7 +1764,7 @@ then.
       replies), `dhcp4::reply_for`, `Tcp4Socket::interface`,
       `registry::claim_boothost` with `{mac, serial}` and a status on error,
       `network_name`/`ptr_lookup` and step 3b/3c in `run()`. **Still open on:**
-      - stormblock#204: an unknown name claimed with a known MAC/serial must
+      - ~~stormblock#204~~ (closed 2026-10-07, 758239d; forge 13.7.0 lacks it): an unknown name claimed with a known MAC/serial must
         reach (and name) that host, not mint a new one from the default.
         Until then, rename on the engine before the reservation's hostname
         reaches the machine (C2NR0Q2 → `stormblock1`, #199).
@@ -1983,7 +1983,7 @@ then.
 
 ## Status
 
-v0.29.0 (#151: stormbootx-stick). v0.28.2 was #130 (reproducible media); v0.28.0 was #144 (the boot panel); v0.27.0 was #148 (the self-update resolves its host); v0.26.0 was #145 (the fall-through starts the local disk itself); v0.25.0 was #128: #4, #10, #17, #25, #36, #42, #53, #67 and #138. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
+v0.29.0 (#151: stormbootx-stick; released, frozen until 2026-10-17, then the master promotes it). v0.28.2 was #130 (reproducible media); v0.28.0 was #144 (the boot panel); v0.27.0 was #148 (the self-update resolves its host); v0.26.0 was #145 (the fall-through starts the local disk itself); v0.25.0 was #128: #4, #10, #17, #25, #36, #42, #53, #67 and #138. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
 (and the same day, the full chain: chain-load into stormuefi and a running
 stormcos kernel), on a
 Dell PowerEdge R230 (service tag C2NR0Q2) booting the agent over iDRAC virtual

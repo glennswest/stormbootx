@@ -274,12 +274,11 @@ smoltcp, through stormuefi to a running stormcos (#56, #68).
 
 | | What | Waiting on |
 |---|---|---|
-| stormblock#204 | a DNS name the engine hasn't seen reaches its host (#23 is closed) | stormblock |
 | #69–#74 | more Rust NIC drivers (iPXE retired from every medium, #91) | paused by the owner at P3 |
-| #92, #89 | a current release promoted, and a stick taking it on metal | stormcentral#459 |
+| #92, #89 | v0.29.0 promoted (canary server1 first, the master, after the 2026-10-17 freeze), and a stick taking it on metal | the master |
 | #100 | more than one NVMe/TCP command in flight (~46 MiB/s on metal) | — |
 | #84 | arm64 media (`BOOTAA64.EFI`) | the owner; stormcentral#604 |
-| #110 | the claim over HTTPS against a fleet CA | stormcos#35 |
+| #110 | the claim over HTTPS against a fleet CA | — (stormcos#35 closed as a design) |
 | #14 | test containers | a test's engine token (stormcentral#133) |
 
 ---
