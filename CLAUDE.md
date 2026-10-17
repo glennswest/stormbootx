@@ -584,7 +584,11 @@ then.
       stubhost's image and read 96 MiB, with no `no reply within` or `no
       network boot`. Ships with the next release (after the freeze).
       **Not run:** forge itself; the next slow claim's console shows how
-      long it took.
+      long it took. **#158** (pvetest1/2, 17:39Z, closed as this): the
+      boots ran v0.29.0 (212a6b0), before 00345ee; the console's `.times`
+      put `no HTTP status line` 30.0 s after the claim (17:39:24.9 →
+      54.9), v0.29.0's read budget. Forge's watchdog line ("for 11s") was
+      a snapshot mid-claim, not where the read ended.
 
 - [x] **#124 — the OVMF tests stalled before stormbootx started (P3,
       hitting most full builds' first attempt since 2026-10-13). Closed
