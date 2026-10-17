@@ -569,17 +569,22 @@ then.
 
 ### Open, no external blocker
 
-- [ ] **#157 — the first claim of a parallel install read `no HTTP status
-      line` (P1, pvetest1/2 on 12.33, 2026-10-17).** The consoles' clock
-      lines put the failed claim at ~30 s, the socket's whole read budget,
-      and the second claim answered in ~2 s: forge was slow to mint the
-      clone, and `read_to_end` returned the empty buffer of a timeout as a
-      whole response. Plan: `read_to_end` says which it was (`no reply
-      within N s`, `stopped after N bytes`, `closed … with no reply`); a
-      claim waits 90 s (a retry mints another clone, and the fall-through
-      and reboot cost more) with a line every 10 s; a net-ovmf boot whose
-      stub answers the claim after 40 s. Forge's slow claim filed on
-      stormblock.
+- [x] **#157 — the first claim of a parallel install read `no HTTP status
+      line` (P1, pvetest1/2 on 12.33, 2026-10-17). Closed 2026-10-17.**
+      The consoles' clock lines put the failed claim at ~30 s, the socket's
+      whole read budget, and the second claim answered in ~2 s: forge was
+      slow to mint the clone (stormblock#460, beside #438), and
+      `read_to_end` returned the empty buffer of a timeout as a whole
+      response. `read_to_end` now says which it was (`no reply within N s`,
+      `stopped after N bytes`, `closed (STATE) with no reply`); a claim
+      waits `CLAIM_SECS` (90 s; a retry mints another clone) with `waiting
+      for the reply (N s)` every 10 s. 00345ee. sc-build of 00345ee: no
+      warnings, the full suite; net-ovmf's `slowclaim` boot (the stub holds
+      the default claim 40 s) printed the 10/20/30 s lines, booted
+      stubhost's image and read 96 MiB, with no `no reply within` or `no
+      network boot`. Ships with the next release (after the freeze).
+      **Not run:** forge itself; the next slow claim's console shows how
+      long it took.
 
 - [x] **#124 — the OVMF tests stalled before stormbootx started (P3,
       hitting most full builds' first attempt since 2026-10-13). Closed
