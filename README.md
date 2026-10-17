@@ -254,6 +254,12 @@ console; a machine with no screen console gets it anyway.
    POST …/api/v1/synonyms/boothost/<serial>/claim        body {"agent":{…},"inventory":{…}}
    ```
 
+   A claim mints a clone, so it may take a while: it waits 90 s for the
+   reply (every other read 30 s), printing `waiting for the reply (N s)`
+   every 10 s (#157). A reply that never comes reads `no reply within 90 s
+   (the request was sent)`; a connection the engine closes first, `the
+   connection closed (…) with no reply after N s`. Either falls through.
+
    Every claim names the boot agent (#90, stormcentral#286), so stormcentral
    can tell which stormbootx booted a machine, not only which release it
    installed:

@@ -925,6 +925,8 @@ pub struct TcpSocket {
     handle: SocketHandle,
     /// How long one operation may make no progress.
     secs: u32,
+    /// `read_to_end` says while the reply has not begun (`patient`).
+    progress: bool,
 }
 
 const RX_BUFFER: usize = 256 * 1024;
@@ -979,7 +981,7 @@ impl TcpSocket {
                             }
                             n.preferred = Some(i);
                         }
-                        return Ok(TcpSocket { nic: i, handle: h, secs });
+                        return Ok(TcpSocket { nic: i, handle: h, secs, progress: false });
                     }
                     tcp::State::Closed => {
                         n.nics[i].sockets.remove(h);
@@ -1127,29 +1129,58 @@ impl TcpSocket {
         Ok(())
     }
 
+    /// Wait up to `secs` for each read from now on, and say every 10 s that
+    /// the reply has not begun. For a request the far end may take a while
+    /// to answer: a claim mints a clone (#157).
+    pub fn patient(&mut self, secs: u32) {
+        self.secs = secs;
+        self.progress = true;
+    }
+
     /// Read until the peer closes, or `limit` bytes. Used for one HTTP
     /// response (`Connection: close`); NVMe reads exact lengths instead.
+    ///
+    /// A reply that never began, or stopped, is an error that says so, and
+    /// so is a close before any byte: an empty buffer is never a response
+    /// (#157: a claim forge took over 30 s to answer read as `no HTTP status
+    /// line`, the same words as a connection forge had closed).
     pub fn read_to_end(&mut self, limit: usize) -> Result<Vec<u8>, String> {
         let mut out = Vec::new();
         let mut buf = vec![0u8; 8192];
         let wait = Duration::from_secs(self.secs as u64);
-        let mut last = net()?.clock.now();
+        let start = net()?.clock.now();
+        let mut last = start;
+        let mut note = start + Duration::from_secs(10);
         while out.len() < limit {
             let (r, now) = self.with(|s, clock| {
                 let r = if s.can_recv() {
-                    s.recv_slice(&mut buf).ok()
+                    s.recv_slice(&mut buf).map_err(|e| format!("failed a receive ({e:?})"))
                 } else if !s.may_recv() {
-                    None
+                    Err(format!("closed ({})", s.state()))
                 } else {
-                    Some(0)
+                    Ok(0)
                 };
                 (r, clock.now())
             })?;
             match r {
-                None => break,
-                Some(0) if now - last > wait => break,
-                Some(0) => {}
-                Some(k) => {
+                Err(why) if out.is_empty() => {
+                    return Err(format!("the connection {why} with no reply after {} s", (now - start).secs()));
+                }
+                Err(_) => break,
+                Ok(0) if now - last > wait => {
+                    return Err(if out.is_empty() {
+                        format!("no reply within {} s (the request was sent)", self.secs)
+                    } else {
+                        format!("the reply stopped after {} bytes ({} s with nothing more)", out.len(), self.secs)
+                    });
+                }
+                Ok(0) => {
+                    if self.progress && out.is_empty() && now >= note {
+                        uefi::println!("    waiting for the reply ({} s)", (now - start).secs());
+                        note = now + Duration::from_secs(10);
+                    }
+                }
+                Ok(k) => {
                     out.extend_from_slice(&buf[..k]);
                     last = now;
                 }

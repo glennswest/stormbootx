@@ -76,6 +76,13 @@ fn field(body: &str, key: &str) -> Option<String> {
 /// (`TcpSocket::interface`).
 pub type Interface = ([u8; 32], usize, [u8; 4]);
 
+/// How long a claim may take to answer (#157). A claim mints a clone, and
+/// forge answering two installs' claims at once took longer than the 30 s
+/// every other read gets, while the retry a boot later answered in 2 s.
+/// Waiting is the cheaper miss: giving up falls through and reboots (about
+/// 45 s on the pve VMs), and the next claim mints another clone.
+const CLAIM_SECS: u32 = 90;
+
 fn request(
     server: [u8; 4],
     port: u16,
@@ -84,7 +91,12 @@ fn request(
     path: &str,
     body: Option<&str>,
 ) -> Result<String, String> {
-    request_on(server, port, host, method, path, body).map(|(r, _)| r)
+    request_on(server, port, host, method, path, body, None).map(|(r, _)| r)
+}
+
+/// A claim: `request`, waiting `CLAIM_SECS` for the reply.
+fn claim(server: [u8; 4], port: u16, host: &str, path: &str, body: &str) -> Result<String, String> {
+    request_on(server, port, host, "POST", path, Some(body), Some(CLAIM_SECS)).map(|(r, _)| r)
 }
 
 fn request_on(
@@ -94,9 +106,13 @@ fn request_on(
     method: &str,
     path: &str,
     body: Option<&str>,
+    patience: Option<u32>,
 ) -> Result<(String, Option<Interface>), String> {
     let mut sock = TcpSocket::connect(server, port)?;
     let iface = sock.interface();
+    if let Some(secs) = patience {
+        sock.patient(secs);
+    }
 
     let mut req = format!("{method} {path} HTTP/1.1\r\nHost: {host}\r\n");
     req.push_str("User-Agent: stormbootx\r\nAccept: application/json\r\nConnection: close\r\n");
@@ -175,7 +191,7 @@ pub fn claim_boothost(
 ) -> Result<Attach, (u16, String)> {
     let path = format!("/api/v1/synonyms/{BOOTHOST_NS}/{service_tag}/claim");
     let body = hints(mac, serial);
-    let response = request(server, port, host, "POST", &path, Some(&body)).map_err(|e| (0, e))?;
+    let response = claim(server, port, host, &path, &body).map_err(|e| (0, e))?;
     let (status, body) = split_response(&response).map_err(|e| (0, e))?;
     if status == 404 {
         // Worth separating from every other failure: it is not a fault, it is
@@ -276,7 +292,7 @@ pub fn claim_default(
 ) -> Result<Attach, (u16, String)> {
     let body = hints(Some(mac), serial);
     let path = format!("/api/v1/synonyms/{BOOTHOST_NS}/default/claim");
-    let response = request(server, port, host, "POST", &path, Some(&body)).map_err(|e| (0, e))?;
+    let response = claim(server, port, host, &path, &body).map_err(|e| (0, e))?;
     let (status, body) = split_response(&response).map_err(|e| (0, e))?;
     if !(200..300).contains(&status) {
         // A 404 here is the engine saying it has no `boothost/default` to give
@@ -300,7 +316,7 @@ pub fn engine_version(
     port: u16,
     host: &str,
 ) -> (Result<String, String>, Option<Interface>) {
-    let (response, iface) = match request_on(server, port, host, "GET", "/api/v1/health", None) {
+    let (response, iface) = match request_on(server, port, host, "GET", "/api/v1/health", None, None) {
         Ok(r) => r,
         Err(e) => return (Err(e), None),
     };

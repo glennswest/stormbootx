@@ -38,6 +38,8 @@
 #      volatile `BOOTSERVICE_ACCESS | RUNTIME_ACCESS` Linux reads (#76).
 #   3. a new machine (#15): the default claim by MAC answers the
 #      provisional host `mac-525400123456`, which is booted and handed down;
+#   (#157) `slowclaim`: the stub holds the default claim 40 s, past the 30 s
+#      every other read gets; the claim must wait, say so every 10 s, and boot;
 #   4. an attach that boots nothing (#54): a blank namespace from a second
 #      NVMe stub and a blank local virtio-scsi disk. The fall-through must
 #      withdraw the attached disk, count one local disk, and the firmware
@@ -109,7 +111,7 @@ trap cleanup EXIT
 
 # The stub engine. Port 0: the kernel picks one, and the stub writes it down.
 cat > "$W/stub.py" <<'PY'
-import http.server, json, os, sys
+import http.server, json, os, sys, time
 log = open(sys.argv[1], "a", buffering=1)
 W = os.path.dirname(sys.argv[1])
 class H(http.server.BaseHTTPRequestHandler):
@@ -171,6 +173,13 @@ class H(http.server.BaseHTTPRequestHandler):
         # mints the provisional host `mac-<hex>` from the default.
         new = os.path.exists(W + "/claim.new")
         if self.path.endswith("/default/claim") and (new or os.path.exists(W + "/claim.ok")):
+            # claim.slow (#157): the engine takes that many seconds to mint
+            # the clone, as forge did for two installs' claims at once.
+            if os.path.exists(W + "/claim.slow"):
+                secs = int(open(W + "/claim.slow").read())
+                log.write("claim held for %d s\n" % secs)
+                log.flush()
+                time.sleep(secs)
             port = int(open(W + "/nvme.port").read())
             name = "mac-525400123456" if new else "stubhost"
             self.reply(200, {
@@ -432,6 +441,8 @@ BOOT_PXE=
 WAIT_FOR=
 # BOOT_INTENT (#11) is the intent the stub engine answers for this MAC.
 BOOT_INTENT=
+# BOOT_SLOW=<s> (#157): the stub answers the default claim that late.
+BOOT_SLOW=
 # BOOT_DRIVERS (#108) is a directory laid on the media as \stormboot\drivers,
 # BOOT_PREFER its `prefer_media_drivers`, BOOT_NICDEV more virtio-net-pci
 # properties (disable-legacy=on: a modern-only 1af4:1041).
@@ -450,10 +461,11 @@ boot() {
     local name=$1 cpu=$2 rng=$3 claim=$4 ntp=$5; shift 5
     # NET_ONLY=<name>: run that boot alone (a rerun of one failure).
     [[ -z "${NET_ONLY:-}" || "$NET_ONLY" == "$name" ]] || return 0
-    rm -f "$W/claim.ok" "$W/claim.new" "$W/ntp.bad" "$W/intent"
+    rm -f "$W/claim.ok" "$W/claim.new" "$W/claim.slow" "$W/ntp.bad" "$W/intent"
     [[ $claim == ok ]] && : > "$W/claim.ok"
     [[ $claim == new ]] && : > "$W/claim.new"
     [[ -n $BOOT_INTENT ]] && printf '%s\n' "$BOOT_INTENT" > "$W/intent"
+    [[ -n $BOOT_SLOW ]] && printf '%s\n' "$BOOT_SLOW" > "$W/claim.slow"
     [[ $ntp == bad ]] && : > "$W/ntp.bad"
     local iso="$W/$name.iso" log="$W/$name.serial" txt="$W/$name.txt"
     local args=(--iso --binary "$EFI" --engine 10.0.2.2 --api-port "$PORT" --port "${BOOT_PORT:-$NVME_PORT}"
@@ -663,6 +675,22 @@ boot newhost "$host_cpu" "" new good \
     "is there a TCP/IP stack in this firmware" \
     "stub:POST /api/v1/synonyms/boothost/default/claim {" \
     "stub:\"mac\":\"52:54:00:12:34:56\"" \
+    "not:no network boot"
+
+# #157: an engine slow to mint the clone. Two installs' claims at once took
+# forge over the 30 s every other read gets, and the empty buffer of that
+# timeout read as `no HTTP status line`. A claim waits CLAIM_SECS (90 s),
+# saying so every 10 s, so a 40 s claim must boot.
+BOOT_SLOW=40 \
+boot slowclaim "$host_cpu" "" ok good \
+    "stub:claim held for 40 s" \
+    "    waiting for the reply (10 s)" \
+    "    waiting for the reply (30 s)" \
+    "booting stubhost's image" \
+    "blockio     : 96 MiB read in all" \
+    "is there a TCP/IP stack in this firmware" \
+    "not:no reply within" \
+    "not:no HTTP status line" \
     "not:no network boot"
 
 # #54: an attach that boots nothing, on a machine with one blank local disk.
