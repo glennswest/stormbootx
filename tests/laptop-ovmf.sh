@@ -262,6 +262,9 @@ attached=(
 
 laptop named "--host server8" "$(app_conf 'name     = server8')" "${attached[@]}" \
     "claim       : boothost/server8 at " \
+    "service tag : server8  (stated in \\stormboot\\local.conf)" \
+    "(syslog in \\stormboot\\local.conf) as server8" \
+    "update      : off (update = off); this medium is pinned" \
     "  claimed a clone of server8's image" \
     "handed down : StormBootTag = server8  (attributes 0x6)" \
     "handed down : StormBootHostNqn = nqn.2026-09.lo.storm:host-server8  (attributes 0x6)" \

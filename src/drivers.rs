@@ -172,7 +172,7 @@ fn nic_verbose() {
         return;
     }
     match uefi::runtime::set_variable(name, &vendor, VariableAttributes::BOOTSERVICE_ACCESS, &[1]) {
-        Ok(()) => uefi::println!("drivers     : stormnic drivers verbose (nic_verbose in {}; StormnicVerbose set until reset)", crate::config::CONF_PATH),
+        Ok(()) => uefi::println!("drivers     : stormnic drivers verbose (nic_verbose in {}; StormnicVerbose set until reset)", crate::config::file_of(&["nic_verbose"])),
         Err(e) => uefi::println!("drivers     : nic_verbose asked for, but StormnicVerbose was refused ({:?}); the drivers stay quiet", e.status()),
     }
 }

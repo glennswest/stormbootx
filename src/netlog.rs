@@ -123,7 +123,7 @@ pub fn begin() {
     }
     let mut note = None;
     let stated = match config::stated_syslog() {
-        Some(v) => Some((v, config::CONF_PATH)),
+        Some(v) => Some((v, config::file_of(&["syslog"]))),
         None => config::read_bytes(installconf::PATH, installconf::MAX)
             .and_then(|b| String::from_utf8(b).ok())
             .and_then(|y| logwire::yaml_syslog(&y).map(String::from))

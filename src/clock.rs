@@ -146,11 +146,11 @@ fn check() -> Result<String, String> {
         None => None,
         Some(v) => match sntp::setting(v) {
             Some(sntp::Setting::Off) => {
-                return Err(left(&format!("not checked (ntp = off in {})", config::CONF_PATH)))
+                return Err(left(&format!("not checked (ntp = off in {})", config::file_of(&["ntp"]))))
             }
             Some(sntp::Setting::Server(h, p)) => Some((h.to_string(), p)),
             None => {
-                uefi::println!("clock       : ntp = {v:?} in {} is not host[:port]; ignored", config::CONF_PATH);
+                uefi::println!("clock       : ntp = {v:?} in {} is not host[:port]; ignored", config::file_of(&["ntp"]));
                 None
             }
         },

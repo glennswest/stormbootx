@@ -63,6 +63,16 @@ pub fn conf_text() -> Option<String> {
     }
 }
 
+/// The file a stated key (any of `keys`) came from, for the console: `local.conf` when it
+/// says it (and so wins), else `stormboot.conf`. The laptop app (#164) puts
+/// its portal, name and syslog in `local.conf` over a golden's own.
+pub fn file_of(keys: &[&str]) -> &'static str {
+    match read_file(LOCAL_CONF_PATH) {
+        Some(t) if keys.iter().any(|k| field(&t, k).is_some()) => LOCAL_CONF_PATH,
+        _ => CONF_PATH,
+    }
+}
+
 /// `update =` (#83): where this medium's current release is, or `off`.
 /// `None` when the media names nothing.
 pub fn stated_update() -> Option<String> {
@@ -428,7 +438,7 @@ pub fn resolve(d: &Defaults) -> Config {
 
     if let Some(p) = pinned {
         cfg.portal = p;
-        cfg.source = format!("{CONF_PATH} (portal named)");
+        cfg.source = format!("{} (portal named)", file_of(&["portal"]));
     }
 
     // Each field stands on its own, so a stick can take a different namespace

@@ -143,7 +143,7 @@ fn run() -> Result<(), String> {
     // nothing on the media again, as before #37 (#46).
     let esp_reader = config::esp_reader();
     if esp_reader != config::EspReader::Auto {
-        uefi::println!("esp         : {esp_reader:?} only (esp = in {})", config::CONF_PATH);
+        uefi::println!("esp         : {esp_reader:?} only (esp = in {})", config::file_of(&["esp"]));
     }
     // Reads in flight on the attached image (#100), read here for the same
     // reason.
@@ -153,7 +153,7 @@ fn run() -> Result<(), String> {
     // 2026-09-30).
     let local_when_bootable = config::local_when_bootable();
     if local_when_bootable {
-        uefi::println!("local       : auto boots a bootable local disk (local_when_bootable in {})", config::CONF_PATH);
+        uefi::println!("local       : auto boots a bootable local disk (local_when_bootable in {})", config::file_of(&["local_when_bootable"]));
     }
 
     // The node's first-boot input (#79), handed down whatever this boot does
@@ -172,7 +172,7 @@ fn run() -> Result<(), String> {
     let stated = config::stated_tag();
     let serial = match &stated {
         Some(t) => {
-            uefi::println!("service tag : {t}  (stated in {})", config::CONF_PATH);
+            uefi::println!("service tag : {t}  (stated in {})", config::file_of(&["name", "tag"]));
             netlog::name(t, netlog::Rank::Named);
             None
         }
