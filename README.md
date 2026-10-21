@@ -720,7 +720,8 @@ published BlockIO (about 105–120 MiB/s, KVM) and starts it. Its boots
 
 | boot | must show |
 |---|---|
-| `shipped` | `rng : firmware`/`rdrand`; every claim carries `agent` and the firmware inventory (#4, #90); a stub SNTP server's 2031 time set in the RTC and read back by the payload (#77); a 2 KiB `install-config.yaml` handed down and reassembled (#79); the ISO's `update =` skipped as read-only (#83) |
+| `shipped` | `8 in flight` and the NVMe stub holding at least 2 reads at once, answered out of order (#100); `rng : firmware`/`rdrand`; every claim carries `agent` and the firmware inventory (#4, #90); a stub SNTP server's 2031 time set in the RTC and read back by the payload (#77); a 2 KiB `install-config.yaml` handed down and reassembled (#79); the ISO's `update =` skipped as read-only (#83) |
+| `depth1` | `nvme_depth = 1`: one read in flight (the stub never holds two), for its MiB/s beside `shipped`'s 8 (#100) |
 | `jitter` | firmware RNG and RDRAND/RDSEED masked: `rng : jitter`; told `install`, claims the default and hands down `StormBootTag = stubhost` (#76); an unsynchronised SNTP answer sets nothing (`StormBootClock = unsynced`) |
 | `newhost` | no name from DHCP or PTR: claims `boothost/default` by MAC and boots as `mac-525400123456` (#15) |
 | `noesp` | an attach that boots nothing: `blockio : withdrawn`, one local disk counted, no CPU exception in BDS after (#54) |
@@ -752,7 +753,16 @@ write data by R2T.
   do not exist over a fabric.
 - **`CC.EN` before any admin command.** Identify on a disabled controller is a
   Command Sequence Error.
-- **Synchronous, one command in flight.** There is no write pipelining.
+- **Synchronous, with reads pipelined (#100).** One BlockIO read keeps up
+  to 8 commands in flight (fewer if the I/O queue is smaller), matches each
+  C2HData and response to its command by CCCID in whatever order the target
+  answers, and returns when all are done; a failed command is reported once
+  the others have finished, so nothing of it is left on the queue.
+  stormuefi reads in 1 MiB calls, so one call is eight 128 KiB commands
+  against stormblock. One at a time held the Dell to 46–80 MiB/s on 25 GbE:
+  a round trip and a target read per command. Writes stay one at a time.
+  `nvme_depth = 1` in `stormboot.conf` is the old behaviour; the attach
+  prints `transfer : 128 KiB per command, 8 in flight (…)`.
 - **No header or data digests.** A target that insists on them is refused.
 - **Transfer size comes from the controller's MDTS**:
   `2^(12+MPSMIN) × 2^MDTS`, capped at 512 KiB, or 64 KiB if MDTS is 0. It is
@@ -835,6 +845,7 @@ others.
 | `ntp` | none (DHCP option 42, then `pool.ntp.org`) | NTP server for the hardware clock when the lease names none: `host[:port]`, or `off` to leave the clock alone (#77); `build-boot-agent.sh --ntp` |
 | `syslog` | none (`install-config.yaml`'s `syslog:`, then the group alone) | a unicast collector the boot's log is sent to beside the stormcast group (#162): `host[:port]` (port 514 when bare), or `off` to send nothing at all. The goldens write `stormcentral.g8.lo:5514`; `build-boot-agent.sh --syslog` |
 | `local_when_bootable` | `false` | `true`: `auto` and every doubt boot a local disk whose ESP carries `BOOTX64.EFI` instead of claiming (#3). Off until intents work on forge |
+| `nvme_depth` | `8` | reads kept in flight on the attached image, 1–8 (#100); `1` is one command at a time, as before #100, for an A/B or a target that mishandles a queue. Read at start-up, with `esp` |
 | `ui` | `panel` | `log`: no boot panel (#144); the screen scrolls the log as before |
 | `local_boot` | `stormbootx` | `firmware`: the fall-through returns to whatever started stormbootx instead of starting the local disk's `BOOTX64.EFI` itself (#145) |
 | `esp` | `auto` | who reads the attached ESP (#37): `auto` (firmware, then stormbootx), `firmware`, or `stormbootx` (the bridge and its read-only filesystem, #42); `build-boot-agent.sh --esp` |

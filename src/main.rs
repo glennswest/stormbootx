@@ -145,6 +145,9 @@ fn run() -> Result<(), String> {
     if esp_reader != config::EspReader::Auto {
         uefi::println!("esp         : {esp_reader:?} only (esp = in {})", config::CONF_PATH);
     }
+    // Reads in flight on the attached image (#100), read here for the same
+    // reason.
+    let nvme_depth = config::stated_nvme_depth();
     // Whether `auto` may boot a bootable local disk (#3). Off unless the media
     // says so: until intents work on forge, every boot claims (owner,
     // 2026-09-30).
@@ -735,13 +738,16 @@ fn run() -> Result<(), String> {
     uefi::println!("attaching   : {hostnqn}");
     ui::step(ui::Step::Image, &format!("attaching nsid {} at {a}.{b}.{c}.{d}", attach.nsid));
 
-    let ns = nvme::attach(
+    let mut ns = nvme::attach(
         attach.address,
         attach.port,
         &attach.nqn,
         attach.nsid,
         &hostnqn,
     )?;
+    if let Some(n) = nvme_depth {
+        ns.set_depth(n);
+    }
 
     // An attach is what a new medium on trial has to reach (#83).
     selfupdate::mark_good("attached");
@@ -767,9 +773,11 @@ fn run() -> Result<(), String> {
         Some(mtu) => format!("path MTU {mtu}"),
         None => String::from("the stack reported no MTU"),
     };
+    let stated = if nvme_depth.is_some() { ", nvme_depth" } else { "" };
     uefi::println!(
-        "  transfer  : {} KiB per command  ({source}; {path})",
-        ns.max_transfer / 1024
+        "  transfer  : {} KiB per command, {} in flight{stated}  ({source}; {path})",
+        ns.max_transfer / 1024,
+        ns.depth
     );
 
     // The host NQN the namespace is attached as, for the initramfs to attach

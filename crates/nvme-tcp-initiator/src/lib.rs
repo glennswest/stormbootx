@@ -1,5 +1,5 @@
-//! NVMe/TCP initiator for boot loaders: synchronous, one command in flight,
-//! over any byte stream (#10).
+//! NVMe/TCP initiator for boot loaders: synchronous, reads pipelined up to a
+//! small queue depth (#100), over any byte stream (#10).
 //!
 //! Extracted from stormbootx's `src/nvme.rs`, itself ported from
 //! sbregistry's host `src/nvme.rs`, which is validated against real hardware,
@@ -18,8 +18,12 @@
 //!
 //! Differences from the host version, both forced by where this runs: it is
 //! synchronous (firmware has no executor and the caller is a block driver that
-//! wants blocking reads), and there is no write pipelining — a boot path reads
-//! far more than it writes, and one command in flight keeps this small.
+//! wants blocking reads), and only reads are pipelined. One `read` call keeps
+//! up to [`Namespace::depth`] commands in flight and returns when all of them
+//! have completed, in whatever order the controller answered (#100: one
+//! command at a time held the Dell to 46 MiB/s on 25 GbE, a round trip and a
+//! target read per 128 KiB). Writes stay one at a time: a boot path reads far
+//! more than it writes.
 //!
 //! **Where the bytes go is the caller's.** A [`Transport`] is a connected byte
 //! stream: stormbootx's is its smoltcp socket on a UEFI NIC's SNP, and
@@ -222,6 +226,40 @@ impl Cqe {
     }
 }
 
+/// A received PDU: the common header's type, flags and PDO, and the rest.
+struct Pdu {
+    ptype: u8,
+    flags: u8,
+    pdo: usize,
+    rest: Vec<u8>,
+}
+
+/// A C2HData PDU's CCCID, data offset and payload. `rest` follows the common
+/// header: CCCID at 0, DATAO at 4, DATAL at 8; the payload at PDO.
+fn c2h_parts(rest: &[u8], pdo: usize) -> Result<(u16, usize, &[u8]), String> {
+    let offset = le32(rest, 4) as usize;
+    let length = le32(rest, 8) as usize;
+    let at = pdo.saturating_sub(8);
+    if at + length > rest.len() {
+        return Err("C2HData payload runs past the PDU".into());
+    }
+    Ok((le16(rest, 0), offset, &rest[at..at + length]))
+}
+
+/// Whether a C2HData PDU completes its command with no CapsuleResp to follow.
+/// In a data PDU bits 0 and 1 are digest flags, so LAST_PDU and SUCCESS are
+/// bits 2 and 3.
+fn c2h_done(flags: u8) -> bool {
+    const C2H_LAST_PDU: u8 = 0x4;
+    const C2H_SUCCESS: u8 = 0x8;
+    flags & C2H_LAST_PDU != 0 && flags & C2H_SUCCESS != 0
+}
+
+/// The most reads one `read` keeps in flight, unless the queue is smaller
+/// (#100). Eight 128 KiB commands are a 1 MiB ReadBlocks call (stormuefi's
+/// size) in one go; more buys nothing a 256 KiB receive window can carry.
+pub const QUEUE_DEPTH: u16 = 8;
+
 /// One NVMe/TCP queue: a connection that has completed ICReq and Connect.
 pub struct Queue<T: Transport> {
     sock: T,
@@ -331,6 +369,30 @@ impl<T: Transport> Queue<T> {
         self.send(&pdu)
     }
 
+    /// The next PDU: its type, flags, PDO and everything after the 8-byte
+    /// common header.
+    fn recv_pdu(&mut self) -> Result<Pdu, String> {
+        let ch = self.read_exact(8)?;
+        let hlen = ch[2] as usize;
+        let plen = le32(&ch, 4) as usize;
+        if plen < 8 || hlen < 8 {
+            return Err(format!(
+                "malformed PDU (type {:#04x}, hlen {hlen}, plen {plen})",
+                ch[0]
+            ));
+        }
+        let rest = self.read_exact(plen - 8)?;
+        if matches!(ch[0], PDU_RESP | PDU_C2H_DATA) && rest.len() < 16 {
+            return Err(format!("PDU type {:#04x} too short ({plen} bytes)", ch[0]));
+        }
+        Ok(Pdu {
+            ptype: ch[0],
+            flags: ch[1],
+            pdo: ch[3] as usize,
+            rest,
+        })
+    }
+
     /// Wait for `cid`, servicing whatever PDUs arrive on the way.
     fn complete(
         &mut self,
@@ -340,24 +402,13 @@ impl<T: Transport> Queue<T> {
     ) -> Result<Cqe, String> {
         // Bounded so a controller that goes silent cannot wedge the boot.
         for _ in 0..4096 {
-            let ch = self.read_exact(8)?;
-            let ptype = ch[0];
-            let flags = ch[1];
-            let hlen = ch[2] as usize;
-            let pdo = ch[3] as usize;
-            let plen = le32(&ch, 4) as usize;
-            if plen < 8 || hlen < 8 {
-                return Err(format!(
-                    "malformed PDU (type {ptype:#04x}, hlen {hlen}, plen {plen})"
-                ));
-            }
-            let rest = self.read_exact(plen - 8)?;
+            let Pdu { ptype, flags, pdo, rest } = self.recv_pdu()?;
 
             match ptype {
                 PDU_RESP => {
                     let cqe = Cqe::parse(&rest[..16]);
                     if le16(&rest, 12) != cid {
-                        continue; // not ours; nothing else is in flight here
+                        continue; // not ours: a command an earlier read gave up on
                     }
                     return match cqe.failed() {
                         Some(msg) => Err(msg),
@@ -393,13 +444,11 @@ impl<T: Transport> Queue<T> {
                     }
                 }
                 PDU_C2H_DATA => {
-                    let offset = le32(&rest, 4) as usize;
-                    let length = le32(&rest, 8) as usize;
-                    let payload_at = pdo.saturating_sub(8);
-                    if payload_at + length > rest.len() {
-                        return Err("C2HData payload runs past the PDU".into());
+                    let (cccid, offset, payload) = c2h_parts(&rest, pdo)?;
+                    if cccid != cid {
+                        continue; // not ours, as above
                     }
-                    let payload = &rest[payload_at..payload_at + length];
+                    let length = payload.len();
                     let buf = read_into
                         .as_deref_mut()
                         .ok_or("unexpected read data on a command that asked for none")?;
@@ -407,11 +456,7 @@ impl<T: Transport> Queue<T> {
                         return Err("controller returned more data than requested".into());
                     }
                     buf[offset..offset + length].copy_from_slice(payload);
-                    // In a data PDU bits 0 and 1 are digest flags, so LAST_PDU
-                    // and SUCCESS are bits 2 and 3.
-                    const C2H_LAST_PDU: u8 = 0x4;
-                    const C2H_SUCCESS: u8 = 0x8;
-                    if flags & C2H_LAST_PDU != 0 && flags & C2H_SUCCESS != 0 {
+                    if c2h_done(flags) {
                         return Ok(Cqe {
                             dw0: 0,
                             dw1: 0,
@@ -550,6 +595,10 @@ pub struct Namespace<T: Transport> {
     /// path that turned out to be 1500 is worth being able to see.
     /// `None` means the stack would not say.
     pub mtu: Option<u32>,
+    /// Reads one `read` keeps in flight: [`QUEUE_DEPTH`], or fewer when the
+    /// I/O queue is smaller (an SQ of N entries holds N − 1). The caller may
+    /// lower it (`set_depth`); 1 is one command at a time, as before #100.
+    pub depth: u16,
 }
 
 impl<T: Transport> Namespace<T> {
@@ -627,32 +676,99 @@ impl<T: Transport> Namespace<T> {
             max_transfer: transfer_limit(mdts, mpsmin, block_size),
             mdts,
             mtu,
+            depth: sqsize.saturating_sub(1).clamp(1, QUEUE_DEPTH),
         })
     }
 
+    /// Lower (or restore) the reads kept in flight, within what the queue
+    /// allows; never below 1.
+    pub fn set_depth(&mut self, depth: u16) {
+        self.depth = depth.clamp(1, self.depth.max(1));
+    }
+
+    /// Read `buf.len()` bytes from `lba`, as up to `depth` commands in flight
+    /// at once. Each command's data lands at its own place in `buf` whatever
+    /// order the controller answers in. A command that fails is reported once
+    /// every other command in flight has finished, so the queue holds nothing
+    /// of this call when it returns; a transport error returns at once (the
+    /// connection is gone).
     pub fn read(&mut self, lba: u64, buf: &mut [u8]) -> Result<(), String> {
         let bs = self.geometry.block_size as usize;
         if !buf.len().is_multiple_of(bs) {
             return Err(format!("read of {} bytes is not a multiple of {bs}", buf.len()));
         }
-        let mut done = 0usize;
-        while done < buf.len() {
-            let chunk = (buf.len() - done).min(self.max_transfer);
-            let blocks = (chunk / bs) as u32;
-            let cid = self.io.next_cid();
-            let at = lba + (done / bs) as u64;
-            let mut sqe = Sqe::new(OPC_READ, cid, self.nsid);
-            sqe.sgl(0, chunk as u32, SGL_TRANSPORT)
-                .dw(10, at as u32)
-                .dw(11, (at >> 32) as u32)
-                // CDW12 NLB is 0-based.
-                .dw(12, blocks - 1);
-            self.io.send_cmd(&sqe, None)?;
-            self.io
-                .complete(cid, None, Some(&mut buf[done..done + chunk]))?;
-            done += chunk;
+        let depth = self.depth.max(1) as usize;
+        // In flight: (cid, where in buf, length).
+        let mut flight: Vec<(u16, usize, usize)> = Vec::with_capacity(depth);
+        let mut next = 0usize;
+        let mut failed: Option<String> = None;
+        // PDUs still allowed, so a controller that streams junk cannot wedge
+        // the boot: as `complete`'s bound, per command issued.
+        let mut budget = 0usize;
+        loop {
+            while failed.is_none() && next < buf.len() && flight.len() < depth {
+                let chunk = (buf.len() - next).min(self.max_transfer);
+                let blocks = (chunk / bs) as u32;
+                let cid = self.io.next_cid();
+                let at = lba + (next / bs) as u64;
+                let mut sqe = Sqe::new(OPC_READ, cid, self.nsid);
+                sqe.sgl(0, chunk as u32, SGL_TRANSPORT)
+                    .dw(10, at as u32)
+                    .dw(11, (at >> 32) as u32)
+                    // CDW12 NLB is 0-based.
+                    .dw(12, blocks - 1);
+                self.io.send_cmd(&sqe, None)?;
+                flight.push((cid, next, chunk));
+                next += chunk;
+                budget += 4096;
+            }
+            if flight.is_empty() {
+                break;
+            }
+            if budget == 0 {
+                return Err("controller never completed the command".to_string());
+            }
+            budget -= 1;
+
+            let Pdu { ptype, flags, pdo, rest } = self.io.recv_pdu()?;
+            match ptype {
+                PDU_RESP => {
+                    let cid = le16(&rest, 12);
+                    let Some(i) = flight.iter().position(|f| f.0 == cid) else {
+                        continue; // not this call's: an earlier read gave up on it
+                    };
+                    if let Some(msg) = Cqe::parse(&rest[..16]).failed() {
+                        failed.get_or_insert(msg);
+                    }
+                    flight.swap_remove(i);
+                }
+                PDU_C2H_DATA => {
+                    let (cccid, offset, payload) = c2h_parts(&rest, pdo)?;
+                    let Some(i) = flight.iter().position(|f| f.0 == cccid) else {
+                        continue;
+                    };
+                    let (_, start, len) = flight[i];
+                    if offset + payload.len() > len {
+                        return Err("controller returned more data than requested".into());
+                    }
+                    buf[start + offset..start + offset + payload.len()].copy_from_slice(payload);
+                    if c2h_done(flags) {
+                        flight.swap_remove(i);
+                    }
+                }
+                PDU_R2T => return Err("controller asked for data on a read".into()),
+                PDU_C2H_TERM | PDU_H2C_TERM => {
+                    return Err(format!(
+                        "controller terminated the connection (PDU {ptype:#04x})"
+                    ));
+                }
+                other => return Err(format!("unexpected PDU type {other:#04x}")),
+            }
         }
-        Ok(())
+        match failed {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
     }
 
     pub fn write(&mut self, lba: u64, data: &[u8]) -> Result<(), String> {
@@ -714,6 +830,13 @@ mod tests {
         violations: Vec<String>,
         /// Opcodes in order (fabrics as 0x7F00 | fctype).
         log: Vec<u32>,
+        /// Hold reads until the initiator waits, then answer them newest
+        /// first: a controller with several commands in flight (#100).
+        hold_reads: bool,
+        /// The most reads held at once.
+        max_held: usize,
+        /// A read covering this LBA fails with Internal Error.
+        fail_lba: Option<u64>,
     }
 
     struct Conn {
@@ -723,6 +846,8 @@ mod tests {
         /// A write waiting for its H2CData: cid, lba, length, bytes so far.
         pending: Option<(u16, u64, usize, Vec<u8>)>,
         mtu: Option<u32>,
+        /// Reads held (`hold_reads`): cid and data, or `None` to fail it.
+        held: Vec<(u16, Option<Vec<u8>>)>,
     }
 
     fn put16(v: &mut [u8], at: usize, x: u16) {
@@ -767,6 +892,14 @@ mod tests {
             }
             if !success_flag {
                 self.resp(cid, 0, 0, 0);
+            }
+        }
+
+        fn answer(&mut self, cid: u16, bytes: Option<Vec<u8>>) {
+            match bytes {
+                Some(b) => self.c2h(cid, &b, true),
+                // Internal Error (sct 0, sc 0x06).
+                None => self.resp(cid, 0, 0, 0x06 << 1),
             }
         }
 
@@ -876,8 +1009,19 @@ mod tests {
                     let n = (dw(12) as usize + 1) * BLOCK;
                     assert_eq!(le32(sqe, 32) as usize, n, "the SGL length is the transfer");
                     let at = lba as usize * BLOCK;
-                    let bytes = self.ctrl.borrow().disk[at..at + n].to_vec();
-                    self.c2h(cid, &bytes, true);
+                    let c = self.ctrl.borrow();
+                    let fails = c.fail_lba.is_some_and(|f| (lba..lba + (n / BLOCK) as u64).contains(&f));
+                    let bytes = (!fails).then(|| c.disk[at..at + n].to_vec());
+                    let hold = c.hold_reads;
+                    drop(c);
+                    if hold {
+                        self.held.push((cid, bytes));
+                        let held = self.held.len();
+                        let mut c = self.ctrl.borrow_mut();
+                        c.max_held = c.max_held.max(held);
+                    } else {
+                        self.answer(cid, bytes);
+                    }
                 }
                 (OPC_WRITE, _) => {
                     let lba = dw(10) as u64 | (dw(11) as u64) << 32;
@@ -915,6 +1059,10 @@ mod tests {
             }
         }
         fn recv_exact(&mut self, buf: &mut [u8]) -> Result<(), String> {
+            while self.out.len() < buf.len() {
+                let Some((cid, bytes)) = self.held.pop() else { break };
+                self.answer(cid, bytes);
+            }
             if self.out.len() < buf.len() {
                 return Err(format!("receive timed out ({} of {} bytes)", self.out.len(), buf.len()));
             }
@@ -939,7 +1087,7 @@ mod tests {
         fn connect(&mut self, addr: [u8; 4], port: u16) -> Result<Conn, String> {
             assert_eq!((addr, port), ([10, 0, 0, 1], 4420));
             self.connects += 1;
-            Ok(Conn { ctrl: self.ctrl.clone(), inbuf: Vec::new(), out: VecDeque::new(), pending: None, mtu: Some(9000) })
+            Ok(Conn { ctrl: self.ctrl.clone(), inbuf: Vec::new(), out: VecDeque::new(), pending: None, mtu: Some(9000), held: Vec::new() })
         }
         fn stall_ms(&mut self, ms: u32) {
             self.stalled_ms += ms;
@@ -957,6 +1105,9 @@ mod tests {
             digests: false,
             violations: Vec::new(),
             log: Vec::new(),
+            hold_reads: false,
+            max_held: 0,
+            fail_lba: None,
         };
         Fake { ctrl: Rc::new(RefCell::new(ctrl)), connects: 0, stalled_ms: 0 }
     }
@@ -1001,6 +1152,49 @@ mod tests {
     }
 
     #[test]
+    fn reads_keep_several_commands_in_flight_answered_in_any_order() {
+        let mut f = fake(1);
+        f.ctrl.borrow_mut().hold_reads = true;
+        let mut ns = attach(&mut f).unwrap();
+        assert_eq!(ns.depth, QUEUE_DEPTH, "the fake's queue (MQES 128) allows the full depth");
+        // 40 blocks at 8 KiB a command: 20 commands, 8 at a time, each
+        // window answered newest first.
+        let mut buf = vec![0u8; 40 * BLOCK];
+        ns.read(3, &mut buf).unwrap();
+        assert!(buf == f.ctrl.borrow().disk[3 * BLOCK..43 * BLOCK]);
+        assert_eq!(f.ctrl.borrow().max_held, QUEUE_DEPTH as usize);
+        let reads = f.ctrl.borrow().log.iter().filter(|&&o| o == OPC_READ as u32).count();
+        assert_eq!(reads, 20);
+
+        // Depth 1 is one command at a time, as before #100.
+        f.ctrl.borrow_mut().max_held = 0;
+        ns.set_depth(1);
+        let mut buf = vec![0u8; 6 * BLOCK];
+        ns.read(50, &mut buf).unwrap();
+        assert!(buf == f.ctrl.borrow().disk[50 * BLOCK..56 * BLOCK]);
+        assert_eq!(f.ctrl.borrow().max_held, 1);
+        ns.set_depth(100);
+        assert_eq!(ns.depth, 1, "set_depth never raises it past what attach allowed");
+    }
+
+    #[test]
+    fn a_failed_read_finishes_the_rest_first_and_leaves_the_queue_clean() {
+        let mut f = fake(1);
+        f.ctrl.borrow_mut().hold_reads = true;
+        f.ctrl.borrow_mut().fail_lba = Some(12);
+        let mut ns = attach(&mut f).unwrap();
+        let mut buf = vec![0u8; 16 * BLOCK];
+        let e = ns.read(4, &mut buf).err().unwrap();
+        assert!(e.contains("0x06"), "{e}");
+        // Nothing of the failed call is left on the queue: the next read gets
+        // its own data, not a stale command's.
+        f.ctrl.borrow_mut().fail_lba = None;
+        let mut buf = vec![0u8; 4 * BLOCK];
+        ns.read(30, &mut buf).unwrap();
+        assert!(buf == f.ctrl.borrow().disk[30 * BLOCK..34 * BLOCK]);
+    }
+
+    #[test]
     fn writes_answer_r2t_and_read_back() {
         let mut f = fake(0);
         let mut ns = attach(&mut f).unwrap();
@@ -1039,6 +1233,7 @@ mod tests {
             out: VecDeque::new(),
             pending: None,
             mtu: None,
+            held: Vec::new(),
         })
         .unwrap();
         let e = q.read_exact(8).err().unwrap();

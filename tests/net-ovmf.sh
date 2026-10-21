@@ -36,6 +36,8 @@
 #      boot's claim succeeds, and the payload (tcp4probe) must read back
 #      `StormBootTag = stubhost` and the host NQN at attributes 0x6, the
 #      volatile `BOOTSERVICE_ACCESS | RUNTIME_ACCESS` Linux reads (#76).
+#   (#100) `depth1`: `nvme_depth = 1`, one read in flight, beside the
+#      shipped boot's 8 (the stub must see 2 at once there, never here);
 #   3. a new machine (#15): the default claim by MAC answers the
 #      provisional host `mac-525400123456`, which is booted and handed down;
 #   (#157) `slowclaim`: the stub holds the default claim 40 s, past the 30 s
@@ -243,10 +245,15 @@ PY
 
 # The NVMe/TCP target: ICReq, Fabrics Connect, Property Get/Set, Identify
 # (namespace and controller) and Read, which is all nvme.rs sends on a boot.
-# Reads go back as 32 KiB C2HData PDUs, the last one flagged SUCCESS.
+# Reads go back as 32 KiB C2HData PDUs, the last one flagged SUCCESS. Each
+# read is answered from its own thread after a delay, as a target reading a
+# disk would (#100): 2 ms for an even command id, 0.5 ms for an odd one, so
+# commands in flight finish out of order. Each time a connection holds more
+# reads at once than before, the stub log says `nvme: N reads in flight`.
 cat > "$W/nvme.py" <<'PY'
-import socket, socketserver, struct, sys
+import os, socket, socketserver, struct, sys, threading
 disk = open(sys.argv[1], 'rb').read()
+STUBLOG = os.path.join(os.path.dirname(sys.argv[2]), "stub.log")
 BS = 4096
 state = {"cc": 0}
 def pdu(t, flags, hlen, pdo, body):
@@ -275,12 +282,24 @@ class H(socketserver.BaseRequestHandler):
     def handle(self):
         s = self.request
         s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        lock = threading.Lock()
+        flight = {"now": 0, "max": 0}
+        def answer(cid, data):
+            with lock:
+                try:
+                    s.sendall(c2h(cid, data))
+                except OSError:
+                    pass
+                flight["now"] -= 1
+        def send(b):
+            with lock:
+                s.sendall(b)
         try:
             while True:
                 t, flags, hlen, pdo, plen = struct.unpack('<BBBBI', self.read(8))
                 rest = self.read(plen - 8)
                 if t == 0x00:
-                    s.sendall(pdu(0x01, 0, 128, 0, struct.pack('<HBBI', 0, 0, 0, 131072).ljust(120, b'\0')))
+                    send(pdu(0x01, 0, 128, 0, struct.pack('<HBBI', 0, 0, 0, 131072).ljust(120, b'\0')))
                     continue
                 if t != 0x04:
                     return
@@ -290,18 +309,18 @@ class H(socketserver.BaseRequestHandler):
                     fct = sqe[4]
                     ofst = struct.unpack_from('<I', sqe, 44)[0]
                     if fct == 0x01:
-                        s.sendall(resp(cid, 1))
+                        send(resp(cid, 1))
                     elif fct == 0x04:
                         v = {0x00: 127 | 1 << 16 | 1 << 24 | 1 << 37, 0x08: 0x10400,
                              0x14: state["cc"], 0x1C: state["cc"] & 1}.get(ofst, 0)
-                        s.sendall(resp(cid, v & 0xFFFFFFFF, v >> 32))
+                        send(resp(cid, v & 0xFFFFFFFF, v >> 32))
                     elif fct == 0x00:
                         v = struct.unpack_from('<Q', sqe, 48)[0]
                         if ofst == 0x14:
                             state["cc"] = v
-                        s.sendall(resp(cid))
+                        send(resp(cid))
                     else:
-                        s.sendall(resp(cid, status=0x01 << 1))
+                        send(resp(cid, status=0x01 << 1))
                 elif opc == 0x06:
                     cns = sqe[40]
                     d = bytearray(4096)
@@ -311,13 +330,20 @@ class H(socketserver.BaseRequestHandler):
                         d[130] = 12
                     else:
                         d[77] = 5
-                    s.sendall(c2h(cid, bytes(d)))
+                    send(c2h(cid, bytes(d)))
                 elif opc == 0x02:
                     slba = struct.unpack_from('<Q', sqe, 40)[0]
                     nlb = struct.unpack_from('<H', sqe, 48)[0] + 1
-                    s.sendall(c2h(cid, disk[slba * BS:(slba + nlb) * BS]))
+                    with lock:
+                        flight["now"] += 1
+                        if flight["now"] > flight["max"]:
+                            flight["max"] = flight["now"]
+                            with open(STUBLOG, "a") as f:
+                                f.write("nvme: %d reads in flight\n" % flight["max"])
+                    threading.Timer(0.002 if cid % 2 == 0 else 0.0005, answer,
+                                    (cid, disk[slba * BS:(slba + nlb) * BS])).start()
                 else:
-                    s.sendall(resp(cid, status=0x01 << 1))
+                    send(resp(cid, status=0x01 << 1))
         except (EOFError, ConnectionError):
             pass
 class S(socketserver.ThreadingTCPServer):
@@ -429,10 +455,8 @@ IC="$W/install-config.yaml"
 } > "$IC"
 IC_LEN=$(stat -c %s "$IC")
 IC_SHA=$(sha256sum "$IC" | cut -d' ' -f1)
-write_install_config() { # ISO [FILE]
-    local file=${2:-$IC}
-    local off
-    off=$(python3 - "$1" <<'PY'
+esp_offset() { # ISO: the byte offset of its 0xEF (ESP) partition
+    python3 - "$1" <<'PY'
 import struct, sys
 mbr = open(sys.argv[1], "rb").read(512)
 for i in range(4):
@@ -441,7 +465,21 @@ for i in range(4):
         print(struct.unpack_from("<I", e, 8)[0] * 512)
         break
 PY
-)
+}
+
+# Lines added to the ESP's stormboot.conf (BOOT_CONF).
+append_conf() { # ISO TEXT
+    local off; off=$(esp_offset "$1")
+    [[ -n "$off" ]] || die "no 0xEF partition in $1's MBR"
+    mcopy -n -i "$1@@$off" ::/stormboot/stormboot.conf "$W/conf.tmp" || die "could not read $1's stormboot.conf"
+    printf '%s\n' "$2" >> "$W/conf.tmp"
+    mcopy -o -i "$1@@$off" "$W/conf.tmp" ::/stormboot/stormboot.conf || die "could not write $1's stormboot.conf"
+    say "stormboot.conf: added $2"
+}
+
+write_install_config() { # ISO [FILE]
+    local file=${2:-$IC}
+    local off; off=$(esp_offset "$1")
     [[ -n "$off" ]] || die "no 0xEF partition in $1's MBR"
     mcopy -o -i "$1@@$off" "$file" ::/stormboot/install-config.yaml || die "could not write install-config.yaml into $1"
     say "install-config.yaml ($(stat -c %s "$file") bytes, sha256 $(sha256sum "$file" | cut -d' ' -f1)) written to the ESP at byte $off"
@@ -503,6 +541,8 @@ BOOT_ESP=
 BOOT_NOFALLBACK=
 # BOOT_IC (#93): an install-config.yaml of another size for this boot's ESP.
 BOOT_IC=
+# BOOT_CONF: lines added to the medium's stormboot.conf.
+BOOT_CONF=
 # BOOT_SYSLOG (#162): the medium's `syslog =` (the shipped boot names the
 # stub; `off` sends nothing).
 BOOT_SYSLOG=
@@ -537,6 +577,7 @@ boot() {
     "$ROOT/scripts/build-boot-agent.sh" "${args[@]}" >/dev/null
     [[ $name == jitter ]] && write_install_config "$iso"
     [[ -n "$BOOT_IC" ]] && write_install_config "$iso" "$BOOT_IC"
+    [[ -n "$BOOT_CONF" ]] && append_conf "$iso" "$BOOT_CONF"
     cp "$OVMF_VARS" "$W/$name.vars"
     : > "$W/stub.log"
     : > "$W/ntp.log"
@@ -693,6 +734,8 @@ boot shipped "$host_cpu" "" 404 good "${common[@]}" "rng         : " \
     "handed down : StormBootClock = synced:10.0.2.2  (attributes 0x6)" \
     "rtc         : 2031-05-04 03:0" \
     "update      : the boot medium is read-only (an ISO or virtual media); not updated" \
+    "  transfer  : 128 KiB per command, 8 in flight  (controller MDTS 5; " \
+    "stub:nvme: 2 reads in flight" \
     "stub:\"media\":\"agent test\"}" \
     "inventory   : 1 NIC(s), " \
     "  no ConnectX on the bus" \
@@ -738,6 +781,20 @@ boot jitter "$host_cpu,-rdrand,-rdseed" cpu ok bad "${common[@]}" "rng         :
     "log:syslog <134>1 - stubhost stormbootx - - - RESULT: image attached" \
     "log:mcast ttl=4 <134>1 - stubhost stormbootx - - - " \
     "not-log:stub@test"
+
+# #100: `nvme_depth = 1` is one read at a time, as before #100: the same
+# boot as shipped's, for its blockio MiB/s line beside shipped's.
+BOOT_CONF="nvme_depth = 1" \
+boot depth1 "$host_cpu" "" 404 good \
+    "  transfer  : 128 KiB per command, 1 in flight, nvme_depth  (controller MDTS 5; " \
+    "blockio     : 96 MiB read in all" \
+    "is there a TCP/IP stack in this firmware" \
+    "stub:nvme: 1 reads in flight" \
+    "not-stub:nvme: 2 reads in flight" \
+    "not:no network boot"
+for b in shipped depth1; do
+    [[ -f "$W/$b.txt" ]] && say "#100 $b: $(grep -m1 'transfer  :' "$W/$b.txt" | sed 's/^ *//'); $(grep 'blockio     : 96 MiB read in all' "$W/$b.txt" | tail -1)"
+done
 
 # #15: a machine nothing has named and the engine has never seen. It must
 # claim `boothost/default` by its MAC (the engine is newer than 19.3.0),

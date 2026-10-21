@@ -204,6 +204,14 @@ pub fn local_boot() -> bool {
     !matches!(conf_text().and_then(|t| field(&t, "local_boot")).as_deref(), Some("firmware"))
 }
 
+/// `nvme_depth = N` in the config file (#100): the reads kept in flight on
+/// the attached namespace, 1..=8. 1 is one command at a time, as before #100,
+/// for an A/B or a target that mishandles a queue. Absent or unreadable: the
+/// initiator's own depth.
+pub fn stated_nvme_depth() -> Option<u16> {
+    field(&conf_text()?, "nvme_depth")?.parse().ok().filter(|n| (1..=8).contains(n))
+}
+
 /// `ui = log` in the config file: no boot panel (#144), the console
 /// scrolls as before. Anything else, or nothing, draws the panel on a screen.
 pub fn panel_wanted() -> bool {
