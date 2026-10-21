@@ -280,6 +280,13 @@ pub fn stated_ntp() -> Option<String> {
     field(&conf_text()?, "ntp")
 }
 
+/// `syslog =`: a unicast collector for the boot's log (#162), `host[:port]`
+/// or `off`, parsed by `logwire::target`. Absent: install-config.yaml's
+/// `syslog:`, else the stormcast group alone.
+pub fn stated_syslog() -> Option<String> {
+    field(&conf_text()?, "syslog")
+}
+
 /// Read a file from the boot volume as text.
 pub fn read_file(path: &str) -> Option<String> {
     // Config files here are a few hundred bytes; refuse anything that is not,

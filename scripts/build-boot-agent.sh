@@ -47,6 +47,7 @@ FEC=""
 DRIVERS=""
 DNS=""
 NTP=""
+SYSLOG=""
 MEDIA=""
 RNG=""
 ESP_READER=""
@@ -74,6 +75,9 @@ Options:
                    its DHCP reply names none or cannot be read (#26)
   --ntp SERVER     NTP server (host[:port], or off) when the lease names none
                    in option 42; default pool.ntp.org (#77)
+  --syslog TARGET  a unicast syslog collector (host[:port], port 514 when
+                   bare, or off) the boot's log goes to beside the stormcast
+                   group 239.255.42.1:5514 (#162); `off` sends nothing
   --portal ADDR    NVMe/TCP portal, with --pin (default 192.168.31.202)
   --engine ADDR    the portal and engine host, claim still on (tests/net-ovmf.sh)
   --nic-verbose    the stormnic drivers print their whole bring-up trace
@@ -113,6 +117,7 @@ while [[ $# -gt 0 ]]; do
         --drivers) DRIVERS="$2"; shift 2 ;;
         --dns)    DNS="$2"; shift 2 ;;
         --ntp)    NTP="$2"; shift 2 ;;
+        --syslog) SYSLOG="$2"; shift 2 ;;
         --media)  MEDIA="$2"; shift 2 ;;
         --api-port) API_PORT="$2"; shift 2 ;;
         --portal) PORTAL="$2"; PIN="yes"; shift 2 ;;
@@ -282,6 +287,17 @@ if [[ -n "$NTP" ]]; then
 # The NTP server the hardware clock is set from (host[:port], or off), when
 # the DHCP lease names none in option 42. Default pool.ntp.org.
 ntp      = $NTP
+CONF
+fi
+
+# Where the boot's log goes over the network (#162), beside the group.
+if [[ -n "$SYSLOG" ]]; then
+    cat >> "$WORK/stormboot.conf" <<CONF
+
+# A unicast syslog collector (host[:port], or off) the boot's log is sent to
+# once a NIC holds a lease, beside the stormcast group 239.255.42.1:5514.
+# \\stormboot\\install-config.yaml's syslog: is read when this is absent.
+syslog   = $SYSLOG
 CONF
 fi
 

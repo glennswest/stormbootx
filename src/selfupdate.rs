@@ -217,6 +217,8 @@ fn load_image(volume: &uefi::proto::device_path::DevicePath, path: &str) -> Resu
 }
 
 fn restart() -> ! {
+    // What led here, to the collectors, before the reset (#162).
+    crate::netlog::flush();
     boot::stall(core::time::Duration::from_secs(1));
     uefi::runtime::reset(uefi::runtime::ResetType::WARM, Status::SUCCESS, None)
 }

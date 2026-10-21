@@ -202,6 +202,8 @@ fn check() -> Result<String, String> {
     let Some(ntp_ns) = ntp_ns else {
         return Err(left(&format!("NTP unreachable at {source} ({last})")));
     };
+    // The log's lines carry their own time from here (#162).
+    crate::netlog::synced(ntp_ns);
 
     let ntp_s = ntp_ns / 1_000_000_000;
     let now = sntp::civil(ntp_s);

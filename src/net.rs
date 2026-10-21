@@ -21,8 +21,9 @@
 //!   again.
 //! - **DHCP** comes from smoltcp's dhcpv4 socket, on every NIC at once. The raw
 //!   reply is kept for `dnsname.rs` (options 12/15/6, #23).
-//! - **UDP** is used once per boot, for the SNTP request that sets the clock
-//!   and the DNS lookup of its server (#77): `udp_exchange`.
+//! - **UDP** is used for the SNTP request that sets the clock and the DNS
+//!   lookup of its server (#77): `udp_exchange`; and for the boot's log,
+//!   sent and never answered (#162): `udp_send`.
 //! - **ARP** and **TCP** are smoltcp's. A connection goes out on the NIC that
 //!   reached the target last time, else the best-ranked NIC with a lease: link
 //!   up first, then the larger MTU (the storage port is the jumbo one).
@@ -877,6 +878,51 @@ pub fn udp_exchange(
     };
     n.nics[i].sockets.remove(h);
     result
+}
+
+/// Send `frames` to `dest:port`, one datagram each, and expect nothing back:
+/// the log (#162). On every NIC with a lease when `every_nic` (the group:
+/// each link has its own watchers), else on the one `udp_exchange` would
+/// use. `ttl` is the IP TTL (the group's is 4). Gives up after `ms` on a
+/// NIC, as a unicast target whose ARP is never answered would hold the
+/// datagrams forever.
+pub fn udp_send(dest: [u8; 4], port: u16, frames: &[Vec<u8>], every_nic: bool, ttl: Option<u8>, ms: u64) {
+    let Ok(n) = net() else { return };
+    let nics: Vec<usize> = if every_nic {
+        (0..n.nics.len()).filter(|&i| n.nics[i].lease.is_some()).collect()
+    } else {
+        leased_nic(n).into_iter().collect()
+    };
+    let dest = (IpAddress::Ipv4(Ipv4Address::from(dest)), port);
+    for i in nics {
+        let local = local_port(&mut n.rng);
+        let mut s = udp::Socket::new(
+            udp::PacketBuffer::new(vec![udp::PacketMetadata::EMPTY; 1], vec![0u8; 64]),
+            udp::PacketBuffer::new(vec![udp::PacketMetadata::EMPTY; 64], vec![0u8; 64 * 1024]),
+        );
+        s.set_hop_limit(ttl);
+        if s.bind(local).is_err() {
+            continue;
+        }
+        let h = n.nics[i].sockets.add(s);
+        let deadline = n.clock.now() + Duration::from_millis(ms);
+        let mut queued = 0;
+        loop {
+            let sock = n.nics[i].sockets.get_mut::<udp::Socket>(h);
+            while queued < frames.len() && sock.send_slice(&frames[queued], dest).is_ok() {
+                queued += 1;
+            }
+            n.poll_all();
+            let sock = n.nics[i].sockets.get_mut::<udp::Socket>(h);
+            if queued == frames.len() && sock.send_queue() == 0 {
+                break;
+            }
+            if n.clock.now() >= deadline {
+                break;
+            }
+        }
+        n.nics[i].sockets.remove(h);
+    }
 }
 
 /// Wait up to `secs` for leases, then print what every NIC holds. The shell's

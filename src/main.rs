@@ -67,9 +67,11 @@ mod hardware;
 mod installconf;
 mod intent;
 mod inventory;
+mod logwire;
 mod manifest;
 mod mlxfec;
 mod net;
+mod netlog;
 mod nvme;
 mod registry;
 mod selfupdate;
@@ -168,6 +170,7 @@ fn run() -> Result<(), String> {
     let serial = match &stated {
         Some(t) => {
             uefi::println!("service tag : {t}  (stated in {})", config::CONF_PATH);
+            netlog::name(t, netlog::Rank::Named);
             None
         }
         None => match smbios::identity(None) {
@@ -267,6 +270,9 @@ fn run() -> Result<(), String> {
     match (&mac_colon, mac) {
         (Some(c), Some((_, n))) => uefi::println!("mac         : {c}  (lowest of {n} NIC(s))"),
         _ => uefi::println!("mac         : none usable"),
+    }
+    if let Some((m, _)) = mac {
+        netlog::name(core::str::from_utf8(&universal::provisional_name(&m)).unwrap_or(""), netlog::Rank::Mac);
     }
     {
         let nics = net::nic_summary();
@@ -419,12 +425,17 @@ fn run() -> Result<(), String> {
                 match &dns {
                     Some((full, h, from)) => {
                         ui::name(h);
+                        netlog::name(h, netlog::Rank::Named);
                         uefi::println!("name        : {full}  (from {from})")
                     }
                     None => uefi::println!("name        : none from DHCP or reverse DNS"),
                 }
             }
             let dns_host = dns.as_ref().map(|(_, h, _)| h.clone());
+
+            // The log so far goes out now that a lease and a name are known
+            // (#162): a boot that hangs from here on has left its lines.
+            netlog::flush();
 
             // The names the intent is read under, in the order the claim
             // below tries them: a stated tag alone; else the DNS name, the MAC
@@ -643,6 +654,7 @@ fn run() -> Result<(), String> {
             Some((a, name)) => {
                 let name = a.host.clone().unwrap_or(name);
                 ui::name(&name);
+                netlog::name(&name, netlog::Rank::Claimed);
                 ui::done(ui::Step::Claim, &format!("a clone of {name}'s image, nsid {}", a.nsid));
                 (a, Some(name))
             }
@@ -679,6 +691,8 @@ fn run() -> Result<(), String> {
             }
         }
     };
+
+    netlog::flush();
 
     // The hardware clock (#77): the network is up and leased, so ask NTP once
     // and correct the RTC before Linux reads it. Bounded, never fatal. A boot
@@ -778,6 +792,9 @@ fn run() -> Result<(), String> {
     banner("");
     banner("RESULT: image attached; starting its bootloader.");
     banner("============================================================");
+    // The last lines to the collectors (#162): the bootloader's own are not
+    // sent, as nothing here runs between its reads.
+    netlog::flush();
     blockio::boot_attached(handle, esp_reader)?;
     Err(String::from("the attached image did not boot; nothing to chain-load"))
 }
@@ -880,12 +897,15 @@ fn ptr_lookup(server: [u8; 4], addr: [u8; 4]) -> Result<String, String> {
 #[entry]
 fn main() -> Status {
     uefi::helpers::init().unwrap();
+    // Every line from here is kept for the network (#162), the banner too.
+    netlog::begin();
     identify();
 
     // A medium that updated itself counts its trial starts here, before
     // anything else runs, and one whose new set never attached puts the old
     // one back and starts it instead (#83).
     if let Some(status) = selfupdate::at_start() {
+        netlog::end();
         return status;
     }
 
@@ -961,6 +981,8 @@ fn fall_through(err: &str, local: Local) -> Status {
     // Offered on a timer and never forced: a machine that reboots unattended
     // must not stop at a prompt because nobody was watching. Silence takes the
     // path it would have taken anyway.
+    // What happened, to the collectors, before anything waits (#162).
+    netlog::flush();
     if shell::offer(5) {
         // The console is interactive: the screen is the firmware's again.
         ui::suspend();
@@ -970,6 +992,7 @@ fn fall_through(err: &str, local: Local) -> Status {
     // The local disk's OS needs the right time too (#77). Once per boot: a
     // claim that got this far has already done it. Nothing waits for a lease.
     clock::sync();
+    netlog::flush();
     // Give the NICs back, so a later boot option (PXE, HTTP boot) finds the
     // firmware's own network stack bound again (#56).
     net::release();
@@ -998,7 +1021,9 @@ fn fall_through(err: &str, local: Local) -> Status {
         ui::wait(30);
     }
     uefi::println!("============================================================");
-    // Whatever runs next (the boot manager, the EFI Shell) gets its screen.
+    // Whatever runs next (the boot manager, the EFI Shell) gets its screen,
+    // and a ConOut that does not point into this image.
     ui::end();
+    netlog::end();
     Status::ABORTED
 }

@@ -740,8 +740,11 @@ pub fn take_char() -> Option<Option<char>> {
 
 // ------------------------------------------------------- the ConOut hook
 
-/// Every line anyone prints: kept for F2, written to the serial consoles.
+/// Every line anyone prints: kept for F2 and for the network log
+/// (`netlog.rs`), written to the serial consoles.
 unsafe extern "efiapi" fn out_string(_this: *mut SimpleTextOutputProtocol, s: *const Char16) -> Status {
+    // And to the network, once there is one (#162).
+    crate::netlog::capture(s);
     let Some(u) = ui() else { return Status::SUCCESS };
     for &d in &u.serials {
         unsafe {
