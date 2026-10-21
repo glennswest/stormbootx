@@ -5,8 +5,9 @@
 //! (glennswest/stormcast, `docs/wire.md`). stormpump and stormd emit it
 //! through the stormcast crate; stormcentral's receiver (`[syslog]`, UDP
 //! 5514) and mcastsyslog read it. stormcast is `std` (it owns a socket), so
-//! this `no_std` binary cannot link it. These are its rules, byte for byte,
-//! and the tests below are its wire document's examples:
+//! this `no_std` binary cannot link it (stormcast#15 would let it). These
+//! are its rules, byte for byte, and the tests below are its wire
+//! document's examples:
 //!
 //! ```text
 //! <PRI>1 TIMESTAMP HOSTNAME APP-NAME - - - MSG
