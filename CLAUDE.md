@@ -570,6 +570,20 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#100 — several NVMe reads in flight (P1, from #165's decision,
+      2026-10-21). In progress.** The Dell reads at 46–80 MiB/s with one
+      command outstanding; stormuefi reads its kernel and initramfs in 1 MiB
+      ReadBlocks calls, so one call is 2–8 commands. Plan: `Namespace::read`
+      in `crates/nvme-tcp-initiator` keeps up to `depth` commands in flight
+      (min(SQSIZE − 1, 8)), matching C2HData and responses by CCCID, in any
+      order; a failed command drains the rest before returning; PDUs of a
+      command not in flight are skipped (also in `complete`). Writes stay one
+      at a time. `nvme_depth = N` in stormboot.conf (1 = the old behaviour,
+      for A/B and a way out); the `transfer :` line says the depth. Tests:
+      host tests with a fake controller that answers out of order; net-ovmf's
+      stub answers reads from worker threads after a delay and logs the most
+      reads it held at once, and the shipped boot must see ≥ 2.
+
 - [ ] **#165 — jumbo frames: the Dell boots at `mtu 1500 … path MTU 1500`
       on g16's 9000 network (P0, the master, 2026-10-21). In progress.**
       Found: an SNP's MTU is `Mode.MaxPacketSize`, set by the NIC driver;
