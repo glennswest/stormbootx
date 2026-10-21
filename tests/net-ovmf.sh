@@ -100,9 +100,11 @@ STUB_PID=""
 NVME_PID=""
 BLANK_PID=""
 NTP_PID=""
+SYSLOG_PID=""
 cleanup() {
     [[ -n "$STUB_PID" ]] && kill "$STUB_PID" 2>/dev/null
     [[ -n "$NTP_PID" ]] && kill "$NTP_PID" 2>/dev/null
+    [[ -n "$SYSLOG_PID" ]] && kill "$SYSLOG_PID" 2>/dev/null
     [[ -n "$NVME_PID" ]] && kill "$NVME_PID" 2>/dev/null
     [[ -n "$BLANK_PID" ]] && kill "$BLANK_PID" 2>/dev/null
     rm -rf "$W"
@@ -367,6 +369,49 @@ for _ in $(seq 50); do [[ -s "$W/ntp.port" ]] && break; sleep 0.1; done
 NTP_PORT=$(cat "$W/ntp.port" 2>/dev/null) || die "the SNTP stub did not start"
 say "SNTP stub on 127.0.0.1:$NTP_PORT (udp)"
 
+# The syslog collector (#162): a UDP port that writes each datagram down as
+# `syslog <frame>`, as stormcentral's [syslog] receiver would take it. The
+# group's frames never reach it (slirp drops multicast); each boot's
+# filter-dump of the NIC's traffic is read for them instead (`group_frames`).
+cat > "$W/syslog.py" <<'PY'
+import socket, sys
+log = open(sys.argv[1], "a", buffering=1)
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.bind(("127.0.0.1", 0))
+open(sys.argv[2], "w").write(str(s.getsockname()[1]))
+while True:
+    m, _ = s.recvfrom(65535)
+    log.write("syslog " + m.decode("utf-8", "replace").replace("\n", " ") + "\n")
+PY
+python3 "$W/syslog.py" "$W/syslog.log" "$W/syslog.port" &
+SYSLOG_PID=$!
+for _ in $(seq 50); do [[ -s "$W/syslog.port" ]] && break; sleep 0.1; done
+SYSLOG_PORT=$(cat "$W/syslog.port" 2>/dev/null) || die "the syslog stub did not start"
+say "syslog stub on 127.0.0.1:$SYSLOG_PORT (udp)"
+
+# The stormcast group's frames (#162) out of a boot's pcap, as `mcast
+# ttl=<TTL> <frame>` lines in the syslog log: IPv4 UDP to 239.255.42.1:5514.
+group_frames() { # PCAP
+    python3 - "$1" >> "$W/syslog.log" <<'PY'
+import struct, sys
+try:
+    d = open(sys.argv[1], "rb").read()
+except OSError:
+    sys.exit(0)
+i = 24
+while i + 16 <= len(d):
+    n = struct.unpack_from("<I", d, i + 8)[0]
+    f = d[i + 16:i + 16 + n]
+    i += 16 + n
+    if len(f) < 42 or f[12:14] != b"\x08\x00" or f[23] != 17 or f[30:34] != bytes([239, 255, 42, 1]):
+        continue
+    u = 14 + (f[14] & 0x0f) * 4
+    if struct.unpack_from("!H", f, u + 2)[0] != 5514:
+        continue
+    print("mcast ttl=%d %s" % (f[22], f[u + 8:].decode("utf-8", "replace")))
+PY
+}
+
 accel=tcg
 [[ -w /dev/kvm ]] && accel=kvm
 
@@ -379,6 +424,8 @@ IC="$W/install-config.yaml"
     printf 'apiVersion: v1\nbaseDomain: stub.lo\nmetadata:\n  name: stubcluster\n'
     printf 'pullSecret: '"'"'{"auths":{"registry.stub.lo":{"auth":"%s"}}}'"'"'\n' "$(head -c 900 /dev/zero | tr '\0' 'A')"
     printf 'sshKey: ssh-ed25519 %s stub@test\n' "$(head -c 1000 /dev/zero | tr '\0' 'B')"
+    # The log's collector (#162), for a medium whose stormboot.conf names none.
+    printf 'syslog: "10.0.2.2:%s"\n' "$SYSLOG_PORT"
 } > "$IC"
 IC_LEN=$(stat -c %s "$IC")
 IC_SHA=$(sha256sum "$IC" | cut -d' ' -f1)
@@ -456,6 +503,9 @@ BOOT_ESP=
 BOOT_NOFALLBACK=
 # BOOT_IC (#93): an install-config.yaml of another size for this boot's ESP.
 BOOT_IC=
+# BOOT_SYSLOG (#162): the medium's `syslog =` (the shipped boot names the
+# stub; `off` sends nothing).
+BOOT_SYSLOG=
 BOOT_NICDEV=
 boot() {
     local name=$1 cpu=$2 rng=$3 claim=$4 ntp=$5; shift 5
@@ -481,12 +531,16 @@ boot() {
     [[ $name == shipped ]] && args+=(--update "http://10.0.2.2:$PORT/api/v1/boothelpers/stormbootx-test")
     # It also names a media label, which every claim carries (#90).
     [[ $name == shipped ]] && args+=(--media "agent test")
+    # And the log's collector (#162).
+    [[ $name == shipped ]] && args+=(--syslog "10.0.2.2:$SYSLOG_PORT")
+    [[ -n "$BOOT_SYSLOG" ]] && args+=(--syslog "$BOOT_SYSLOG")
     "$ROOT/scripts/build-boot-agent.sh" "${args[@]}" >/dev/null
     [[ $name == jitter ]] && write_install_config "$iso"
     [[ -n "$BOOT_IC" ]] && write_install_config "$iso" "$BOOT_IC"
     cp "$OVMF_VARS" "$W/$name.vars"
     : > "$W/stub.log"
     : > "$W/ntp.log"
+    : > "$W/syslog.log"
     # The ISO on virtio-scsi, not -cdrom: OVMF's ATA PIO path on q35's
     # emulated CD looped on ATAPI PACKET commands and the boot never started
     # stormbootx (#124; shell-ovmf, on virtio-scsi, never did).
@@ -506,7 +560,7 @@ boot() {
     say "[$name] booting under OVMF ($accel, cpu $cpu, rng ${rng:-as shipped}, up to ${LIMIT}s)"
     local attempt=1 qemu t
     while :; do
-    rm -f "$W/$name.mon"
+    rm -f "$W/$name.mon" "$W/$name.pcap"
     : > "$log"; : > "$W/$name.debug"
     cp "$OVMF_VARS" "$W/$name.vars"
     qemu-system-x86_64 -machine q35,accel="$accel" -cpu "$cpu" -m 1024 \
@@ -515,6 +569,7 @@ boot() {
         -fw_cfg name=opt/org.tianocore/IPv4Support,string=$ipv4 \
         -fw_cfg name=opt/org.tianocore/IPv6Support,string=no \
         "${net[@]}" -device virtio-net-pci,netdev=n0,romfile=$nicopt${BOOT_NICDEV:+,$BOOT_NICDEV} \
+        -object filter-dump,id=fd0,netdev=n0,file="$W/$name.pcap" \
         "${media[@]}" "${extra[@]}" \
         -debugcon file:"$W/$name.debug" -global isa-debugcon.iobase=0x402 \
         -monitor unix:"$W/$name.mon",server,nowait \
@@ -540,7 +595,7 @@ boot() {
         if (( attempt == 1 )); then
             attempt=2
             say "[$name] booting it once more (#124)"
-            : > "$W/stub.log"; : > "$W/ntp.log"
+            : > "$W/stub.log"; : > "$W/ntp.log"; : > "$W/syslog.log"
             continue
         fi
         say "[$name] stormbootx did not start, twice"
@@ -564,9 +619,19 @@ boot() {
     grep -v '^\s*$' "$txt" | sed -n '1,90s/^/  | /p'
     say "[$name] stub log:"
     sed 's/^/  > /' "$W/stub.log" "$W/ntp.log"
+    group_frames "$W/$name.pcap"
+    say "[$name] log frames (#162): $(grep -c '^syslog ' "$W/syslog.log") to the collector, $(grep -c '^mcast ' "$W/syslog.log") to the group; the first and last of each:"
+    { grep -m2 '^syslog ' "$W/syslog.log"; grep '^syslog ' "$W/syslog.log" | tail -1
+      grep -m2 '^mcast ' "$W/syslog.log"; grep '^mcast ' "$W/syslog.log" | tail -1; } | cut -c1-200 | sed 's/^/  ~ /'
     local fail=0 want
     for want in "$@"; do
-        if [[ "$want" == stub:* ]]; then
+        if [[ "$want" == log:* ]]; then
+            grep -qF -- "${want#log:}" "$W/syslog.log" && say "[$name] log frame: ${want#log:}" \
+                || { say "[$name] log frame missing: ${want#log:}"; fail=1; }
+        elif [[ "$want" == not-log:* ]]; then
+            grep -qF -- "${want#not-log:}" "$W/syslog.log" && { say "[$name] unexpected log frame: ${want#not-log:}"; fail=1; } \
+                || say "[$name] no log frame, as it should be: ${want#not-log:}"
+        elif [[ "$want" == stub:* ]]; then
             grep -qF -- "${want#stub:}" "$W/stub.log" "$W/ntp.log" && say "[$name] stub saw: ${want#stub:}" \
                 || { say "[$name] stub missing: ${want#stub:}"; fail=1; }
         elif [[ "$want" == not-stub:* ]]; then
@@ -643,7 +708,16 @@ boot shipped "$host_cpu" "" 404 good "${common[@]}" "rng         : " \
     "not-stub:NOT kept" \
     "not-stub:NOT JSON" \
     "install cfg : none on the media (\\stormboot\\install-config.yaml)" \
-    "not:handed down : StormBootInstallConfig"
+    "not:handed down : StormBootInstallConfig" \
+    "log         : sent to the stormcast group 239.255.42.1:5514 and to 10.0.2.2:$SYSLOG_PORT (syslog in \\stormboot\\stormboot.conf) as " \
+    "log:syslog <134>1 - " \
+    "log: stormbootx - - - stormbootx $VERSION (" \
+    "log: stormbootx - - - tcp4        : smoltcp over SNP (nic 0 " \
+    "log:syslog <134>1 2031-05-04T03:0" \
+    "log: stormbootx - - - RESULT: image attached; starting its bootloader." \
+    "log:mcast ttl=4 <134>1 - " \
+    "log:mcast ttl=4 <134>1 2031-05-04T03:0" \
+    "not-log:is there a TCP/IP stack in this firmware"
 grep -q "rng         : jitter" "$W/shipped.txt" && say "note: the shipped boot fell back to jitter"
 BOOT_INTENT=install \
 boot jitter "$host_cpu,-rdrand,-rdseed" cpu ok bad "${common[@]}" "rng         : jitter" \
@@ -659,7 +733,11 @@ boot jitter "$host_cpu,-rdrand,-rdseed" cpu ok bad "${common[@]}" "rng         :
     "handoff     : StormBootInstallConfig ($IC_LEN bytes in 3 chunk(s)) = v1:$IC_LEN:3:$IC_SHA" \
     "handed down : StormBootInstallConfig = v1:$IC_LEN:3:$IC_SHA  (attributes 0x6)" \
     "install cfg : $IC_LEN bytes reassembled from 3 chunk(s), length and sha256 match" \
-    "not:stub@test"
+    "not:stub@test" \
+    "log         : sent to the stormcast group 239.255.42.1:5514 and to 10.0.2.2:$SYSLOG_PORT (syslog in \\stormboot\\install-config.yaml) as " \
+    "log:syslog <134>1 - stubhost stormbootx - - - RESULT: image attached" \
+    "log:mcast ttl=4 <134>1 - stubhost stormbootx - - - " \
+    "not-log:stub@test"
 
 # #15: a machine nothing has named and the engine has never seen. It must
 # claim `boothost/default` by its MAC (the engine is newer than 19.3.0),
@@ -743,8 +821,10 @@ boot nolease "$host_cpu" "" 404 good \
 # the claim's names (the DNS name, if any, 404s; the MAC is the host's
 # alias), and `local` must fall through with no claim made, so no clone is
 # minted.
-BOOT_INTENT=local \
+BOOT_INTENT=local BOOT_SYSLOG=off \
 boot intent "$host_cpu" "" ok good \
+    "log         : not sent over the network (syslog = off)" \
+    "not-log:<13" \
     "engine      : stormblock 19.4.0  (universal boot)" \
     "intent      : local" \
     "no network boot: boot intent for 525400123456 is \`local\`: nothing claimed" \

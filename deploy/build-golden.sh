@@ -142,6 +142,11 @@ seal() {
 # signed release (stormcentral#279).
 update_url() { echo "http://stormcentral.g8.lo/api/v1/boothelpers/$1"; }
 
+# Where a medium's boot log goes beside the stormcast group (#162):
+# stormcentral's syslog receiver, which the blades' subnets cannot reach by
+# multicast. Looked up at the lease's DNS server, as the update host is.
+SYSLOG_TARGET="stormcentral.g8.lo:5514"
+
 # media.files: the self-update manifest's file lines, from the media/ tree.
 # A media golden names no namespace (#36): `fallback = none`, no nqn/nsid.
 no_fallback() {
@@ -214,7 +219,7 @@ stormbootx)
     # defaults. Which image a machine boots is its boothost on the engine,
     # never the media, so one golden boots every machine, and it names no
     # fallback namespace either (#36): no claim, no attach.
-    agent=(--binary "$OUT/bin/stormbootx.efi" --dns 192.168.31.252 --no-fallback --media fw
+    agent=(--binary "$OUT/bin/stormbootx.efi" --dns 192.168.31.252 --no-fallback --syslog "$SYSLOG_TARGET" --media fw
            --update "$(update_url stormbootx)")
     "$ROOT/scripts/build-boot-agent.sh" --iso "${agent[@]}" --output "$OUT/boot/stormbootx.iso"
     "$ROOT/scripts/build-boot-agent.sh" "${agent[@]}" --tree "$OUT/media" --output "$OUT/boot/stormbootx.img"
@@ -238,7 +243,7 @@ stormbootx-rustnic)
     rustnic_drivers
     "$ROOT/scripts/build-boot-agent.sh" --iso --binary "$OUT/bin/stormbootx.efi" \
         --drivers "$WORK/media-drivers" --prefer-media-drivers virtio --dns 192.168.31.252 \
-        --no-fallback --media "$RUSTNIC_LABEL" \
+        --no-fallback --syslog "$SYSLOG_TARGET" --media "$RUSTNIC_LABEL" \
         --update "$(update_url stormbootx-rustnic)" --tree "$OUT/media" \
         --output "$OUT/boot/stormbootx-rustnic.iso"
     media_files
@@ -253,7 +258,7 @@ stormbootx-disk|stormbootx-rustnic-disk)
     cp "$REL/stormbootx.efi" "$WORK/stormbootx.efi"
     mkdir -p "$OUT/boot"
     # The same medium as the family's ISO, on a writable stick.
-    disk=(--binary "$WORK/stormbootx.efi" --dns 192.168.31.252 --no-fallback --size 64)
+    disk=(--binary "$WORK/stormbootx.efi" --dns 192.168.31.252 --no-fallback --syslog "$SYSLOG_TARGET" --size 64)
     if [[ $GOLDEN == stormbootx-disk ]]; then
         disk+=(--media fw --update "$(update_url stormbootx)")
         note="drivers  = none (the firmware's own, #52)"
@@ -278,7 +283,7 @@ stormbootx-arm64)
     mkdir -p "$OUT/bin" "$OUT/boot"
     cp "$REL/stormbootx.efi" "$OUT/bin/"
     "$ROOT/scripts/build-boot-agent.sh" --iso --arch arm64 --binary "$OUT/bin/stormbootx.efi" \
-        --dns 192.168.31.252 --no-fallback --media "fw arm64" \
+        --dns 192.168.31.252 --no-fallback --syslog "$SYSLOG_TARGET" --media "fw arm64" \
         --update "$(update_url stormbootx-arm64)" --tree "$OUT/media" \
         --output "$OUT/boot/stormbootx-arm64.iso"
     media_files
