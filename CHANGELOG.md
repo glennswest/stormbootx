@@ -3,8 +3,11 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
-### 2026-10-21
-- **fix:** `stormbootx-stick` no longer leaves a stick alone because it names no `update =` (#161). server1's stick (a v0.27.0 exe swapped in by hand, no `update =`, `version =` or `media =`) read `stormbootx 0.0.0 (commit ?), media ?, serial 0` and `left alone`, so it never took the promoted v0.29.0. With no `update =` and no `--update`, the stick now asks its family's boothelper under `--boothelpers` (default `http://stormcentral.g8.lo/api/v1/boothelpers`, as the goldens' `update =`): `stormbootx-rustnic` for `media = rustnic …` or, with no `media =`, a stick carrying NIC drivers; `stormbootx` for `media = fw` or none. A stick with no `version =` was already 0.0.0 and serial 0, older than any release; the `read` line now says so. Only `update = off` pins a stick. `tests/stick.sh`: `nourl` (server1's stick takes stormbootx-rustnic's serial 2 and the release's `stormboot.conf`, `update =` and all), `nourl-fw`, `nourl-media`, `nourl-given`.
+## [v0.29.1] — 2026-10-21
+
+### Fixed
+- `stormbootx-stick` no longer leaves a stick alone because it names no `update =` (#161). server1's stick (a v0.27.0 exe swapped in by hand, no `update =`, `version =` or `media =`) read `stormbootx 0.0.0 (commit ?), media ?, serial 0` and `left alone`, so it never took the promoted v0.29.0. With no `update =` and no `--update`, the stick now asks its family's boothelper under `--boothelpers` (default `http://stormcentral.g8.lo/api/v1/boothelpers`, as the goldens' `update =`): `stormbootx-rustnic` for `media = rustnic …` or, with no `media =`, a stick carrying NIC drivers; `stormbootx` for `media = fw` or none. A stick with no `version =` was already 0.0.0 and serial 0, older than any release; the `read` line now says so. Only `update = off` pins a stick. `tests/stick.sh`: `nourl` (server1's stick takes stormbootx-rustnic's serial 2 and the release's `stormboot.conf`, `update =` and all), `nourl-fw`, `nourl-media`, `nourl-given`.
+- A claim the engine is slow to answer waits for it (#157): see 2026-10-17 below.
 
 ### 2026-10-17
 - **docs:** #158 (pvetest1/2's claims at 17:39Z ending as `no HTTP status line`) is #157: those boots ran v0.29.0, before its fix, and the console's timings put the end of the read 30.0 s after the claim, v0.29.0's budget, not ~10 s. The fix ships with the next release.
