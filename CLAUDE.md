@@ -591,6 +591,27 @@ then.
       MiB/s** against the same 0.5–2 ms stub. **Not run:** the Dell (or any
       metal) on it: its `blockio : … MiB/s` line, today 46–80.
 
+- [ ] **#164 — boot and install from the laptop app: stormbootx claims
+      from `stormboot-serve` (stormblock#474, v21.4.0, 4947c7d) on a Mac or
+      Windows laptop, no forge (P1, the master, 2026-10-21). In progress.**
+      Read against 4947c7d: the boothost router answers health (`version`
+      21.2.1, past the 19.3.0 gate), intent, claim (`attach` first, its
+      `address`/`port`/`nqn`/`nsid` the keys `registry.rs` reads; `host.name`
+      the name handed down) and installed; each host's subsystem admits
+      `nqn.2026-09.lo.storm:host-<name>`, what stormbootx presents. So no
+      code change is expected; the media are the app's to make. Plan:
+      `scripts/build-stormboot-serve.sh` builds it from stormblock at the
+      pinned rev; `tests/laptop-ovmf.sh` takes the `stormbootx` golden's
+      ISO, adds `\stormboot\local.conf` (read first, so it wins over the
+      golden's `stormboot.conf`: `portal`, `api_port`, `name`, `syslog`,
+      `update = off`) and `install-config.yaml` with mtools, as the app
+      would, and boots it under OVMF against the real `stormboot-serve`:
+      by name (`install`: claim, attach, 96 MiB read, the payload reads
+      `StormBootTag` and the install-config), by MAC (`--host
+      name=MAC`, no name on the media), `local` (no claim) and a name the
+      laptop does not serve (falls through). README: "Booting from a
+      laptop", the contract for storminstall#20.
+
 - [ ] **#165 — jumbo frames: the Dell boots at `mtu 1500 … path MTU 1500`
       on g16's 9000 network (P0, the master, 2026-10-21). In progress.**
       Found: an SNP's MTU is `Mode.MaxPacketSize`, set by the NIC driver;
