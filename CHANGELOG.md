@@ -3,6 +3,11 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+## [v0.30.0] — 2026-10-21
+
+### Added
+- The boot's log goes over the network (#162): see 2026-10-21 below.
+
 ### 2026-10-21
 - **feat:** the boot's log goes over the network (#162). A BMC's serial-over-LAN that dies mid-boot (server8, stormblock#476) no longer loses what stormbootx printed. Every console line, from the banner on, including the media's NIC drivers' (`src/netlog.rs`: tapped in the boot panel's `ConOut`, or a `ConOut` of its own when there is no panel, taken out again before the image returns), is kept while no NIC holds a lease and then sent as a stormcast frame (`src/logwire.rs`, core-only and host-tested against stormcast's `docs/wire.md`: RFC 5424, `local0`, APP-NAME `stormbootx`, severity from the line) to the group `239.255.42.1:5514` (TTL 4) on every leased NIC, and to a unicast collector when one is named: `syslog =` in `stormboot.conf` (`build-boot-agent.sh --syslog`), else `syslog:` in the media's `install-config.yaml`; `off` sends nothing. Sent once the name is known, after the claim, before the chain-load, before a self-update resets and on the fall-through. HOSTNAME is the claimed host, the DNS name or stated tag, else `mac-<hex>`; TIMESTAMP is real once NTP set the clock, else `-`. The goldens name `syslog = stormcentral.g8.lo:5514`. `net::udp_send` sends datagrams with no answer. net-ovmf: a collector stub and the NIC's pcap (`filter-dump`) must hold the frames (the shipped boot by `syslog =`, `jitter` by `install-config.yaml`, `intent` with `off` none).
 
