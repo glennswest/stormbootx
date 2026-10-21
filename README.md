@@ -57,6 +57,9 @@ as a NIC driver (#26; absent on ordinary media). It writes to these:
 | its own boot medium: `\EFI\BOOT\BOOTX64.EFI`, `\startup.nsh`, `\stormboot\stormboot.conf`, `\stormboot\drivers\*` (with `*.new`/`*.prev` copies), `\stormboot\state`, and `\stormboot\local.conf` only to keep a `name =` | a writable medium (USB stick, local ESP) with `update =`, when a newer signed release verifies, and the starts of its trial (#83, *Self-update*) |
 | one **non-volatile** EFI variable, `StormBootMinSerial` | when a self-updated medium passes its trial (#83): the highest release serial this machine has run, so an older signed release can't be replayed onto it |
 
+Every line it prints is also **sent** over the network once a NIC holds a
+lease (#162, *The log over the network*): nothing is written for it.
+
 Nothing is written to the platform's network configuration any more (#56;
 until 0.9 a `STATIC` IP4 policy was switched to `DHCP` in NVRAM). The NICs are
 taken from the firmware's own stack for the boot (SNP opened exclusively) and
@@ -445,6 +448,41 @@ console; a machine with no screen console gets it anyway.
    bootloader then shows whether reads crawl, fail, or stopped being asked
    for.
 
+### The log over the network
+
+The serial console is a boot's only record, and a BMC's serial-over-LAN can
+die mid-install (server8, stormblock#476). So every line stormbootx prints,
+and every line printed through `ConOut` while it runs (the media's NIC
+drivers'), is also sent as a **stormcast** frame (#162, `src/netlog.rs`,
+`src/logwire.rs`): RFC 5424 over UDP, facility `local0`, APP-NAME
+`stormbootx`, the framing of glennswest/stormcast's `docs/wire.md`.
+
+- **To** the fleet's group `239.255.42.1:5514` (TTL 4) on every NIC with a
+  lease, which mcastsyslog and stormconsole read; and, because multicast does
+  not leave the subnet, to a unicast collector when one is named: `syslog =`
+  in `stormboot.conf`, else a top-level `syslog:` in the media's
+  `install-config.yaml` (`host[:port]`, port 514 when bare; a name is looked
+  up once at the lease's DNS server). The goldens name stormcentral's
+  receiver, `stormcentral.g8.lo:5514`, so `stormcentral logs --host <machine>`
+  shows the boot. Nothing named: the group alone, never an error. `off`:
+  nothing is sent.
+- **Kept from the first line** (the banner) while no NIC holds a lease, at
+  most 4000 lines or 512 KiB (the oldest go first, and the next send says how
+  many), and sent at fixed points: once the machine's name is known, after
+  the claim, before the attached image's bootloader starts, before a
+  self-update resets, and on the fall-through before the NICs are given back.
+  Never from inside a print, so the bootloader's own lines are not sent.
+- **HOSTNAME** is the best name known when a line goes: the host the claim
+  booted, else the DNS name or a stated `tag`, else `mac-<hex>`.
+  **TIMESTAMP** is the line's own time once NTP set the clock this boot
+  (#77); before that `-`, and the collector keeps the arrival time.
+- The console says where it goes, once: `log : sent to the stormcast group
+  239.255.42.1:5514 and to stormcentral.g8.lo:5514 (192.168.8.x, syslog in
+  \stormboot\stormboot.conf) as server8`.
+
+The initramfs's and the installer's lines after it are stormblock's
+(stormblock#477).
+
 ### install-config.yaml
 
 A node's first-boot input (stormcos#82, stormcos `docs/INSTALL-CONFIG.md`:
@@ -783,6 +821,7 @@ others.
 | `name` (or `tag`) | none (DNS name, then MAC, then SMBIOS) | states the identity; the only name claimed |
 | `dns` | none | DNS server for the PTR of the machine's own address, when its DHCP reply names none or cannot be read (#26); `build-boot-agent.sh --dns` |
 | `ntp` | none (DHCP option 42, then `pool.ntp.org`) | NTP server for the hardware clock when the lease names none: `host[:port]`, or `off` to leave the clock alone (#77); `build-boot-agent.sh --ntp` |
+| `syslog` | none (`install-config.yaml`'s `syslog:`, then the group alone) | a unicast collector the boot's log is sent to beside the stormcast group (#162): `host[:port]` (port 514 when bare), or `off` to send nothing at all. The goldens write `stormcentral.g8.lo:5514`; `build-boot-agent.sh --syslog` |
 | `local_when_bootable` | `false` | `true`: `auto` and every doubt boot a local disk whose ESP carries `BOOTX64.EFI` instead of claiming (#3). Off until intents work on forge |
 | `ui` | `panel` | `log`: no boot panel (#144); the screen scrolls the log as before |
 | `local_boot` | `stormbootx` | `firmware`: the fall-through returns to whatever started stormbootx instead of starting the local disk's `BOOTX64.EFI` itself (#145) |
@@ -1049,6 +1088,8 @@ only makes outbound connections:
 | NTP server (one SNTP exchange, #77) | DHCP option 42, else `pool.ntp.org`, UDP 123 | DHCP, else `ntp` |
 | NVMe/TCP portal (attach) | `<portal>:4420`, or what the claim returns | `port`, or the claim reply |
 | stormcentral (the self-update's manifest, signature and files, #83) | the `update =` URL, HTTP/1.1; its host looked up over UDP 53 | `update` |
+| the stormcast group (the boot's log, #162) | `239.255.42.1:5514`, UDP, TTL 4, on every NIC with a lease | `syslog = off` stops it |
+| a syslog collector (the boot's log, #162) | none; the goldens name `stormcentral.g8.lo:5514`, UDP, its host looked up over UDP 53 | `syslog`, else `install-config.yaml`'s `syslog:` |
 
 The portal defaults to `192.168.31.202` (forge). Since stormblock v17.0.0 the
 engine API requires a token for everything except `POST
