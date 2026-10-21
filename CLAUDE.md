@@ -228,7 +228,7 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/drivers.rs` | load NIC drivers from `\stormboot\drivers` on the media (#26), after the platform's own bind; `take_over` gives a `prefer_media_drivers` family its NICs (#108); `nic_verbose` sets `StormnicVerbose` before the drivers load (#80) |
 | `src/dhcp4.rs` | tcp4probe only since #56: DHCP through the firmware's `EFI_DHCP4` |
 | `src/nvme.rs` | the NVMe/TCP initiator's UEFI end: `TcpSocket` as its `Transport`, `boot::stall` (#10) |
-| `crates/nvme-tcp-initiator` | the NVMe/TCP initiator itself (#10): `no_std` + `alloc`, no dependencies, generic over a `Transport` and a `Platform`, shared with stormboot4bios; host tests against a fake controller (`cargo test -p nvme-tcp-initiator`) |
+| `crates/nvme-tcp-initiator` | the NVMe/TCP initiator itself (#10): `no_std` + `alloc`, no dependencies, generic over a `Transport` and a `Platform`, shared with stormboot4bios; reads up to 8 in flight (#100); host tests against a fake controller (`cargo test -p nvme-tcp-initiator`) |
 | `src/handoff.rs` | `StormBootTag`/`StormBootHostNqn`, volatile EFI variables naming the machine to Linux's initramfs (#76, stormblock#249); `StormBootClock` (#77); `StormBootUpdate` (#83); `StormBootInstallConfig` + chunks (#79) |
 | `src/selfupdate.rs` | the boot medium updates itself (#83): trial count and revert at start; fetch, Ed25519 check, `*.new`/`*.prev` swap and restart after `net::up`; `mark_good` after the attach; `StormBootMinSerial` (NV) |
 | `src/manifest.rs` | the self-update's signed manifest, `RELEASE_KEYS` (stormcentral's, #86), `\stormboot\state`, trial and serial decisions, HTTP framing, `update =` (core-only, host-tested) |
@@ -358,8 +358,8 @@ These have each cost a debugging session. Do not "simplify" them away.
 - **The transfer size comes from MDTS, never from the MTU.** Sizing a command
   to fit one frame inverts: a 9000 path lands on 8 KiB and a 1500 path on
   64 KiB. TCP segments to the MSS and never IP-fragments, so frames are not
-  the constraint; round trips are, because `read` keeps one command
-  outstanding.
+  the constraint; round trips are. Since #100 `read` keeps up to 8
+  commands in flight within one call, which is what attacks them.
 - **There is no DNS *discovery* in this binary.** The portal is a fixed
   appliance address named on the media or compiled in; *which image* is a
   `boothost/<name>` synonym claimed from the engine. Discovery was removed

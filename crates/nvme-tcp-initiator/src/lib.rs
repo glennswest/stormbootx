@@ -137,9 +137,9 @@ fn transfer_limit(mdts: u8, mpsmin: u32, block_size: u32) -> usize {
     /// What to use when the controller declines to say. Every controller
     /// accepts it, and it is what this client used before MDTS was read.
     const UNSTATED: usize = 64 * 1024;
-    /// A ceiling of our own. One command is one stall with no other command
-    /// outstanding, and a target that advertises a very large MDTS is offering
-    /// more than a boot path has any use for.
+    /// A ceiling of our own. A target that advertises a very large MDTS is
+    /// offering more than a boot path has any use for, and with several
+    /// commands in flight (#100) smaller commands keep more of them going.
     const CEILING: usize = 512 * 1024;
 
     let page = 1usize << (12 + mpsmin.min(12));
