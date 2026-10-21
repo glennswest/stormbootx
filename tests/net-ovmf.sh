@@ -622,7 +622,7 @@ boot() {
     group_frames "$W/$name.pcap"
     say "[$name] log frames (#162): $(grep -c '^syslog ' "$W/syslog.log") to the collector, $(grep -c '^mcast ' "$W/syslog.log") to the group; the first and last of each:"
     { grep -m2 '^syslog ' "$W/syslog.log"; grep '^syslog ' "$W/syslog.log" | tail -1
-      grep -m2 '^mcast ' "$W/syslog.log"; grep '^mcast ' "$W/syslog.log" | tail -1; } | cut -c1-200 | sed 's/^/  ~ /'
+      grep -m2 '^mcast ' "$W/syslog.log"; grep '^mcast ' "$W/syslog.log" | tail -1; } | cut -c1-200 | sed 's/^/  ~ /' || true
     local fail=0 want
     for want in "$@"; do
         if [[ "$want" == log:* ]]; then
