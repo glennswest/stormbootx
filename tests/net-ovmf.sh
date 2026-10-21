@@ -667,7 +667,7 @@ fi
 common=(
     "nic 0: driver Virtio Network Driver"
     "tcp4        : smoltcp over SNP (nic 0 "
-    "nic 0: leased 10.0.2.15/24 gw 10.0.2.2"
+    "nic 0: leased 10.0.2.15/24 gw 10.0.2.2  mtu 1500 ("
     "engine      : stormblock 19.4.0  (universal boot)"
     "namespace : "
     "x 4096 bytes"

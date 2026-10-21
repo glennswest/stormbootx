@@ -42,6 +42,26 @@ pub const OPT_HOST_NAME: u8 = 12;
 pub const OPT_DOMAIN: u8 = 15;
 /// NTP servers (#77): a list of addresses, like option 6.
 pub const OPT_NTP: u8 = 42;
+/// Interface MTU (#165): two bytes, big-endian (RFC 2132 §5.1).
+pub const OPT_MTU: u8 = 26;
+
+/// The MTU an Ethernet interface runs at when DHCP names none (RFC 894).
+pub const DEFAULT_MTU: u32 = 1500;
+
+/// Option 26's MTU. Anything but two bytes, or below the 576 every IPv4 host
+/// must take (RFC 791), reads as no option.
+pub fn interface_mtu(opt: &[u8]) -> Option<u32> {
+    let m = u16::from_be_bytes(opt.try_into().ok()?) as u32;
+    (m >= 576).then_some(m)
+}
+
+/// The MTU a NIC runs at once it holds a lease (#165): what DHCP offered (or
+/// 1500 with no offer), never more than its SNP carries. The SNP's
+/// `MaxPacketSize` is the driver's and `EFI_SIMPLE_NETWORK` has no call to
+/// raise it, so an offer above it is capped, not applied.
+pub fn link_mtu(snp_max: u32, offered: Option<u32>) -> u32 {
+    offered.unwrap_or(DEFAULT_MTU).min(snp_max)
+}
 
 /// One option's data from a whole BOOTP/DHCP message (header onwards).
 ///
@@ -319,6 +339,28 @@ mod tests {
         assert_eq!(text(dhcp_option(&m, OPT_DOMAIN).unwrap()), Some("g10.lo"));
         assert_eq!(first_dns(dhcp_option(&m, OPT_DNS).unwrap()), Some([192, 168, 10, 252]));
         assert_eq!(dhcp_option(&m, 66), None);
+    }
+
+    #[test]
+    fn option_26_sets_the_mtu_up_to_what_the_snp_carries() {
+        // g16's pool (microdns, mtu 9000) on the Dell's 1500 SNP, and on a
+        // driver that carries 9000.
+        let m = ack(&[53, 1, 5, 26, 2, 0x23, 0x28, 255]);
+        let offered = dhcp_option(&m, OPT_MTU).and_then(interface_mtu);
+        assert_eq!(offered, Some(9000));
+        assert_eq!(link_mtu(1500, offered), 1500);
+        assert_eq!(link_mtu(9000, offered), 9000);
+        assert_eq!(link_mtu(9600, offered), 9000);
+        // No offer: Ethernet's 1500, even on a jumbo-capable driver.
+        assert_eq!(link_mtu(9000, None), 1500);
+        assert_eq!(link_mtu(1500, None), 1500);
+        // A smaller network than the driver.
+        assert_eq!(link_mtu(9000, Some(1400)), 1400);
+        // Malformed or below 576 is no offer.
+        assert_eq!(interface_mtu(&[0x23]), None);
+        assert_eq!(interface_mtu(&[0, 0x23, 0x28]), None);
+        assert_eq!(interface_mtu(&[0x02, 0x3f]), None);
+        assert_eq!(interface_mtu(&[0x02, 0x40]), Some(576));
     }
 
     #[test]

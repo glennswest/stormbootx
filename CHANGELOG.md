@@ -3,6 +3,10 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-10-21
+- **feat:** the MTU comes from DHCP option 26 (#165). DHCP now asks for option 26, and once a NIC holds a lease it runs at what the lease offers (1500 with no offer), capped at its SNP's `MaxPacketSize`; smoltcp's TCP MSS follows it, and the `transfer` line's `path MTU` is that figure. The lease line names it and why: `nic 0: leased … mtu 9000 (DHCP option 26)`, or `mtu 1500 (DHCP offers 9000; the SNP of <driver> carries at most 1500, and EFI_SIMPLE_NETWORK has no call to raise it)`. `EFI_SIMPLE_NETWORK` cannot change an MTU, so a 9000 network needs a driver that carries 9000: the Dell's ConnectX-4 Lx runs Mellanox's own driver at 1500, and the stormnic drivers are fixed at 1500 until their jumbo issues land. The NVMe/TCP transfer size stays the controller's MDTS (#6). `dnsname::{interface_mtu, link_mtu}` (core-only, host-tested).
+- **fix:** the boot panel's DHCP step showed the MTU plus the Ethernet header (`MTU 1514`); it shows the link MTU.
+
 ## [v0.30.0] — 2026-10-21
 
 ### Added

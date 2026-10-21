@@ -21,6 +21,11 @@
 //!   again.
 //! - **DHCP** comes from smoltcp's dhcpv4 socket, on every NIC at once. The raw
 //!   reply is kept for `dnsname.rs` (options 12/15/6, #23).
+//! - **The MTU** (#165) is the SNP's `MaxPacketSize` until a lease, then what
+//!   the lease's option 26 offers (1500 with none), capped at that
+//!   `MaxPacketSize`. TCP's MSS follows it. The SNP's figure is its driver's,
+//!   and `EFI_SIMPLE_NETWORK` has no call to raise it: a jumbo network on a
+//!   1500 driver stays at 1500, and the lease line says so.
 //! - **UDP** is used for the SNTP request that sets the clock and the DNS
 //!   lookup of its server (#77): `udp_exchange`; and for the boot's log,
 //!   sent and never answered (#162): `udp_send`.
@@ -389,7 +394,11 @@ struct Nic {
     exclusive: bool,
     mac: [u8; 32],
     mac_len: usize,
+    /// The MTU in use: the SNP's until a lease, then `dnsname::link_mtu`.
     link_mtu: u32,
+    /// What the SNP carries (`MaxPacketSize`), and whose SNP it is.
+    snp_mtu: u32,
+    driver: Option<String>,
     dev: SnpDevice,
     iface: Interface,
     sockets: SocketSet<'static>,
@@ -398,6 +407,22 @@ struct Nic {
 }
 
 impl Nic {
+    /// Why the lease's MTU is what it is, for the lease line (#165).
+    fn mtu_reason(&self, offered: Option<u32>) -> String {
+        match offered {
+            Some(o) if o > self.snp_mtu => format!(
+                "DHCP offers {o}; the SNP of {} carries at most {}, and EFI_SIMPLE_NETWORK has no call to raise it",
+                self.driver.as_deref().unwrap_or("its driver"),
+                self.snp_mtu
+            ),
+            Some(_) => "DHCP option 26".into(),
+            None if self.snp_mtu > crate::dnsname::DEFAULT_MTU => {
+                format!("no DHCP option 26; Ethernet's default, though the SNP carries {}", self.snp_mtu)
+            }
+            None => "no DHCP option 26".into(),
+        }
+    }
+
     fn link_up(&self) -> bool {
         mode_of(self.handle).is_some_and(|m| bool::from(m.media_present))
     }
@@ -430,17 +455,26 @@ impl Nic {
                     }
                 }
                 let fresh = self.lease.as_ref().is_none_or(|o| o.address != l.address);
+                let offered = l
+                    .reply
+                    .as_deref()
+                    .and_then(|r| crate::dnsname::dhcp_option(r, crate::dnsname::OPT_MTU))
+                    .and_then(crate::dnsname::interface_mtu);
+                self.link_mtu = crate::dnsname::link_mtu(self.snp_mtu, offered);
+                self.dev.mtu = self.link_mtu as usize + 14;
                 if fresh {
                     crate::ui::done_once(
                         crate::ui::Step::Dhcp,
-                        &format!("nic {} {}/{}  MTU {}", self.index, ip_text(l.address), l.prefix, self.dev.mtu),
+                        &format!("nic {} {}/{}  MTU {}", self.index, ip_text(l.address), l.prefix, self.link_mtu),
                     );
                     uefi::println!(
-                        "      nic {}: leased {}/{}{}",
+                        "      nic {}: leased {}/{}{}  mtu {} ({})",
                         self.index,
                         ip_text(l.address),
                         l.prefix,
-                        l.router.map(|r| format!(" gw {}", ip_text(r))).unwrap_or_default()
+                        l.router.map(|r| format!(" gw {}", ip_text(r))).unwrap_or_default(),
+                        self.link_mtu,
+                        self.mtu_reason(offered)
                     );
                 }
                 self.lease = Some(l);
@@ -456,9 +490,9 @@ impl Nic {
     }
 }
 
-/// DHCP asks for these: mask, router, DNS, host name, domain (#23), NTP
-/// servers (#77).
-static DHCP_PARAMS: [u8; 6] = [1, 3, 6, 12, 15, 42];
+/// DHCP asks for these: mask, router, DNS, host name, domain (#23), the
+/// interface MTU (#165), NTP servers (#77).
+static DHCP_PARAMS: [u8; 7] = [1, 3, 6, 12, 15, 26, 42];
 
 struct Net {
     nics: Vec<Nic>,
@@ -684,6 +718,8 @@ fn open_nic(index: usize, handle: uefi_raw::Handle, clock: &Clock, rng: &mut Ent
         mac,
         mac_len: 6,
         link_mtu,
+        snp_mtu: link_mtu,
+        driver,
         dev,
         iface,
         sockets,
@@ -1235,8 +1271,8 @@ impl TcpSocket {
         Ok(out)
     }
 
-    /// The MTU of the NIC this connection runs over, in bytes, from its SNP
-    /// mode (the link MTU, excluding the media header).
+    /// The MTU of the NIC this connection runs over, in bytes, excluding the
+    /// media header: the lease's (#165), within what its SNP carries.
     pub fn link_mtu(&self) -> Option<u32> {
         Some(net().ok()?.nics.get(self.nic)?.link_mtu)
     }

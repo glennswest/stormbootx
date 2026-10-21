@@ -669,6 +669,18 @@ each NIC's SNP instead:
   (a 25G link takes seconds to train). It asks for options 1/3/6/12/15, and
   keeps the reply for the name (#23). It asks for option 42 too, for the
   NTP server (#77). ARP and TCP are smoltcp's.
+- **The MTU** (#165): DHCP is asked for option 26, and once a NIC holds a
+  lease it runs at what option 26 offers (Ethernet's 1500 with none), never
+  above its SNP's `MaxPacketSize`. TCP's MSS follows it, so a 9000 network
+  on a driver that carries 9000 sends 8960-byte segments. `MaxPacketSize`
+  is the NIC driver's: `EFI_SIMPLE_NETWORK` has no call to raise it, so a
+  driver that carries 1500 (every firmware SNP seen so far, the Dell's
+  Mellanox driver among them, and the stormnic drivers until their jumbo
+  issues land) keeps the boot at 1500 on any network. The lease line says
+  which: `nic 0: leased 192.168.30.1/20 gw 192.168.16.1  mtu 1500 (DHCP
+  offers 9000; the SNP of Mellanox ConnectX Driver + … carries at most
+  1500, …)`. The NVMe/TCP transfer size does not change with it: that is
+  the controller's MDTS (#6).
 - **UDP** carries one SNTP exchange and, for a server named by name, one A
   query per boot (#77), on the NIC that reached the engine.
 - **A connection** goes out on the NIC that reached a target last, else on
