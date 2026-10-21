@@ -596,6 +596,14 @@ then.
       (`wait-owner`): mlx5 + #131 for the Dell, or 1500 there and #100
       (recommended). **Not run:** an option-26 offer (no DHCP in the tests
       sends one), a 9000 SNP, the Dell. No release yet.
+      **Decided (master, 2026-10-21): option 2.** Option 26 stays; the Dell
+      stays at 1500 under Mellanox's SNP until stormnic-mlx5; #100 raised to
+      P1. Close when an X9 lease line reads `mtu 9000 (DHCP option 26)`
+      (g16's pool and serverNa/b reservations offer `mtu 9000`). Our
+      drivers still carry 1500 (ixgbe#33, mlx4#26 open; the master's note
+      said otherwise, corrected on #165), so #165 is proposed after
+      stormnic-ixgbe#33: then pin it, sc-build, release, rustnic goldens,
+      `wait-hardware` on an X9.
 
 - [ ] **#162 — the log over the network (stormcast multicast + a unicast
       syslog target) once a NIC holds a lease (P1, the master, 2026-10-21).
