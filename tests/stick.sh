@@ -11,6 +11,11 @@
 #   trial     run again: serial 5 is on trial, nothing new
 #   failed    a stick on which serial 6 failed its trial: declined
 #   off       `update = off`: left alone
+#   nourl     server1's stick (#161): an exe swapped in by hand, a
+#             stormboot.conf with no update =, version = or media =, and
+#             drivers: takes stormbootx-rustnic's release from --boothelpers
+#             (0.0.0, serial 0 is older than any release); with no drivers
+#             it asks stormbootx's
 #   older     a stick running a newer version than offered: declined, its
 #             serial recorded as the floor (`min`)
 #   tampered  a manifest changed after signing: refused before any write
@@ -78,7 +83,7 @@ release() {
     for opt in "$@"; do
         case $opt in canary=*) canaries+=("${opt#canary=}") ;; tamper) tamper=1 ;; esac
     done
-    local r="$T/rel$serial" at="$SERVE/api/v1/boothelpers/stormbootx-test"
+    local r="$T/rel$serial" at="$SERVE/api/v1/boothelpers/${AT:-stormbootx-test}"
     rm -rf "$r" "$at"
     mkdir -p "$r/EFI/BOOT" "$r/stormboot/drivers" "$at"
     printf 'MZ stormbootx %s serial %s\n' "$v" "$serial" > "$r/EFI/BOOT/BOOTX64.EFI"
@@ -178,6 +183,35 @@ sed -i 's|^update = .*|update = off|' "$O/stormboot/stormboot.conf"
 before=$(sums "$O")
 stick off 0 --esp "$O" -- "update = off: this stick is pinned; left alone" 'json:"outcome":"off"' "not:ask    :"
 [[ "$(sums "$O")" == "$before" ]] || die "[off] the stick changed"
+
+# --- nourl: no update =, no version =, no media = (server1's, #161).
+B="$T/bare"
+mkdir -p "$B/EFI/BOOT" "$B/stormboot/drivers"
+printf 'MZ stormbootx 0.27.0 swapped in\n' > "$B/EFI/BOOT/BOOTX64.EFI"
+printf 'MZ driver\n' > "$B/stormboot/drivers/stormnic-ixgbe.efi"
+printf 'portal = 192.168.31.202\n' > "$B/stormboot/stormboot.conf"
+HELPERS="http://127.0.0.1:$PORT/api/v1/boothelpers"
+AT=stormbootx-rustnic release 2 "$VERSION-test" "$T/key.pem"
+stick nourl 0 --boothelpers "$HELPERS" --esp "$B" -- \
+    "read   : stormbootx 0.0.0 (commit ?), media ?, serial 0; no version =, so older than any release" \
+    "read   : the stick names no update =; using $HELPERS/stormbootx-rustnic (no media =; 1 NIC driver(s) on the stick)" \
+    "decide : update: v0.0.0 -> v$VERSION-test (serial 2)" \
+    "the stick's next boot runs it on trial" 'json:"outcome":"updated"' 'json:"from":"0.0.0"'
+cmp -s "$B/EFI/BOOT/BOOTX64.EFI" "$T/rel2/EFI/BOOT/BOOTX64.EFI" || die "[nourl] BOOTX64.EFI is not serial 2's"
+grep -qx "update = $URL" "$B/stormboot/stormboot.conf" || die "[nourl] the release's stormboot.conf was not written"
+grep -qx "trial = 2 0" "$B/stormboot/state" || die "[nourl] state: $(cat "$B/stormboot/state")"
+rm -rf "$SERVE/api/v1/boothelpers/stormbootx-rustnic"
+rm -f "$B"/stormboot/drivers/* "$B"/stormboot/state
+printf 'portal = 192.168.31.202\n' > "$B/stormboot/stormboot.conf"
+stick nourl-fw 1 --boothelpers "$HELPERS" --esp "$B" -- \
+    "read   : the stick names no update =; using $HELPERS/stormbootx (no media = and no NIC drivers on the stick)" \
+    "no current release at $HELPERS/stormbootx"
+printf 'media = fw\n' > "$B/stormboot/stormboot.conf"
+printf 'MZ driver\n' > "$B/stormboot/drivers/stormnic-ixgbe.efi"
+stick nourl-media 1 --boothelpers "$HELPERS" --esp "$B" -- \
+    "using $HELPERS/stormbootx (media = fw)"
+stick nourl-given 0 --dry-run --boothelpers "$HELPERS" --update "$URL" --esp "$B" -- \
+    "using $URL (--update)" "not:(media = fw)"
 
 # --- older: the stick runs a newer release than the promotion.
 N="$T/newer"

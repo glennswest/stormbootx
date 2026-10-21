@@ -13,7 +13,8 @@
 //!    node's system disk is refused three ways before anything is opened
 //!    for writing;
 //! 2. **read** its `stormboot.conf` (`update =`, `version =`), `local.conf`
-//!    and `state`;
+//!    and `state`; a stick that names no `update =` takes its family's
+//!    boothelper (#161), and one with no `version =` is 0.0.0;
 //! 3. **ask** stormcentral for `<update>/current` and `current.sig`, and
 //!    verify the Ed25519 signature against the compiled-in release keys
 //!    before a byte of the manifest is believed;
@@ -149,15 +150,23 @@ struct Opts {
     mnt: PathBuf,
     esp: Option<PathBuf>,
     update: Option<String>,
+    boothelpers: String,
     mac: Option<String>,
 }
 
+/// stormcentral's open boothelper route (`deploy/build-golden.sh`'s
+/// `update_url`): a stick that names no `update =` takes its family's from
+/// here (#161).
+const BOOTHELPERS: &str = "http://stormcentral.g8.lo/api/v1/boothelpers";
+
 const USAGE: &str = "usage: stormbootx-stick [--dry-run] [--status FILE] [--update URL] [--mac MAC]
-                        [--esp DIR] [--sys DIR] [--proc DIR] [--dev DIR] [--efivars DIR] [--mnt DIR]
+                        [--boothelpers URL] [--esp DIR] [--sys DIR] [--proc DIR] [--dev DIR] [--efivars DIR] [--mnt DIR]
 
 Find this node's stormbootx boot stick and update it from stormcentral's signed
 release, with the medium's own rules (stormbootx #151). --update is used only
-when the stick names no `update =`. --esp updates an ESP already mounted there.";
+when the stick names no `update =`; with neither, the stick's family's
+boothelper under --boothelpers (default http://stormcentral.g8.lo/api/v1/boothelpers).
+--esp updates an ESP already mounted there.";
 
 fn opts() -> Result<Opts, String> {
     let mut o = Opts {
@@ -170,6 +179,7 @@ fn opts() -> Result<Opts, String> {
         mnt: PathBuf::from("/run/stormbootx-stick/mnt"),
         esp: None,
         update: None,
+        boothelpers: BOOTHELPERS.to_string(),
         mac: None,
     };
     let mut args = std::env::args().skip(1);
@@ -185,6 +195,7 @@ fn opts() -> Result<Opts, String> {
             "--mnt" => o.mnt = val()?.into(),
             "--esp" => o.esp = Some(val()?.into()),
             "--update" => o.update = Some(val()?),
+            "--boothelpers" => o.boothelpers = val()?.trim_end_matches('/').to_string(),
             "--mac" => o.mac = Some(val()?.to_ascii_lowercase()),
             "-h" | "--help" => return Err(USAGE.to_string()),
             _ => return Err(format!("unknown argument {a}\n{USAGE}")),
@@ -584,13 +595,18 @@ fn update(o: &Opts, root: &Path, r: &mut Report) -> Result<(), String> {
     r.say(
         "read",
         format!(
-            "stormbootx {running} (commit {}), media {}, serial {}{}",
+            "stormbootx {running} (commit {}), media {}, serial {}{}{}",
             manifest::conf_field(&main_conf, "commit").unwrap_or("?"),
             manifest::conf_field(&conf, "media").unwrap_or("?"),
             state.serial,
             match state.trial {
                 Some((s, n)) => format!(", serial {s} on trial after {n} start(s)"),
                 None => String::new(),
+            },
+            if manifest::conf_field(&main_conf, "version").is_none() {
+                "; no version =, so older than any release"
+            } else {
+                ""
             }
         ),
     );
@@ -603,9 +619,13 @@ fn update(o: &Opts, root: &Path, r: &mut Report) -> Result<(), String> {
             u.clone()
         }
         (None, None) => {
-            r.outcome = "off";
-            r.say("done", "the stick names no update = and none was given; left alone");
-            return Ok(());
+            // A stick that names no `update =` (hand-built, or an exe
+            // swapped in by hand) still updates: from its family's
+            // boothelper (#161). Only `update = off` pins a stick.
+            let (family, why) = family(&vol, &main_conf);
+            let u = format!("{}/{family}", o.boothelpers);
+            r.say("read", format!("the stick names no update =; using {u} ({why})"));
+            u
         }
     };
     let (host, port, path) = match manifest::setting(&url) {
@@ -763,6 +783,28 @@ fn update(o: &Opts, root: &Path, r: &mut Report) -> Result<(), String> {
     r.outcome = "updated";
     r.say("done", format!("{what}; the stick's next boot runs it on trial"));
     Ok(())
+}
+
+/// The golden a stick with no `update =` belongs to (#161), and why: its
+/// `media =` line where it has one (`rustnic …` or `fw`), else the drivers it
+/// carries (a medium with NIC drivers is a rustnic one; the iPXE `normal`
+/// media's drivers went with #91), else the firmware-drivers medium.
+fn family(vol: &Medium, conf: &str) -> (&'static str, String) {
+    match manifest::conf_field(conf, "media").map(|m| m.split_whitespace().next().unwrap_or("")) {
+        Some("rustnic") => return ("stormbootx-rustnic", "media = rustnic".into()),
+        Some("fw") => return ("stormbootx", "media = fw".into()),
+        _ => {}
+    }
+    let drivers = vol
+        .list(DRIVERS)
+        .into_iter()
+        .filter(|n| n.len() > 4 && n.as_bytes()[n.len() - 4..].eq_ignore_ascii_case(b".efi"))
+        .count();
+    if drivers > 0 {
+        ("stormbootx-rustnic", format!("no media =; {drivers} NIC driver(s) on the stick"))
+    } else {
+        ("stormbootx", "no media = and no NIC drivers on the stick".into())
+    }
 }
 
 fn current(r: &mut Report, why: &str) -> Result<(), String> {

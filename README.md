@@ -509,7 +509,9 @@ stormcentral#279.
   `<url>/current` (the manifest), `<url>/current.sig` (an Ed25519 signature
   over those exact bytes, raw or hex) and `<url>/files/<path>`. No token.
   `update = off` pins a medium; no `update =` (media built by hand) checks
-  nothing; a read-only medium (an ISO on virtual media) is skipped.
+  nothing at boot, though `stormbootx-stick` on the running node gives such
+  a stick its family's (#161) and the release's `stormboot.conf` names it from
+  then on; a read-only medium (an ISO on virtual media) is skipped.
 - **The manifest** is text:
 
   ```
@@ -812,7 +814,13 @@ have done:
    holds (dm, md), or that carries a stormblock slab (`STRMSLAB` at its start
    or at a partition's). Two sticks: neither is chosen;
 2. **read** `stormboot.conf` (`update =`, `version =`), `local.conf` and
-   `state`; `update = off` is left alone;
+   `state`; `update = off` is left alone. A stick that names no `update =`
+   (hand-built, or an exe swapped in by hand: server1's, #161) takes
+   `--update`, else its family's boothelper under `--boothelpers` (default
+   `http://stormcentral.g8.lo/api/v1/boothelpers`): `stormbootx-rustnic` for
+   `media = rustnic …` or, with no `media =`, a stick carrying NIC drivers;
+   `stormbootx` otherwise. A stick with no `version =` reads as 0.0.0, older
+   than any release;
 3. **ask** `<update>/current` and `current.sig`, and verify the Ed25519
    signature against the compiled-in release keys before the manifest is
    parsed;
@@ -830,7 +838,7 @@ have done:
 
 ```
 stormbootx-stick [--dry-run] [--status FILE] [--update URL] [--mac MAC]
-                 [--esp DIR] [--sys DIR] [--proc DIR] [--dev DIR] [--efivars DIR] [--mnt DIR]
+                 [--boothelpers URL] [--esp DIR] [--sys DIR] [--proc DIR] [--dev DIR] [--efivars DIR] [--mnt DIR]
 ```
 
 `--update` is used only when the stick names no `update =`. `--esp` updates

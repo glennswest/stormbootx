@@ -569,6 +569,17 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#161 — stormbootx-stick left server1's stick alone: it names no
+      `update =` (P1, the master, 2026-10-21).** server1's stick (a v0.27.0
+      exe swapped in by a pod, no `update =`/`version =`/`media =`) read
+      `stormbootx 0.0.0 (commit ?), media ?, serial 0` and `left alone`.
+      Fix: with no `update =` and no `--update`, the family's boothelper
+      under `--boothelpers` (default stormcentral's, as `update_url` in
+      build-golden.sh): rustnic by `media =`, else by NIC drivers on the
+      stick, else fw. 0.0.0/serial 0 already decided Update. `tests/stick.sh`
+      `nourl*`. In progress: sc-build. Proof on metal: server1's next
+      install boots v0.29.0 (the master's).
+
 - [x] **#157 — the first claim of a parallel install read `no HTTP status
       line` (P1, pvetest1/2 on 12.33, 2026-10-17). Closed 2026-10-17.**
       The consoles' clock lines put the failed claim at ~30 s, the socket's
