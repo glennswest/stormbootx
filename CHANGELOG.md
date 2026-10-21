@@ -3,10 +3,16 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
-### 2026-10-21
-- **test:** Booting from the laptop app (#164): `tests/laptop-ovmf.sh` boots the `stormbootx` golden's ISO, with the app's `\stormboot\local.conf` and `install-config.yaml` added, against stormblock's real `stormboot-serve` (stormblock#474, v21.4.0, built by `scripts/build-stormboot-serve.sh`). It boots by name, by MAC, with `local` intent and with a name not served. No change to stormbootx was needed.
-- **fix:** A key stated in `\stormboot\local.conf` is reported as from `local.conf`, not `stormboot.conf`: `syslog`, `ntp`, `name`/`tag`, `esp`, `local_when_bootable`, `nic_verbose` and the portal's source (#164).
-- **docs:** README "Booting from a laptop": what the app writes onto a golden medium, and what the node does.
+## [v0.31.1] — 2026-10-21
+
+### Fixed
+- A key stated in `\stormboot\local.conf` is reported as from `local.conf`, not `stormboot.conf`: `syslog`, `ntp`, `name`/`tag`, `esp`, `local_when_bootable`, `nic_verbose` and the portal's source (#164).
+
+### Added
+- `tests/laptop-ovmf.sh` and `scripts/build-stormboot-serve.sh` (#164): the `stormbootx` golden as the laptop app makes it, booted against stormblock's real `stormboot-serve`.
+
+### Documentation
+- README "Booting from a laptop" (#164).
 
 ## [v0.31.0] — 2026-10-21
 
