@@ -586,6 +586,16 @@ then.
       (#6, a load-bearing fact). Elsewhere: jumbo in stormnic-ixgbe,
       -mlx4, -virtio (filed); the Dell needs a driver of ours under its
       ConnectX-4 Lx (stormnic-mlx5, paused by the owner, and #131): asked.
+      **State (2026-10-21): this repo's side done in 5367332, waiting on the
+      owner.** sc-build of 5367332 (1057 s): no warnings, the full suite,
+      dnsname's `option_26_sets_the_mtu_up_to_what_the_snp_carries`; every
+      net-ovmf boot `leased 10.0.2.15/24 gw 10.0.2.2  mtu 1500 (no DHCP
+      option 26)` (slirp sends none; OVMF's virtio SNP carries 1500).
+      Filed stormnic-ixgbe#33, stormnic-mlx4#26, stormnic-virtio#4 (virtio
+      is the one a VM can test 9000 on: `host_mtu=9000`). Asked on #165
+      (`wait-owner`): mlx5 + #131 for the Dell, or 1500 there and #100
+      (recommended). **Not run:** an option-26 offer (no DHCP in the tests
+      sends one), a 9000 SNP, the Dell. No release yet.
 
 - [ ] **#162 — the log over the network (stormcast multicast + a unicast
       syslog target) once a NIC holds a lease (P1, the master, 2026-10-21).
@@ -2128,8 +2138,10 @@ and broke the fabric later (see the `#7` correction). The rest held.
 
 ### Known follow-ups
 
-- The Mellanox presents MTU 1500 to firmware, so the path is not jumbo
-  end-to-end even though the switch ports are 9216. Transfer size is unaffected
+- The Mellanox presents MTU 1500 to firmware (its own UEFI driver's SNP,
+  which nothing can raise), so the path is not jumbo end-to-end even though
+  the switch ports are 9216. Since #165 stormbootx takes DHCP option 26 up
+  to what the SNP carries; 9000 on the Dell needs a driver of ours under it. Transfer size is unaffected
   (MDTS drives it), but raising the card's UEFI MTU would let a 9000 path show.
 - Three `boothost-C2NR0Q2` clones accumulated from repeated claims during
   bring-up; harmless, but the claim mints a fresh clone each call.
