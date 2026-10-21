@@ -569,6 +569,28 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#162 — the log over the network (stormcast multicast + a unicast
+      syslog target) once a NIC holds a lease (P1, the master, 2026-10-21).
+      In progress.** server8's SOL died during an install (stormblock#476)
+      and nothing else had the boot's lines. Plan: every console line
+      (ours, the media's NIC drivers', anything printed through `ConOut`)
+      is kept from the first line (`src/netlog.rs`: tapped in `ui.rs`'s
+      hook, or its own `ConOut` wrapper when there is no panel), and sent
+      as stormcast frames (RFC 5424, local0, APP-NAME `stormbootx`,
+      `src/logwire.rs`, core-only, host-tested against stormcast's
+      `docs/wire.md`) to `239.255.42.1:5514` (TTL 4) on every leased NIC,
+      and to a unicast target when one is given: `syslog =` in
+      `stormboot.conf`, else `syslog:` in the media's install-config.yaml;
+      `off` sends nothing; none means multicast only. HOSTNAME is the best
+      name known at the send (claimed, DNS, stated tag, `mac-<hex>`);
+      TIMESTAMP is real only once NTP set the clock (#77), else `-`.
+      Flushed after the name is known (step 3b), after the claim, before
+      the chain-load, before the self-update restarts, and on the
+      fall-through before the NICs go back. Goldens name
+      `syslog = stormcentral.g8.lo:5514` (as `update =` names it).
+      Test: net-ovmf's stub collector requires the frames, multicast and
+      unicast. The initramfs half is stormblock#477.
+
 - [x] **#161 — stormbootx-stick left server1's stick alone: it names no
       `update =` (P1, the master, 2026-10-21). Closed 2026-10-21.** server1's stick (a v0.27.0
       exe swapped in by a pod, no `update =`/`version =`/`media =`) read
