@@ -50,6 +50,8 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   LOCAL_EFI=$R/tcp4probe.efi LIMIT=120 tests/shell-ovmf.sh t/s.iso old "from the local disk" "EFI\BOOT lists" && \
   tests/screen-ovmf.sh t/s.iso && \
   tests/stick.sh && deploy/build-golden.sh stormbootx-stick $PWD/t/stick && \
+  deploy/build-golden.sh stormbootx $PWD/t/fw && scripts/build-stormboot-serve.sh $PWD/t/serve && \
+  tests/laptop-ovmf.sh t/fw/boot/stormbootx.iso $R/tcp4probe.efi t/serve/stormboot-serve && \
   REPRO_MEDIA="stormbootx stormbootx-rustnic stormbootx-disk stormbootx-rustnic-disk" tests/repro.sh && \
   deploy/build-golden.sh stormbootx-arm64 $PWD/t/arm && \
   EFI_NAME=BOOTAA64.EFI tests/iso-layout.sh t/arm/boot/stormbootx-arm64.iso && \
@@ -129,6 +131,13 @@ releases from a local HTTP stub: a directory as the stick's ESP (update,
 trial, failed serial, `update = off`, older, tampered and other-key
 manifests, canary, dry run) and a machine of image files for the refusals
 (fixed disk, slab, mounted, held). The mount itself needs root: not here.
+
+`tests/laptop-ovmf.sh GOLDEN.ISO PAYLOAD STORMBOOT-SERVE` (#164) boots a
+golden's ISO as the laptop app makes it (`\stormboot\local.conf` and
+`install-config.yaml` added with mtools) against stormblock's real
+`stormboot-serve`, built from the commit pinned in
+`scripts/build-stormboot-serve.sh` (stormblock v21.4.0): by name, by MAC,
+`--intent local`, and a name not served. Bump that pin deliberately.
 
 `tests/screen-ovmf.sh ISO` (#144) boots the shell test's ISO with no
 network and checks the panel through QEMU monitor screendumps

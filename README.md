@@ -861,6 +861,63 @@ others.
 `\stormboot\local.conf`, when present, takes the same keys and is read first,
 so its values win. It belongs to the medium: a self-update never replaces it.
 
+## Booting from a laptop (#164)
+
+A machine can boot and install with no forge, from the owner's Mac or
+Windows laptop. The laptop app (storminstall#20) runs stormblock's portable
+target (`stormblock-nvmeof`, `stormboot-serve`, stormblock#474): one release
+image over NVMe/TCP, with a copy-on-write overlay for each claim, and the
+boothost API stormbootx already speaks (health, intent, claim, installed).
+This is for machines whose BMC virtual media can't carry the full ISO, such
+as the X9 blades. They boot this small medium instead. **stormbootx needs
+nothing different for it.** The medium tells it where to claim, and the
+laptop answers as forge does.
+
+**What the app makes.** It starts from a media golden, unchanged:
+`stormbootx-rustnic` for the X9s (their NICs need its drivers) or
+`stormbootx`, as the ISO (`boot/<golden>.iso`, for virtual media) or the disk
+image (`<golden>-disk`, for a USB stick). The app adds two files to the ESP
+(the FAT that the ISO's 0xEF MBR entry names, or the image's one partition).
+It touches nothing else:
+
+- `\stormboot\local.conf`, read before the golden's `stormboot.conf`, so
+  its keys win. A self-update never replaces it.
+
+  ```
+  portal   = 192.168.1.50          # the laptop's IPv4 address on the node's network
+  api_port = 9090                  # stormboot-serve --http-port
+  name     = server8               # the --host it serves; leave it out to claim by MAC (--host server8=MAC)
+  syslog   = 192.168.1.50:5514     # the app's log collector (#162): the boot shows live
+  update   = off                   # no stormcentral here; the medium keeps the app's version
+  ```
+
+  `portal` is an address, not a name. It is also where the claim goes. The
+  NVMe/TCP address and port come back in the claim reply (`stormboot-serve
+  --advertise`, by default the address the node's request reached). Leave
+  `ntp` out (DHCP option 42, then `pool.ntp.org`), or set `ntp = off` on a
+  network with no way out.
+- `\stormboot\install-config.yaml`, the node's install-config (#79), handed
+  down to the initramfs.
+
+**What the node does.** It gets its lease and reads the laptop's health,
+which says `21.2.1`, past universal boot's gate. Then it reads its intent:
+`install` claims, and `local` falls through to its own disk. The claim mints
+a fresh overlay under the node's own subsystem, which admits only
+`nqn.2026-09.lo.storm:host-<name>`. The node attaches it, reads with 8
+commands in flight, and starts the image's `BOOTX64.EFI`. `StormBootTag`
+names the host the laptop answered, so the initramfs claims the same one. A
+name the laptop does not serve gets a 404, and with the golden's
+`fallback = none` the node falls through to its local disk.
+
+`tests/laptop-ovmf.sh` (in the sc-build command) does exactly this under
+OVMF against the real `stormboot-serve`. `scripts/build-stormboot-serve.sh`
+builds it from stormblock at the pinned commit. The test adds both files to
+the `stormbootx` golden's ISO with mtools, then boots four times: by name;
+by MAC with no name on the medium; `--intent local`; and a name the laptop
+does not serve. Under KVM the reads ran at 69–127 MiB/s, 512 KiB per command
+(the target's MDTS 8). The served image is unchanged after the boots. Not
+run here: the app itself, macOS or Windows as the laptop, and metal.
+
 ## `stormbootx-stick`: a node updates its own stick
 
 A medium updates itself at boot (*Self-update*), but a stick whose updater is
