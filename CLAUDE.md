@@ -591,6 +591,18 @@ then.
       `syslog = stormcentral.g8.lo:5514` (as `update =` names it).
       Test: net-ovmf's stub collector requires the frames, multicast and
       unicast. The initramfs half is stormblock#477.
+      **State (2026-10-21, paused for P0 #165):** done in 1761b58..1ed7bd4,
+      released **v0.30.0** (9a970df, tagged). sc-build of 1ed7bd4: the full
+      suite, no warnings (914 s); shipped boot 41 frames to the collector
+      and 41 on the group (TTL 4, `-` before NTP, `2031-05-04T03:0…`
+      after), jitter by install-config's `syslog:` as `stubhost`, `intent`
+      with `off` none, every leased boot on the group. The tag built
+      `--locked`; its rustnic golden tree has `syslog   =
+      stormcentral.g8.lo:5514`, iso-layout PASS, net-ovmf shipped PASS.
+      **Left:** request goldens at v0.30.0 (stormbootx, -rustnic, -disk,
+      -rustnic-disk, -stick), close #162 with the verification comment,
+      and `stormcentral shipped`. Not run: metal, stormcentral's receiver
+      itself. stormcast#15 filed (a no_std frame builder).
 
 - [x] **#161 — stormbootx-stick left server1's stick alone: it names no
       `update =` (P1, the master, 2026-10-21). Closed 2026-10-21.** server1's stick (a v0.27.0
