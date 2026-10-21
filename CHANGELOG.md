@@ -3,6 +3,17 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+## [v0.31.0] — 2026-10-21
+
+### Changed
+- Several NVMe reads in flight (#100): up to 8 commands per BlockIO read; `nvme_depth` in `stormboot.conf`. Under OVMF against a stub target answering in 0.5–2 ms, 122 MiB/s against 42 MiB/s one at a time.
+
+### Added
+- The MTU comes from DHCP option 26, within what each NIC's SNP carries (#165).
+
+### Fixed
+- The boot panel's DHCP step showed the MTU plus the Ethernet header.
+
 ### 2026-10-21
 - **perf:** several NVMe reads in flight (#100). `Namespace::read` (`crates/nvme-tcp-initiator`) keeps up to 8 commands in flight (`QUEUE_DEPTH`, fewer when the I/O queue holds fewer), matching C2HData and responses to their command by CCCID in any order, and returns once all are done; a failed command is reported after the rest finish, so the queue is clean for the next call. One command at a time held the Dell to 46–80 MiB/s on 25 GbE; stormuefi reads the kernel and initramfs in 1 MiB calls, now eight 128 KiB commands at once against stormblock. Writes stay one at a time. `nvme_depth = N` (1–8) in `stormboot.conf` lowers it; `1` is the old behaviour. The attach line says it: `transfer : 128 KiB per command, 8 in flight (…)`. `complete` now also skips a C2HData PDU of another command. Host tests: a controller that holds reads and answers them newest first, and a failed read mid-flight. net-ovmf's NVMe stub answers reads from worker threads after 0.5–2 ms, out of order, and logs the most it held at once; the shipped boot must reach 2, the new `depth1` boot must never.
 - **feat:** the MTU comes from DHCP option 26 (#165). DHCP now asks for option 26, and once a NIC holds a lease it runs at what the lease offers (1500 with no offer), capped at its SNP's `MaxPacketSize`; smoltcp's TCP MSS follows it, and the `transfer` line's `path MTU` is that figure. The lease line names it and why: `nic 0: leased … mtu 9000 (DHCP option 26)`, or `mtu 1500 (DHCP offers 9000; the SNP of <driver> carries at most 1500, and EFI_SIMPLE_NETWORK has no call to raise it)`. `EFI_SIMPLE_NETWORK` cannot change an MTU, so a 9000 network needs a driver that carries 9000: the Dell's ConnectX-4 Lx runs Mellanox's own driver at 1500, and the stormnic drivers are fixed at 1500 until their jumbo issues land. The NVMe/TCP transfer size stays the controller's MDTS (#6). `dnsname::{interface_mtu, link_mtu}` (core-only, host-tested).
