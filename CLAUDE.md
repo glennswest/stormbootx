@@ -570,6 +570,23 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#165 — jumbo frames: the Dell boots at `mtu 1500 … path MTU 1500`
+      on g16's 9000 network (P0, the master, 2026-10-21). In progress.**
+      Found: an SNP's MTU is `Mode.MaxPacketSize`, set by the NIC driver;
+      `EFI_SIMPLE_NETWORK` has no call to change it. The Dell's 25G ports are
+      under Mellanox's own UEFI driver + SnpDxe (console 2026-10-21:
+      `driver Mellanox ConnectX Driver + Simple Network Protocol Driver`,
+      `mtu 1500`), and all three stormnic drivers report a fixed 1500
+      (ixgbe `MAX_PACKET`, mlx4 `max_packet_size: 1500`/`PORT_MTU 1526`,
+      virtio `MAX_PACKET`). Plan, this repo: ask DHCP option 26; on a lease a
+      NIC runs at min(SNP max, option 26, else 1500), so smoltcp's MSS comes
+      from it; the lease line says `mtu N` and why (option 26, or the
+      driver's SNP carries at most M); the panel's DHCP step shows the link
+      MTU (it showed 1514, MTU + header). The NVMe transfer stays MDTS
+      (#6, a load-bearing fact). Elsewhere: jumbo in stormnic-ixgbe,
+      -mlx4, -virtio (filed); the Dell needs a driver of ours under its
+      ConnectX-4 Lx (stormnic-mlx5, paused by the owner, and #131): asked.
+
 - [ ] **#162 — the log over the network (stormcast multicast + a unicast
       syslog target) once a NIC holds a lease (P1, the master, 2026-10-21).
       In progress.** server8's SOL died during an install (stormblock#476)
