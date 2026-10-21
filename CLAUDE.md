@@ -570,8 +570,8 @@ then.
 
 ### Open, no external blocker
 
-- [ ] **#100 — several NVMe reads in flight (P1, from #165's decision,
-      2026-10-21). In progress.** The Dell reads at 46–80 MiB/s with one
+- [x] **#100 — several NVMe reads in flight (P1, from #165's decision,
+      2026-10-21). Closed 2026-10-21.** The Dell reads at 46–80 MiB/s with one
       command outstanding; stormuefi reads its kernel and initramfs in 1 MiB
       ReadBlocks calls, so one call is 2–8 commands. Plan: `Namespace::read`
       in `crates/nvme-tcp-initiator` keeps up to `depth` commands in flight
@@ -583,6 +583,13 @@ then.
       host tests with a fake controller that answers out of order; net-ovmf's
       stub answers reads from worker threads after a delay and logs the most
       reads it held at once, and the shipped boot must see ≥ 2.
+      **State (2026-10-21): done in f23ab05 + 04702eb, released v0.31.0.**
+      sc-build of 04702eb (871 s): no warnings, the full suite, the crate's
+      9 host tests (out of order, failure mid-flight); net-ovmf: `shipped`
+      `128 KiB per command, 8 in flight`, the stub held up to 7 reads at once,
+      96 MiB at **122 MiB/s**; `depth1` (`nvme_depth = 1`) never 2, **42
+      MiB/s** against the same 0.5–2 ms stub. **Not run:** the Dell (or any
+      metal) on it: its `blockio : … MiB/s` line, today 46–80.
 
 - [ ] **#165 — jumbo frames: the Dell boots at `mtu 1500 … path MTU 1500`
       on g16's 9000 network (P0, the master, 2026-10-21). In progress.**
