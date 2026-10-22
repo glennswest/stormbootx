@@ -157,7 +157,7 @@ console_wait api "hold        : holding until a command; the API at http://10.0.
 grep -q '^POST /api/v1/synonyms/boothost/default/claim .*"image":"maint"' "$W/stub.log" \
     && say "[api] the maint claim went to the engine: $(grep -m1 '"image":"maint"' "$W/stub.log" | cut -c1-80)…" \
     || { say "[api] no claim with \"image\":\"maint\""; api_fail api; }
-tr -d '\r' < "$W/api.serial" | grep -q "falling back to the resolved target" \
+tr -d '\r' < "$W/api.serial" | sed -n '/maint (id 103): claiming/,$p' | grep -q "falling back to the resolved target" \
     && { say "[api] the maint claim fell back to the media's target"; api_fail api; }
 expect_post api 202 '"accepted":104' "$(signed "$W/cmd.pem" $ME 104 inventory)"
 console_wait api "command     : inventory (id 104): collected again: "
