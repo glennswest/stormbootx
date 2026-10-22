@@ -15,7 +15,7 @@
 set -euo pipefail
 
 OUT=${1:?usage: $0 OUTDIR}
-REF=${STORMBOOT_SERVE_REF:-10d3b469434e6ba66e925b874bdf122914abae29}   # stormblock v22.2.0
+REF=${STORMBOOT_SERVE_REF:-89846a60b6d598315d0d491fa37ac35acf5395c8}   # stormblock v22.3.0
 REPO=${STORMBOOT_SERVE_REPO:-https://github.com/glennswest/stormblock}
 
 say() { printf 'build-stormboot-serve: %s\n' "$*"; }

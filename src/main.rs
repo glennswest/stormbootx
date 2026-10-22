@@ -138,8 +138,8 @@ enum Stop {
     Local(String),
     /// A command said hold.
     Hold(String),
-    /// A command said boot again; `true` claims whatever the intent says.
-    Retry(bool),
+    /// A command said boot again, claiming as it says.
+    Retry(api::Claim),
 }
 
 impl From<String> for Stop {
@@ -155,13 +155,14 @@ impl From<&str> for Stop {
 }
 
 /// What a command taken at one of the boot's fixed points means here
-/// (#167): `Ok` goes on, claiming whatever the intent says when `true`.
-fn after_command(next: api::Next) -> Result<bool, Stop> {
+/// (#167): `Ok` goes on, claiming as it says.
+fn after_command(next: api::Next) -> Result<api::Claim, Stop> {
     match next {
-        api::Next::Go => Ok(false),
-        api::Next::Install => Ok(true),
+        api::Next::Go => Ok(api::Claim::Intent),
+        api::Next::Install => Ok(api::Claim::Install),
+        api::Next::Maint => Ok(api::Claim::Maint),
         api::Next::Local => Err(Stop::Local(String::from("a command said local: nothing claimed"))),
-        api::Next::Retry => Err(Stop::Retry(false)),
+        api::Next::Retry => Err(Stop::Retry(api::Claim::Intent)),
         api::Next::Hold => Err(Stop::Hold(String::from("a command said hold"))),
     }
 }
@@ -169,8 +170,9 @@ fn after_command(next: api::Next) -> Result<bool, Stop> {
 /// One boot from the media to the chain-load. `pass` counts the boots a hold
 /// started again (#167): the media's NIC drivers, the FEC read, the
 /// self-update and the install-config hand-down run on the first only.
-/// `install` claims whatever the intent says (a command said so).
-fn run(pass: u32, install: bool) -> Result<(), Stop> {
+/// `ask` is what a command said to claim: this machine's image whatever the
+/// intent says, or the maintenance image.
+fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
     let first = pass == 0;
     api::phase("booting", if first { "" } else { "again, after a hold" });
     // A disk an earlier start published and left behind (#54): its BlockIO
@@ -435,6 +437,10 @@ fn run(pass: u32, install: bool) -> Result<(), Stop> {
         // synonym yet, or an engine that is down, falls through to the local
         // disk instead of attaching a namespace nobody assigned it.
         let mut engine_answered = false;
+        // A command said `maint` (#167): the maintenance image, claimed down
+        // the same names with `"image":"maint"` (stormblock#497), and never
+        // the media's fallback.
+        let mut maint = false;
         let claimed = if cfg.claim {
             let [a, b, c, d] = cfg.portal;
             let host = format!("{a}.{b}.{c}.{d}:{}", cfg.api_port);
@@ -594,11 +600,26 @@ fn run(pass: u32, install: bool) -> Result<(), Stop> {
             // A command for this machine (#167): one the API took, else the
             // engine's record under the name the intent answered for.
             api::engine(cfg.portal, cfg.api_port, &host, &intent_key);
-            let told = install || after_command(api::checkpoint(true))?;
-            if told {
-                uefi::println!("intent      : install  (a command said so; the engine's is {})", chosen.name());
-                chosen = intent::Intent::Install;
+            let told = match ask {
+                api::Claim::Intent => after_command(api::checkpoint(true))?,
+                a => a,
+            };
+            match told {
+                api::Claim::Intent => {}
+                api::Claim::Install => {
+                    uefi::println!("intent      : install  (a command said so; the engine's is {})", chosen.name());
+                    chosen = intent::Intent::Install;
+                }
+                api::Claim::Maint => {
+                    uefi::println!(
+                        "intent      : maint  (a command said so; the engine's is {}): the maintenance image",
+                        chosen.name()
+                    );
+                    chosen = intent::Intent::Install;
+                    maint = true;
+                }
             }
+            let image = maint.then_some("maint");
             // With `local_when_bootable = true` only, `auto` and every doubt
             // boot the local disk when one can boot (#3). Off by default: the
             // owner's override of 2026-09-30 is that every boot claims until
@@ -643,21 +664,26 @@ fn run(pass: u32, install: bool) -> Result<(), Stop> {
             //     so the next one is tried; anything else falls back to the
             //     resolved target rather than guessing at another identity.
             ui::step(ui::Step::Claim, "");
+            let what = if maint { "  (the maintenance image)" } else { "" };
             let claim_as = |name: &str, hints: bool| {
-                uefi::println!("claim       : {}/{name} at {host}", registry::BOOTHOST_NS);
+                uefi::println!("claim       : {}/{name} at {host}{what}", registry::BOOTHOST_NS);
                 let (m, s) = if hints { (mac_colon.as_deref(), serial.as_deref()) } else { (None, None) };
-                registry::claim_boothost(cfg.portal, cfg.api_port, &host, name, m, s)
+                registry::claim_boothost(cfg.portal, cfg.api_port, &host, name, m, s, image)
             };
             let claimed_ok = |a: registry::Attach, name: &str| {
-                match &a.host {
-                    Some(h) => uefi::println!("  claimed a clone of {h}'s image"),
-                    None => uefi::println!("  claimed a clone of this machine's image"),
+                match (&a.host, a.maint) {
+                    (Some(h), true) => uefi::println!("  claimed {h}'s clone of the maintenance image"),
+                    (None, true) => uefi::println!("  claimed this machine's clone of the maintenance image"),
+                    (Some(h), false) => uefi::println!("  claimed a clone of {h}'s image"),
+                    (None, false) => uefi::println!("  claimed a clone of this machine's image"),
                 }
                 Some((a, name.to_string()))
             };
             let give_up = |e: &str| -> Option<(registry::Attach, String)> {
                 uefi::println!("  {e}");
-                uefi::println!("  falling back to the resolved target");
+                if !maint {
+                    uefi::println!("  falling back to the resolved target");
+                }
                 None
             };
             let by_tag = || match claim_as(&tag, false) {
@@ -687,7 +713,7 @@ fn run(pass: u32, install: bool) -> Result<(), Stop> {
                             let provisional = universal::provisional_name(m);
                             let provisional = core::str::from_utf8(&provisional).unwrap_or("mac-?");
                             uefi::println!(
-                                "claim       : {}/default as {colon} at {host}",
+                                "claim       : {}/default as {colon} at {host}{what}",
                                 registry::BOOTHOST_NS
                             );
                             match registry::claim_default(
@@ -696,7 +722,9 @@ fn run(pass: u32, install: bool) -> Result<(), Stop> {
                                 &host,
                                 colon,
                                 serial.as_deref(),
+                                image,
                             ) {
+                                Ok(a) if maint => claimed_ok(a, provisional),
                                 Ok(a) => {
                                     match (&a.host, a.provisional) {
                                         (Some(h), false) => uefi::println!(
@@ -735,13 +763,43 @@ fn run(pass: u32, install: bool) -> Result<(), Stop> {
         };
 
         match claimed {
+            // An engine before stormblock#497 (stormboot-serve v22.3.0 too)
+            // ignores `"image"` and answers with this machine's own image:
+            // booting that is not what `maint` asked for.
+            Some((a, name)) if maint && !a.maint => {
+                let name = a.host.clone().unwrap_or(name);
+                uefi::println!(
+                    "  the engine answered with {name}'s own image, not the maintenance image \
+                     (no \"image\":\"maint\" in the reply: an engine before stormblock#497); not attached"
+                );
+                ui::fail(ui::Step::Claim, "the engine gave no maintenance image");
+                ui::skip(ui::Step::Image, "");
+                ui::skip(ui::Step::Handoff, "");
+                return Err(Stop::Failed(String::from(
+                    "a command said maint, and the engine answered with this machine's own image",
+                )));
+            }
             Some((a, name)) => {
                 let name = a.host.clone().unwrap_or(name);
                 ui::name(&name);
                 netlog::name(&name, netlog::Rank::Claimed);
                 api::name(&name);
-                ui::done(ui::Step::Claim, &format!("a clone of {name}'s image, nsid {}", a.nsid));
+                if maint {
+                    ui::done(ui::Step::Claim, &format!("the maintenance image for {name}, nsid {}", a.nsid));
+                } else {
+                    ui::done(ui::Step::Claim, &format!("a clone of {name}'s image, nsid {}", a.nsid));
+                }
                 (a, Some(name))
+            }
+            // Never the media's fallback for a maintenance boot: that is
+            // this machine's own image, which `maint` was sent not to boot.
+            None if maint => {
+                ui::fail(ui::Step::Claim, "no claim gave this machine the maintenance image");
+                ui::skip(ui::Step::Image, "");
+                ui::skip(ui::Step::Handoff, "");
+                return Err(Stop::Failed(String::from(
+                    "a command said maint, and no claim gave this machine the maintenance image",
+                )));
             }
             None if !cfg.fallback => {
                 // The engine answered, so a medium on trial (#83) has done
@@ -770,6 +828,7 @@ fn run(pass: u32, install: bool) -> Result<(), Stop> {
                         nsid: cfg.nsid,
                         host: None,
                         provisional: false,
+                        maint: false,
                     },
                     None,
                 )
@@ -878,8 +937,10 @@ fn run(pass: u32, install: bool) -> Result<(), Stop> {
     let handle = blockio::publish(ns)?;
     uefi::println!("blockio     : published on handle {handle:p}");
     // The last point a command is taken (#167): from here the image's own
-    // bootloader runs.
-    after_command(api::checkpoint(false))?;
+    // bootloader runs. `maint` here boots again for the maintenance image.
+    if after_command(api::checkpoint(false))? == api::Claim::Maint {
+        return Err(Stop::Retry(api::Claim::Maint));
+    }
     api::phase("handed off", "the image's bootloader");
     profile::mark("attach");
     profile::print();
@@ -1023,9 +1084,9 @@ fn main() -> Status {
     // success; every path back here is a failure to fall through from, a
     // `local` to fall through to, or a hold. A hold that is told to boot
     // again runs it again.
-    let (mut pass, mut install) = (0u32, false);
+    let (mut pass, mut ask) = (0u32, api::Claim::Intent);
     loop {
-        let stop = match run(pass, install) {
+        let stop = match run(pass, ask) {
             Ok(()) => Stop::Failed(String::from("attach succeeded but no bootloader started")),
             Err(s) => s,
         };
@@ -1033,7 +1094,7 @@ fn main() -> Status {
             Stop::Local(why) => return fall_through(&why, local),
             Stop::Retry(i) => {
                 withdraw();
-                (pass, install) = (pass + 1, i);
+                (pass, ask) = (pass + 1, i);
                 continue;
             }
             Stop::Hold(why) => (why, api::Hold::Forever, 0),
@@ -1058,7 +1119,7 @@ fn main() -> Status {
         };
         match api::hold(&why, how, retry) {
             api::After::FallThrough => return fall_through(&why, local),
-            api::After::Retry(i) => (pass, install) = (pass + 1, i),
+            api::After::Retry(i) => (pass, ask) = (pass + 1, i),
         }
     }
 }

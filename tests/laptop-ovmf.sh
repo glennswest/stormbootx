@@ -20,7 +20,7 @@
 # 96 MiB, as BOOTX64.EFI; slirp maps the guest's 10.0.2.2 to the build box's
 # loopback, where stormboot-serve listens and advertises 10.0.2.2.
 #
-# Four boots of the ISO under OVMF, as a BMC's virtual media would carry it,
+# Six boots of the ISO under OVMF, as a BMC's virtual media would carry it,
 # with stormboot-serve started afresh for each:
 #   1. named:   local.conf `name = server8`, served `--host server8`,
 #               intent install: the claim, the attach as
@@ -41,6 +41,11 @@
 #               hold is taken before the claim and reported done; a signed
 #               `poweroff` PUT while it holds is read from the record and ends
 #               the VM. Nothing is claimed.
+#   6. maint:   as record, the command a signed `maint`: the laptop serves
+#               one image and no maintenance image, and stormboot-serve
+#               answers a claim with `"image":"maint"` with server7's own
+#               image (no `"image":"maint"` in its reply), so stormbootx must
+#               not attach it: it holds, and a `poweroff` ends it (#167).
 #
 # Needs qemu-system-x86_64, OVMF, python3, mtools, mkfs.fat, curl. KVM when
 # /dev/kvm is writable. Unprivileged; everything is under $TMPDIR.
@@ -360,6 +365,28 @@ laptop record "--host server7=$MAC" "$(app_conf "command_key = $CMD_PUB")" \
     "serve:server7: command 8 done: powering off" \
     "not:RESULT: image attached" \
     "not-serve:claim of"
+
+# maint: the laptop has no maintenance image (stormblock#497 is forge's).
+maint_before() { put_command server7 7 maint; }
+MAINT_POWEROFF=
+maint_during() {
+    if [[ -z $MAINT_POWEROFF ]] && grep -q "hold        : holding until a command" "$1" 2>/dev/null; then
+        MAINT_POWEROFF=1
+        put_command server7 8 poweroff
+    fi
+}
+BEFORE=maint_before DURING=maint_during \
+laptop maint "--host server7=$MAC" "$(app_conf "command_key = $CMD_PUB")" \
+    "command     : maint (id 7, from the engine's record, by laptop-test), signature good" \
+    "command     : maint (id 7): claiming the maintenance image (boothost/maint)" \
+    "intent      : maint  (a command said so; the engine's is " \
+    "  (the maintenance image)" \
+    "  the engine answered with server7's own image, not the maintenance image (no \"image\":\"maint\" in the reply: an engine before stormblock#497); not attached" \
+    "no network boot: a command said maint, and the engine answered with this machine's own image" \
+    "command     : poweroff (id 8): powering off (ACPI S5)" \
+    "serve:server7: command 7 done: claiming the maintenance image (boothost/maint)" \
+    "not:RESULT: image attached" \
+    "not:attaching   : "
 
 # The image is never written: every write a node makes lands in its overlay.
 [[ $(sha256sum < "$W/release.img" | cut -d' ' -f1) == "$IMG_SUM" ]] || die "the served image changed"

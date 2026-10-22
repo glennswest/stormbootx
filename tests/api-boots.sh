@@ -1,7 +1,7 @@
 # stormbootx's own API and the hold (#167), sourced by tests/net-ovmf.sh for
 # its stubs (the engine on $PORT, the SNTP server) and its helpers.
 #
-# Two boots, the API forwarded to the host by slirp (127.0.0.1:$APIP to the
+# Three boots, the API forwarded to the host by slirp (127.0.0.1:$APIP to the
 # guest's 9180). Commands are signed with a key made here, named on the
 # medium as `command_key =`, as the laptop app does:
 #
@@ -12,15 +12,21 @@
 #              another key's signature and another machine's command are
 #              refused; `format APIDISK1` wipes the disk's first and last MiB
 #              (and nothing between); the same id again is refused; a serial
-#              nothing has, `boot-next FFFF` and `maint` are refused; the
-#              inventory is collected again, the disk now blank; `poweroff`
-#              ends the VM.
+#              nothing has and `boot-next FFFF` are refused; `maint` claims
+#              with `"image":"maint"`, the engine has no boothost/maint, and
+#              it holds again; the inventory is collected again, the disk
+#              now blank; `poweroff` ends the VM.
 #   apirecord  the same machine (its variable store kept), the engine's host
 #              record carrying a signed `hold`: taken before the intent and
 #              reported done to the engine; the API refuses boot 1's last id;
 #              `boot-next 0000` sets BootNext and resets.
+#   apimaint   the engine's record carrying a signed `maint` and the engine
+#              serving boothost/maint (stormblock#497): taken before the
+#              intent, the claim carries `"image":"maint"`, never the
+#              media's fallback, and the maintenance clone is attached and
+#              its BOOTX64.EFI started.
 
-[[ -z "${NET_ONLY:-}" || "$NET_ONLY" == api || "$NET_ONLY" == apirecord ]] || return 0
+[[ -z "${NET_ONLY:-}" || "$NET_ONLY" == api || "$NET_ONLY" == apirecord || "$NET_ONLY" == apimaint ]] || return 0
 command -v openssl >/dev/null || die "[api] openssl is not installed"
 command -v curl >/dev/null || die "[api] curl is not installed"
 command -v sfdisk >/dev/null || die "[api] sfdisk is not installed"
@@ -108,7 +114,7 @@ truncate -s 64M "$W/apidisk.img"
 printf 'label: gpt\n,16M,L\n' | sfdisk -q "$W/apidisk.img"
 printf 'KEEP-THIS-MIDDLE' | dd of="$W/apidisk.img" bs=1M seek=32 conv=notrunc status=none
 cp "$OVMF_VARS" "$W/api.vars"
-rm -f "$W/command.json"
+rm -f "$W/command.json" "$W/maint.ok"
 
 # ---------------------------------------------------------------- boot 1
 if [[ -z "${NET_ONLY:-}" || "$NET_ONLY" == api ]]; then
@@ -143,7 +149,16 @@ console_wait api "command     : format (id 101): refused: no drive has serial NO
 expect_post api 202 '"accepted":102' "$(signed "$W/cmd.pem" $ME 102 boot-next FFFF)"
 console_wait api "command     : boot-next (id 102): refused: there is no BootFFFF"
 expect_post api 202 '"accepted":103' "$(signed "$W/cmd.pem" $ME 103 maint)"
-console_wait api "command     : maint (id 103): refused: no maintenance image is served yet"
+console_wait api "command     : maint (id 103): claiming the maintenance image (boothost/maint)"
+console_wait api "intent      : maint  (a command said so; the engine's is auto): the maintenance image" 60
+console_wait api "no boothost/maint synonym on this engine" 60
+console_wait api "no network boot: a command said maint, and no claim gave this machine the maintenance image" 60
+console_wait api "hold        : holding until a command; the API at http://10.0.2.15:9180" 30
+grep -q '^POST /api/v1/synonyms/boothost/default/claim .*"image":"maint"' "$W/stub.log" \
+    && say "[api] the maint claim went to the engine: $(grep -m1 '"image":"maint"' "$W/stub.log" | cut -c1-80)…" \
+    || { say "[api] no claim with \"image\":\"maint\""; api_fail api; }
+tr -d '\r' < "$W/api.serial" | grep -q "falling back to the resolved target" \
+    && { say "[api] the maint claim fell back to the media's target"; api_fail api; }
 expect_post api 202 '"accepted":104' "$(signed "$W/cmd.pem" $ME 104 inventory)"
 console_wait api "command     : inventory (id 104): collected again: "
 status=$(api_get /api/v1/status)
@@ -193,5 +208,26 @@ for _ in $(seq 20); do kill -0 "$API_QEMU" 2>/dev/null || break; sleep 1; done
 kill -0 "$API_QEMU" 2>/dev/null && { say "[apirecord] still running after boot-next"; api_fail apirecord; }
 wait "$API_QEMU" 2>/dev/null || true
 say "[apirecord] BootNext set and reset: $(tr -d '\r' < "$W/apirecord.serial" | grep -m1 'BootNext = ')"
+fi
+
+# ---------------------------------------------------------------- boot 3
+if [[ -z "${NET_ONLY:-}" || "$NET_ONLY" == apimaint ]]; then
+signed "$W/cmd.pem" $ME 300 maint > "$W/command.json"
+: > "$W/maint.ok"
+api_boot apimaint
+console_wait apimaint "command     : maint (id 300, from the engine's record, by api-test), signature good" 120
+console_wait apimaint "command     : maint (id 300): claiming the maintenance image (boothost/maint)"
+console_wait apimaint "claim       : boothost/default as 52:54:00:12:34:56 at 10.0.2.2:$PORT  (the maintenance image)" 30
+console_wait apimaint "  claimed mac-525400123456's clone of the maintenance image" 60
+console_wait apimaint "boot        : starting \EFI\BOOT\BOOTX64.EFI from the attached image" 120
+grep -q "command/done {\"id\":300,\"result\":\"claiming the maintenance image (boothost/maint)\"}" "$W/stub.log" \
+    && say "[apimaint] the engine was told: $(grep -m1 'command/done' "$W/stub.log")" \
+    || { say "[apimaint] no done for id 300 to the engine"; api_fail apimaint; }
+grep -q '^POST .*/claim .*"image":"maint"' "$W/stub.log" || { say "[apimaint] no maint claim"; api_fail apimaint; }
+grep '^POST .*/claim' "$W/stub.log" | grep -vq '"image":"maint"' \
+    && { say "[apimaint] a claim without \"image\":\"maint\""; api_fail apimaint; }
+kill "$API_QEMU" 2>/dev/null; wait "$API_QEMU" 2>/dev/null || true
+rm -f "$W/command.json" "$W/maint.ok"
+say "[apimaint] the maintenance image attached and its bootloader started"
 fi
 API_QEMU=

@@ -387,6 +387,20 @@ pub enum Next {
     Retry,
     /// Stay in stormbootx until another command.
     Hold,
+    /// Claim the maintenance image (stormblock#497) and boot it.
+    Maint,
+}
+
+/// What a boot claims (#167).
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Claim {
+    /// As the intent says.
+    Intent,
+    /// This machine's image, whatever the intent says.
+    Install,
+    /// The maintenance image: `"image":"maint"`, a `maint-<host>` clone of
+    /// `boothost/maint`'s volume.
+    Maint,
 }
 
 /// Take a command waiting from the API, else read the engine's record once,
@@ -455,13 +469,8 @@ fn execute(c: Signed, v: Verb, from: Source) -> Next {
             Next::Go
         }
         Verb::Maint => {
-            done(
-                &c,
-                &v,
-                from,
-                "refused: no maintenance image is served yet (baremetalservices's image as a namespace)",
-            );
-            Next::Go
+            done(&c, &v, from, "claiming the maintenance image (boothost/maint)");
+            Next::Maint
         }
     }
 }
@@ -560,8 +569,8 @@ fn secs(v: &str) -> Option<u64> {
 pub enum After {
     /// Fall through to the local disk, as before the hold.
     FallThrough,
-    /// Run the boot again; `true` claims whatever the intent says.
-    Retry(bool),
+    /// Run the boot again, claiming as it says.
+    Retry(Claim),
 }
 
 /// Stay in stormbootx with the API up (#167): until a command, the time
@@ -610,8 +619,9 @@ pub fn hold(why: &str, how: Hold, retry_min: u64) -> After {
                 how = Hold::Forever;
                 phase("holding", "told to hold");
             }
-            Next::Install => return After::Retry(true),
-            Next::Retry => return After::Retry(false),
+            Next::Install => return After::Retry(Claim::Install),
+            Next::Maint => return After::Retry(Claim::Maint),
+            Next::Retry => return After::Retry(Claim::Intent),
             Next::Local => return After::FallThrough,
         }
         if t >= flush_at {
@@ -630,7 +640,7 @@ pub fn hold(why: &str, how: Hold, retry_min: u64) -> After {
         }
         if retry_ms > 0 && t >= retry_ms {
             uefi::println!("hold        : {retry_min} min; booting again");
-            return After::Retry(false);
+            return After::Retry(Claim::Intent);
         }
     }
 }

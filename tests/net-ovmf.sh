@@ -194,6 +194,25 @@ class H(http.server.BaseHTTPRequestHandler):
                     log.write("inventory NOT kept: %r\n" % type(inv))
             except ValueError as e:
                 log.write("claim body is NOT JSON: %s\n" % e)
+        # The maintenance image (#167, stormblock#497): a claim with
+        # `"image":"maint"`, on any claim route. With maint.ok, the host's
+        # `maint-<host>` clone (the NVMe stub, intent and image `maint`);
+        # without, stormblock's 404 for a forge with no boothost/maint.
+        if self.path.endswith("/claim") and '"image":"maint"' in body:
+            if not os.path.exists(W + "/maint.ok"):
+                self.reply(404, {"error": "no boothost/maint synonym on this engine: set it to the maintenance image"})
+                return
+            port = int(open(W + "/nvme.port").read())
+            self.reply(201, {
+                "attach": {"addresses": [{"traddr": "10.0.2.2", "trsvcid": str(port)}],
+                           "nqn": "nqn.2026-09.lo.stub:release", "nsid": 1},
+                "claimed_from": {"synonym": "boothost/maint"}, "image": "maint", "intent": "maint",
+                "host": {"aliases": ["52:54:00:12:34:56"], "claimed_as": "default",
+                         "mac": "52:54:00:12:34:56", "name": "mac-525400123456", "new": False,
+                         "provisional": True},
+                "volume": "maint-mac-525400123456",
+            })
+            return
         # claim.ok present: the default claim names this machine `stubhost`
         # and attaches the NVMe stub, the shape stormblock's claim reply has.
         # claim.new present (#15): a machine the engine has never seen, so it

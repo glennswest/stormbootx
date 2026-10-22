@@ -45,6 +45,11 @@ pub struct Attach {
     /// `host.provisional`: this machine booted the default and nobody has
     /// named it yet.
     pub provisional: bool,
+    /// The reply said `"image":"maint"` (stormblock#497): this is the
+    /// maintenance image. An engine that does not know the field answers a
+    /// maint claim with the machine's own image, so this is read from the
+    /// reply, never assumed from the request.
+    pub maint: bool,
 }
 
 pub fn parse_ipv4(s: &str) -> Option<[u8; 4]> {
@@ -179,6 +184,11 @@ pub const BOOTHOST_NS: &str = "boothost";
 /// serial as `{"mac", "serial"}` so the engine can tie a name it has not seen
 /// to a host it already knows by either; a stated tag sends neither. Every
 /// claim also names the boot agent (`agent`, #90).
+///
+/// `image` is `Some("maint")` for the maintenance image (#167,
+/// stormblock#497): the same claim, answering this host's own `maint-<host>`
+/// clone of `boothost/maint`'s volume, and a 404 naming `boothost/maint`
+/// when the engine has none.
 /// The error carries the HTTP status (0 when nothing answered): a 404 means
 /// "not under this name", and the caller may try the next one.
 pub fn claim_boothost(
@@ -188,9 +198,10 @@ pub fn claim_boothost(
     service_tag: &str,
     mac: Option<&str>,
     serial: Option<&str>,
+    image: Option<&str>,
 ) -> Result<Attach, (u16, String)> {
     let path = format!("/api/v1/synonyms/{BOOTHOST_NS}/{service_tag}/claim");
-    let body = hints(mac, serial);
+    let body = hints(mac, serial, image);
     let response = claim(server, port, host, &path, &body).map_err(|e| (0, e))?;
     let (status, body) = split_response(&response).map_err(|e| (0, e))?;
     if status == 404 {
@@ -214,12 +225,12 @@ pub fn claim_boothost(
     attach_from(body).map_err(|e| (status, e))
 }
 
-/// `{"agent": {…}, "inventory": {…}, "mac": …, "serial": …}`, the MAC and
-/// serial when known. The inventory (#4, #20) is what the firmware sees that a
+/// `{"agent": {…}, "inventory": {…}, "mac": …, "serial": …, "image": …}`,
+/// the MAC and serial when known, the image only for `maint`. The inventory (#4, #20) is what the firmware sees that a
 /// BMC can't say; the engine keeps both objects in the host's last-claim
 /// record (stormblock#177) and drops either if it is over 16 KiB, never the
 /// claim.
-fn hints(mac: Option<&str>, serial: Option<&str>) -> String {
+fn hints(mac: Option<&str>, serial: Option<&str>, image: Option<&str>) -> String {
     let mut fields = vec![
         format!("\"agent\":{}", agent()),
         format!("\"inventory\":{}", crate::hardware::json()),
@@ -229,6 +240,9 @@ fn hints(mac: Option<&str>, serial: Option<&str>) -> String {
     }
     if let Some(s) = serial {
         fields.push(format!("\"serial\":\"{}\"", json_str(s)));
+    }
+    if let Some(i) = image {
+        fields.push(format!("\"image\":\"{}\"", json_str(i)));
     }
     format!("{{{}}}", fields.join(","))
 }
@@ -293,8 +307,9 @@ pub fn claim_default(
     host: &str,
     mac: &str,
     serial: Option<&str>,
+    image: Option<&str>,
 ) -> Result<Attach, (u16, String)> {
-    let body = hints(Some(mac), serial);
+    let body = hints(Some(mac), serial, image);
     let path = format!("/api/v1/synonyms/{BOOTHOST_NS}/default/claim");
     let response = claim(server, port, host, &path, &body).map_err(|e| (0, e))?;
     let (status, body) = split_response(&response).map_err(|e| (0, e))?;
@@ -419,7 +434,20 @@ fn attach_from(body: &str) -> Result<Attach, String> {
         nsid,
         host,
         provisional,
+        maint: says_maint(body),
     })
+}
+
+/// Any `"image"` in the reply is `"maint"`.
+fn says_maint(body: &str) -> bool {
+    let mut rest = body;
+    while let Some(at) = rest.find("\"image\"") {
+        if field(rest, "image").as_deref() == Some("maint") {
+            return true;
+        }
+        rest = &rest[at + 7..];
+    }
+    false
 }
 
 /// Everything after the last `/`, for logging a digest without the noise.
