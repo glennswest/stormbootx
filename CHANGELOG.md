@@ -3,6 +3,19 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+## [v0.32.0] — 2026-10-21
+
+### Added
+- The inventory says everything the firmware can (#167, `"v":2`): every drive's bus, model, serial, firmware, WWN, size, sector sizes, media and partitions (an ESP's `\EFI` directories), the drive count, each NIC's MTU, SMBIOS system, board and firmware, CPU and memory always; a console line per drive.
+- A `timing :` line before each boot's result (#168).
+
+### Changed
+- Two seconds off every boot before the claim (#168): stormbootx ARPs the next hops itself, past smoltcp's one-request-a-second limit.
+- A parked ConnectX cap9 lock is taken after 50 ms, not 2 s (#99): ~4 s on the Dell.
+
+### Documentation
+- `docs/remote-control.md` (#167).
+
 ### 2026-10-21
 - **perf:** two seconds off every boot, before the claim (#168). smoltcp sends one ARP request a second per interface and silences a socket for a second while its neighbour is unknown. So the reverse-DNS lookup after the engine and the NTP exchange after it each waited a whole second, on the Dell, the X9 blades and pve. Once a NIC holds a lease, stormbootx sends its own ARP requests for the router and the lease's DNS and NTP servers, and for each connection's or datagram's next hop before its first packet. smoltcp caches the replies. `dnsname::{next_hop, arp_request, addresses}` (core-only, host-tested).
 - **perf:** a ConnectX-4/5 cap9 lock parked by the Mellanox UEFI driver is recognised after 50 ms of the same ticket, not 2 s (#99). That was ~4 s a boot on the Dell. A value that moves still gets the full wait.
