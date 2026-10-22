@@ -3,6 +3,14 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+## [v0.33.1] — 2026-10-22
+
+### Fixed
+- The host the intent was answered for is one of the machine's names (#167), so a machine known by a MAC alias takes the engine record's commands before its claim.
+
+### Changed
+- `tests/laptop-ovmf.sh` boots the real `stormboot-serve`'s command record (`record`); the pin moves to stormblock v22.2.0.
+
 ### 2026-10-22
 - **fix:** the host the intent was answered for is one of the machine's names (#167): a machine the engine knows by a MAC alias can take the command record's commands, which name the host, before its claim.
 - **test:** `tests/laptop-ovmf.sh` `record`: the real `stormboot-serve`'s command record (stormblock#494, v22.2.0): a signed `hold` taken before the claim and reported done, then a `poweroff` read while holding. The stormboot-serve pin moves to v22.2.0 (10d3b46).

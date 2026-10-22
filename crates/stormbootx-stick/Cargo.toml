@@ -1,7 +1,7 @@
 [package]
 name = "stormbootx-stick"
 description = "Update a stormbootx boot stick from a running Linux node: the self-update's manifest, keys and rules (#151)"
-version = "0.33.0"
+version = "0.33.1"
 edition = "2021"
 license = "MIT"
 
