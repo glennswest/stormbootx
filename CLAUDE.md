@@ -706,6 +706,16 @@ then.
       `--locked` laptop-ovmf + net-ovmf PASS), goldens requested
       (stormbootx, -rustnic, -rustnic-disk, -stick). `maint`'s claim is
       stormblock#497; #167 is proposed after it.
+      **2026-10-22, stormblock v22.3.0 has the `maint` claim**
+      (stormblock#497): `{"image":"maint", mac…}` on the usual claim
+      routes answers a `maint-<host>` clone of `boothost/maint`'s volume,
+      404 naming it when forge has none. **In progress:** `maint` claims
+      with `"image":"maint"` down the same name list (never the media's
+      fallback; a failed maint claim holds), from before the intent, the
+      hold, or before the chain-load (a boot again); net-ovmf's stub
+      engine serves it, api-boots' `maint` case boots its image, and the
+      refusal without `boothost/maint` holds; laptop-ovmf pins
+      stormboot-serve v22.3.0.
 
 - [x] **#100 — several NVMe reads in flight (P1, from #165's decision,
       2026-10-21). Closed 2026-10-21.** The Dell reads at 46–80 MiB/s with one
