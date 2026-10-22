@@ -238,7 +238,7 @@ fn hints(mac: Option<&str>, serial: Option<&str>) -> String {
 /// booted clean from the release it installed. The engine ignores fields it
 /// does not know; stormblock#177's claim record is where it will be kept.
 ///
-/// `{"name":"stormbootx","version","commit","media","update_serial","update"}`:
+/// `{"name":"stormbootx","version","commit","media","update_serial","update","api_port"}`:
 /// `commit` is the build stamp (absent when unstamped), `media` the medium's
 /// `media =` label, `update_serial` the self-update serial of the files on the
 /// medium (absent when no update wrote them), `update` the `StormBootUpdate`
@@ -260,6 +260,10 @@ fn agent() -> String {
     }
     if let Some(u) = crate::handoff::update_value() {
         fields.push(format!("\"update\":\"{}\"", json_str(&u)));
+    }
+    // Where stormbootx's own API answers on this machine (#167).
+    if let Some(p) = crate::api::port() {
+        fields.push(format!("\"api_port\":{p}"));
     }
     format!("{{{}}}", fields.join(","))
 }
@@ -357,6 +361,25 @@ pub fn boot_intent(
     let response = request(server, port, host, "GET", &path, None)?;
     let (status, body) = split_response(&response)?;
     Ok((status, body.to_string()))
+}
+
+/// The command waiting on this machine's host record (#167,
+/// stormblock#494): `GET /api/v1/synonyms/boothost/<name>/command`, the same
+/// signed object the API takes (`command.rs`). A 404 is none.
+pub fn command(server: [u8; 4], port: u16, host: &str, name: &str) -> Result<(u16, String), String> {
+    let path = format!("/api/v1/synonyms/{BOOTHOST_NS}/{name}/command");
+    let response = request(server, port, host, "GET", &path, None)?;
+    let (status, body) = split_response(&response)?;
+    Ok((status, body.to_string()))
+}
+
+/// Tell the engine a command from the record is done, so it clears it:
+/// `POST …/command/done {"id":…,"result":"…"}`. Returns the status.
+pub fn command_done(server: [u8; 4], port: u16, host: &str, name: &str, id: u64, result: &str) -> Result<u16, String> {
+    let path = format!("/api/v1/synonyms/{BOOTHOST_NS}/{name}/command/done");
+    let body = format!("{{\"id\":{id},\"result\":\"{}\"}}", json_str(result));
+    let response = request(server, port, host, "POST", &path, Some(&body))?;
+    Ok(split_response(&response)?.0)
 }
 
 /// Read an attach out of a response, in either spelling.

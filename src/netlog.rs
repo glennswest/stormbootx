@@ -93,6 +93,10 @@ struct Log {
     /// is not the one in front.
     ours: *mut SimpleTextOutputProtocol,
     orig: *mut SimpleTextOutputProtocol,
+    /// Every line so far, for the API's `/api/v1/log` (#167): kept with
+    /// `syslog = off` too, and never drained by a send.
+    history: VecDeque<String>,
+    history_bytes: usize,
 }
 
 static mut LOG: Option<Log> = None;
@@ -160,8 +164,11 @@ pub fn begin() {
         clock: None,
         ours: core::ptr::null_mut(),
         orig,
+        history: VecDeque::new(),
+        history_bytes: 0,
     };
-    if !off {
+    // Installed with `syslog = off` too: the API's log is kept either way.
+    {
         l.ours = alloc::boxed::Box::into_raw(alloc::boxed::Box::new(SimpleTextOutputProtocol {
             reset: hook_reset,
             output_string: hook_output,
@@ -228,7 +235,7 @@ pub fn synced(unix_ns: u64) {
 /// the panel's (`ui.rs`).
 pub fn capture(s: *const Char16) {
     let Some(l) = log() else { return };
-    if s.is_null() || l.off {
+    if s.is_null() {
         return;
     }
     let old = unsafe { (bs(l.st).raise_tpl)(Tpl::NOTIFY) };
@@ -262,6 +269,17 @@ pub fn capture(s: *const Char16) {
 }
 
 fn keep(l: &mut Log, line: String) {
+    l.history_bytes += line.len() + 1;
+    l.history.push_back(line.clone());
+    while l.history.len() > KEEP_LINES || l.history_bytes > KEEP_BYTES {
+        match l.history.pop_front() {
+            Some(old) => l.history_bytes -= old.len() + 1,
+            None => break,
+        }
+    }
+    if l.off {
+        return;
+    }
     l.bytes += line.len();
     l.lines.push_back((crate::entropy::ticks(), line));
     while l.lines.len() > KEEP_LINES || l.bytes > KEEP_BYTES {
@@ -273,6 +291,20 @@ fn keep(l: &mut Log, line: String) {
             None => break,
         }
     }
+}
+
+/// Every line kept so far, one per line, oldest first (the API's
+/// `/api/v1/log`, #167). At most [`KEEP_LINES`] lines and [`KEEP_BYTES`].
+pub fn history() -> String {
+    let Some(l) = log() else { return String::new() };
+    let old = unsafe { (bs(l.st).raise_tpl)(Tpl::NOTIFY) };
+    let mut out = String::with_capacity(l.history_bytes);
+    for line in l.history.iter() {
+        out.push_str(line);
+        out.push('\n');
+    }
+    unsafe { (bs(l.st).restore_tpl)(old) };
+    out
 }
 
 /// The lines waiting, taken out under the raised TPL.

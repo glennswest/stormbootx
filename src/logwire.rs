@@ -223,8 +223,14 @@ pub fn target(v: &str) -> Option<Target<'_>> {
 /// taken off and a trailing comment dropped. Only a key at column 0: a
 /// `syslog:` under a host or an option is not the install's.
 pub fn yaml_syslog(text: &str) -> Option<&str> {
+    yaml_value(text, "syslog")
+}
+
+/// The value of any top-level `key:` in install-config.yaml, read as
+/// `yaml_syslog` reads `syslog:` (also `stormbootx_hold:`, #167).
+pub fn yaml_value<'a>(text: &'a str, key: &str) -> Option<&'a str> {
     for line in text.lines() {
-        let Some(rest) = line.strip_prefix("syslog:") else { continue };
+        let Some(rest) = line.strip_prefix(key).and_then(|r| r.strip_prefix(':')) else { continue };
         let mut v = rest.trim();
         if let Some(i) = v.find(" #") {
             v = v[..i].trim_end();
@@ -316,5 +322,10 @@ mod tests {
         assert_eq!(yaml_syslog("syslog: 10.0.0.1\r\n"), Some("10.0.0.1"));
         assert_eq!(yaml_syslog("syslog: 'off'"), Some("off"));
         assert_eq!(yaml_syslog("syslog:\n"), None);
+        // #167: the hold's keys, and a key that only begins with another.
+        let y = "stormbootx_hold_retry: 5\nstormbootx_hold: forever # until a command\n";
+        assert_eq!(yaml_value(y, "stormbootx_hold"), Some("forever"));
+        assert_eq!(yaml_value(y, "stormbootx_hold_retry"), Some("5"));
+        assert_eq!(yaml_syslog("syslogd: x\n"), None);
     }
 }

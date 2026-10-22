@@ -52,8 +52,10 @@
 
 extern crate alloc;
 
+mod api;
 mod blockio;
 mod clock;
+mod command;
 mod config;
 mod connectx;
 mod dnsname;
@@ -127,7 +129,50 @@ fn identify() {
     banner("============================================================");
 }
 
-fn run() -> Result<(), String> {
+/// Why `run` stopped short of the chain-load.
+enum Stop {
+    /// A failure: the hold (#167), then the fall-through.
+    Failed(String),
+    /// Nothing failed: the local disk is what was asked for (the intent, a
+    /// command).
+    Local(String),
+    /// A command said hold.
+    Hold(String),
+    /// A command said boot again; `true` claims whatever the intent says.
+    Retry(bool),
+}
+
+impl From<String> for Stop {
+    fn from(s: String) -> Self {
+        Stop::Failed(s)
+    }
+}
+
+impl From<&str> for Stop {
+    fn from(s: &str) -> Self {
+        Stop::Failed(String::from(s))
+    }
+}
+
+/// What a command taken at one of the boot's fixed points means here
+/// (#167): `Ok` goes on, claiming whatever the intent says when `true`.
+fn after_command(next: api::Next) -> Result<bool, Stop> {
+    match next {
+        api::Next::Go => Ok(false),
+        api::Next::Install => Ok(true),
+        api::Next::Local => Err(Stop::Local(String::from("a command said local: nothing claimed"))),
+        api::Next::Retry => Err(Stop::Retry(false)),
+        api::Next::Hold => Err(Stop::Hold(String::from("a command said hold"))),
+    }
+}
+
+/// One boot from the media to the chain-load. `pass` counts the boots a hold
+/// started again (#167): the media's NIC drivers, the FEC read, the
+/// self-update and the install-config hand-down run on the first only.
+/// `install` claims whatever the intent says (a command said so).
+fn run(pass: u32, install: bool) -> Result<(), Stop> {
+    let first = pass == 0;
+    api::phase("booting", if first { "" } else { "again, after a hold" });
     // A disk an earlier start published and left behind (#54): its BlockIO
     // points into an unloaded image.
     match blockio::stale() {
@@ -159,7 +204,9 @@ fn run() -> Result<(), String> {
 
     // The node's first-boot input (#79), handed down whatever this boot does
     // next: it lives on the media, which nothing opens after the attach.
-    handoff::set_install_config();
+    if first {
+        handoff::set_install_config();
+    }
 
     // 1. Who am I? No network, no configuration, no BMC.
     // A stated tag wins. Discovery is a convenience for a machine nobody has
@@ -175,11 +222,13 @@ fn run() -> Result<(), String> {
         Some(t) => {
             uefi::println!("service tag : {t}  (stated in {})", config::file_of(&["name", "tag"]));
             netlog::name(t, netlog::Rank::Named);
+            api::name(t);
             None
         }
         None => match smbios::identity(None) {
             Some(id) => {
                 uefi::println!("service tag : {}  ({})", id.value(), id.source());
+                api::name(id.value());
                 Some(id.value().to_string())
             }
             None => {
@@ -214,16 +263,18 @@ fn run() -> Result<(), String> {
         stated.as_deref().or(serial.as_deref()).unwrap_or("none")
     ));
     ui::step(ui::Step::Nic, "NIC drivers and links");
-    uefi::println!("nic fec     :");
-    let _ = mlxfec::apply(None);
-    profile::mark("nic fec");
+    if first {
+        uefi::println!("nic fec     :");
+        let _ = mlxfec::apply(None);
+        profile::mark("nic fec");
+    }
 
     //     A recovery stick, and only a recovery stick, may state `fec = MODE`
     //     in stormboot.conf. That is an operator saying so on one piece of
     //     media, not this code inferring it from link state — the distinction
     //     that matters, and the one step 2b is about. Write once, warm-reset
     //     once, and the next boot of the same stick finds nothing to do.
-    if let Some(want) = config::stated_fec() {
+    if let Some(want) = config::stated_fec().filter(|_| first) {
         uefi::println!("              media states fec = {} — writing it", want.name());
         if mlxfec::apply(Some(want)).reset_needed() {
             uefi::println!("              FEC written; warm-resetting to apply");
@@ -238,11 +289,11 @@ fn run() -> Result<(), String> {
     //     drivers bind first; a media driver only takes a NIC nothing else did.
     //     Media with none (`media : fw`, #52) leave every NIC to the
     //     firmware's own drivers, and the console says so.
-    let loaded = drivers::load_from_media();
+    let loaded = if first { drivers::load_from_media() } else { Vec::new() };
     profile::mark("drivers");
-    if loaded.is_empty() {
+    if first && loaded.is_empty() {
         uefi::println!("drivers     : none on the media; the firmware's own NIC drivers");
-    } else {
+    } else if first {
         let ok = loaded.iter().filter(|l| l.result.is_ok()).count();
         uefi::println!("drivers     : {ok} of {} started from {}", loaded.len(), drivers::DRIVERS_DIR);
         for l in loaded.iter().filter(|l| l.result.is_err()) {
@@ -279,7 +330,9 @@ fn run() -> Result<(), String> {
         _ => uefi::println!("mac         : none usable"),
     }
     if let Some((m, _)) = mac {
-        netlog::name(core::str::from_utf8(&universal::provisional_name(&m)).unwrap_or(""), netlog::Rank::Mac);
+        let p = universal::provisional_name(&m);
+        netlog::name(core::str::from_utf8(&p).unwrap_or(""), netlog::Rank::Mac);
+        api::name(core::str::from_utf8(&p).unwrap_or(""));
     }
     {
         let nics = net::nic_summary();
@@ -303,7 +356,9 @@ fn run() -> Result<(), String> {
     //     release of this medium's golden and, if it is newer and its signed
     //     manifest verifies, write it to the medium and restart into it.
     //     Read-only media, `update = off` and every failure go on booting.
-    selfupdate::check(mac_colon.as_deref());
+    if first {
+        selfupdate::check(mac_colon.as_deref());
+    }
 
     // What an older engine is asked for, and what the host NQN falls back to:
     // the stated tag, else the SMBIOS serial, else the MAC (#7's floor).
@@ -435,6 +490,7 @@ fn run() -> Result<(), String> {
                     Some((full, h, from)) => {
                         ui::name(h);
                         netlog::name(h, netlog::Rank::Named);
+                        api::name(h);
                         uefi::println!("name        : {full}  (from {from})")
                     }
                     None => uefi::println!("name        : none from DHCP or reverse DNS"),
@@ -503,7 +559,7 @@ fn run() -> Result<(), String> {
                 Ok((status, body)) => intent::from_reply(*status, body),
                 Err(_) => intent::Reply::Status(0),
             };
-            let chosen = said.intent();
+            let mut chosen = said.intent();
             profile::mark("intent");
             match (&reply, said) {
                 (_, intent::Reply::Stated(i)) => {
@@ -524,6 +580,14 @@ fn run() -> Result<(), String> {
                 (_, intent::Reply::Unreadable(None)) => {
                     uefi::println!("intent      : auto  (the reply stated no intent)")
                 }
+            }
+            // A command for this machine (#167): one the API took, else the
+            // engine's record under the name the intent answered for.
+            api::engine(cfg.portal, cfg.api_port, &host, &intent_key);
+            let told = install || after_command(api::checkpoint(true))?;
+            if told {
+                uefi::println!("intent      : install  (a command said so; the engine's is {})", chosen.name());
+                chosen = intent::Intent::Install;
             }
             // With `local_when_bootable = true` only, `auto` and every doubt
             // boot the local disk when one can boot (#3). Off by default: the
@@ -555,14 +619,14 @@ fn run() -> Result<(), String> {
                 // named the machine anyway (a stated tag, a DNS name), never
                 // a serial or MAC guess (#76).
                 handoff::set_tag(stated.as_deref().or(dns_host.as_deref()));
-                return Err(if local_bootable {
+                return Err(Stop::Local(if local_bootable {
                     format!(
                         "boot intent for {intent_key} is `{}` and a local disk can boot: nothing claimed",
                         chosen.name()
                     )
                 } else {
                     format!("boot intent for {intent_key} is `{}`: nothing claimed", chosen.name())
-                });
+                }));
             }
 
             // 3c. Claim, best name first. A 404 means "not under this name",
@@ -665,6 +729,7 @@ fn run() -> Result<(), String> {
                 let name = a.host.clone().unwrap_or(name);
                 ui::name(&name);
                 netlog::name(&name, netlog::Rank::Claimed);
+                api::name(&name);
                 ui::done(ui::Step::Claim, &format!("a clone of {name}'s image, nsid {}", a.nsid));
                 (a, Some(name))
             }
@@ -679,9 +744,9 @@ fn run() -> Result<(), String> {
                 ui::fail(ui::Step::Claim, "nothing claimed, and the media names no fallback");
                 ui::skip(ui::Step::Image, "");
                 ui::skip(ui::Step::Handoff, "");
-                return Err(String::from(
+                return Err(Stop::Failed(String::from(
                     "no claim gave this machine an image, and the media names no fallback (fallback = none)",
-                ));
+                )));
             }
             None => {
                 if cfg.claim {
@@ -745,6 +810,7 @@ fn run() -> Result<(), String> {
             .unwrap_or(&tag)
     );
     uefi::println!("attaching   : {hostnqn}");
+    api::phase("attaching", &hostnqn);
     ui::step(ui::Step::Image, &format!("attaching nsid {} at {a}.{b}.{c}.{d}", attach.nsid));
 
     let mut ns = nvme::attach(
@@ -801,6 +867,10 @@ fn run() -> Result<(), String> {
     // 5. Publish it as an ordinary disk, then boot it.
     let handle = blockio::publish(ns)?;
     uefi::println!("blockio     : published on handle {handle:p}");
+    // The last point a command is taken (#167): from here the image's own
+    // bootloader runs.
+    after_command(api::checkpoint(false))?;
+    api::phase("handed off", "the image's bootloader");
     profile::mark("attach");
     profile::print();
 
@@ -815,7 +885,7 @@ fn run() -> Result<(), String> {
     // sent, as nothing here runs between its reads.
     netlog::flush();
     blockio::boot_attached(handle, esp_reader)?;
-    Err(String::from("the attached image did not boot; nothing to chain-load"))
+    Err(Stop::Failed(String::from("the attached image did not boot; nothing to chain-load")))
 }
 
 /// The machine's DNS name from the network it booted on (#23): DHCP option 12
@@ -936,12 +1006,67 @@ fn main() -> Status {
 
     // Read with the rest of the media, before anything is attached (#46).
     let local = Local { boot: config::local_boot(), reader: config::esp_reader() };
+    // The API (#167): its port and command keys, and the hold, from the media.
+    api::init();
 
     // run() hands off to the image's bootloader and does not return on
-    // success; every path back here is a failure to fall through from.
-    match run() {
-        Ok(()) => fall_through("attach succeeded but no bootloader started", local),
-        Err(err) => fall_through(&err, local),
+    // success; every path back here is a failure to fall through from, a
+    // `local` to fall through to, or a hold. A hold that is told to boot
+    // again runs it again.
+    let (mut pass, mut install) = (0u32, false);
+    loop {
+        let stop = match run(pass, install) {
+            Ok(()) => Stop::Failed(String::from("attach succeeded but no bootloader started")),
+            Err(s) => s,
+        };
+        let (why, how, retry) = match stop {
+            Stop::Local(why) => return fall_through(&why, local),
+            Stop::Retry(i) => {
+                withdraw();
+                (pass, install) = (pass + 1, i);
+                continue;
+            }
+            Stop::Hold(why) => (why, api::Hold::Forever, 0),
+            Stop::Failed(why) => {
+                let (how, retry, _) = api::policy();
+                (why, how, retry)
+            }
+        };
+        if how == api::Hold::Off || !net::leased() {
+            return fall_through(&why, local);
+        }
+        withdraw();
+        // A machine with nothing local that boots holds until a command:
+        // falling through would only reach the firmware's shell or setup
+        // (server1, 2026-10-14).
+        let how = match (how, blockio::local_bootloader()) {
+            (api::Hold::Secs(_), Err(nothing)) => {
+                uefi::println!("hold        : nothing local to fall through to ({nothing}); until a command");
+                api::Hold::Forever
+            }
+            (h, _) => h,
+        };
+        match api::hold(&why, how, retry) {
+            api::After::FallThrough => return fall_through(&why, local),
+            api::After::Retry(i) => (pass, install) = (pass + 1, i),
+        }
+    }
+}
+
+/// Take the attached disk back before this image leaves it (#54) or boots
+/// again: its BlockIO lives in this image, and it is not a local disk.
+fn withdraw() {
+    match blockio::withdraw() {
+        None => {}
+        Some(Ok(())) => uefi::println!("blockio     : withdrawn (the attached image is not left to the firmware)"),
+        Some(Err(e)) => {
+            // Returning would leave the boot manager a disk whose functions
+            // are freed: a crash, not a fall-through. A reset is a boot that
+            // tries again, which is what a fall-through would have been.
+            uefi::println!("blockio     : could not withdraw the attached disk ({e}); resetting instead of returning");
+            uefi::boot::stall(core::time::Duration::from_secs(10));
+            uefi::runtime::reset(uefi::runtime::ResetType::WARM, Status::SUCCESS, None);
+        }
     }
 }
 
@@ -976,18 +1101,8 @@ struct Local {
 fn fall_through(err: &str, local: Local) -> Status {
     // The attached disk first (#54): its BlockIO lives in this image, which
     // the firmware unloads when this returns, and it is not a local disk.
-    match blockio::withdraw() {
-        None => {}
-        Some(Ok(())) => uefi::println!("blockio     : withdrawn (the attached image is not left to the firmware)"),
-        Some(Err(e)) => {
-            // Returning would leave the boot manager a disk whose functions
-            // are freed: a crash, not a fall-through. A reset is a boot that
-            // tries again, which is what a fall-through would have been.
-            uefi::println!("blockio     : could not withdraw the attached disk ({e}); resetting instead of returning");
-            uefi::boot::stall(core::time::Duration::from_secs(10));
-            uefi::runtime::reset(uefi::runtime::ResetType::WARM, Status::SUCCESS, None);
-        }
-    }
+    withdraw();
+    api::phase("falling through", err);
     let disks = blockio::local_disks();
 
     uefi::println!("");

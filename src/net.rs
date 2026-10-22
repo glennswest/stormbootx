@@ -408,7 +408,36 @@ struct Nic {
     primed: Vec<[u8; 4]>,
     /// The MAC the interface sends from (the SNP's current address).
     hw: [u8; 6],
+    /// stormbootx's own API (#167): listening sockets, served from `poll`.
+    api: Vec<ApiConn>,
 }
+
+/// One of the API's listening sockets and the request on it (#167).
+struct ApiConn {
+    handle: SocketHandle,
+    inbuf: Vec<u8>,
+    out: Vec<u8>,
+    sent: usize,
+    closing: bool,
+    /// When the connection was first seen established.
+    since: Option<Instant>,
+}
+
+impl ApiConn {
+    fn reset(&mut self) {
+        self.inbuf.clear();
+        self.out = Vec::new();
+        self.sent = 0;
+        self.closing = false;
+        self.since = None;
+    }
+}
+
+/// Listening sockets per NIC: one request at a time each.
+const API_SOCKETS: usize = 2;
+/// A connection that has not finished its request and response by then is
+/// dropped.
+const API_CONN_SECS: u64 = 15;
 
 impl Nic {
     /// Ask for the MAC of `dest`'s next hop ourselves, once a lease (#168).
@@ -449,8 +478,68 @@ impl Nic {
         mode_of(self.handle).is_some_and(|m| bool::from(m.media_present))
     }
 
+    /// Answer the API's connections (#167): read a request, have `api.rs`
+    /// answer it, send that, close. Runs on every poll, so the API answers
+    /// whenever stormbootx pumps the stack, from `up` to the chain-load. The
+    /// answer never calls back into this module.
+    fn serve(&mut self, now: Instant) {
+        let Some(port) = crate::api::port() else { return };
+        for c in self.api.iter_mut() {
+            let s = self.sockets.get_mut::<tcp::Socket>(c.handle);
+            if !s.is_open() {
+                c.reset();
+                let _ = s.listen(port);
+                continue;
+            }
+            if s.state() == tcp::State::Listen {
+                continue;
+            }
+            let since = *c.since.get_or_insert(now);
+            if now - since > Duration::from_secs(API_CONN_SECS) {
+                s.abort();
+                c.reset();
+                continue;
+            }
+            if c.out.is_empty() {
+                while s.can_recv() && c.inbuf.len() <= crate::command::REQUEST_MAX {
+                    let room = crate::command::REQUEST_MAX + 1 - c.inbuf.len();
+                    let got = s.recv(|d| {
+                        let n = d.len().min(room);
+                        (n, d[..n].to_vec())
+                    });
+                    match got {
+                        Ok(d) if !d.is_empty() => c.inbuf.extend_from_slice(&d),
+                        _ => break,
+                    }
+                }
+                let peer = match s.remote_endpoint() {
+                    Some(e) => match e.addr {
+                        IpAddress::Ipv4(a) => a.octets(),
+                    },
+                    None => [0; 4],
+                };
+                c.out = match crate::command::request(&c.inbuf) {
+                    crate::command::Request::Partial if s.may_recv() => continue,
+                    crate::command::Request::Partial => crate::command::error(400, "the request ended early"),
+                    crate::command::Request::Bad(why) => crate::command::error(400, why),
+                    crate::command::Request::Done { method, path, body } => {
+                        crate::api::answer(method, path, body, peer)
+                    }
+                };
+            }
+            if c.sent < c.out.len() && s.can_send() {
+                c.sent += s.send_slice(&c.out[c.sent..]).unwrap_or(0);
+            }
+            if c.sent == c.out.len() && !c.closing {
+                s.close();
+                c.closing = true;
+            }
+        }
+    }
+
     fn poll(&mut self, now: Instant) {
         self.iface.poll(now, &mut self.dev, &mut self.sockets);
+        self.serve(now);
         let event = match self.sockets.get_mut::<dhcpv4::Socket>(self.dhcp).poll() {
             None => return,
             Some(dhcpv4::Event::Deconfigured) => None,
@@ -745,6 +834,19 @@ fn open_nic(index: usize, handle: uefi_raw::Handle, clock: &Clock, rng: &mut Ent
     retry.initial_request_timeout = Duration::from_secs(2);
     dhcp.set_retry_config(retry);
     let dhcp = sockets.add(dhcp);
+    let api = (0..API_SOCKETS)
+        .map(|_| ApiConn {
+            handle: sockets.add(tcp::Socket::new(
+                tcp::SocketBuffer::new(vec![0u8; 16 * 1024]),
+                tcp::SocketBuffer::new(vec![0u8; 32 * 1024]),
+            )),
+            inbuf: Vec::new(),
+            out: Vec::new(),
+            sent: 0,
+            closing: false,
+            since: None,
+        })
+        .collect();
 
     let mut mac = [0u8; 32];
     mac.copy_from_slice(&m.permanent_address.0);
@@ -764,6 +866,7 @@ fn open_nic(index: usize, handle: uefi_raw::Handle, clock: &Clock, rng: &mut Ent
         lease: None,
         primed: Vec::new(),
         hw: cur,
+        api,
     })
 }
 
@@ -887,6 +990,26 @@ pub fn wait_lease(secs: u32) -> bool {
             note = now + Duration::from_secs(1);
         }
     }
+}
+
+/// Pump the stack for `ms` milliseconds: leases, the log's sends and the
+/// API's connections (#167). The hold loop's heartbeat.
+pub fn pump(ms: u64) {
+    let Ok(n) = net() else {
+        boot::stall(core::time::Duration::from_millis(ms));
+        return;
+    };
+    let until = n.clock.now() + Duration::from_millis(ms);
+    while n.clock.now() < until {
+        n.poll_all();
+    }
+}
+
+/// Every leased address, `nic N a.b.c.d`, for the line that says where the
+/// API answers (#167).
+pub fn addresses() -> Vec<[u8; 4]> {
+    let Ok(n) = net() else { return Vec::new() };
+    n.nics.iter().filter_map(|c| c.lease.as_ref().map(|l| l.address)).collect()
 }
 
 /// The DHCP reply of the NIC `udp_exchange` would use, for its options

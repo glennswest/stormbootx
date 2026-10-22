@@ -175,6 +175,18 @@ struct Cached(core::cell::UnsafeCell<Option<String>>);
 unsafe impl Sync for Cached {}
 static INVENTORY: Cached = Cached(core::cell::UnsafeCell::new(None));
 
+/// The inventory already collected, for the API (#167), which answers from
+/// inside a poll of the stack and must not collect it there.
+pub fn cached() -> Option<String> {
+    unsafe { (*INVENTORY.0.get()).clone() }
+}
+
+/// Forget the inventory, so the next `json` collects it again (the
+/// `inventory` command, and after a wipe).
+pub fn refresh() {
+    unsafe { *INVENTORY.0.get() = None };
+}
+
 /// The inventory as the claim's `"inventory"` object, collected on the first
 /// call and said on the console then.
 pub fn json() -> String {
@@ -285,6 +297,11 @@ fn storage() -> Vec<Controller> {
 /// stormbootx published. Each with what it says about itself and what its
 /// partition table holds (#167).
 fn disks() -> Vec<Disk> {
+    disk_handles().into_iter().map(|(_, d)| d).collect()
+}
+
+/// `disks`, each with its BlockIO handle.
+fn disk_handles() -> Vec<(uefi::Handle, Disk)> {
     // A firmware that boots fast connects only what its boot order names, so
     // a drive on another controller has no BlockIO yet. Connect every
     // mass-storage controller (PCI class 01), recursively, so the count is
@@ -345,9 +362,78 @@ fn disks() -> Vec<Disk> {
             };
             table(&mut bd, &mut disk);
         }
-        out.push(disk);
+        out.push((*h, disk));
     }
     out
+}
+
+/// How much of each end of a drive the fast wipe zeroes (#167).
+const WIPE_BYTES: u64 = 1024 * 1024;
+
+/// The `format <serial>` command's fast wipe (#167): zero the first and last
+/// MiB of the one drive whose serial is `serial`, which takes its MBR, its
+/// GPT and the GPT's backup, then reconnect it so the firmware drops the
+/// partitions it had. Never the boot medium, never a disk stormbootx
+/// published, never a read-only one, and nothing when no drive or more than
+/// one has that serial. The full wipe and secure erase are the maintenance
+/// image's (baremetalservices).
+pub fn wipe(serial: &str) -> Result<String, String> {
+    let all = disk_handles();
+    let found: Vec<&(uefi::Handle, Disk)> =
+        all.iter().filter(|(_, d)| d.id.serial.as_deref().map(str::trim) == Some(serial.trim())).collect();
+    let (h, d) = match found.as_slice() {
+        [one] => *one,
+        [] => {
+            let known: Vec<&str> = all.iter().filter_map(|(_, d)| d.id.serial.as_deref()).collect();
+            return Err(format!(
+                "no drive has serial {serial} (serials here: {})",
+                if known.is_empty() { String::from("none") } else { known.join(", ") }
+            ));
+        }
+        more => return Err(format!("{} drives have serial {serial}; nothing written", more.len())),
+    };
+    if d.medium {
+        return Err(format!("{serial} is the medium stormbootx runs from"));
+    }
+    let mut bio = unsafe {
+        boot::open_protocol::<BlockIO>(
+            OpenProtocolParams { handle: *h, agent: boot::image_handle(), controller: None },
+            OpenProtocolAttributes::GetProtocol,
+        )
+    }
+    .map_err(|e| format!("BlockIO: {:?}", e.status()))?;
+    let m = bio.media();
+    if !m.is_media_present() {
+        return Err(format!("{serial} has no medium"));
+    }
+    if m.is_read_only() {
+        return Err(format!("{serial} is read-only"));
+    }
+    let (media_id, block) = (m.media_id(), m.block_size() as u64);
+    let blocks = m.last_block() + 1;
+    let n = (WIPE_BYTES / block).max(1).min(blocks / 2).max(1);
+    let len = (n * block) as usize;
+    let align = (m.io_align() as usize).max(1);
+    let mut raw = vec![0u8; len + align];
+    let off = raw.as_ptr().align_offset(align);
+    let zeros = &mut raw[off..off + len];
+    for lba in [0, blocks - n] {
+        bio.write_blocks(media_id, lba, zeros).map_err(|e| format!("write at LBA {lba}: {:?}", e.status()))?;
+    }
+    bio.flush_blocks().map_err(|e| format!("flush: {:?}", e.status()))?;
+    drop(bio);
+    // The partitions the firmware made from the old table go with it.
+    let _ = boot::disconnect_controller(*h, None, None);
+    crate::net::connect(h.as_ptr());
+    refresh();
+    Ok(format!(
+        "{}{} serial {serial} ({}): {} at each end zeroed (LBA 0..{n} and {}..{blocks}), its partition table gone",
+        d.bus.map(|b| format!("{b} ")).unwrap_or_default(),
+        d.id.model.as_deref().unwrap_or("disk"),
+        inventory::size_text(blocks * block),
+        inventory::size_text(n * block),
+        blocks - n
+    ))
 }
 
 /// Which bus a disk is on and what it says about itself: `EFI_DISK_INFO`
