@@ -117,6 +117,79 @@ impl Partition {
 /// `block_size`-byte blocks. The header and the entry array are both
 /// CRC-checked: a table that fails its own checksum is not read.
 pub fn find_esp<D: Disk>(disk: &mut D, block_size: u32) -> Result<Partition, Error> {
+    let mut found: Option<Partition> = None;
+    walk_gpt(disk, block_size, &mut |number, e| {
+        if found.is_none() && e[0..16] == ESP_TYPE {
+            found = Some(partition_of(number, e));
+        }
+    })?;
+    let p = found.ok_or(Error::NoEsp)?;
+    if p.first_lba == 0 || p.last_lba < p.first_lba {
+        return Err(Error::Corrupt("the ESP's GPT entry has an empty range"));
+    }
+    Ok(p)
+}
+
+fn partition_of(number: u32, e: &[u8]) -> Partition {
+    let mut guid = [0u8; 16];
+    guid.copy_from_slice(&e[16..32]);
+    Partition { number, first_lba: le64(e, 32), last_lba: le64(e, 40), guid }
+}
+
+/// One used GPT entry, for the inventory (#167): where it is, its type GUID
+/// as stored, and its name (UCS-2, up to 36 units, no terminator).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GptEntry {
+    pub partition: Partition,
+    pub type_guid: [u8; 16],
+    pub name: [u16; 36],
+    pub name_len: usize,
+}
+
+impl GptEntry {
+    pub const EMPTY: GptEntry = GptEntry {
+        partition: Partition { number: 0, first_lba: 0, last_lba: 0, guid: [0; 16] },
+        type_guid: [0; 16],
+        name: [0; 36],
+        name_len: 0,
+    };
+
+    pub fn is_esp(&self) -> bool {
+        self.type_guid == ESP_TYPE
+    }
+}
+
+/// The used entries of a disk's primary GPT, in table order, into `out`;
+/// returns how many there are, which may be more than `out` holds. Nothing is
+/// returned from a table that fails either CRC.
+pub fn partitions<D: Disk>(disk: &mut D, block_size: u32, out: &mut [GptEntry]) -> Result<usize, Error> {
+    let mut n = 0usize;
+    walk_gpt(disk, block_size, &mut |number, e| {
+        if e[0..16] == [0u8; 16] {
+            return;
+        }
+        if let Some(slot) = out.get_mut(n) {
+            let mut g = GptEntry { partition: partition_of(number, e), type_guid: [0; 16], name: [0; 36], name_len: 0 };
+            g.type_guid.copy_from_slice(&e[0..16]);
+            for (i, u) in e[56..128].chunks_exact(2).enumerate() {
+                let u = le16(u, 0);
+                if u == 0 {
+                    break;
+                }
+                g.name[i] = u;
+                g.name_len = i + 1;
+            }
+            *slot = g;
+        }
+        n += 1;
+    })?;
+    Ok(n)
+}
+
+/// Every entry of the primary GPT, used or not, to `each` (1-based number,
+/// the entry's bytes), then the entry array's CRC: an `Err` means whatever
+/// `each` saw must be thrown away.
+fn walk_gpt<D: Disk>(disk: &mut D, block_size: u32, each: &mut dyn FnMut(u32, &[u8])) -> Result<(), Error> {
     let bs = block_size as u64;
     let mut hdr = [0u8; 512];
     if !disk.read(bs, &mut hdr) {
@@ -149,7 +222,6 @@ pub fn find_esp<D: Disk>(disk: &mut D, block_size: u32) -> Result<Partition, Err
 
     let mut chunk = [0u8; 4096];
     let mut state = !0u32;
-    let mut found: Option<Partition> = None;
     let mut off = 0u64;
     while off < total {
         let n = (total - off).min(chunk.len() as u64) as usize;
@@ -158,30 +230,16 @@ pub fn find_esp<D: Disk>(disk: &mut D, block_size: u32) -> Result<Partition, Err
         }
         state = crc32_update(state, &chunk[..n]);
         for (i, e) in chunk[..n].chunks_exact(esize as usize).enumerate() {
-            // Nothing in an entry is judged until the array passes its CRC.
-            if found.is_none() && e[0..16] == ESP_TYPE {
-                let first = le64(e, 32);
-                let last = le64(e, 40);
-                let mut guid = [0u8; 16];
-                guid.copy_from_slice(&e[16..32]);
-                found = Some(Partition {
-                    number: ((off / esize) + i as u64 + 1) as u32,
-                    first_lba: first,
-                    last_lba: last,
-                    guid,
-                });
-            }
+            each(((off / esize) + i as u64 + 1) as u32, e);
         }
         off += n as u64;
     }
+    // Nothing in an entry may be judged until the array passes its CRC: the
+    // callers throw away what they kept on an `Err`.
     if !state != le32(&hdr, 88) {
         return Err(Error::NoGpt("the GPT entry array fails its CRC"));
     }
-    let p = found.ok_or(Error::NoEsp)?;
-    if p.first_lba == 0 || p.last_lba < p.first_lba {
-        return Err(Error::Corrupt("the ESP's GPT entry has an empty range"));
-    }
-    Ok(p)
+    Ok(())
 }
 
 /// One sector of the filesystem, kept so the FAT and directories aren't read
@@ -1058,6 +1116,13 @@ mod tests {
         let p = find_esp(&mut img.disk, img.block).unwrap();
         assert_eq!(p.number, 3);
         assert_eq!(p.guid, [0xAB; 16]);
+        // The inventory's walk (#167): the two used entries of 128, in order.
+        let mut parts = [GptEntry::EMPTY; 4];
+        assert_eq!(partitions(&mut img.disk, img.block, &mut parts), Ok(2));
+        assert_eq!((parts[0].partition.number, parts[0].type_guid[0], parts[0].is_esp()), (1, 0x11, false));
+        assert_eq!((parts[1].partition, parts[1].is_esp()), (p, true));
+        let mut one = [GptEntry::EMPTY; 1];
+        assert_eq!(partitions(&mut img.disk, img.block, &mut one), Ok(2), "counted past what fits");
         let bs = img.block as u64;
         let mut fat = Fat::mount(&mut img.disk, p.first_lba * bs, p.blocks() * bs).unwrap();
         assert_eq!(fat.kind(), bits);
@@ -1234,6 +1299,11 @@ mod tests {
         img.disk.head[4096 + 40] ^= 1;
         img.disk.head[8192 + 2 * 128 + 33] ^= 1;
         assert_eq!(find_esp(&mut img.disk, 4096), Err(Error::NoGpt("the GPT entry array fails its CRC")));
+        let mut parts = [GptEntry::EMPTY; 4];
+        assert_eq!(
+            partitions(&mut img.disk, 4096, &mut parts),
+            Err(Error::NoGpt("the GPT entry array fails its CRC"))
+        );
     }
 
     #[test]

@@ -282,7 +282,7 @@ fn run() -> Result<(), String> {
         let up = nics.iter().filter(|n| n.2).count();
         let first = nics.iter().find(|n| n.2).or(nics.first());
         let detail = match first {
-            Some((h, m, _)) => format!(
+            Some((h, m, _, _)) => format!(
                 "{} {m}{}",
                 snpwatch::driver_of(*h).unwrap_or_else(|| String::from("?")),
                 if nics.len() > 1 { format!("  ({up} of {} with link)", nics.len()) } else { String::new() }

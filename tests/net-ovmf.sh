@@ -28,8 +28,11 @@
 #
 # Seven boots, and three more with stormnic-virtio (#108, below):
 #   1. as shipped: `rng : firmware` or `rdrand`; every claim carries the
-#      firmware inventory (#4): the virtio NIC and its driver, q35's AHCI
-#      and the CD's virtio-scsi, the CD as the medium, and CPU and memory (QEMU has no BMC);
+#      firmware inventory (#4, #167): the virtio NIC, its driver and MTU,
+#      q35's AHCI and the CD's virtio-scsi, the CD as the medium, an NVMe, a
+#      SATA and a SCSI drive with their models, serials, WWNs and media
+#      types, the NVMe's GPT and its ESP's `\EFI` directories, SMBIOS's
+#      system and firmware, and CPU and memory;
 #   2. the entropy fallback: `rng = cpu` on the media masks the firmware's
 #      EFI_RNG, and the CPU is started without RDRAND and RDSEED, so the
 #      boot must say `rng : jitter` and still lease, connect and fetch. This
@@ -340,6 +343,29 @@ for _ in $(seq 100); do [[ -s "$W/blank.port" ]] && break; sleep 0.1; done
 BLANK_PORT=$(cat "$W/blank.port" 2>/dev/null) || die "the blank NVMe/TCP stub did not start"
 say "blank NVMe/TCP stub on 127.0.0.1:$BLANK_PORT"
 
+# The shipped boot's local drives (#167), for the inventory: an NVMe disk
+# whose GPT holds an ESP (`\EFI\BOOT` and `\EFI\ubuntu`, no bootloader, so
+# nothing boots it) and a Linux partition, a SATA SSD with 4096-byte physical
+# sectors on q35's AHCI, and a spinning SCSI disk; each with a serial and a
+# WWN the inventory must report.
+truncate -s 64M "$W/nvme-local.img"
+sfdisk --quiet --label gpt "$W/nvme-local.img" <<PARTS
+start=2048, size=65536, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, name="EFI system"
+start=67584, size=61440, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4
+PARTS
+mkfs.fat -C -F 16 -n LOCALESP "$W/nvme-esp.img" 32768 >/dev/null
+mmd -i "$W/nvme-esp.img" ::/EFI ::/EFI/BOOT ::/EFI/ubuntu
+printf 'grub\n' > "$W/grub.cfg" && mcopy -i "$W/nvme-esp.img" "$W/grub.cfg" ::/EFI/ubuntu/grub.cfg
+dd if="$W/nvme-esp.img" of="$W/nvme-local.img" bs=1M seek=1 conv=notrunc status=none
+truncate -s 128M "$W/sata-local.img"
+truncate -s 256M "$W/scsi-local.img"
+LOCAL_DRIVES=(-drive if=none,id=nvd,format=raw,file="$W/nvme-local.img"
+    -device nvme,id=nv0,serial=NVME0167 -device nvme-ns,drive=nvd,bus=nv0,nsid=1,eui64=0x0011223344556677
+    -drive if=none,id=sad,format=raw,file="$W/sata-local.img"
+    -device ide-hd,drive=sad,bus=ide.2,serial=SATA0167,wwn=0x5000c500a1b2c3d4,rotation_rate=1,physical_block_size=4096
+    -drive if=none,id=scd,format=raw,file="$W/scsi-local.img"
+    -device scsi-hd,drive=scd,bus=cdscsi.0,serial=SCSI0167,wwn=0x5000c500a1b2c3d5,rotation_rate=7200)
+
 # The SNTP stub (#77): a fixed time, or with ntp.bad present an
 # unsynchronised answer (LI 3) that must not set the clock.
 cat > "$W/ntp.py" <<'PY'
@@ -568,6 +594,7 @@ boot() {
         nicopt=,bootindex=2 ipv4=yes
         extra+=(-device virtio-rng-pci)
     fi
+    [[ $name == shipped ]] && extra+=("${LOCAL_DRIVES[@]}")
     [[ -n "$BOOT_DISK" ]] && extra+=(-device virtio-scsi-pci,id=scsi0
         -drive if=none,id=d0,format=raw,file="$BOOT_DISK" -device scsi-hd,drive=d0,bus=scsi0.0,bootindex=2)
     say "[$name] booting under OVMF ($accel, cpu $cpu, rng ${rng:-as shipped}, up to ${LIMIT}s)"
@@ -712,11 +739,30 @@ boot shipped "$host_cpu" "" 404 good "${common[@]}" "rng         : " \
     "inventory   : 1 NIC(s), " \
     "  no ConnectX on the bus" \
     "not:no FEC to report" \
-    "no BMC (CPU and memory sent)" \
-    "stub:\"inventory\":{\"v\":1,\"bmc\":false,\"nics\":[{\"mac\":\"52:54:00:12:34:56\",\"link\":true,\"driver\":\"Virtio Network Driver\",\"media_driver\":false,\"pci\":\"0000:00:" \
-    "stub:\"id\":\"1af4:1000\"}]" \
+    " disk(s), no BMC; " \
+    "  system    : QEMU " \
+    "  firmware  : " \
+    ": nvme  QEMU NVMe Ctrl  serial NVME0167  fw " \
+    "  wwn eui.0011223344556677  64 MiB  512 B sectors  nvme" \
+    "/NVMe(0x1," \
+    "              gpt: 1 esp 32 MiB \"EFI system\" (EFI: BOOT, ubuntu), 2 linux 30 MiB" \
+    ": sata  QEMU HARDDISK  serial SATA0167  fw " \
+    "  wwn naa.5000c500a1b2c3d4  128 MiB  512 B sectors (4096 B physical)  ssd" \
+    ": scsi  QEMU QEMU HARDDISK  serial SCSI0167  fw " \
+    "  wwn naa.5000c500a1b2c3d5  256 MiB  512 B sectors  hdd" \
+    ": scsi  QEMU QEMU CD-ROM  " \
+    "stub:\"inventory\":{\"v\":2,\"bmc\":false,\"nics\":[{\"mac\":\"52:54:00:12:34:56\",\"link\":true,\"driver\":\"Virtio Network Driver\",\"media_driver\":false,\"pci\":\"0000:00:" \
+    "stub:\"id\":\"1af4:1000\",\"mtu\":1500}]" \
+    "stub:\"disk_count\":4," \
+    "stub:{\"bus\":\"nvme\",\"path\":\"PciRoot(0x0)/" \
+    "stub:\"model\":\"QEMU NVMe Ctrl\",\"serial\":\"NVME0167\"," \
+    "stub:\"partitions\":[{\"n\":1,\"kind\":\"esp\",\"bytes\":33554432,\"name\":\"EFI system\",\"efi\":[\"BOOT\",\"ubuntu\"]},{\"n\":2,\"kind\":\"linux\"," \
+    "stub:\"wwn\":\"naa.5000c500a1b2c3d4\",\"media\":\"ssd\",\"blocks\":262144,\"block_size\":512,\"physical_block_size\":4096," \
+    "stub:\"serial\":\"SCSI0167\"," \
+    "stub:\"system\":{\"vendor\":\"QEMU\"," \
+    "stub:\"firmware\":{" \
     "stub:{\"pci\":\"0000:00:1f.2\",\"id\":\"8086:2922\",\"class\":\"01:06:01\"" \
-    "stub:\"removable\":true,\"medium\":true}" \
+    "stub:\"removable\":true,\"medium\":true" \
     "stub:\"cpu\":{\"model\":" \
     "stub:\"memory\":{\"mb\":1024,\"dimms\":1}}" \
     "stub:inventory kept: an object of " \

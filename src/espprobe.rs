@@ -106,6 +106,24 @@ fn probe() -> Result<(), String> {
             ),
             Err(e) => uefi::println!("  local     : nothing to boot: {e}"),
         }
+        // The inventory's walk of the same table (#167): every used entry,
+        // the ESP among them.
+        let mut parts = [esp::GptEntry::EMPTY; 8];
+        match esp::partitions(&mut disk, block, &mut parts) {
+            Ok(n) => {
+                let each: Vec<String> = parts[..n.min(parts.len())]
+                    .iter()
+                    .map(|e| {
+                        let name: String = char::decode_utf16(e.name[..e.name_len].iter().copied())
+                            .map(|c| c.unwrap_or('?'))
+                            .collect();
+                        format!("{} {} \"{name}\"", e.partition.number, if e.is_esp() { "ESP" } else { "other" })
+                    })
+                    .collect();
+                uefi::println!("  gpt       : {n} partition(s): {}", each.join(", "));
+            }
+            Err(e) => uefi::println!("  gpt       : {}", e.describe()),
+        }
         let loader = match espboot::read(&mut disk, block) {
             Ok(l) => l,
             Err(e) => {

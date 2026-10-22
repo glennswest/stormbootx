@@ -509,15 +509,15 @@ unsafe impl Sync for Global {}
 static NET: Global = Global(core::cell::UnsafeCell::new(None));
 
 /// Every NIC the stack opened: its SNP handle, its permanent MAC as
-/// `aa:bb:…`, and whether it has link now. For the inventory (#4); empty
-/// before `up`.
-pub fn nic_summary() -> Vec<(uefi_raw::Handle, String, bool)> {
+/// `aa:bb:…`, whether it has link now, and its MTU (the lease's, #165, else
+/// the SNP's). For the inventory (#4, #167); empty before `up`.
+pub fn nic_summary() -> Vec<(uefi_raw::Handle, String, bool, u32)> {
     let Ok(n) = net() else { return Vec::new() };
     n.nics
         .iter()
         .map(|c| {
             let mac: Vec<String> = c.mac[..c.mac_len.min(32)].iter().map(|b| format!("{b:02x}")).collect();
-            (c.handle, mac.join(":"), c.link_up())
+            (c.handle, mac.join(":"), c.link_up(), c.link_mtu)
         })
         .collect()
 }
