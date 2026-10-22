@@ -280,34 +280,72 @@ console; a machine with no screen console gets it anyway.
    `failed:<n>`; absent when unset). The engine keeps it on the host's
    last-claim record (stormblock#177).
 
-   Every claim also carries the **firmware inventory** (#4, `src/inventory.rs`
-   and `src/hardware.rs`): what the firmware sees that a BMC can't say (the
-   owner's choice on #20). That is:
-   - each NIC's MAC as firmware sees it, whether it has link, and which
-     driver bound it, with `media_driver` true for a stormnic driver off the
-     media, plus its PCI location and ID;
+   Every claim also carries the **firmware inventory** (#4, #167,
+   `src/inventory.rs` and `src/hardware.rs`): everything the firmware can say
+   with no OS and no BMC (`"v":2`; #20 sent only what a BMC can't, and #167,
+   the server8 experience of a BMC that answers nothing, widened it). That is:
+   - each NIC's MAC as firmware sees it, whether it has link, its MTU (the
+     lease's, #165, else the SNP's), and which driver bound it, with
+     `media_driver` true for a stormnic driver off the media, plus its PCI
+     location and ID (SNP has no link speed; the stormnic drivers print it);
    - every mass-storage controller (PCI class 01) and its driver, if any;
-   - every whole disk with a BlockIO, the boot medium marked.
+     each is connected first, so a drive the firmware's fast boot left
+     unconnected is still counted;
+   - every whole disk with a BlockIO, the boot medium marked, and how many
+     (`disk_count`). For each: the bus (`nvme`, `sata`, `ata`, `scsi`,
+     `usb`, `virtio`), its device path (controller, port or target), model,
+     serial, firmware revision, WWN, size, logical and physical sector size,
+     media (`ssd`, `hdd`, `nvme`), and its partition table: the GPT's
+     entries by kind (`esp`, `linux`, `windows-data`, … or the type GUID)
+     with size and name, an ESP's directories under `\EFI` (`BOOT`,
+     `ubuntu`, `Microsoft`: the installs on it), else an MBR's four entries.
+     From `EFI_DISK_INFO` (ATA IDENTIFY, SCSI/USB INQUIRY, NVMe Identify
+     Namespace), NVMe pass-thru Identify Controller, `EFI_SCSI_IO` VPD pages
+     0x80/0x83/0xB1, and the disk's own first blocks; all read-only;
+   - SMBIOS: the system (Type 1: vendor, product, serial, UUID), board
+     (Type 2), firmware (Type 0: vendor, version, date), CPU (Type 4) and
+     memory (Type 17), and whether there is a BMC (Type 38 or 42).
 
-   With no BMC (no SMBIOS Type 38 or 42: pve VMs, homelab boxes) it also
-   sends CPU and memory from SMBIOS Types 4 and 17, which stormipmi reads
-   over Redfish otherwise. It is collected once, at the first claim, before
-   anything is attached, so the namespace this boot attaches is never in it,
-   and the console says `inventory : N NIC(s), …; B bytes with the claim`.
-   The engine keeps it beside `agent` and drops it, never the claim, if it
-   is not a JSON object or is over 16 KiB; it is cut to 15 KiB here (disks
-   last, the rest counted in `disks_omitted`):
+   It is collected once, at the first claim, before anything is attached,
+   so the namespace this boot attaches is never in it. The console prints
+   it too, and so the log collector gets it (#162):
 
    ```
-   "inventory": {"v":1,"bmc":false,
+   inventory   : 1 NIC(s), 2 storage controller(s), 4 disk(s), no BMC; 2391 bytes with the claim
+     system    : QEMU Standard PC (Q35 + ICH9, 2009)
+     firmware  : EFI Development Kit II / OVMF 0.0.0 (02/06/2015)
+     disk 1    : nvme  QEMU NVMe Ctrl  serial NVME0167  fw 10.1.5  wwn eui.0011223344556677  64 MiB  512 B sectors  nvme
+                 PciRoot(0x0)/Pci(0x5,0x0)/NVMe(0x1,77-66-55-44-33-22-11-00)
+                 gpt: 1 esp 32 MiB "EFI system" (EFI: BOOT, ubuntu), 2 linux 30 MiB
+     disk 2    : sata  QEMU HARDDISK  serial SATA0167  fw 2.5+  wwn naa.5000c500a1b2c3d4  128 MiB  512 B sectors (4096 B physical)  ssd
+   ```
+
+   The engine keeps it beside `agent` and drops it, never the claim, if it
+   is not a JSON object or is over 16 KiB; it is cut to 15 KiB here (disks
+   last, the rest counted in `disks_omitted`, partitions after 16 in
+   `partitions_omitted`):
+
+   ```
+   "inventory": {"v":2,"bmc":false,
      "nics":[{"mac":"52:54:00:12:34:56","link":true,"driver":"Virtio Network Driver",
-              "media_driver":false,"pci":"0000:00:02.0","id":"1af4:1000"}],
+              "media_driver":false,"pci":"0000:00:02.0","id":"1af4:1000","mtu":1500}],
      "storage":[{"pci":"0000:00:1f.2","id":"8086:2922","class":"01:06:01","driver":"…"}],
-     "disks":[{"path":"PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)","blocks":2604,
-               "block_size":2048,"removable":true,"medium":true}],
+     "disk_count":2,
+     "disks":[{"bus":"scsi","path":"PciRoot(0x0)/Pci(0x3,0x0)/Scsi(0x0,0x0)","model":"QEMU QEMU CD-ROM",
+               "firmware":"2.5+","blocks":2604,"block_size":2048,"removable":true,"medium":true,
+               "table":"mbr","partitions":[{"n":1,"kind":"esp","bytes":4194304}]},
+              {"bus":"sata","path":"…/Sata(0x2,0xFFFF,0x0)","model":"QEMU HARDDISK","serial":"SATA0167",
+               "firmware":"2.5+","wwn":"naa.5000c500a1b2c3d4","media":"ssd","blocks":262144,
+               "block_size":512,"physical_block_size":4096,"removable":false,"medium":false,"table":"none"}],
+     "system":{"vendor":"QEMU","product":"Standard PC (Q35 + ICH9, 2009)"},
+     "firmware":{"vendor":"EFI Development Kit II / OVMF","version":"0.0.0","date":"02/06/2015"},
      "cpu":{"model":"…","sockets":1,"cores":1,"threads":1,"max_mhz":2000},
      "memory":{"mb":1024,"dimms":1}}
    ```
+
+   The design for the rest of #167 (commands beside the intent, console
+   input, the controls in stormcentral and the laptop app) is
+   `docs/remote-control.md`.
 
    A stated name is the only one tried. Otherwise a 404 moves on to the next
    line, and any other failure falls back to the resolved target. The DNS
@@ -720,7 +758,7 @@ published BlockIO (about 105–120 MiB/s, KVM) and starts it. Its boots
 
 | boot | must show |
 |---|---|
-| `shipped` | `8 in flight` and the NVMe stub holding at least 2 reads at once, answered out of order (#100); `rng : firmware`/`rdrand`; every claim carries `agent` and the firmware inventory (#4, #90); a stub SNTP server's 2031 time set in the RTC and read back by the payload (#77); a 2 KiB `install-config.yaml` handed down and reassembled (#79); the ISO's `update =` skipped as read-only (#83) |
+| `shipped` | `8 in flight` and the NVMe stub holding at least 2 reads at once, answered out of order (#100); `rng : firmware`/`rdrand`; every claim carries `agent` and the firmware inventory (#4, #90), with an NVMe, a SATA and a SCSI drive's models, serials, WWNs, media and the NVMe's GPT and `\EFI` directories (#167); a stub SNTP server's 2031 time set in the RTC and read back by the payload (#77); a 2 KiB `install-config.yaml` handed down and reassembled (#79); the ISO's `update =` skipped as read-only (#83) |
 | `depth1` | `nvme_depth = 1`: one read in flight (the stub never holds two), for its MiB/s beside `shipped`'s 8 (#100) |
 | `jitter` | firmware RNG and RDRAND/RDSEED masked: `rng : jitter`; told `install`, claims the default and hands down `StormBootTag = stubhost` (#76); an unsynchronised SNTP answer sets nothing (`StormBootClock = unsynced`) |
 | `newhost` | no name from DHCP or PTR: claims `boothost/default` by MAC and boots as `mac-525400123456` (#15) |

@@ -246,12 +246,12 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/sntp.rs` | SNTP request and reply checks, NTP era → Unix, the UTC calendar (core-only, host-tested) |
 | `src/blockio.rs` | publish the namespace as a block device, then chain-load its `BOOTX64.EFI` (the firmware's FAT, then `esp.rs`) |
 | `src/intent.rs` | the boot intent (`install`/`local`/`auto`) read before the claim; every doubt is `auto` |
-| `src/inventory.rs` | the firmware inventory with the claim (#4, #20): SMBIOS Type 4/17/38/42, the JSON and its budget (core-only, host-tested) |
-| `src/hardware.rs` | what the inventory is collected from: the stack's NICs and their drivers, PCI class 01, BlockIO disks, the SMBIOS table; once, before anything is attached |
+| `src/inventory.rs` | the firmware inventory with the claim (#4, #20, #167 `"v":2`): SMBIOS Type 0/1/2/4/17/38/42, ATA IDENTIFY, NVMe Identify, SCSI INQUIRY and VPD parsers, partition kinds, the JSON and its budget, the console lines (core-only, host-tested) |
+| `src/hardware.rs` | what the inventory is collected from: the stack's NICs, their drivers and MTU, PCI class 01 (connected first), BlockIO disks with `EFI_DISK_INFO`, NVMe pass-thru, `EFI_SCSI_IO` VPD and their GPT/MBR and ESP `\EFI`, the SMBIOS table; once, before anything is attached |
 | `src/registry.rs` | read the intent; claim `boothost/<tag>`, or `boothost/default` by MAC, every claim naming the agent (#90); read the engine's version. The old sbregistry `/v1/clones/claim` path was removed (#17) |
 | `src/dnsname.rs` | the machine's DNS name (#23): DHCP options 12/15/6, PTR query and answer over DNS/TCP |
 | `src/universal.rs` | universal boot (#15): is the engine new enough, which MAC is the machine's, what host the reply named; which SMBIOS serial is a placeholder (#7, matches stormipmi) |
-| `src/esp.rs` | the attached ESP read without the firmware's FAT (#37): GPT, FAT12/16/32 at 512..4096-byte sectors; listings, reads at any position and lookups from a directory for `espfs.rs` (#42) |
+| `src/esp.rs` | the attached ESP read without the firmware's FAT (#37): GPT, FAT12/16/32 at 512..4096-byte sectors; listings, reads at any position and lookups from a directory for `espfs.rs` (#42); `partitions`, every GPT entry, for the inventory (#167) |
 | `src/espboot.rs` | read `BOOTX64.EFI` through `esp.rs` and `LoadImage` it from the buffer, under the ESP's path |
 | `src/espfs.rs` | a read-only `EFI_SIMPLE_FILE_SYSTEM` over `esp.rs` on the bridged ESP's partition handle (#42), so the bootloader opens its other files; `withdraw` before the disk goes |
 | `src/espprobe.rs` | third binary: who can read a 4K ESP; booted under OVMF by `tests/esp-ovmf.sh` |
