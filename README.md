@@ -308,16 +308,24 @@ console; a machine with no screen console gets it anyway.
 
    It is collected once, at the first claim, before anything is attached,
    so the namespace this boot attaches is never in it. The console prints
-   it too, and so the log collector gets it (#162):
+   it too, and so the log collector gets it (#162). net-ovmf's shipped boot:
 
    ```
-   inventory   : 1 NIC(s), 2 storage controller(s), 4 disk(s), no BMC; 2391 bytes with the claim
+   inventory   : 1 NIC(s), 3 storage controller(s), 4 disk(s), no BMC; 1960 bytes with the claim
      system    : QEMU Standard PC (Q35 + ICH9, 2009)
-     firmware  : EFI Development Kit II / OVMF 0.0.0 (02/06/2015)
-     disk 1    : nvme  QEMU NVMe Ctrl  serial NVME0167  fw 10.1.5  wwn eui.0011223344556677  64 MiB  512 B sectors  nvme
-                 PciRoot(0x0)/Pci(0x5,0x0)/NVMe(0x1,77-66-55-44-33-22-11-00)
+     firmware  : EDK II edk2-20260812-8.fc44 (08/12/2026)
+     disk 0    : scsi  QEMU QEMU CD-ROM  fw 2.5+  5 MiB  2048 B sectors  the boot medium
+                 PciRoot(0x0)/Pci(0x3,0x0)/Scsi(0x0,0x0)
+                 mbr: 2 esp 16 MiB
+     disk 1    : scsi  QEMU QEMU HARDDISK  serial SCSI0167  fw 2.5+  wwn naa.5000c500a1b2c3d5  256 MiB  512 B sectors  hdd
+                 PciRoot(0x0)/Pci(0x3,0x0)/Scsi(0x1,0x0)
+                 none: no partitions
+     disk 2    : nvme  QEMU NVMe Ctrl  serial NVME0167  fw 10.2.2  wwn eui.0011223344556677  64 MiB  512 B sectors  nvme
+                 PciRoot(0x0)/Pci(0x4,0x0)/NVMe(0x1,77-66-55-44-33-22-11-00)
                  gpt: 1 esp 32 MiB "EFI system" (EFI: BOOT, ubuntu), 2 linux 30 MiB
-     disk 2    : sata  QEMU HARDDISK  serial SATA0167  fw 2.5+  wwn naa.5000c500a1b2c3d4  128 MiB  512 B sectors (4096 B physical)  ssd
+     disk 3    : sata  QEMU HARDDISK  serial SATA0167  fw 2.5+  wwn naa.5000c500a1b2c3d4  128 MiB  512 B sectors (4096 B physical)  ssd
+                 PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
+                 none: no partitions
    ```
 
    The engine keeps it beside `agent` and drops it, never the claim, if it

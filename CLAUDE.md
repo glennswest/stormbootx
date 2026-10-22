@@ -594,6 +594,18 @@ then.
       `…/command` record), stormcentral (command key, controls, WoL),
       baremetalservices (maint image as a namespace), and build the command
       reader once answered.
+      **State (2026-10-21): phase 0 done** in 3eb3362 (+ 323a5e2 note,
+      93d0adf docs). sc-build of 3eb3362 (1137 s): no warnings, the full
+      suite (inventory 9 host tests, esp's `partitions` in every FAT
+      check); esp-ovmf's espprobe `gpt : 1 partition(s): 1 ESP "EFI
+      system"`; net-ovmf's shipped boot `4 disk(s)`: the CD (scsi, mbr),
+      `scsi QEMU QEMU HARDDISK serial SCSI0167 … wwn naa.5000c500a1b2c3d5
+      … hdd`, `nvme QEMU NVMe Ctrl serial NVME0167 fw 10.2.2 wwn
+      eui.0011223344556677`, `gpt: 1 esp 32 MiB "EFI system" (EFI: BOOT,
+      ubuntu), 2 linux 30 MiB`, `sata QEMU HARDDISK serial SATA0167 … (4096
+      B physical) ssd`, and the claim's inventory (1960 bytes) the same.
+      **Not run:** metal (a RAID controller, a SAS HBA, Aptio 4's
+      DiskInfo). No release yet. Next: the owner's auth answer.
 
 - [x] **#100 — several NVMe reads in flight (P1, from #165's decision,
       2026-10-21). Closed 2026-10-21.** The Dell reads at 46–80 MiB/s with one
