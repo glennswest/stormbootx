@@ -710,11 +710,14 @@ caches any ARP reply aimed at its address, so the answers fill its cache and
 nothing waits for them.
 
 **Where the time goes (#168).** Every boot prints one line before its result
-with the time each step took, from the banner:
+with the time each step took, from the banner (net-ovmf's shipped boot,
+OVMF under KVM):
 
 ```
-timing      : nic fec 4.03 s, drivers 3.30 s, nics 0.80 s, lease+engine 0.25 s, name 12 ms, intent 8 ms, claim 0.50 s, clock 9 ms, attach 0.25 s; 9.40 s in all
+timing      : nic fec 84 ms, drivers 0 ms, nics 5.15 s, lease+engine 57 ms, name 39 ms, intent 25 ms, claim 1.77 s, clock 20 ms, attach 86 ms; 7.24 s in all
 ```
+
+The same boot with the ARP requests taken out read `name 1.03 s`.
 
 `nic fec` is `mlxfec`'s ConnectX FEC read, and `drivers` is loading the
 media's NIC drivers and connecting every handle (a driver's `Start` runs in
