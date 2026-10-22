@@ -579,6 +579,22 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#167 — stormbootx as the front end of a machine with no working
+      BMC (P2, the master for the owner, 2026-10-21). In progress.** Plan
+      (design note `docs/remote-control.md`): phase 0, this repo alone: the
+      inventory `"v":2` (owner's addition: drives with bus, model, serial,
+      WWN, size, sector sizes, ssd/hdd/nvme, partitions and `\EFI` dirs;
+      NIC MTU; SMBIOS Type 0/1/2; CPU and memory always) from `EFI_DISK_INFO`,
+      NVMe pass-thru Identify Controller, `EFI_SCSI_IO` VPD and the GPT, a
+      console line per drive (so it rides #162's stream). Test: net-ovmf's
+      shipped boot with an NVMe and a SATA disk carrying serials, one with
+      a GPT and an ESP. Then: ask the owner the command authentication
+      (recommended: Ed25519, a stormcentral command key compiled in + the
+      laptop app's `command_key =` on the media), file stormblock (the
+      `…/command` record), stormcentral (command key, controls, WoL),
+      baremetalservices (maint image as a namespace), and build the command
+      reader once answered.
+
 - [x] **#100 — several NVMe reads in flight (P1, from #165's decision,
       2026-10-21). Closed 2026-10-21.** The Dell reads at 46–80 MiB/s with one
       command outstanding; stormuefi reads its kernel and initramfs in 1 MiB

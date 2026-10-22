@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-10-21
+- **docs:** `docs/remote-control.md` (#167): stormbootx as the front end of a machine with no working BMC. The fuller inventory first, then signed commands beside the intent (`reboot`, `poweroff`, `boot-next`, `maint`, `hold`, …), console input, and the controls in stormcentral and the laptop app; who does what.
+
 ## [v0.31.1] — 2026-10-21
 
 ### Fixed
