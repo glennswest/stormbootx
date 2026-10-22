@@ -73,6 +73,7 @@ mod mlxfec;
 mod net;
 mod netlog;
 mod nvme;
+mod profile;
 mod registry;
 mod selfupdate;
 mod shell;
@@ -215,6 +216,7 @@ fn run() -> Result<(), String> {
     ui::step(ui::Step::Nic, "NIC drivers and links");
     uefi::println!("nic fec     :");
     let _ = mlxfec::apply(None);
+    profile::mark("nic fec");
 
     //     A recovery stick, and only a recovery stick, may state `fec = MODE`
     //     in stormboot.conf. That is an operator saying so on one piece of
@@ -237,6 +239,7 @@ fn run() -> Result<(), String> {
     //     Media with none (`media : fw`, #52) leave every NIC to the
     //     firmware's own drivers, and the console says so.
     let loaded = drivers::load_from_media();
+    profile::mark("drivers");
     if loaded.is_empty() {
         uefi::println!("drivers     : none on the media; the firmware's own NIC drivers");
     } else {
@@ -253,6 +256,7 @@ fn run() -> Result<(), String> {
     //    driver loaded. All this needs is a NIC driver, the firmware's or one
     //    from the media (step 1c).
     let up = net::up(config::stated_rng())?;
+    profile::mark("nics");
     uefi::println!("tcp4        : smoltcp over SNP ({})", up.nics);
     if up.waited_ms > 0 {
         uefi::println!("              (the first SNP appeared after {} ms; the platform was not ready)", up.waited_ms);
@@ -389,6 +393,7 @@ fn run() -> Result<(), String> {
             // a version after 19.3.0 is "no".
             ui::step(ui::Step::Engine, &host);
             let (version, iface) = registry::engine_version(cfg.portal, cfg.api_port, &host);
+            profile::mark("lease+engine");
             engine_answered = version.is_ok();
             match &version {
                 Ok(v) => ui::done(ui::Step::Engine, &format!("stormblock {v} at {host}")),
@@ -425,6 +430,7 @@ fn run() -> Result<(), String> {
                     uefi::println!("name        : the engine's interface is unknown, so no lease to read");
                 }
                 dns = iface.and_then(|i| network_name(&i));
+                profile::mark("name");
                 match &dns {
                     Some((full, h, from)) => {
                         ui::name(h);
@@ -498,6 +504,7 @@ fn run() -> Result<(), String> {
                 Err(_) => intent::Reply::Status(0),
             };
             let chosen = said.intent();
+            profile::mark("intent");
             match (&reply, said) {
                 (_, intent::Reply::Stated(i)) => {
                     uefi::println!("intent      : {}", i.name())
@@ -700,7 +707,9 @@ fn run() -> Result<(), String> {
     // The hardware clock (#77): the network is up and leased, so ask NTP once
     // and correct the RTC before Linux reads it. Bounded, never fatal. A boot
     // that falls through instead does this in `fall_through`.
+    profile::mark("claim");
     clock::sync();
+    profile::mark("clock");
 
     // Hand the name down to Linux (#76, stormblock#249): the initramfs claims
     // again, and on a chassis whose blades share one SMBIOS serial its own
@@ -792,6 +801,8 @@ fn run() -> Result<(), String> {
     // 5. Publish it as an ordinary disk, then boot it.
     let handle = blockio::publish(ns)?;
     uefi::println!("blockio     : published on handle {handle:p}");
+    profile::mark("attach");
+    profile::print();
 
     // Do not hand back to the firmware boot manager and hope it boots the new
     // disk — it will not, because the disk is not in BootOrder, and the machine
@@ -905,6 +916,8 @@ fn ptr_lookup(server: [u8; 4], addr: [u8; 4]) -> Result<String, String> {
 #[entry]
 fn main() -> Status {
     uefi::helpers::init().unwrap();
+    // Where the seconds go (#168): a `timing :` line before the result.
+    profile::begin();
     // Every line from here is kept for the network (#162), the banner too.
     netlog::begin();
     identify();
@@ -1000,6 +1013,8 @@ fn fall_through(err: &str, local: Local) -> Status {
     // The local disk's OS needs the right time too (#77). Once per boot: a
     // claim that got this far has already done it. Nothing waits for a lease.
     clock::sync();
+    profile::mark("fall-through");
+    profile::print();
     netlog::flush();
     // Give the NICs back, so a later boot option (PXE, HTTP boot) finds the
     // firmware's own network stack bound again (#56).

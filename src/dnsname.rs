@@ -96,6 +96,49 @@ pub fn first_dns(opt: &[u8]) -> Option<[u8; 4]> {
     (a != [0; 4] && a != [255; 4]).then_some(a)
 }
 
+/// Every usable address in option 6 or 42 (a list of IPv4 addresses).
+pub fn addresses(opt: &[u8]) -> impl Iterator<Item = [u8; 4]> + '_ {
+    opt.chunks_exact(4).filter_map(first_dns)
+}
+
+/// The next hop to `dest` from an interface at `addr/prefix`: `dest` itself
+/// on the same subnet, else the router (#168). None for a multicast or
+/// broadcast address, or off the subnet with no router: no ARP is asked for.
+pub fn next_hop(addr: [u8; 4], prefix: u8, router: Option<[u8; 4]>, dest: [u8; 4]) -> Option<[u8; 4]> {
+    if dest[0] >= 224 || dest == [0; 4] {
+        return None;
+    }
+    let mask = if prefix == 0 { 0 } else { u32::MAX << (32 - prefix.min(32) as u32) };
+    let (a, d) = (u32::from_be_bytes(addr), u32::from_be_bytes(dest));
+    if d | mask == u32::MAX && prefix < 31 {
+        return None; // the subnet's broadcast
+    }
+    if a & mask == d & mask {
+        Some(dest)
+    } else {
+        router
+    }
+}
+
+/// An ARP request (#168) for `target`, from `mac`/`ip`, as a whole Ethernet
+/// frame padded to the 60-byte minimum. stormbootx sends these itself because
+/// smoltcp asks for one address a second per interface: a first contact with a
+/// new host in the second after another (the DNS server after the engine,
+/// the NTP server after the DNS server) waited a whole second. smoltcp caches
+/// any ARP reply aimed at its address, so the answers fill its cache.
+pub fn arp_request(mac: [u8; 6], ip: [u8; 4], target: [u8; 4]) -> [u8; 60] {
+    let mut f = [0u8; 60];
+    f[0..6].copy_from_slice(&[0xFF; 6]);
+    f[6..12].copy_from_slice(&mac);
+    f[12..14].copy_from_slice(&[0x08, 0x06]);
+    // Ethernet, IPv4, 6 and 4 bytes, a request.
+    f[14..22].copy_from_slice(&[0x00, 0x01, 0x08, 0x00, 6, 4, 0x00, 0x01]);
+    f[22..28].copy_from_slice(&mac);
+    f[28..32].copy_from_slice(&ip);
+    f[38..42].copy_from_slice(&target);
+    f
+}
+
 /// An option's text without the NULs and dots some servers pad it with.
 pub fn text(raw: &[u8]) -> Option<&str> {
     let s = core::str::from_utf8(raw).ok()?;
@@ -468,5 +511,46 @@ mod tests {
         let mut nx = r.clone();
         nx[3] = 0x83;
         assert_eq!(a_answer(&nx, 0x1234), None);
+    }
+
+    #[test]
+    fn next_hops() {
+        let me = [192, 168, 16, 100];
+        let gw = Some([192, 168, 16, 1]);
+        // g16 is a /20: the engine and microdns are on the link.
+        assert_eq!(next_hop(me, 20, gw, [192, 168, 31, 202]), Some([192, 168, 31, 202]));
+        assert_eq!(next_hop(me, 20, gw, [192, 168, 31, 252]), Some([192, 168, 31, 252]));
+        // stormcentral on g8 is reached through the router.
+        assert_eq!(next_hop(me, 20, gw, [192, 168, 8, 170]), gw);
+        assert_eq!(next_hop(me, 20, None, [192, 168, 8, 170]), None);
+        // The log's group, the limited and the subnet broadcast: no ARP.
+        assert_eq!(next_hop(me, 20, gw, [239, 255, 42, 1]), None);
+        assert_eq!(next_hop(me, 20, gw, [255, 255, 255, 255]), None);
+        assert_eq!(next_hop(me, 20, gw, [192, 168, 31, 255]), None);
+        assert_eq!(next_hop(me, 24, gw, [192, 168, 17, 5]), gw);
+        assert_eq!(next_hop([10, 0, 2, 15], 24, Some([10, 0, 2, 2]), [10, 0, 2, 3]), Some([10, 0, 2, 3]));
+    }
+
+    #[test]
+    fn an_arp_request() {
+        let f = arp_request([0x52, 0x54, 0, 0x12, 0x34, 0x56], [10, 0, 2, 15], [10, 0, 2, 3]);
+        assert_eq!(f.len(), 60);
+        assert_eq!(&f[0..14], &[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x52, 0x54, 0, 0x12, 0x34, 0x56, 0x08, 0x06]);
+        assert_eq!(&f[14..22], &[0, 1, 8, 0, 6, 4, 0, 1]);
+        assert_eq!(&f[22..32], &[0x52, 0x54, 0, 0x12, 0x34, 0x56, 10, 0, 2, 15]);
+        assert_eq!(&f[32..38], &[0; 6]);
+        assert_eq!(&f[38..42], &[10, 0, 2, 3]);
+        assert!(f[42..].iter().all(|&b| b == 0));
+    }
+
+    #[test]
+    fn address_lists() {
+        let opt = [192, 168, 31, 252, 0, 0, 0, 0, 192, 168, 10, 252, 1];
+        let got: [[u8; 4]; 2] = {
+            let mut it = addresses(&opt);
+            [it.next().unwrap(), it.next().unwrap()]
+        };
+        assert_eq!(got, [[192, 168, 31, 252], [192, 168, 10, 252]]);
+        assert_eq!(addresses(&opt).count(), 2);
     }
 }

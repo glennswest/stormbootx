@@ -404,9 +404,31 @@ struct Nic {
     sockets: SocketSet<'static>,
     dhcp: SocketHandle,
     lease: Option<Lease>,
+    /// Next hops this lease has sent its own ARP request for (#168).
+    primed: Vec<[u8; 4]>,
+    /// The MAC the interface sends from (the SNP's current address).
+    hw: [u8; 6],
 }
 
 impl Nic {
+    /// Ask for the MAC of `dest`'s next hop ourselves, once a lease (#168).
+    /// smoltcp sends one ARP request a second per interface and silences a
+    /// socket for a second when its neighbour is unknown, so a first contact
+    /// with a new host in the second after another cost a whole second (the
+    /// DNS server after the engine, the NTP server after the DNS server: 1 s
+    /// each on the Dell, the X9 blades and pve). The reply fills smoltcp's
+    /// cache as its own would, and nothing here waits for it.
+    fn prime(&mut self, dest: [u8; 4]) {
+        let Some(l) = &self.lease else { return };
+        let Some(hop) = crate::dnsname::next_hop(l.address, l.prefix, l.router, dest) else { return };
+        if hop == l.address || self.primed.contains(&hop) {
+            return;
+        }
+        let frame = crate::dnsname::arp_request(self.hw, l.address, hop);
+        self.primed.push(hop);
+        self.dev.tx.send(frame.to_vec());
+    }
+
     /// Why the lease's MTU is what it is, for the lease line (#165).
     fn mtu_reason(&self, offered: Option<u32>) -> String {
         match offered {
@@ -462,7 +484,19 @@ impl Nic {
                     .and_then(crate::dnsname::interface_mtu);
                 self.link_mtu = crate::dnsname::link_mtu(self.snp_mtu, offered);
                 self.dev.mtu = self.link_mtu as usize + 14;
+                // The hosts a boot talks to next: the router, the lease's DNS
+                // and NTP servers (#168).
+                let mut next: Vec<[u8; 4]> = Vec::new();
                 if fresh {
+                    self.primed.clear();
+                    next.extend(l.router);
+                    if let Some(r) = l.reply.as_deref() {
+                        for code in [crate::dnsname::OPT_DNS, crate::dnsname::OPT_NTP] {
+                            if let Some(o) = crate::dnsname::dhcp_option(r, code) {
+                                next.extend(crate::dnsname::addresses(o));
+                            }
+                        }
+                    }
                     crate::ui::done_once(
                         crate::ui::Step::Dhcp,
                         &format!("nic {} {}/{}  MTU {}", self.index, ip_text(l.address), l.prefix, self.link_mtu),
@@ -478,6 +512,9 @@ impl Nic {
                     );
                 }
                 self.lease = Some(l);
+                for a in next {
+                    self.prime(a);
+                }
             }
             None => {
                 self.iface.update_ip_addrs(|a| a.clear());
@@ -725,6 +762,8 @@ fn open_nic(index: usize, handle: uefi_raw::Handle, clock: &Clock, rng: &mut Ent
         sockets,
         dhcp,
         lease: None,
+        primed: Vec::new(),
+        hw: cur,
     })
 }
 
@@ -888,6 +927,7 @@ pub fn udp_exchange(
     s.bind(local).map_err(|e| format!("bind: {e:?}"))?;
     let dest = (IpAddress::Ipv4(Ipv4Address::from(server)), port);
     s.send_slice(request, dest).map_err(|e| format!("send: {e:?}"))?;
+    n.nics[i].prime(server);
     let h = n.nics[i].sockets.add(s);
     let sent = n.clock.now();
     let deadline = sent + Duration::from_millis(ms);
@@ -929,6 +969,7 @@ pub fn udp_send(dest: [u8; 4], port: u16, frames: &[Vec<u8>], every_nic: bool, t
     } else {
         leased_nic(n).into_iter().collect()
     };
+    let to = dest;
     let dest = (IpAddress::Ipv4(Ipv4Address::from(dest)), port);
     for i in nics {
         let local = local_port(&mut n.rng);
@@ -940,6 +981,7 @@ pub fn udp_send(dest: [u8; 4], port: u16, frames: &[Vec<u8>], every_nic: bool, t
         if s.bind(local).is_err() {
             continue;
         }
+        n.nics[i].prime(to);
         let h = n.nics[i].sockets.add(s);
         let deadline = n.clock.now() + Duration::from_millis(ms);
         let mut queued = 0;
@@ -1101,6 +1143,7 @@ impl TcpSocket {
                 if let Some(&i) = order.iter().find(|&&i| !tried[i] && n.nics[i].lease.is_some()) {
                     let local = local_port(&mut n.rng);
                     let nic = &mut n.nics[i];
+                    nic.prime(remote);
                     let mut s = tcp::Socket::new(
                         tcp::SocketBuffer::new(vec![0u8; RX_BUFFER]),
                         tcp::SocketBuffer::new(vec![0u8; TX_BUFFER]),

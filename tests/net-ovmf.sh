@@ -27,7 +27,10 @@
 #     `StormBootClock = unsynced`.
 #
 # Seven boots, and three more with stormnic-virtio (#108, below):
-#   1. as shipped: `rng : firmware` or `rdrand`; every claim carries the
+#   1. as shipped: `rng : firmware` or `rdrand`; the `timing` line (#168),
+#      with the reverse-DNS name and the clock each under a second (the DNS
+#      server 10.0.2.3 is ARPed at the lease, not a second after the engine);
+#      every claim carries the
 #      firmware inventory (#4, #167): the virtio NIC, its driver and MTU,
 #      q35's AHCI and the CD's virtio-scsi, the CD as the medium, an NVMe, a
 #      SATA and a SCSI drive with their models, serials, WWNs and media
@@ -733,6 +736,12 @@ boot shipped "$host_cpu" "" 404 good "${common[@]}" "rng         : " \
     "handed down : StormBootClock = synced:10.0.2.2  (attributes 0x6)" \
     "rtc         : 2031-05-04 03:0" \
     "update      : the boot medium is read-only (an ISO or virtual media); not updated" \
+    "timing      : nic fec " \
+    ", lease+engine " \
+    " in all" \
+    "not:, name 1." \
+    "not:, name 2." \
+    "not:, clock 1." \
     "  transfer  : 128 KiB per command, 8 in flight  (controller MDTS 5; " \
     "stub:nvme: 2 reads in flight" \
     "stub:\"media\":\"agent test\"}" \

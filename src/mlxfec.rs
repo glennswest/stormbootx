@@ -82,6 +82,10 @@ const VSC_SEMAPHORE: u8 = 0x0c;
 const VSC_ADDR: u8 = 0x10; //  [29:0] address, [31] flag
 const VSC_DATA: u8 = 0x14;
 const VSC_RETRIES: u32 = 2048;
+/// Tries (1 ms apart) after which one plausible ticket that never moved is
+/// the UEFI driver's parked lock, not a holder about to let go (#99): the
+/// full `VSC_RETRIES` cost the Dell 2 s per ConnectX-4 Lx function, 4 s a boot.
+const VSC_PARKED_TRIES: u32 = 50;
 
 /// The whole step's real-time budget (#138). A boot that reads and reports
 /// takes ~4 s on the R230 (two functions, each ~2 s waiting out a parked
@@ -354,6 +358,12 @@ impl Dev<'_> {
                 moved += 1;
             }
             last = now;
+            // The same small ticket all along: parked, and waiting longer only
+            // costs time. A value that moves is a live holder, and gets the
+            // whole cooperative wait.
+            if i + 1 >= VSC_PARKED_TRIES && moved == 0 && last != 0 && last != 0xffff_ffff {
+                break;
+            }
             boot::stall(Duration::from_millis(1));
         }
         let waited = secs(self.clock.ms_since(t));
