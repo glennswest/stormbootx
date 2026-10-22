@@ -588,8 +588,8 @@ then.
 
 ### Open, no external blocker
 
-- [ ] **#168 — 11–15 s on metal against 3 s on pve before the claim (P2,
-      the master's review, 2026-10-21). In progress.** From the consoles'
+- [x] **#168 — 11–15 s on metal against 3 s on pve before the claim (P2,
+      the master's review, 2026-10-21). Shipped in v0.32.0 (f21ff90).** From the consoles'
       `.times`: X9 (server1, server8) ~10.5 s in `connecting every handle`,
       i.e. stormnic-mlx4's Start (ixgbe done at ~2 s, mlx4 link at ~10.7 s):
       filed stormnic-mlx4#27. Dell: ~4 s in mlxfec's cap9 wait (#99), ~2 s
@@ -599,6 +599,14 @@ then.
       the next hops (`Nic::prime`), a parked cap9 lock taken after 50 ms
       (#99), and a `timing :` line per boot (`profile.rs`). net-ovmf's shipped
       boot must show `name` and `clock` under a second.
+      **State (2026-10-21):** sc-build of 02d57cc (1122 s): no warnings,
+      the full suite; shipped `name 39 ms … clock 20 ms`. Negative control
+      (priming off, branch deleted): `name 1.03 s`, failed as expected.
+      Released **v0.32.0** (f21ff90, with #167's inventory), the tag
+      `--locked` passed net-ovmf + repro; goldens requested (stormbootx,
+      -rustnic, -rustnic-disk, -stick); `shipped`. **Not run:** metal; the
+      next Dell/X9 boot's `timing :` line is the check (#99 stays open for
+      the Dell's `nic fec`). The X9's 8.5 s is stormnic-mlx4#27.
 
 - [ ] **#167 — stormbootx as the front end of a machine with no working
       BMC (P2, the master for the owner, 2026-10-21). In progress.** Plan
@@ -626,7 +634,7 @@ then.
       ubuntu), 2 linux 30 MiB`, `sata QEMU HARDDISK serial SATA0167 … (4096
       B physical) ssd`, and the claim's inventory (1960 bytes) the same.
       **Not run:** metal (a RAID controller, a SAS HBA, Aptio 4's
-      DiskInfo). No release yet. **Waiting on the owner** (2026-10-21,
+      DiskInfo). Released in v0.32.0. **Waiting on the owner** (2026-10-21,
       `wait-owner`, question on #167): command auth, Ed25519 (recommended)
       or HMAC. Engine side filed as stormblock#494.
 
@@ -2192,7 +2200,7 @@ then.
 
 ## Status
 
-v0.29.0 (#151: stormbootx-stick; released, frozen until 2026-10-17, then the master promotes it). v0.28.2 was #130 (reproducible media); v0.28.0 was #144 (the boot panel); v0.27.0 was #148 (the self-update resolves its host); v0.26.0 was #145 (the fall-through starts the local disk itself); v0.25.0 was #128: #4, #10, #17, #25, #36, #42, #53, #67 and #138. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
+v0.32.0 (#167's inventory v2, #168's ARP priming and timing line, #99's parked cap9 in 50 ms). v0.29.0 (#151: stormbootx-stick; released, frozen until 2026-10-17, then the master promotes it). v0.28.2 was #130 (reproducible media); v0.28.0 was #144 (the boot panel); v0.27.0 was #148 (the self-update resolves its host); v0.26.0 was #145 (the fall-through starts the local disk itself); v0.25.0 was #128: #4, #10, #17, #25, #36, #42, #53, #67 and #138. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
 (and the same day, the full chain: chain-load into stormuefi and a running
 stormcos kernel), on a
 Dell PowerEdge R230 (service tag C2NR0Q2) booting the agent over iDRAC virtual
