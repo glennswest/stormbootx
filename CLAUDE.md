@@ -629,8 +629,8 @@ then.
       next Dell/X9 boot's `timing :` line is the check (#99 stays open for
       the Dell's `nic fec`). The X9's 8.5 s is stormnic-mlx4#27.
 
-- [ ] **#167 — stormbootx as the front end of a machine with no working
-      BMC (P2, the master for the owner, 2026-10-21). In progress.** Plan
+- [x] **#167 — stormbootx as the front end of a machine with no working
+      BMC (P2, the master for the owner, 2026-10-21). Closed 2026-10-22.** Plan
       (design note `docs/remote-control.md`): phase 0, this repo alone: the
       inventory `"v":2` (owner's addition: drives with bus, model, serial,
       WWN, size, sector sizes, ssd/hdd/nvme, partitions and `\EFI` dirs;
@@ -721,6 +721,15 @@ then.
       engine serves it, api-boots' `maint` case boots its image, and the
       refusal without `boothost/maint` holds; laptop-ovmf pins
       stormboot-serve v22.3.0.
+      **Done, released v0.34.0 (40ff84a).** 65cfb9e (+ 3d29ee9, eb33c4d
+      test fixes; #171 was apimaint reusing apirecord's BootNext). A maint
+      reply must say `"image":"maint"`: stormboot-serve v22.3.0 ignores the
+      field and answers the node's own image (stormblock#498 filed;
+      laptop-ovmf `maint` proves the refusal). sc-build of eb33c4d (944 s,
+      full suite, no warnings); the tag `--locked` passed net-ovmf and
+      laptop-ovmf. Goldens requested (stormbootx, -rustnic, -rustnic-disk,
+      -stick). **Not run:** forge with `boothost/maint` set (needs
+      baremetalservices#2's image), metal.
 
 - [x] **#100 — several NVMe reads in flight (P1, from #165's decision,
       2026-10-21). Closed 2026-10-21.** The Dell reads at 46–80 MiB/s with one
