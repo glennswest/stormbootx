@@ -3,6 +3,17 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+## [v0.33.0] — 2026-10-22
+
+### Added
+- stormbootx's own API on port 9180 of every leased NIC (#167): `/api/v1/status`, `/api/v1/inventory`, `/api/v1/log`, `POST /api/v1/command`.
+- Signed commands (#167): `reboot`, `poweroff`, `boot-next`, `install`, `local`, `retry`, `hold`, `inventory`, `format <serial>` (fast wipe), `maint` (refused until served); Ed25519 by stormcentral's release key or the media's `command_key =`; a non-volatile replay floor; the engine's host record as the fallback (stormblock#494).
+- A failed network boot holds with its API up (`hold =`, `hold_retry =`; the goldens 120 s; nothing local that boots: until a command).
+- The claim's `agent` names `api_port`.
+
+### Documentation
+- README *The API, commands and the hold*; `docs/remote-control.md` phase 1 as built.
+
 ### 2026-10-22
 - **feat:** stormbootx's own API (#167, the owner: "more important to have api control"). HTTP on port 9180 of every leased NIC (`api =`), from the moment the stack is up until the image's bootloader starts: `GET /api/v1/status`, `/api/v1/inventory`, `/api/v1/log` (every console line, `netlog` keeps them), and `POST /api/v1/command`. Served from every poll of the stack; `src/api.rs`, the sockets in `net.rs`.
 - **feat:** signed commands (#167): `reboot`, `poweroff`, `boot-next NNNN`, `install`, `local`, `retry`, `hold`, `inventory`, `format <serial>` (the fast wipe: the drive's first and last MiB; never the boot medium) and `maint` (refused until baremetalservices' image is served). Ed25519 over `stormbootx-command v1\n<host>\n<id>\n<command>\n<args>\n<issued>\n`, by stormcentral's release key or the media's `command_key =` (the master's decision); the host one of the machine's names; the id above `StormBootCommandId` (non-volatile), raised before the command runs. The engine's host record carries the same object (stormblock#494): read before the intent and while holding, reported with `…/command/done`. `src/command.rs` (core + alloc, 8 host tests).
