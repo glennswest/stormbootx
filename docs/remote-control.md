@@ -95,7 +95,7 @@ unsigned, a bad signature, an `id` it has taken, another machine's name) is
 | `inventory` | collect again, served by `/api/v1/inventory` |
 | `hold` | stay in stormbootx: panel up, log streaming, API answering, until another command |
 | `format <serial> [fast]` | zero the first and last MiB of that one drive; `full` and `secure` are baremetalservices' |
-| `maint` | refused until the engine can serve baremetalservices' image as a namespace |
+| `maint` | claim the maintenance image and boot it: the usual claim with `"image":"maint"` (stormblock#497), down the same names, answering this host's own `maint-<host>` clone of `boothost/maint`'s volume. Never the media's fallback; a reply without `"image":"maint"` (an engine before #497, `stormboot-serve`) is not attached; no `boothost/maint` (a 404) or either of those is a failed boot, so it holds. Before the chain-load it boots again for the maintenance image |
 
 **Holding.** A failed network boot with a lease holds for `hold =` seconds
 (the goldens: 120; the binary's default: off), then falls through as every
@@ -149,9 +149,10 @@ ends at the command record and the inventory.
 
 | piece | repo |
 |---|---|
-| Inventory v2, the API, signatures, reset, `BootNext`, `hold`, the fast wipe, `maint` once served | stormbootx |
+| Inventory v2, the API, signatures, reset, `BootNext`, `hold`, the fast wipe, `maint`'s claim | stormbootx |
 | Console input for the installer and the maintenance image | stormblock#477, baremetalservices |
 | `…/command` and `…/command/done` on the host record, the inventory kept | stormblock (forge and `stormboot-serve`) |
 | The command key, signing, the Test machines controls, WoL | stormcentral |
-| A maintenance image the engine can serve as a namespace (ESP + UKI) | baremetalservices |
+| `boothost/maint` and its claim (`"image":"maint"`) | stormblock#497 (v22.3.0); forge's `boothost/maint` set to the image |
+| The maintenance image itself (ESP + UKI, sealed) | baremetalservices#2 |
 | A BMC cold reset without touching users | baremetalservices `/ipmi` |

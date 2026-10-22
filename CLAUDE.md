@@ -137,9 +137,11 @@ manifests, canary, dry run) and a machine of image files for the refusals
 golden's ISO as the laptop app makes it (`\stormboot\local.conf` and
 `install-config.yaml` added with mtools) against stormblock's real
 `stormboot-serve`, built from the commit pinned in
-`scripts/build-stormboot-serve.sh` (stormblock v22.2.0): by name, by MAC,
+`scripts/build-stormboot-serve.sh` (stormblock v22.3.0): by name, by MAC,
 `--intent local`, a name not served, and `record` (#167: a signed `hold`
-and then `poweroff` PUT on the laptop's command record, stormblock#494). Bump that pin deliberately.
+and then `poweroff` PUT on the laptop's command record, stormblock#494), and `maint`
+(#167: stormboot-serve answers with the node's own image, which must not be
+attached). Bump that pin deliberately.
 
 `tests/screen-ovmf.sh ISO` (#144) boots the shell test's ISO with no
 network and checks the panel through QEMU monitor screendumps
@@ -201,13 +203,16 @@ the verbs, and the API's HTTP request parser; `extern crate alloc` like
 `inventory.rs`. The signature check is `api.rs`'s (ed25519-compact).
 
 `tests/api-boots.sh` (#167), sourced at the end of `net-ovmf.sh`, boots
-twice with slirp forwarding the guest's API (9180) to the host: a failed
+three times with slirp forwarding the guest's API (9180) to the host: a failed
 claim holds (`hold = 30`, but nothing local boots, so until a command);
 status, inventory and log read; a non-command, another key, another host
 and a replayed id refused; `format APIDISK1` zeroes that disk's first and
-last MiB and nothing between; `boot-next FFFF`, `maint` and an unknown
-serial refused; `inventory` again; `poweroff`. Then the engine's record
-carries a signed `hold`, reported done; `boot-next 0000` resets.
+last MiB and nothing between; `boot-next FFFF` and an unknown serial
+refused; `maint` with no `boothost/maint` holds again; `inventory` again;
+`poweroff`. Then the engine's record carries a signed `hold`, reported
+done; `boot-next 0000` resets. A third, `apimaint`: the record's signed
+`maint`, the stub serving `boothost/maint`: the claim carries
+`"image":"maint"` and the clone boots.
 
 `Cargo.lock` is tracked, as it should be for anything that produces a binary.
 Without it every build resolved fresh, and this is a firmware binary whose

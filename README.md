@@ -895,7 +895,7 @@ runs: each command is done once, on one machine. Use Unix milliseconds for
 | `hold` | stay in stormbootx until another command |
 | `inventory` | collect it again |
 | `format <serial> [fast]` | zero the first and last MiB of the one drive with that serial (its MBR, GPT and backup GPT), never the boot medium, a read-only drive or a published one; `full`/`secure` are the maintenance image's (baremetalservices) |
-| `maint` | refused until baremetalservices' maintenance image is served as a namespace |
+| `maint` | claim the maintenance image and boot it: the usual claim with `"image":"maint"` (stormblock#497), down the same names, answering this host's own `maint-<host>` clone of `boothost/maint`'s volume. Never the media's fallback; a reply without `"image":"maint"` (an engine before #497, `stormboot-serve`) is not attached; no `boothost/maint` (a 404) or either of those is a failed boot, so it holds. Before the chain-load it boots again for the maintenance image |
 
 A command is taken at fixed points: before the intent is read (the API's,
 else the engine's host record `GET …/boothost/<name>/command`,
@@ -1066,12 +1066,14 @@ name the laptop does not serve gets a 404, and with the golden's
 `tests/laptop-ovmf.sh` (in the sc-build command) does exactly this under
 OVMF against the real `stormboot-serve`. `scripts/build-stormboot-serve.sh`
 builds it from stormblock at the pinned commit. The test adds both files to
-the `stormbootx` golden's ISO with mtools, then boots five times: by name;
+the `stormbootx` golden's ISO with mtools, then boots six times: by name;
 by MAC with no name on the medium; `--intent local`; a name the laptop
-does not serve; and the laptop's command record (stormblock#494, v22.2.0):
+does not serve; the laptop's command record (stormblock#494, pinned at v22.3.0):
 a signed `hold` for server7, PUT before a by-MAC boot with `command_key =`
 in `local.conf`, taken before the claim and reported done, then a
-`poweroff` PUT while it holds, read from the record and done. Under KVM the reads ran at 69–127 MiB/s, 512 KiB per command
+`poweroff` PUT while it holds, read from the record and done; and a signed
+`maint` from the record, which the laptop (one image, no maintenance image)
+answers with server7's own image: not attached, it holds. Under KVM the reads ran at 69–127 MiB/s, 512 KiB per command
 (the target's MDTS 8). The served image is unchanged after the boots. Not
 run here: the app itself, macOS or Windows as the laptop, and metal.
 
