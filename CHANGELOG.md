@@ -3,6 +3,14 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+## [v0.34.0] — 2026-10-22
+
+### Added
+- `maint` boots the maintenance image (#167, stormblock#497): the claim with `"image":"maint"`, never the media's fallback, attached only when the reply says `"image":"maint"`; a failed maint claim holds.
+
+### Changed
+- `tests/api-boots.sh` `apimaint`; `tests/laptop-ovmf.sh` `maint`; the stormboot-serve pin moves to stormblock v22.3.0.
+
 ### 2026-10-22
 - **feat:** `maint` claims the maintenance image (#167, stormblock#497, v22.3.0): the usual claim with `"image":"maint"`, down the same names (DNS name, `default` by MAC, the tag); never the media's fallback; a reply without `"image":"maint"` is not attached; a failed maint claim holds. Taken before the intent, in a hold, or before the chain-load (a boot again). Was refused.
 - **test:** `tests/api-boots.sh`: `maint` with no `boothost/maint` holds again; `apimaint`, the record's signed `maint` with the stub engine serving it, attaches the maintenance clone and starts its `BOOTX64.EFI`. `tests/laptop-ovmf.sh` `maint`: stormboot-serve answers with server7's own image, refused. The stormboot-serve pin moves to stormblock v22.3.0 (89846a6).
