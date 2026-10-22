@@ -581,6 +581,16 @@ fn run(pass: u32, install: bool) -> Result<(), Stop> {
                     uefi::println!("intent      : auto  (the reply stated no intent)")
                 }
             }
+            // The host the intent answered for is one of this machine's names,
+            // as the claim reply's is: a MAC alias of `server7` is server7,
+            // and the record's commands are signed for that name (#167).
+            if let Ok((200..=299, body)) = &reply {
+                if let Some(h) = command::json_str(body, "host") {
+                    if universal::handoff_value_ok(&h) {
+                        api::name(&h);
+                    }
+                }
+            }
             // A command for this machine (#167): one the API took, else the
             // engine's record under the name the intent answered for.
             api::engine(cfg.portal, cfg.api_port, &host, &intent_key);

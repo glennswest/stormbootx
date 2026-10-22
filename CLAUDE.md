@@ -137,8 +137,9 @@ manifests, canary, dry run) and a machine of image files for the refusals
 golden's ISO as the laptop app makes it (`\stormboot\local.conf` and
 `install-config.yaml` added with mtools) against stormblock's real
 `stormboot-serve`, built from the commit pinned in
-`scripts/build-stormboot-serve.sh` (stormblock v21.4.0): by name, by MAC,
-`--intent local`, and a name not served. Bump that pin deliberately.
+`scripts/build-stormboot-serve.sh` (stormblock v22.2.0): by name, by MAC,
+`--intent local`, a name not served, and `record` (#167: a signed `hold`
+and then `poweroff` PUT on the laptop's command record, stormblock#494). Bump that pin deliberately.
 
 `tests/screen-ovmf.sh ISO` (#144) boots the shell test's ISO with no
 network and checks the panel through QEMU monitor screendumps
@@ -693,6 +694,15 @@ then.
       shell; the installer's and maint image's input is theirs). So #167
       is proposed after stormblock#494 (the engine's `"image":"maint"`
       claim). **Not run:** metal.
+      **2026-10-22, stormblock v22.2.0 has the record** (stormblock#494,
+      on forge and `stormboot-serve`). Checked against its source: the same
+      object, 404 `{next_id, last_done}` for none, done answering again for
+      the id done. Gap found: the record stores the host's own name, and a
+      machine known only by a MAC alias did not have that name before its
+      claim; the intent reply's `host` is now one of its names (the trust
+      the claim reply's already has). laptop-ovmf's `record` boot runs it
+      against the real stormboot-serve (pin v22.2.0). `maint`'s claim is
+      stormblock#497, so #167 moves behind it.
 
 - [x] **#100 — several NVMe reads in flight (P1, from #165's decision,
       2026-10-21). Closed 2026-10-21.** The Dell reads at 46–80 MiB/s with one

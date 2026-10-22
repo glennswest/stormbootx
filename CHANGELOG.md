@@ -4,6 +4,8 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-10-22
+- **fix:** the host the intent was answered for is one of the machine's names (#167): a machine the engine knows by a MAC alias can take the command record's commands, which name the host, before its claim.
+- **test:** `tests/laptop-ovmf.sh` `record`: the real `stormboot-serve`'s command record (stormblock#494, v22.2.0): a signed `hold` taken before the claim and reported done, then a `poweroff` read while holding. The stormboot-serve pin moves to v22.2.0 (10d3b46).
 - **docs:** `docs/remote-control.md` (#167): console input dropped from stormbootx (master's decision: the API covers its own shell; the installer and the maintenance image carry their own); `maint` is what is left, after stormblock#494.
 
 ## [v0.33.0] — 2026-10-22

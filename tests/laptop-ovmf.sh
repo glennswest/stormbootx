@@ -33,7 +33,14 @@
 #   3. local:   served `--intent local`: no claim, the boot falls through;
 #   4. unknown: `name = server9`, which the laptop does not serve: the claim
 #               is refused, nothing attached, and the golden's `hold = 120`
-#               with no local disk holds with the API up until a command (#167).
+#               with no local disk holds with the API up until a command (#167);
+#   5. record:  served `--host server7=<the NIC's MAC>`, no name on the media,
+#               `command_key =` in local.conf, and a signed `hold` for server7
+#               PUT on the laptop's command record (stormblock#494) before the
+#               boot: the intent's host (server7) is a name of this machine, the
+#               hold is taken before the claim and reported done; a signed
+#               `poweroff` PUT while it holds is read from the record and ends
+#               the VM. Nothing is claimed.
 #
 # Needs qemu-system-x86_64, OVMF, python3, mtools, mkfs.fat, curl. KVM when
 # /dev/kvm is writable. Unprivileged; everything is under $TMPDIR.
@@ -69,6 +76,31 @@ cleanup() {
 trap cleanup EXIT
 
 say "$("$SERVE" --version)"
+
+# The laptop app's command key (#167): commands are signed with it, and the
+# medium names its public half as `command_key =`.
+openssl genpkey -algorithm ed25519 -out "$W/cmd.pem" 2>/dev/null
+CMD_PUB=$(openssl pkey -in "$W/cmd.pem" -pubout -outform DER | tail -c 32 | od -An -tx1 | tr -d ' \n')
+[[ ${#CMD_PUB} -eq 64 ]] || die "no Ed25519 public key"
+
+# signed HOST ID COMMAND: the command's JSON body for the record's PUT.
+signed() {
+    local host=$1 id=$2 cmd=$3 issued=2026-10-22T03:00:00Z
+    printf 'stormbootx-command v1\n%s\n%s\n%s\n\n%s\n' "$host" "$id" "$cmd" "$issued" > "$W/cmd.txt"
+    openssl pkeyutl -sign -inkey "$W/cmd.pem" -rawin -in "$W/cmd.txt" -out "$W/cmd.sig"
+    printf '{"host":"%s","id":%s,"command":"%s","args":"","issued":"%s","by":"laptop-test","sig":"%s"}' \
+        "$host" "$id" "$cmd" "$issued" "$(od -An -tx1 "$W/cmd.sig" | tr -d ' \n')"
+}
+
+# put_command HOST ID COMMAND: PUT it on the laptop's record; dies unless 200.
+put_command() {
+    local code
+    code=$(curl -s -m 10 -o "$W/put.json" -w '%{http_code}' -X PUT -H 'Content-Type: application/json' \
+        --data-binary "$(signed "$1" "$2" "$3")" \
+        "http://127.0.0.1:$HTTP_PORT/api/v1/synonyms/boothost/$1/command") || true
+    [[ $code == 200 ]] || die "PUT $3 (id $2) on $1's record: HTTP $code $(cat "$W/put.json" 2>/dev/null)"
+    say "PUT $1's command record: $(cut -c1-200 "$W/put.json")"
+}
 
 # The image the laptop serves.
 cp "$PAYLOAD" "$W/payload.efi"
@@ -151,6 +183,7 @@ laptop() {
     done
     (( i < 100 )) || die "[$name] stormboot-serve did not answer its health"
     say "[$name] stormboot-serve $serve_args on 127.0.0.1:$NVME_PORT/$HTTP_PORT: $(cat "$W/health.json" | cut -c1-160)"
+    [[ -n "${BEFORE:-}" ]] && "$BEFORE"
 
     # The app's medium: the golden ISO, plus local.conf and install-config.yaml.
     cp "$ISO" "$iso"
@@ -181,8 +214,12 @@ laptop() {
         qemu=$! t=0
         local stuck=
         while kill -0 "$qemu" 2>/dev/null && (( t < LIMIT )); do
-            grep -qE "is there a TCP/IP stack in this firmware|no network boot: " "$log" 2>/dev/null \
-                && { sleep 2; break; }
+            if [[ -n "${DURING:-}" ]]; then
+                "$DURING" "$log"
+            else
+                grep -qE "is there a TCP/IP stack in this firmware|no network boot: " "$log" 2>/dev/null \
+                    && { sleep 2; break; }
+            fi
             # #124: a boot that has not started stormbootx in a minute never does.
             if (( t == START_LIMIT )) && ! grep -q "NVMe/TCP boot extension" "$log" 2>/dev/null; then
                 stuck=1; break
@@ -212,6 +249,7 @@ laptop() {
     sed 's/\x1b\[[0-9;]*m//g; s/^/  > /' "$W/serve.log"
     sed -i 's/\x1b\[[0-9;]*m//g' "$W/serve.log"
     say "[$name] GET /api/v1/boothost: $(cut -c1-400 "$W/boothost.json")"
+    [[ -n "${DURING:-}" ]] && (( t >= LIMIT )) && die "[$name] still running after ${LIMIT}s"
     say "[$name] log frames at the collector (#162): $(grep -c '^syslog ' "$W/syslog.log" || true)"
 
     local fail=0 want
@@ -245,7 +283,8 @@ app_conf() { # [name = …]
 }
 
 attached=(
-    "engine      : stormblock 21.2.1  (universal boot)"
+    "engine      : stormblock 2"
+    "  (universal boot)"
     "intent      : install"
     "  portal    : 10.0.2.2:$NVME_PORT  nsid "
     "x 4096 bytes"
@@ -285,7 +324,7 @@ laptop bymac "--host server7=$MAC" "$(app_conf)" "${attached[@]}" \
     "log: server7 stormbootx - - - RESULT: image attached"
 
 laptop local "--host server8 --intent local" "$(app_conf 'name     = server8')" \
-    "engine      : stormblock 21.2.1  (universal boot)" \
+    "engine      : stormblock 2" \
     "intent      : local" \
     "no network boot: boot intent for server8 is \`local\`: nothing claimed" \
     "not:claim       : boothost/" \
@@ -296,6 +335,29 @@ laptop unknown "--host server8" "$(app_conf 'name     = server9')" \
     "claim       : boothost/server9 at " \
     "no network boot: no claim gave this machine an image, and the media names no fallback (fallback = none)" \
     "hold        : holding until a command; the API at http://" \
+    "not:RESULT: image attached" \
+    "not-serve:claim of"
+
+# record: the laptop's command record (stormblock#494), as the app writes it.
+record_before() { put_command server7 7 hold; }
+RECORD_POWEROFF=
+record_during() { # the hold taken: put a poweroff for the hold to read
+    if [[ -z $RECORD_POWEROFF ]] && grep -q "hold        : holding until a command" "$1" 2>/dev/null; then
+        RECORD_POWEROFF=1
+        put_command server7 8 poweroff
+    fi
+}
+BEFORE=record_before DURING=record_during \
+laptop record "--host server7=$MAC" "$(app_conf "command_key = $CMD_PUB")" \
+    "engine      : stormblock 2" \
+    "command     : hold (id 7, from the engine's record, by laptop-test), signature good" \
+    "command     : hold (id 7): holding until another command" \
+    "hold        : holding until a command; the API at http://" \
+    "command     : poweroff (id 8, from the engine's record, by laptop-test), signature good" \
+    "command     : poweroff (id 8): powering off (ACPI S5)" \
+    "serve:server7: command hold  put (id 7)" \
+    "serve:server7: command 7 done: holding until another command" \
+    "serve:server7: command 8 done: powering off" \
     "not:RESULT: image attached" \
     "not-serve:claim of"
 

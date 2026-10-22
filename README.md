@@ -876,7 +876,9 @@ stick it makes). The body (`src/command.rs`):
 and the signature is over the bytes
 `stormbootx-command v1\n<host>\n<id>\n<command>\n<args>\n<issued>\n`
 (`by` is not signed). `host` must be one of the machine's names (the
-claimed host, the DNS name, a stated tag, the SMBIOS serial, `mac-<hex>`)
+claimed host, the host the intent was answered for, the DNS name, a stated
+tag, the SMBIOS serial, `mac-<hex>`; a MAC alias of `server7` is server7,
+the name the engine's record stores and a signer signs)
 and `id` above the last one this machine took, kept in the non-volatile
 `StormBootCommandId` (vendor GUID as below) and raised before the command
 runs: each command is done once, on one machine. Use Unix milliseconds for
@@ -1052,7 +1054,7 @@ It touches nothing else:
   down to the initramfs.
 
 **What the node does.** It gets its lease and reads the laptop's health,
-which says `21.2.1`, past universal boot's gate. Then it reads its intent:
+which is past universal boot's gate (`21.2.1` from v21.4.0). Then it reads its intent:
 `install` claims, and `local` falls through to its own disk. The claim mints
 a fresh overlay under the node's own subsystem, which admits only
 `nqn.2026-09.lo.storm:host-<name>`. The node attaches it, reads with 8
@@ -1064,9 +1066,12 @@ name the laptop does not serve gets a 404, and with the golden's
 `tests/laptop-ovmf.sh` (in the sc-build command) does exactly this under
 OVMF against the real `stormboot-serve`. `scripts/build-stormboot-serve.sh`
 builds it from stormblock at the pinned commit. The test adds both files to
-the `stormbootx` golden's ISO with mtools, then boots four times: by name;
-by MAC with no name on the medium; `--intent local`; and a name the laptop
-does not serve. Under KVM the reads ran at 69–127 MiB/s, 512 KiB per command
+the `stormbootx` golden's ISO with mtools, then boots five times: by name;
+by MAC with no name on the medium; `--intent local`; a name the laptop
+does not serve; and the laptop's command record (stormblock#494, v22.2.0):
+a signed `hold` for server7, PUT before a by-MAC boot with `command_key =`
+in `local.conf`, taken before the claim and reported done, then a
+`poweroff` PUT while it holds, read from the record and done. Under KVM the reads ran at 69–127 MiB/s, 512 KiB per command
 (the target's MDTS 8). The served image is unchanged after the boots. Not
 run here: the app itself, macOS or Windows as the laptop, and metal.
 
