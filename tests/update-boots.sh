@@ -203,7 +203,7 @@ cp "$FIX/stormcentral-rustnic-serial1.sig" "$W/serve/current.sig"
 uboot real "${attached[@]}" \
     "update      : current (running v$VERSION; serial 1 offers v0.14.0, which is older); not taken" \
     "stub:GET /api/v1/boothelpers/stormbootx-test/current.sig" \
-    "stub:\"commit\":\"update-test\"}" \
+    "stub:\"commit\":\"update-test\",\"api_port\":9180}" \
     "not:does not verify" \
     "not:signed manifest refused" \
     "not-stub:GET /api/v1/boothelpers/stormbootx-test/files/"
@@ -237,7 +237,7 @@ uboot update "${attached[@]}" \
     "handed down : StormBootUpdate = good:5  (attributes 0x6)" \
     "stub:GET /api/v1/boothelpers/stormbootx-test/files/EFI/BOOT/BOOTX64.EFI" \
     "stub:\"commit\":\"update-test\"" \
-    "stub:\"update_serial\":5,\"update\":\"trial:5:1\"}"
+    "stub:\"update_serial\":5,\"update\":\"trial:5:1\",\"api_port\":9180}"
 same /EFI/BOOT/BOOTX64.EFI "$W/rel5/EFI/BOOT/BOOTX64.EFI"
 same /EFI/BOOT/BOOTX64.EFI.prev "$W/A.efi"
 same /stormboot/stormboot.conf "$W/rel5/stormboot/stormboot.conf"
@@ -250,7 +250,7 @@ state_has "min = 5"
 uboot current "${attached[@]}" \
     "update      : current (serial 5, v$TV)" \
     "handed down : StormBootUpdate = serial:5  (attributes 0x6)" \
-    "stub:\"update_serial\":5,\"update\":\"serial:5\"}" \
+    "stub:\"update_serial\":5,\"update\":\"serial:5\",\"api_port\":9180}" \
     "not:restarting into it" \
     "not:on trial"
 
@@ -314,7 +314,7 @@ uboot revert "${attached[@]}" \
     "update      : 4 file(s) put back; starting the restored \\EFI\\BOOT\\BOOTX64.EFI" \
     "update      : serial 8 failed its trial on this medium; staying on serial 6 until a newer one" \
     "handed down : StormBootUpdate = failed:8  (attributes 0x6)" \
-    "stub:\"update_serial\":6,\"update\":\"failed:8\"}" \
+    "stub:\"update_serial\":6,\"update\":\"failed:8\",\"api_port\":9180}" \
     "not:passed its trial"
 same /EFI/BOOT/BOOTX64.EFI "$W/rel6/EFI/BOOT/BOOTX64.EFI"
 same /stormboot/stormboot.conf "$W/rel6/stormboot/stormboot.conf"

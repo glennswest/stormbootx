@@ -761,7 +761,7 @@ boot shipped "$host_cpu" "" 404 good "${common[@]}" "rng         : " \
     "not:, clock 1." \
     "  transfer  : 128 KiB per command, 8 in flight  (controller MDTS 5; " \
     "stub:nvme: 2 reads in flight" \
-    "stub:\"media\":\"agent test\"}" \
+    "stub:\"media\":\"agent test\",\"api_port\":9180}" \
     "inventory   : 1 NIC(s), " \
     "  no ConnectX on the bus" \
     "not:no FEC to report" \
