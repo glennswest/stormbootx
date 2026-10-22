@@ -634,9 +634,29 @@ then.
       ubuntu), 2 linux 30 MiB`, `sata QEMU HARDDISK serial SATA0167 … (4096
       B physical) ssd`, and the claim's inventory (1960 bytes) the same.
       **Not run:** metal (a RAID controller, a SAS HBA, Aptio 4's
-      DiskInfo). Released in v0.32.0. **Waiting on the owner** (2026-10-21,
-      `wait-owner`, question on #167): command auth, Ed25519 (recommended)
-      or HMAC. Engine side filed as stormblock#494.
+      DiskInfo). Released in v0.32.0. Engine side filed as stormblock#494.
+      **Decided (master, 2026-10-22): Ed25519**, verified as the
+      self-update's manifests are (`RELEASE_KEYS`, stormcentral's key) plus
+      the laptop app's `command_key =` on the media.
+      **Phase 1 plan (2026-10-22, the owner's "api control first"):**
+      `src/command.rs` (core-only, host-tested): the signed text
+      `stormbootx-command v1\n<host>\n<id>\n<command>\n<args>\n<issued>\n`,
+      the JSON body (the API's POST and the engine's `…/command` record are
+      one shape), the verbs (`reboot`, `poweroff`, `boot-next NNNN`,
+      `install`, `local`, `retry`, `hold`, `inventory`, `format <serial>`
+      (fast: first and last MiB), `maint` refused until baremetalservices
+      serves an image), a small HTTP request parser. `net.rs`: a listener
+      on every NIC (`api = <port>|off`, default 9180) served from every
+      poll, so the API answers from the moment the stack is up:
+      `GET /api/v1/status`, `/inventory`, `/log` (netlog keeps a history),
+      `POST /api/v1/command` (Ed25519, host one of the machine's names, id
+      above the NV floor `StormBootCommandId`). `src/api.rs`: the pending
+      command, its execution at checkpoints (before the intent; in the hold
+      loop), and the hold loop: on a failed network boot with a lease,
+      `hold = <s>|forever|off` (golden media `120`; the binary's default
+      off), `hold_retry = <min>`; nothing local that can boot holds until a
+      command; also `stormbootx_hold:` in install-config.yaml. Test:
+      `tests/api-boots.sh` sourced by net-ovmf (hostfwd to the guest's API).
 
 - [x] **#100 — several NVMe reads in flight (P1, from #165's decision,
       2026-10-21). Closed 2026-10-21.** The Dell reads at 46–80 MiB/s with one
