@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-10-22
+- **docs:** `docs/remote-control.md` (#167): console input dropped from stormbootx (master's decision: the API covers its own shell; the installer and the maintenance image carry their own); `maint` is what is left, after stormblock#494.
+
 ## [v0.33.0] — 2026-10-22
 
 ### Added

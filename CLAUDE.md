@@ -688,8 +688,11 @@ then.
       controls, WoL), stormblock#494 (the record; `maint` claim proposed),
       storminstall#20 (the app's `command_key`), baremetalservices#2 (the
       maint image as a disk). **Left here:** `maint` once stormblock#494
-      and baremetalservices#2 serve an image; console input (phase 2), asked
-      on #167 whether still wanted. **Not run:** metal.
+      and baremetalservices#2 serve an image. Console input (phase 2):
+      **dropped** (master, 2026-10-22: the API covers stormbootx's own
+      shell; the installer's and maint image's input is theirs). So #167
+      is proposed after stormblock#494 (the engine's `"image":"maint"`
+      claim). **Not run:** metal.
 
 - [x] **#100 — several NVMe reads in flight (P1, from #165's decision,
       2026-10-21). Closed 2026-10-21.** The Dell reads at 46–80 MiB/s with one

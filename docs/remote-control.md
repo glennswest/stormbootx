@@ -127,18 +127,16 @@ Option 2, HMAC with install-config's token, was declined: a medium without
 an install-config (the BMC virtual-media ISO every blade boots) could take
 no command, and the token would be a secret on a readable stick.
 
-## Phase 2: console input
+## Phase 2: console input — dropped
 
-#162 sends the log, and `/api/v1/log` serves it; nothing comes back. Input rides on phase 1's
-authentication rather than a second scheme: a signed `console <collector>
-<session key>` command makes stormbootx open **one outbound** TCP connection
-to the collector (stormbootx still listens on nothing), take keystrokes
-from it, each frame MAC'd with that session key, and feed them to its own
-`ConIn` beside the keyboard. It lasts while stormbootx runs. A UKI it starts
-(baremetalservices, the installer) carries its own console over the
-network; that is stormblock#477's side. This comes after commands because
-it needs their authentication. The issue lists it first; this note orders
-it second.
+**Master decision (2026-10-22, on #167): no console input in stormbootx.**
+The API already shows the log and status and takes every command, which is
+everything stormbootx's own failure shell does. The prompts a person must
+answer come from the installer and the maintenance image, after stormbootx
+has handed off and its network is gone, so their console input is theirs
+to carry (stormblock#477, baremetalservices). The design that was here (a
+signed `console <session key>` command, MAC'd keystrokes into stormbootx's
+`ConIn`) would have reached nothing after the hand-off.
 
 ## Phase 3: the controls
 
@@ -151,7 +149,8 @@ ends at the command record and the inventory.
 
 | piece | repo |
 |---|---|
-| Inventory v2, the API, signatures, reset, `BootNext`, `hold`, the fast wipe, console input | stormbootx |
+| Inventory v2, the API, signatures, reset, `BootNext`, `hold`, the fast wipe, `maint` once served | stormbootx |
+| Console input for the installer and the maintenance image | stormblock#477, baremetalservices |
 | `…/command` and `…/command/done` on the host record, the inventory kept | stormblock (forge and `stormboot-serve`) |
 | The command key, signing, the Test machines controls, WoL | stormcentral |
 | A maintenance image the engine can serve as a namespace (ESP + UKI) | baremetalservices |
