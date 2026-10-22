@@ -20,7 +20,7 @@
 #              record carrying a signed `hold`: taken before the intent and
 #              reported done to the engine; the API refuses boot 1's last id;
 #              `boot-next 0000` sets BootNext and resets.
-#   apimaint   the engine's record carrying a signed `maint` and the engine
+#   apimaint   a fresh variable store, the engine's record carrying a signed `maint` and the engine
 #              serving boothost/maint (stormblock#497): taken before the
 #              intent, the claim carries `"image":"maint"`, never the
 #              media's fallback, and the maintenance clone is attached and
@@ -214,6 +214,8 @@ fi
 if [[ -z "${NET_ONLY:-}" || "$NET_ONLY" == apimaint ]]; then
 signed "$W/cmd.pem" $ME 300 maint > "$W/command.json"
 : > "$W/maint.ok"
+# A fresh variable store: boot 2's BootNext would start the boot manager.
+cp "$OVMF_VARS" "$W/api.vars"
 api_boot apimaint
 console_wait apimaint "command     : maint (id 300, from the engine's record, by api-test), signature good" 120
 console_wait apimaint "command     : maint (id 300): claiming the maintenance image (boothost/maint)"
