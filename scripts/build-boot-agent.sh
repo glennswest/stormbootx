@@ -48,6 +48,8 @@ DRIVERS=""
 DNS=""
 NTP=""
 SYSLOG=""
+HOLD=""
+COMMAND_KEY=""
 MEDIA=""
 RNG=""
 ESP_READER=""
@@ -78,6 +80,13 @@ Options:
   --syslog TARGET  a unicast syslog collector (host[:port], port 514 when
                    bare, or off) the boot's log goes to beside the stormcast
                    group 239.255.42.1:5514 (#162); `off` sends nothing
+  --hold WHEN      how long a failed network boot stays up with its API (#167):
+                   seconds, forever or off (the binary's default); the
+                   goldens say 120
+  --command-key HEX
+                   an Ed25519 public key (64 hex digits) whose signed
+                   commands this medium's stormbootx takes, beside
+                   stormcentral's (#167; the laptop app writes its own)
   --portal ADDR    NVMe/TCP portal, with --pin (default 192.168.31.202)
   --engine ADDR    the portal and engine host, claim still on (tests/net-ovmf.sh)
   --nic-verbose    the stormnic drivers print their whole bring-up trace
@@ -118,6 +127,8 @@ while [[ $# -gt 0 ]]; do
         --dns)    DNS="$2"; shift 2 ;;
         --ntp)    NTP="$2"; shift 2 ;;
         --syslog) SYSLOG="$2"; shift 2 ;;
+        --hold) HOLD="$2"; shift 2 ;;
+        --command-key) COMMAND_KEY="$2"; shift 2 ;;
         --media)  MEDIA="$2"; shift 2 ;;
         --api-port) API_PORT="$2"; shift 2 ;;
         --portal) PORTAL="$2"; PIN="yes"; shift 2 ;;
@@ -298,6 +309,29 @@ if [[ -n "$SYSLOG" ]]; then
 # once a NIC holds a lease, beside the stormcast group 239.255.42.1:5514.
 # \\stormboot\\install-config.yaml's syslog: is read when this is absent.
 syslog   = $SYSLOG
+CONF
+fi
+
+# How long a failed boot holds with its API up (#167).
+if [[ -n "$HOLD" ]]; then
+    [[ "$HOLD" =~ ^([0-9]+[sm]?|forever|off)$ ]] || die "--hold: seconds, forever or off"
+    cat >> "$WORK/stormboot.conf" <<CONF
+
+# How long a failed network boot stays in stormbootx with its API up
+# (status, inventory, log, signed commands) before the local disk: seconds,
+# forever or off. Nothing local that boots holds until a command.
+hold     = $HOLD
+CONF
+fi
+
+# A key whose signed commands this medium takes (#167).
+if [[ -n "$COMMAND_KEY" ]]; then
+    [[ "$COMMAND_KEY" =~ ^[0-9a-fA-F]{64}$ ]] || die "--command-key: 64 hex digits"
+    cat >> "$WORK/stormboot.conf" <<CONF
+
+# An Ed25519 public key whose signed commands stormbootx takes, beside
+# stormcentral's compiled in.
+command_key = $COMMAND_KEY
 CONF
 fi
 

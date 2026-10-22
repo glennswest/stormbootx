@@ -32,7 +32,8 @@
 #               the default claim by MAC boots server7's image;
 #   3. local:   served `--intent local`: no claim, the boot falls through;
 #   4. unknown: `name = server9`, which the laptop does not serve: the claim
-#               is refused and the boot falls through, nothing attached.
+#               is refused, nothing attached, and the golden's `hold = 120`
+#               with no local disk holds with the API up until a command (#167).
 #
 # Needs qemu-system-x86_64, OVMF, python3, mtools, mkfs.fat, curl. KVM when
 # /dev/kvm is writable. Unprivileged; everything is under $TMPDIR.
@@ -294,6 +295,7 @@ laptop local "--host server8 --intent local" "$(app_conf 'name     = server8')" 
 laptop unknown "--host server8" "$(app_conf 'name     = server9')" \
     "claim       : boothost/server9 at " \
     "no network boot: no claim gave this machine an image, and the media names no fallback (fallback = none)" \
+    "hold        : holding until a command; the API at http://" \
     "not:RESULT: image attached" \
     "not-serve:claim of"
 

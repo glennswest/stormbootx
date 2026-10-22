@@ -270,10 +270,10 @@ fn accept(s: &mut State, body: &str, from: Source) -> Result<(), (u16, String)> 
     s.floor = c.id;
     set_floor(c.id);
     uefi::println!(
-        "command     : {} {}{} (id {}, from {}{}), signature good",
+        "command     : {}{}{} (id {}, from {}{}), signature good",
         v.name(),
-        c.args,
         if c.args.is_empty() { "" } else { " " },
+        c.args,
         c.id,
         match from {
             Source::Api(p) => format!("the API, {}", ip(p)),

@@ -61,6 +61,9 @@
 #   (#42) `bridge`: `esp = stormbootx` on the media, so stormbootx reads the
 #      attached ESP itself, puts its read-only filesystem on the ESP's
 #      partition handle, and the payload must find it as its own volume;
+#   (#167) `api` and `apirecord` (tests/api-boots.sh): a failed boot holds
+#      with its API up, and signed commands from the host and the engine's
+#      record are taken, refused, done once, and reported;
 #   7. a fall-through gives the NIC back (#68): the firmware's own IPv4
 #      stack is on (with a virtio-rng, which its drivers need), the claim
 #      404s and the medium names no fallback namespace, as the goldens don't
@@ -151,6 +154,17 @@ class H(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(data)
             return
+        # A command on the host record (#167, stormblock#494): command.json,
+        # signed by tests/api-boots.sh, under whatever name it is read.
+        if self.path.endswith("/command") and os.path.exists(W + "/command.json"):
+            data = open(W + "/command.json", "rb").read()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(data)
+            return
         if self.path == "/api/v1/health":
             self.reply(200, {"version": "19.4.0", "status": "ok", "pad": "x" * 120000})
         # intent present (#11): the host this MAC is an alias of has that
@@ -166,6 +180,9 @@ class H(http.server.BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(n).decode(errors="replace")
         log.write("POST %s %s\n" % (self.path, body))
+        if self.path.endswith("/command/done"):
+            self.reply(200, {})
+            return
         # What the engine keeps (stormblock#177): `inventory` (#4) only as a
         # JSON object of at most 16 KiB. Said here on the bytes as sent.
         if self.path.endswith("/claim"):
@@ -1021,4 +1038,8 @@ boot release "$host_cpu" "" 404 good \
 grep -qE "Start PXE over IPv4|Station IP address is" "$W/release.txt" \
     && say "[release] the firmware's PXE ran on the NIC after the fall-through" \
     || say "note: no PXE banner on the console (the payload's banner is the evidence)"
+
+# #167: stormbootx's own API and the hold, driven from the host.
+# shellcheck source=tests/api-boots.sh
+source "$ROOT/tests/api-boots.sh"
 say "PASS"
