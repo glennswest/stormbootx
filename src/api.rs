@@ -402,6 +402,11 @@ pub fn checkpoint(read_engine: bool) -> Next {
 }
 
 fn execute(c: Signed, v: Verb, from: Source) -> Next {
+    // The API's 202 is on the wire before the command runs: a wipe or a
+    // fresh inventory holds the stack for seconds.
+    if matches!(from, Source::Api(_)) {
+        net::pump(300);
+    }
     match &v {
         Verb::Reboot | Verb::Poweroff => {
             done(&c, &v, from, if v == Verb::Reboot { "resetting" } else { "powering off (ACPI S5)" });

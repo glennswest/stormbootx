@@ -845,9 +845,81 @@ write data by R2T.
   never derived from the MTU. Against stormblock (MDTS 5) that is 128 KiB per
   command.
 
+## The API, commands and the hold (#167)
+
+A machine whose BMC answers nothing (server8: the web login failed TLS, SOL
+died seconds into a boot, the power button never took) is still reachable
+while stormbootx runs. So stormbootx answers HTTP on **port 9180 of every NIC
+that holds a lease**, from the moment its stack is up until the image's
+bootloader starts (`api = <port>|off` in `stormboot.conf`; the claim's
+`agent` says `"api_port"`):
+
+| request | answer |
+|---|---|
+| `GET /api/v1/status` | `phase` (`booting`, `attaching`, `holding`, `falling through`, `handed off`), `detail` (the failure when holding), the machine's `names` and `addresses`, `command_id` (the floor), the `pending` and `last` command with its result |
+| `GET /api/v1/inventory` | the firmware inventory (`"v":2`, as in the claim): drives first, NICs, controllers, SMBIOS, CPU, memory |
+| `GET /api/v1/log` | every console line so far, the banner first (kept even with `syslog = off`) |
+| `POST /api/v1/command` | a signed command: `202 {"accepted":<id>,…}`, else 400/403/409 with `{"error":…}` |
+
+Reads are open (the log already goes to the stormcast group, and the
+inventory with every claim). **A command counts only by its signature**
+(the owner's choice on #167): Ed25519, by stormcentral's key compiled in
+(`manifest::RELEASE_KEYS`, the self-update's) or by a key on the media
+(`command_key = <64 hex>`, which the laptop app writes into `local.conf` of a
+stick it makes). The body (`src/command.rs`):
+
+```json
+{"host":"server8","id":1792000000123,"command":"format","args":"S3Z9NB0K123456",
+ "issued":"2026-10-22T03:00:00Z","by":"stormcentral","sig":"<128 hex>"}
+```
+
+and the signature is over the bytes
+`stormbootx-command v1\n<host>\n<id>\n<command>\n<args>\n<issued>\n`
+(`by` is not signed). `host` must be one of the machine's names (the
+claimed host, the DNS name, a stated tag, the SMBIOS serial, `mac-<hex>`)
+and `id` above the last one this machine took, kept in the non-volatile
+`StormBootCommandId` (vendor GUID as below) and raised before the command
+runs: each command is done once, on one machine. Use Unix milliseconds for
+`id`, so stormcentral and the laptop app never collide.
+
+| command | does |
+|---|---|
+| `reboot` | `ResetSystem(EfiResetCold)` |
+| `poweroff` | `ResetSystem(EfiResetShutdown)` (ACPI S5); power-on is Wake-on-LAN or the BMC |
+| `boot-next NNNN` | `BootNext = Boot<NNNN>` (it must exist; its description is said), then a reset |
+| `install` | claim and boot, whatever the intent says (this boot) |
+| `local` | boot the local disk, nothing claimed |
+| `retry` | run the boot again from the engine (a hold) |
+| `hold` | stay in stormbootx until another command |
+| `inventory` | collect it again |
+| `format <serial> [fast]` | zero the first and last MiB of the one drive with that serial (its MBR, GPT and backup GPT), never the boot medium, a read-only drive or a published one; `full`/`secure` are the maintenance image's (baremetalservices) |
+| `maint` | refused until baremetalservices' maintenance image is served as a namespace |
+
+A command is taken at fixed points: before the intent is read (the API's,
+else the engine's host record `GET …/boothost/<name>/command`,
+stormblock#494, the same signed object), before the chain-load, and every
+100 ms of a hold (the record every 5 s). One from the record is reported with
+`POST …/command/done {"id","result"}`. Each is said on the console:
+`command : format APIDISK1 (id 100, from the API, 10.0.2.2, by api-test),
+signature good`, then `command : format (id 100): wiped …`.
+
+**Holding.** A failed network boot (no claim, a failed attach, a bootloader
+that did not start) on a machine with a lease stays in stormbootx with the
+API up, the panel and the log saying so, for `hold =` seconds (`forever`, or
+`off`), then falls through as before. A machine with nothing local that
+boots holds until a command (server1 sat at a UEFI shell on 2026-10-14).
+`hold_retry = <minutes>` runs the boot again that often while holding; `L` on
+the keyboard falls through at once. `install-config.yaml`'s
+`stormbootx_hold:` and `stormbootx_hold_retry:` are read when the media says
+neither. The binary's default is `off`; **the goldens say `hold = 120`**. A
+`local` intent is not a failure and never holds. `tests/api-boots.sh`
+(sourced by `tests/net-ovmf.sh`) drives all of it from the host through
+slirp.
+
 ## When it fails
 
-Every error in `run()`, and a `local` intent, ends in `fall_through`:
+Every error in `run()` that the hold (above) does not keep, a hold that
+ends, and a `local` intent end in `fall_through`:
 
 0. If an image was attached, it takes the disk back first
    (`blockio::withdraw`, #54): disconnect, uninstall BlockIO and the device
@@ -931,6 +1003,10 @@ others.
 | `media` | none | the media's label, printed under the banner (`media : fw`); written by the golden build, `build-boot-agent.sh --media` |
 | `fec` | none | **recovery sticks only**: write this FEC and warm-reset |
 | `update` | none (no self-update) | `http://host[:port]/path` of this medium's release on stormcentral, or `off` to pin the medium (#83, *Self-update*); written by the golden build, `build-boot-agent.sh --update` |
+| `api` | `9180` | the port stormbootx's own API answers on (#167), or `off` |
+| `command_key` | none | an Ed25519 public key (64 hex digits) whose signed commands are taken, beside stormcentral's (#167); the laptop app writes its own into `local.conf`; `build-boot-agent.sh --command-key` |
+| `hold` | `off` | how long a failed network boot stays up with its API (#167): seconds (`120`, `2m`), `forever` or `off`; nothing local that boots holds until a command. The goldens write `120`; `build-boot-agent.sh --hold`. Else `install-config.yaml`'s `stormbootx_hold:` |
+| `hold_retry` | `0` | minutes between boots again while holding; 0 never. Else `stormbootx_hold_retry:` |
 | `stamp` | none | parsed, not used |
 | `version`, `commit` | none | **not read by stormbootx**: the stormbootx on this medium, written by every `build-boot-agent.sh` run (#94) so a tool reading the FAT (storminstall, which refuses media older than v0.15.0's install-config slot) needs no EFI binary run. The version is Cargo.toml's and must be in the `.efi` laid down, or the build fails; the commit is the binary's `STORMBOOTX_BUILD` stamp, or `unstamped`. A self-update replaces the file with the release's, so they stay true |
 
@@ -1101,6 +1177,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   rustc --edition 2021 --test src/inventory.rs -o t/inventory-test && ./t/inventory-test && \
   rustc --edition 2021 --test src/connectx.rs -o t/connectx-test && ./t/connectx-test && \
   rustc --edition 2021 --test src/logwire.rs -o t/logwire-test && ./t/logwire-test && \
+  rustc --edition 2021 --test src/command.rs -o t/command-test && ./t/command-test && \
   cargo test -p nvme-tcp-initiator && \
   R=${CARGO_TARGET_DIR:-target}/x86_64-unknown-uefi/release && \
   tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi && \
@@ -1232,9 +1309,11 @@ in any golden (owner on #81: "I dont want the ipxe code. Move to ours."; #91,
 
 ## Ports, health and shipping
 
-stormbootx is a UEFI application, so it has no daemon, listens on no port and
-has no health or metrics endpoint. What it reports goes to the console. It
-only makes outbound connections:
+stormbootx is a UEFI application, so it has no daemon and no metrics. It
+listens on one port while it runs, its own API (#167, *The API, commands and
+the hold*): TCP **9180** on every leased NIC, `api =` to move or turn it
+off; `GET /api/v1/status` is its health. Everything else it reports goes to
+the console and the log. Its outbound connections:
 
 | To | Default | Set by |
 |---|---|---|
@@ -1245,6 +1324,7 @@ only makes outbound connections:
 | NVMe/TCP portal (attach) | `<portal>:4420`, or what the claim returns | `port`, or the claim reply |
 | stormcentral (the self-update's manifest, signature and files, #83) | the `update =` URL, HTTP/1.1; its host looked up over UDP 53 | `update` |
 | the stormcast group (the boot's log, #162) | `239.255.42.1:5514`, UDP, TTL 4, on every NIC with a lease | `syslog = off` stops it |
+| the engine's host record (a command, #167, stormblock#494) | `<portal>:9090`, `GET …/command`, `POST …/command/done` | `api_port` |
 | a syslog collector (the boot's log, #162) | none; the goldens name `stormcentral.g8.lo:5514`, UDP, its host looked up over UDP 53 | `syslog`, else `install-config.yaml`'s `syslog:` |
 
 The portal defaults to `192.168.31.202` (forge). Since stormblock v17.0.0 the

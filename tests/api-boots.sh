@@ -44,8 +44,8 @@ signed() {
 # api_get PATH: the body; api_post BODY: the status, the body in $W/resp.
 api_get() { curl -s -m 10 "http://127.0.0.1:$APIP$1"; }
 api_post() {
-    curl -s -m 10 -o "$W/resp" -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
-        --data-binary "$1" "http://127.0.0.1:$APIP/api/v1/command" || echo 000
+    curl -s -m 30 -o "$W/resp" -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
+        --data-binary "$1" "http://127.0.0.1:$APIP/api/v1/command" || true
 }
 
 # expect_post NAME CODE TEXT BODY: the API answers CODE with TEXT in the body.
@@ -136,7 +136,7 @@ expect_post api 400 '"error":"no \"host\""' '{"command":"reboot"}'
 expect_post api 403 "the signature is not by any of" "$(signed "$W/other-cmd.pem" $ME 50 reboot)"
 expect_post api 403 "it is for server9" "$(signed "$W/cmd.pem" server9 51 reboot)"
 expect_post api 202 '"accepted":100,"command":"format","when":"now"' "$(signed "$W/cmd.pem" $ME 100 format APIDISK1)"
-console_wait api "command     : format (id 100): wiped "
+console_wait api "command     : format (id 100): wiped scsi QEMU QEMU HARDDISK serial APIDISK1 (64 MiB): 1 MiB at each end zeroed" 60
 expect_post api 403 "id 100 is not above 100" "$(signed "$W/cmd.pem" $ME 100 format APIDISK1)"
 expect_post api 202 '"accepted":101' "$(signed "$W/cmd.pem" $ME 101 format NOSUCH)"
 console_wait api "command     : format (id 101): refused: no drive has serial NOSUCH (serials here: "

@@ -54,70 +54,82 @@ from the end and counted when a machine has more than fit). stormcentral's
 Test machines page and the system-drive picker (stormcentral#1066) read it
 from there.
 
-## Phase 1: commands, next to the intent
+## Phase 1: the API, commands and the hold (built, v0.33.0)
 
-The engine's host record carries one pending **command** beside the intent:
+The owner (2026-10-21): "more important to have api control". So the
+commands do not wait for a poll of the engine: **stormbootx answers HTTP on
+port 9180 of every leased NIC** from the moment its stack is up until the
+image's bootloader starts (`src/api.rs`; README, *The API, commands and the
+hold*):
+
+```
+GET  /api/v1/status      phase, detail, names, addresses, the floor, pending/last command
+GET  /api/v1/inventory   phase 0's inventory
+GET  /api/v1/log         every console line so far
+POST /api/v1/command     a signed command → 202 {"accepted":<id>,…} | 400 | 403 | 409
+```
+
+The engine's host record carries the same signed object, for when the API
+can't be reached (stormblock#494):
 
 ```
 GET  /api/v1/synonyms/boothost/<name>/command
-  → 200 {"host":"server8","id":17,"command":"reboot","args":"",
+  → 200 {"host":"server8","id":1792000000123,"command":"reboot","args":"",
          "issued":"2026-10-21T22:01:00Z","by":"stormcentral","sig":"<hex>"}
   → 404 (none)
-POST /api/v1/synonyms/boothost/<name>/command/done  {"id":17,"result":"…"}
+POST /api/v1/synonyms/boothost/<name>/command/done  {"id":…,"result":"…"}
 ```
 
-stormbootx reads it at the intent step, down the same name list, before the
-claim. Every doubt (404, unreachable, unsigned, bad signature, an `id` it
-has done before, another machine's name) is **no command**, and the boot
-goes on exactly as without one.
+stormbootx reads it under the name the intent answered for, once before
+the intent, and every 5 s while holding. Every doubt (404, unreachable,
+unsigned, a bad signature, an `id` it has taken, another machine's name) is
+**no command**, and the boot goes on exactly as without one.
 
 | command | what stormbootx does |
 |---|---|
-| `reboot` | `done`, flush the log, `ResetSystem(EfiResetCold)` |
-| `poweroff` | `done`, flush, `ResetSystem(EfiResetShutdown)` (ACPI S5) |
-| `boot-next <NNNN>` | set `BootNext` to `Boot<NNNN>` (it must exist), `done`, reset |
-| `maint` | claim and attach the baremetalservices maintenance image as it does a host's image, and start its UKI |
+| `reboot` | `ResetSystem(EfiResetCold)` |
+| `poweroff` | `ResetSystem(EfiResetShutdown)` (ACPI S5) |
+| `boot-next <NNNN>` | set `BootNext` to `Boot<NNNN>` (it must exist), reset |
 | `install`, `local` | as the intent of that name, this boot only |
-| `inventory` | collect again, print it and send it with `done` |
-| `hold` | stay in stormbootx: panel up, log streaming, the command read again every 5 s, until another command |
+| `retry` | the boot again from the engine |
+| `inventory` | collect again, served by `/api/v1/inventory` |
+| `hold` | stay in stormbootx: panel up, log streaming, API answering, until another command |
+| `format <serial> [fast]` | zero the first and last MiB of that one drive; `full` and `secure` are baremetalservices' |
+| `maint` | refused until the engine can serve baremetalservices' image as a namespace |
 
-The engine clears a command when its `done` arrives; a command nobody
-collects stays pending until the next boot. Power-**on** cannot come from
-inside the machine: Wake-on-LAN from stormcentral or the laptop app (WoL
-switched on in setup by baremetalservices' `/bios/configure`), the BMC where
-it still works.
+**Holding.** A failed network boot with a lease holds for `hold =` seconds
+(the goldens: 120; the binary's default: off), then falls through as every
+failure did; one with nothing local that boots holds until a command.
+`hold_retry =` boots again every N minutes. install-config.yaml's
+`stormbootx_hold:` / `stormbootx_hold_retry:` when the media says neither.
 
-### Authentication (the owner's choice)
+Power-**on** cannot come from inside the machine: Wake-on-LAN from
+stormcentral or the laptop app (WoL switched on in setup by
+baremetalservices' `/bios/configure`), the BMC where it still works.
 
-Commands must never be open on the network. The manifest's lesson holds:
-the reply comes over plain HTTP from a name DHCP gave, so **only a
+### Authentication (decided: Ed25519)
+
+The master's decision (2026-10-22) is option 1, verified with the
+self-update's key: commands signed by stormcentral's key compiled in
+(`manifest::RELEASE_KEYS`), or by the laptop app's key named on the media
+as `command_key =`. The signed text's first line,
+`stormbootx-command v1`, keeps a signed manifest from ever reading as a
+command. Commands must never be open on the network. The manifest's lesson
+holds: the reply comes over plain HTTP from a name DHCP gave, so **only a
 signature counts**. The signed text is
 `stormbootx-command v1\n<host>\n<id>\n<command>\n<args>\n<issued>\n`: the
 host name ties it to one machine, and the `id` is a replay floor kept in a
 non-volatile variable (`StormBootCommandId`), as `StormBootMinSerial` is
-for updates.
+for updates. Nothing secret is on the media; whoever can write the media
+already decides what boots.
 
-Who can sign:
-
-1. **Ed25519, keys compiled in and named on the media.** stormcentral gets a
-   *command* key (not the release key: that one signs media, and should not
-   sign at the rate commands come). Its public half is compiled in beside
-   `RELEASE_KEYS`. The laptop app makes its own key pair and writes the
-   public half as `command_key =` in the `\stormboot\local.conf` of the
-   media it writes. Nothing secret is on the media; whoever can write the
-   media already decides what boots.
-2. **HMAC-SHA256 with the machine's token from `install-config.yaml`.**
-   No new key anywhere, but a medium without an install-config (the BMC's
-   virtual-media ISO every blade boots) can take no command, and the
-   token is a secret on a stick anyone can read.
-
-**Recommended: 1.** It works on every medium stormcentral serves, keeps no
-secret on the media, and reuses the verify code the self-update already
-runs.
+Option 2, HMAC with install-config's token, was declined: a medium without
+an install-config (the BMC virtual-media ISO every blade boots) could take
+no command, and the token would be a secret on a readable stick.
 
 ## Phase 2: console input
 
-#162 sends the log; nothing comes back. Input rides on phase 1's
+#162 sends the log, and `/api/v1/log` serves it; nothing comes back. Input rides on phase 1's
 authentication rather than a second scheme: a signed `console <collector>
 <session key>` command makes stormbootx open **one outbound** TCP connection
 to the collector (stormbootx still listens on nothing), take keystrokes
@@ -139,7 +151,7 @@ ends at the command record and the inventory.
 
 | piece | repo |
 |---|---|
-| Inventory v2, command reader, signatures, reset, `BootNext`, `hold`, console input | stormbootx |
+| Inventory v2, the API, signatures, reset, `BootNext`, `hold`, the fast wipe, console input | stormbootx |
 | `…/command` and `…/command/done` on the host record, the inventory kept | stormblock (forge and `stormboot-serve`) |
 | The command key, signing, the Test machines controls, WoL | stormcentral |
 | A maintenance image the engine can serve as a namespace (ESP + UKI) | baremetalservices |

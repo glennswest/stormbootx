@@ -3,6 +3,14 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-10-22
+- **feat:** stormbootx's own API (#167, the owner: "more important to have api control"). HTTP on port 9180 of every leased NIC (`api =`), from the moment the stack is up until the image's bootloader starts: `GET /api/v1/status`, `/api/v1/inventory`, `/api/v1/log` (every console line, `netlog` keeps them), and `POST /api/v1/command`. Served from every poll of the stack; `src/api.rs`, the sockets in `net.rs`.
+- **feat:** signed commands (#167): `reboot`, `poweroff`, `boot-next NNNN`, `install`, `local`, `retry`, `hold`, `inventory`, `format <serial>` (the fast wipe: the drive's first and last MiB; never the boot medium) and `maint` (refused until baremetalservices' image is served). Ed25519 over `stormbootx-command v1\n<host>\n<id>\n<command>\n<args>\n<issued>\n`, by stormcentral's release key or the media's `command_key =` (the master's decision); the host one of the machine's names; the id above `StormBootCommandId` (non-volatile), raised before the command runs. The engine's host record carries the same object (stormblock#494): read before the intent and while holding, reported with `…/command/done`. `src/command.rs` (core + alloc, 8 host tests).
+- **feat:** a failed network boot holds with its API up (#167) for `hold =` seconds (`forever`, `off`; `hold_retry =` minutes boots again; install-config.yaml's `stormbootx_hold:`), then falls through as before; nothing local that boots holds until a command. The binary's default is off; the goldens write `hold = 120`. `build-boot-agent.sh --hold`, `--command-key`.
+- **feat:** the claim's `agent` names `"api_port"`.
+- **test:** `tests/api-boots.sh`, sourced by `net-ovmf.sh`: two boots driven from the host through slirp.
+- **docs:** README *The API, commands and the hold*; `docs/remote-control.md` phase 1 as built.
+
 ## [v0.32.0] — 2026-10-21
 
 ### Added

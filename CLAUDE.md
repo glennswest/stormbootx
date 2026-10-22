@@ -22,7 +22,7 @@ scratch files go in `tmp/`.
 Push first, then `sc-build` from this checkout. It builds the pushed commit
 on a fresh build VM as `stormbuild`. There is no checkout there, and no `ssh root@`.
 The plain `cargo build && cargo test` default does not suit a `no_std` UEFI
-crate, so name the command. This builds the three binaries, runs the eleven
+crate, so name the command. This builds the three binaries, runs the twelve
 host suites and the initiator crate's tests, boots `espprobe` and stormbootx under OVMF, boots an ISO's
 `startup.nsh` from two EFI Shells, and runs the self-update's boots:
 
@@ -39,6 +39,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   rustc --edition 2021 --test src/inventory.rs -o t/inventory-test && ./t/inventory-test && \
   rustc --edition 2021 --test src/connectx.rs -o t/connectx-test && ./t/connectx-test && \
   rustc --edition 2021 --test src/logwire.rs -o t/logwire-test && ./t/logwire-test && \
+  rustc --edition 2021 --test src/command.rs -o t/command-test && ./t/command-test && \
   cargo test -p nvme-tcp-initiator && \
   R=${CARGO_TARGET_DIR:-target}/x86_64-unknown-uefi/release && \
   tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi && \
@@ -194,6 +195,18 @@ claim, its SMBIOS parse (BMC, CPU, memory) and its JSON under the engine's
 16 KiB; it alone carries `extern crate alloc` (it builds strings).
 `src/connectx.rs` (#25) is the tenth: which Mellanox ids `mlxfec` reads
 FEC from, which are ConnectX-3s with none, and when "no ConnectX" is true.
+`src/command.rs` (#167) is the eleventh: the signed command's text and body,
+the verbs, and the API's HTTP request parser; `extern crate alloc` like
+`inventory.rs`. The signature check is `api.rs`'s (ed25519-compact).
+
+`tests/api-boots.sh` (#167), sourced at the end of `net-ovmf.sh`, boots
+twice with slirp forwarding the guest's API (9180) to the host: a failed
+claim holds (`hold = 30`, but nothing local boots, so until a command);
+status, inventory and log read; a non-command, another key, another host
+and a replayed id refused; `format APIDISK1` zeroes that disk's first and
+last MiB and nothing between; `boot-next FFFF`, `maint` and an unknown
+serial refused; `inventory` again; `poweroff`. Then the engine's record
+carries a signed `hold`, reported done; `boot-next 0000` resets.
 
 `Cargo.lock` is tracked, as it should be for anything that produces a binary.
 Without it every build resolved fresh, and this is a firmware binary whose
@@ -228,9 +241,11 @@ stormbootx --url http://stormcentral.g8.lo`.
 
 | File | Job |
 |---|---|
-| `src/main.rs` | `run()`: the boot, step by step, and the fall-through |
+| `src/main.rs` | `run()`: the boot, step by step; the hold and the boot again (#167); the fall-through |
+| `src/api.rs` | stormbootx's own API (#167): `/api/v1/status`, `/inventory`, `/log`, `POST /api/v1/command`; Ed25519 over `RELEASE_KEYS` and `command_key =`, the `StormBootCommandId` floor (NV); the engine's record (stormblock#494); the commands done at the boot's fixed points; the hold (`hold =`, `hold_retry =`) |
+| `src/command.rs` | the signed command's text, body and verbs, and the API's HTTP parsing (core + alloc, host-tested) |
 | `src/smbios.rs` | the serials (Type 1 → 2 → 3, placeholders and shared chassis serials rejected), before any network exists; the MAC as the floor |
-| `src/net.rs` | the TCP/IP stack (#56): smoltcp on every NIC's SNP (opened exclusively), DHCP, `TcpSocket`, the TSC clock; its own ARP for the next hops (#168); `release` gives the NICs back on the fall-through |
+| `src/net.rs` | the TCP/IP stack (#56): smoltcp on every NIC's SNP (opened exclusively), DHCP, `TcpSocket`, the TSC clock; its own ARP for the next hops (#168); the API's listening sockets, served from every poll (#167); `release` gives the NICs back on the fall-through |
 | `src/profile.rs` | the `timing :` line (#168): a mark at the end of each step, durations on the TSC |
 | `src/snpwatch.rs` | which driver is under each SNP (named before the first call), and a `TPL_NOTIFY` timer that names an SNP call that has not returned (#88) |
 | `src/entropy.rs` | randomness for the ISN, DHCP xid and ports: firmware `EFI_RNG`, then RDSEED/RDRAND (RNDR on aarch64), then jitter through SHA-256; never fails |
