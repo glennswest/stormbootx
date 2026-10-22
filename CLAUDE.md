@@ -672,6 +672,24 @@ then.
       off), `hold_retry = <min>`; nothing local that can boot holds until a
       command; also `stormbootx_hold:` in install-config.yaml. Test:
       `tests/api-boots.sh` sourced by net-ovmf (hostfwd to the guest's API).
+      **State (2026-10-22): phase 1 done, released v0.33.0 (e658dae).**
+      sc-build of 284da2c (968 s): no warnings, the full suite, command.rs
+      8 host tests; api-boots: a failed claim held `until a command`
+      (nothing local boots), status/inventory/log read, a non-command 400,
+      another key / another host / a replayed id 403, `format APIDISK1`
+      zeroed the first and last MiB with the middle intact (`table none`
+      after `inventory`), NOSUCH / `boot-next FFFF` / `maint` refused,
+      `poweroff` ended the VM; the record's signed `hold` taken before the
+      intent and `command/done` posted, `boot-next 0000` set
+      `Boot0000 "BootManagerMenuApp"` and reset. laptop-ovmf's `unknown`
+      (golden, `hold = 120`, no local disk) held. The tag `--locked` passed
+      net-ovmf, laptop-ovmf, repro. Goldens requested (stormbootx, -rustnic,
+      -rustnic-disk, -stick). **Elsewhere:** stormcentral#1089 (signer,
+      controls, WoL), stormblock#494 (the record; `maint` claim proposed),
+      storminstall#20 (the app's `command_key`), baremetalservices#2 (the
+      maint image as a disk). **Left here:** `maint` once stormblock#494
+      and baremetalservices#2 serve an image; console input (phase 2), asked
+      on #167 whether still wanted. **Not run:** metal.
 
 - [x] **#100 — several NVMe reads in flight (P1, from #165's decision,
       2026-10-21). Closed 2026-10-21.** The Dell reads at 46–80 MiB/s with one
@@ -2235,7 +2253,7 @@ then.
 
 ## Status
 
-v0.32.0 (#167's inventory v2, #168's ARP priming and timing line, #99's parked cap9 in 50 ms). v0.29.0 (#151: stormbootx-stick; released, frozen until 2026-10-17, then the master promotes it). v0.28.2 was #130 (reproducible media); v0.28.0 was #144 (the boot panel); v0.27.0 was #148 (the self-update resolves its host); v0.26.0 was #145 (the fall-through starts the local disk itself); v0.25.0 was #128: #4, #10, #17, #25, #36, #42, #53, #67 and #138. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
+v0.33.0 (#167 phase 1: stormbootx's own API on port 9180, Ed25519-signed commands, the hold on a failed boot; goldens `hold = 120`). v0.32.0 (#167's inventory v2, #168's ARP priming and timing line, #99's parked cap9 in 50 ms). v0.29.0 (#151: stormbootx-stick; released, frozen until 2026-10-17, then the master promotes it). v0.28.2 was #130 (reproducible media); v0.28.0 was #144 (the boot panel); v0.27.0 was #148 (the self-update resolves its host); v0.26.0 was #145 (the fall-through starts the local disk itself); v0.25.0 was #128: #4, #10, #17, #25, #36, #42, #53, #67 and #138. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
 (and the same day, the full chain: chain-load into stormuefi and a running
 stormcos kernel), on a
 Dell PowerEdge R230 (service tag C2NR0Q2) booting the agent over iDRAC virtual
