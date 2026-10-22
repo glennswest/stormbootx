@@ -230,7 +230,8 @@ stormbootx --url http://stormcentral.g8.lo`.
 |---|---|
 | `src/main.rs` | `run()`: the boot, step by step, and the fall-through |
 | `src/smbios.rs` | the serials (Type 1 → 2 → 3, placeholders and shared chassis serials rejected), before any network exists; the MAC as the floor |
-| `src/net.rs` | the TCP/IP stack (#56): smoltcp on every NIC's SNP (opened exclusively), DHCP, `TcpSocket`, the TSC clock; `release` gives the NICs back on the fall-through |
+| `src/net.rs` | the TCP/IP stack (#56): smoltcp on every NIC's SNP (opened exclusively), DHCP, `TcpSocket`, the TSC clock; its own ARP for the next hops (#168); `release` gives the NICs back on the fall-through |
+| `src/profile.rs` | the `timing :` line (#168): a mark at the end of each step, durations on the TSC |
 | `src/snpwatch.rs` | which driver is under each SNP (named before the first call), and a `TPL_NOTIFY` timer that names an SNP call that has not returned (#88) |
 | `src/entropy.rs` | randomness for the ISN, DHCP xid and ports: firmware `EFI_RNG`, then RDSEED/RDRAND (RNDR on aarch64), then jitter through SHA-256; never fails |
 | `src/tcp4.rs` | tcp4probe only since #56: a blocking socket over the firmware's TCP4 |
@@ -403,6 +404,14 @@ These have each cost a debugging session. Do not "simplify" them away.
 - **A boot path must never need the network in order to boot without it.**
   Every failure in discovery or attach falls through to the local disk. One
   provisioning outage must not become a fleet outage.
+- **smoltcp asks ARP for one address a second per interface** (#168).
+  `NeighborCache::limit_rate` is global, and a socket whose neighbour is
+  missing is silenced for a second. So a first contact with a new on-link
+  host within a second of another (the DNS server after the engine, the NTP
+  server after that) waited a whole second, 1 s each on every machine.
+  `Nic::prime` sends our own ARP requests for the router, the lease's DNS
+  and NTP servers, and each connection's next hop. smoltcp fills its cache
+  from any reply aimed at us. Don't take it out to "let smoltcp do ARP".
 - **Link-down early in UEFI is not evidence of anything.** A 25G RS link needs
   seconds to come up after a reset, and `snp.media_present` sampled once at
   that moment reads a perfectly healthy card as dark. This is the same fact as
@@ -578,6 +587,18 @@ pushed, but there is no `chore(release)`, tag or `component build` before
 then.
 
 ### Open, no external blocker
+
+- [ ] **#168 — 11–15 s on metal against 3 s on pve before the claim (P2,
+      the master's review, 2026-10-21). In progress.** From the consoles'
+      `.times`: X9 (server1, server8) ~10.5 s in `connecting every handle`,
+      i.e. stormnic-mlx4's Start (ixgbe done at ~2 s, mlx4 link at ~10.7 s):
+      filed stormnic-mlx4#27. Dell: ~4 s in mlxfec's cap9 wait (#99), ~2 s
+      in the platform drivers' connect, ~1.3 s binding. Every machine: 1 s
+      on the reverse-DNS name and 1 s on the clock, which is smoltcp's 1 s
+      ARP rate limit (`neighbor.rs`). Fix here (02d57cc): our own ARP for
+      the next hops (`Nic::prime`), a parked cap9 lock taken after 50 ms
+      (#99), and a `timing :` line per boot (`profile.rs`). net-ovmf's shipped
+      boot must show `name` and `clock` under a second.
 
 - [ ] **#167 — stormbootx as the front end of a machine with no working
       BMC (P2, the master for the owner, 2026-10-21). In progress.** Plan

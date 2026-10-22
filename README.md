@@ -697,6 +697,32 @@ firmware that has no UEFI driver for its NICs, like the
 Supermicro X9 blades (legacy-only Intel 10G and ConnectX-3). No directory, no
 change.
 
+**ARP for the next hops at the lease (#168).** smoltcp sends one ARP
+request a second per interface, and a socket whose neighbour is unknown is
+silenced for a second. So the first contact with a new host within a second
+of another cost a whole second: the reverse-DNS lookup after the engine, the
+NTP exchange after it (1 s each on the Dell, the X9 blades and pve). Once a
+NIC holds a lease, stormbootx sends its own ARP requests for the router and
+the lease's DNS (option 6) and NTP (option 42) servers, and for each
+connection's or datagram's next hop before its first packet. They are 42-byte
+frames through the SNP, padded to 60, once per address per lease. smoltcp
+caches any ARP reply aimed at its address, so the answers fill its cache and
+nothing waits for them.
+
+**Where the time goes (#168).** Every boot prints one line before its result
+with the time each step took, from the banner:
+
+```
+timing      : nic fec 4.03 s, drivers 3.30 s, nics 0.80 s, lease+engine 0.25 s, name 12 ms, intent 8 ms, claim 0.50 s, clock 9 ms, attach 0.25 s; 9.40 s in all
+```
+
+`nic fec` is `mlxfec`'s ConnectX FEC read, and `drivers` is loading the
+media's NIC drivers and connecting every handle (a driver's `Start` runs in
+it). `nics` is opening the SNPs. `lease+engine` waits for DHCP and reads the
+engine's version, and `claim` covers the claim and its inventory. A boot
+that falls through ends at `fall-through`, which includes the network
+console's wait.
+
 
 **stormbootx's own TCP/IP (#56, `src/net.rs`).** The firmware's `EFI_TCP4` is
 not used on any machine. It is optional, off in setup on some machines, and
@@ -767,6 +793,7 @@ published BlockIO (about 105–120 MiB/s, KVM) and starts it. Its boots
 | boot | must show |
 |---|---|
 | `shipped` | `8 in flight` and the NVMe stub holding at least 2 reads at once, answered out of order (#100); `rng : firmware`/`rdrand`; every claim carries `agent` and the firmware inventory (#4, #90), with an NVMe, a SATA and a SCSI drive's models, serials, WWNs, media and the NVMe's GPT and `\EFI` directories (#167); a stub SNTP server's 2031 time set in the RTC and read back by the payload (#77); a 2 KiB `install-config.yaml` handed down and reassembled (#79); the ISO's `update =` skipped as read-only (#83) |
+| `shipped` (#168) | the `timing` line, with the reverse-DNS name and the clock each under a second: the DNS server is ARPed at the lease, not a second after the engine |
 | `depth1` | `nvme_depth = 1`: one read in flight (the stub never holds two), for its MiB/s beside `shipped`'s 8 (#100) |
 | `jitter` | firmware RNG and RDRAND/RDSEED masked: `rng : jitter`; told `install`, claims the default and hands down `StormBootTag = stubhost` (#76); an unsynchronised SNTP answer sets nothing (`StormBootClock = unsynced`) |
 | `newhost` | no name from DHCP or PTR: claims `boothost/default` by MAC and boots as `mac-525400123456` (#15) |
