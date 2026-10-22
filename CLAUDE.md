@@ -605,7 +605,9 @@ then.
       ubuntu), 2 linux 30 MiB`, `sata QEMU HARDDISK serial SATA0167 … (4096
       B physical) ssd`, and the claim's inventory (1960 bytes) the same.
       **Not run:** metal (a RAID controller, a SAS HBA, Aptio 4's
-      DiskInfo). No release yet. Next: the owner's auth answer.
+      DiskInfo). No release yet. **Waiting on the owner** (2026-10-21,
+      `wait-owner`, question on #167): command auth, Ed25519 (recommended)
+      or HMAC. Engine side filed as stormblock#494.
 
 - [x] **#100 — several NVMe reads in flight (P1, from #165's decision,
       2026-10-21). Closed 2026-10-21.** The Dell reads at 46–80 MiB/s with one
