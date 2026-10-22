@@ -519,7 +519,10 @@ impl Nic {
                     None => [0; 4],
                 };
                 c.out = match crate::command::request(&c.inbuf) {
-                    crate::command::Request::Partial if s.may_recv() => continue,
+                    // SYN-RECEIVED: established on the next poll.
+                    crate::command::Request::Partial if s.may_recv() || s.state() == tcp::State::SynReceived => {
+                        continue
+                    }
                     crate::command::Request::Partial => crate::command::error(400, "the request ended early"),
                     crate::command::Request::Bad(why) => crate::command::error(400, why),
                     crate::command::Request::Done { method, path, body } => {
