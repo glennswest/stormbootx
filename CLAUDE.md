@@ -609,6 +609,21 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#166 — install from an attached release ISO, no forge, no network
+      (P1, the master for the owner, 2026-10-21). Waiting on the owner
+      (2026-10-28).** The reader is ready: mkfs.iso.rs v0.1.0's
+      `reader::Volume` (`no_std` + `alloc`, edition 2024, over a `Medium`:
+      a BlockIO adapter here) and stormdist's format (`RELEASE.toml` +
+      `.sig`, `goldens/<name>.toml` extents, `chunks/<ab>/<sha256>`). The
+      writer is not: "the system half" is stormblock's slab (boot area +
+      system slab, `src/drive/slab.rs`, takeover keeping the data half,
+      #311/stormblock#478), and no `no_std` code lays it. Asked on #166
+      (`wait-owner`): (1) stormblock factors the layout into a `no_std`
+      crate stormbootx links (recommended; first cut refuses a drive with a
+      data half), (2) a staging copy the initramfs lays, (3) our own writer.
+      Also blocked on stormdist#10: no bootable release ISO exists to test
+      on pvetest2. No code yet.
+
 - [x] **#168 — 11–15 s on metal against 3 s on pve before the claim (P2,
       the master's review, 2026-10-21). Shipped in v0.32.0 (f21ff90).** From the consoles'
       `.times`: X9 (server1, server8) ~10.5 s in `connecting every handle`,
