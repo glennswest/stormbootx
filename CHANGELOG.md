@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-10-28
+- **docs:** #166 withdrawn (the master, for the owner): an attached release ISO boots the release itself and its initramfs lays the system half (stormblock#442); the work plan says so. No code change.
+
 ## [v0.35.0] — 2026-10-28
 
 ### Added
