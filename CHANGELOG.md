@@ -3,6 +3,19 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+## [v0.35.0] — 2026-10-28
+
+### Added
+- UEFI HTTP boot of the medium's ISO (#172): `media : a RAM disk (UEFI HTTP boot)`, and the self-update leaves the RAM disk alone.
+- `stormbootx-arm64-disk` golden: the arm64 medium on a USB stick (#172).
+- `bin/stormbootx-stick-arm64` in the `stormbootx-stick` golden (#172).
+
+### Changed
+- `tests/net-ovmf.sh` `httpboot` (OVMF HTTP-boots the ISO; `tests/bootvar.py` writes the URI boot option); the sc-build command builds the arm64 disk golden.
+
+### Fixed
+- `stormbootx-stick` declares libc's `char` as `c_char`, so it builds for aarch64.
+
 ### 2026-10-28
 - **feat:** UEFI HTTP boot of the medium's ISO (#172, the Orion O6N): an image loaded from a RAM disk prints `media : a RAM disk (UEFI HTTP boot)`, and the self-update declines it (the served ISO is what updates).
 - **feat:** `stormbootx-arm64-disk` golden (#172): the arm64 medium on a 64 MiB GPT USB stick (`BOOTAA64.EFI`, `update =` the `stormbootx-arm64` boothelper).
