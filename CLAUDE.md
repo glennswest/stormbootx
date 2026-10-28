@@ -636,6 +636,21 @@ then.
          `prefer_media_drivers = realtek`: **blocked**, the driver repo is
          empty (stormnic-realtek#1, #2). The arm64 boot under AAVMF waits on
          stormcentral#604 (the template bake).
+      **State (2026-10-28): 1–3 done** (831af84..377b6f9). sc-build of
+      377b6f9 (1002 s): no warnings, the full suite; net-ovmf `httpboot`:
+      OVMF sent HEAD and GET for the ISO, mounted it as a RAM disk
+      (`…/Uri(http://10.0.2.2:…/httpboot.iso)/VirtualCD(…)`), stormbootx
+      printed `media : a RAM disk (UEFI HTTP boot)`, took the NIC from the
+      firmware's stack, declined the update for the RAM disk, claimed,
+      read 96 MiB and started the payload; `stormbootx-arm64-disk` (GPT,
+      ESP at 2048 × 131072, `BOOTAA64.EFI`, `media = fw arm64`, `update =`
+      the arm64 boothelper); `bin/stormbootx-stick-arm64` static aarch64.
+      Filed microdns#15 (DHCP `HTTPClient` answer), stormcentral#1120 (the
+      ISO at a stable URL; register stormbootx-arm64/-arm64-disk),
+      stormcos#671 (arm64 nodes run the -arm64 stick). **Left:** 4, behind
+      stormnic-realtek#2; the arm64 boot under AAVMF (stormcentral#604);
+      the O6N itself. Inventory lists the RAM disk as `bus virtio` (its
+      path is the NIC's): cosmetic.
 
 - [ ] **#166 — install from an attached release ISO, no forge, no network
       (P1, the master for the owner, 2026-10-21). Waiting on the owner
