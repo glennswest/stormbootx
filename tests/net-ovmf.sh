@@ -1089,7 +1089,7 @@ boot httpboot "$host_cpu" "" ok good \
     "is there a TCP/IP stack in this firmware" \
     "not:no network boot" \
     "stub:POST /api/v1/synonyms/boothost/"
-kill "$HTTP_PID" 2>/dev/null || true
+kill "$HTTP_PID" 2>/dev/null || true; HTTP_PID=""  # the EXIT trap kills only what is alive (set -e)
 # It claims (`ok`); the release boot after it 404s, which the API boots
 # (#167) need the stub left at (#175).
 
