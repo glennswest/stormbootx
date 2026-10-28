@@ -6,6 +6,7 @@
 #   deploy/build-golden.sh stormbootx-disk OUT
 #   deploy/build-golden.sh stormbootx-rustnic-disk OUT
 #   deploy/build-golden.sh stormbootx-arm64   OUT
+#   deploy/build-golden.sh stormbootx-arm64-disk OUT
 #   deploy/build-golden.sh nic-drivers        OUT
 #   deploy/build-golden.sh stormbootx-stick   OUT
 #
@@ -19,7 +20,8 @@
 #
 # stormbootx-stick golden (#151): bin/stormbootx-stick, the static musl
 # Linux binary a running node updates its boot stick with (stormcos#589),
-# with SHA256SUMS and BUILD. The release keys are the medium's.
+# bin/stormbootx-stick-arm64 the same for an arm64 node's stick (#172:
+# BOOTAA64.EFI, the stormbootx-arm64 boothelper), with SHA256SUMS and BUILD. The release keys are the medium's.
 #
 # stormbootx golden:
 #   bin/stormbootx.efi      the agent (\EFI\BOOT\BOOTX64.EFI on the media)
@@ -78,8 +80,15 @@
 #   SHA256SUMS, BUILD
 #
 #   No NIC drivers: the stormnic drivers are x86 builds, so every NIC is the
-#   firmware's own (`media : fw arm64`). No tcp4probe ISO and no disk image
-#   yet. Until stormcentral#604 bakes the target into the build template,
+#   firmware's own (`media : fw arm64`). No tcp4probe ISO. The ISO is also
+#   what UEFI HTTP boot serves (#172): EDK2 mounts a downloaded ISO as a RAM
+#   disk and boots its BOOTAA64.EFI, so the medium's conf comes with it.
+#
+# stormbootx-arm64-disk golden (#172, the Orion O6N): the arm64 medium on a
+# USB stick, as stormbootx-disk is the fw one's:
+#   boot/stormbootx-arm64-disk.img  GPT, 64 MiB FAT16 ESP, BOOTAA64.EFI,
+#                                   `update =` the stormbootx-arm64 boothelper
+#   SHA256SUMS, BUILD Until stormcentral#604 bakes the target into the build template,
 #   the aarch64 std is added with rustup when it is missing.
 #
 # nic-drivers golden (an EFI boothelper; no medium takes it as an input since
@@ -99,7 +108,7 @@ say() { printf '==> %s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
 GOLDEN="${1:-}"; OUT="${2:-}"
-[[ -n "$GOLDEN" && -n "$OUT" ]] || die "usage: $0 stormbootx|stormbootx-rustnic|stormbootx-disk|stormbootx-rustnic-disk|stormbootx-arm64|nic-drivers OUT [--drivers DIR]"
+[[ -n "$GOLDEN" && -n "$OUT" ]] || die "usage: $0 stormbootx|stormbootx-rustnic|stormbootx-disk|stormbootx-rustnic-disk|stormbootx-arm64|stormbootx-arm64-disk|nic-drivers|stormbootx-stick OUT [--drivers DIR]"
 shift 2
 DRIVERS=""
 while [[ $# -gt 0 ]]; do
@@ -297,21 +306,47 @@ stormbootx-arm64)
     seal "arch     = arm64 (aarch64-unknown-uefi, \\EFI\\BOOT\\BOOTAA64.EFI)
 drivers  = none (the firmware's own)"
     ;;
+stormbootx-arm64-disk)
+    [[ -z "$DRIVERS" ]] || die "$GOLDEN carries no NIC drivers; no --drivers"
+    aarch64_target
+    say "building stormbootx for aarch64-unknown-uefi"
+    ( cd "$ROOT" && scripts/cargo-repro.sh build --locked --release --target aarch64-unknown-uefi --bin stormbootx )
+    REL="${CARGO_TARGET_DIR:-$ROOT/target}/aarch64-unknown-uefi/release"
+    cp "$REL/stormbootx.efi" "$WORK/stormbootx.efi"
+    mkdir -p "$OUT/boot"
+    # The arm64 medium on a writable stick: the same files as its ISO.
+    "$ROOT/scripts/build-boot-agent.sh" --arch arm64 --binary "$WORK/stormbootx.efi" \
+        --dns 192.168.31.252 --no-fallback --syslog "$SYSLOG_TARGET" --hold "$HOLD" --size 64 \
+        --media "fw arm64" --update "$(update_url stormbootx-arm64)" \
+        --output "$OUT/boot/$GOLDEN.img"
+    only_the_image
+    seal "arch     = arm64 (aarch64-unknown-uefi, \\EFI\\BOOT\\BOOTAA64.EFI)
+drivers  = none (the firmware's own)
+image    = boot/$GOLDEN.img (GPT, 64 MiB FAT ESP at 512-byte sectors; dd it whole onto a stick)"
+    ;;
 stormbootx-stick)
     [[ -z "$DRIVERS" ]] || die "$GOLDEN takes no --drivers"
-    t=x86_64-unknown-linux-musl
-    if [[ ! -d "$(rustc --print sysroot)/lib/rustlib/$t" ]]; then
-        command -v rustup >/dev/null || die "no $t std and no rustup to add it"
-        rustup target add "$t" >/dev/null
-    fi
-    say "building stormbootx-stick for $t"
-    ( cd "$ROOT" && scripts/cargo-repro.sh build --locked --release -p stormbootx-stick --target "$t" )
     mkdir -p "$OUT/bin"
-    cp "${CARGO_TARGET_DIR:-$ROOT/target}/$t/release/stormbootx-stick" "$OUT/bin/"
-    seal "target   = $t (static)
+    # x86_64 as bin/stormbootx-stick (#151); arm64 as bin/stormbootx-stick-arm64
+    # (#172), for arm64 nodes' BOOTAA64.EFI sticks, linked with rust-lld (no
+    # C cross toolchain: the crate is pure Rust and musl's crt is Rust's own).
+    for t in x86_64-unknown-linux-musl aarch64-unknown-linux-musl; do
+        if [[ ! -d "$(rustc --print sysroot)/lib/rustlib/$t" ]]; then
+            command -v rustup >/dev/null || die "no $t std and no rustup to add it"
+            rustup target add "$t" >/dev/null
+        fi
+        say "building stormbootx-stick for $t"
+        ( cd "$ROOT" && CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=rust-lld \
+            scripts/cargo-repro.sh build --locked --release -p stormbootx-stick --target "$t" )
+        name=stormbootx-stick; [[ $t == aarch64-* ]] && name=stormbootx-stick-arm64
+        cp "${CARGO_TARGET_DIR:-$ROOT/target}/$t/release/stormbootx-stick" "$OUT/bin/$name"
+    done
+    file "$OUT/bin/stormbootx-stick-arm64" | grep -qE 'ARM aarch64.*static(ally|-pie) linked' \
+        || die "bin/stormbootx-stick-arm64 is not a static aarch64 binary: $(file -b "$OUT/bin/stormbootx-stick-arm64")"
+    seal "target   = x86_64-unknown-linux-musl (bin/stormbootx-stick), aarch64-unknown-linux-musl (bin/stormbootx-stick-arm64); static
 keys     = the medium's RELEASE_KEYS (src/manifest.rs)"
     ;;
 *)
-    die "no golden $GOLDEN (stormbootx, stormbootx-rustnic, stormbootx-disk, stormbootx-rustnic-disk, stormbootx-arm64, nic-drivers or stormbootx-stick)"
+    die "no golden $GOLDEN (stormbootx, stormbootx-rustnic, stormbootx-disk, stormbootx-rustnic-disk, stormbootx-arm64, stormbootx-arm64-disk, nic-drivers or stormbootx-stick)"
     ;;
 esac

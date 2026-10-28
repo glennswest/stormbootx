@@ -308,6 +308,13 @@ fn try_update(mac: Option<&str>) -> Result<(), String> {
         Some(Setting::At { host, port, path }) => (host, port, path),
         None => return Err(format!("update = {stated:?} is not http://host[:port]/path; ignored")),
     };
+    // An HTTP-booted ISO (#172) is a RAM disk that may even say writable:
+    // the next boot downloads the served ISO again, so a written set would
+    // be gone and fetched again on every boot. The served ISO is what
+    // updates (a new golden at the URL).
+    if config::boot_from_ram_disk() {
+        return Err("the boot medium is a RAM disk (UEFI HTTP boot); the served ISO is what updates, not this copy".to_string());
+    }
     let mut vol = Vol::mount().map_err(|e| format!("the boot medium cannot be opened ({e})"))?;
     let info = vol.fs_info()?;
     if info.read_only() {

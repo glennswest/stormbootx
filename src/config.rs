@@ -562,6 +562,27 @@ pub(crate) fn truncate(file: &mut RegularFile, len: u64) -> Result<(), String> {
         .map_err(|e| format!("truncate to {len}: {e:?}"))
 }
 
+/// Whether this image was loaded from a RAM disk (#172): UEFI HTTP boot
+/// downloads the medium's ISO and the firmware mounts it in memory (EDK2's
+/// RamDiskDxe), so its `stormboot.conf` and drivers are there as on any
+/// medium, and nothing written to it outlives the boot.
+pub fn boot_from_ram_disk() -> bool {
+    use uefi::boot::{OpenProtocolAttributes, OpenProtocolParams};
+    use uefi::proto::device_path::{DeviceSubType, DeviceType};
+    let Some(h) = boot_volume() else { return false };
+    // GetProtocol: a look; the firmware's FAT keeps the volume.
+    let dp = unsafe {
+        boot::open_protocol::<DevicePath>(
+            OpenProtocolParams { handle: h, agent: boot::image_handle(), controller: None },
+            OpenProtocolAttributes::GetProtocol,
+        )
+    };
+    dp.is_ok_and(|dp| {
+        dp.node_iter()
+            .any(|n| n.device_type() == DeviceType::MEDIA && n.sub_type() == DeviceSubType::MEDIA_RAM_DISK)
+    })
+}
+
 /// Unused today; kept because the update path needs a device path to name the
 /// volume in a message an operator can act on.
 #[allow(dead_code)]

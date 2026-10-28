@@ -71,6 +71,14 @@
 #      and must say `1 of 1 NIC(s) given back`; the next boot option, the
 #      firmware's PXE on the same NIC, must then lease from slirp and start
 #      the payload over TFTP.
+#   8. UEFI HTTP boot (#172: the Orion O6N's PXE never sends TFTP): no CD;
+#      the firmware's IPv4 stack on, a boot option `Uri(http://…/x.iso)`
+#      written into the variable store (tests/bootvar.py) and an HTTP stub
+#      serving the medium's ISO as `application/vnd.efi-iso`. OVMF's HTTP
+#      boot downloads it into a RAM disk and starts its BOOTX64.EFI, which
+#      must say `media : a RAM disk`, read the ISO's conf, take the NIC from
+#      the firmware's stack, decline the self-update for the RAM disk, claim,
+#      attach and start the payload.
 #
 # Boots 1 and 2 must show the stack, a lease from slirp, the engine's version from
 # the stub, the attach, a blockio progress line and the payload's banner; the
@@ -112,7 +120,9 @@ NVME_PID=""
 BLANK_PID=""
 NTP_PID=""
 SYSLOG_PID=""
+HTTP_PID=""
 cleanup() {
+    [[ -n "$HTTP_PID" ]] && kill "$HTTP_PID" 2>/dev/null
     [[ -n "$STUB_PID" ]] && kill "$STUB_PID" 2>/dev/null
     [[ -n "$NTP_PID" ]] && kill "$NTP_PID" 2>/dev/null
     [[ -n "$SYSLOG_PID" ]] && kill "$SYSLOG_PID" 2>/dev/null
@@ -584,6 +594,9 @@ BOOT_CONF=
 # stub; `off` sends nothing).
 BOOT_SYSLOG=
 BOOT_NICDEV=
+# BOOT_HTTP=1 (#172): no CD; the ISO is HTTP-booted by the firmware from
+# the HTTP stub, by a URI boot option in the variable store.
+BOOT_HTTP=
 boot() {
     local name=$1 cpu=$2 rng=$3 claim=$4 ntp=$5; shift 5
     # NET_ONLY=<name>: run that boot alone (a rerun of one failure).
@@ -633,6 +646,12 @@ boot() {
         nicopt=,bootindex=2 ipv4=yes
         extra+=(-device virtio-rng-pci)
     fi
+    if [[ -n $BOOT_HTTP ]]; then
+        cp "$iso" "$W/http/$name.iso"
+        media=()
+        nicopt=,bootindex=1 ipv4=yes
+        extra+=(-device virtio-rng-pci)
+    fi
     [[ $name == shipped ]] && extra+=("${LOCAL_DRIVES[@]}")
     [[ -n "$BOOT_DISK" ]] && extra+=(-device virtio-scsi-pci,id=scsi0
         -drive if=none,id=d0,format=raw,file="$BOOT_DISK" -device scsi-hd,drive=d0,bus=scsi0.0,bootindex=2)
@@ -642,6 +661,10 @@ boot() {
     rm -f "$W/$name.mon" "$W/$name.pcap"
     : > "$log"; : > "$W/$name.debug"
     cp "$OVMF_VARS" "$W/$name.vars"
+    if [[ -n $BOOT_HTTP ]]; then
+        python3 "$ROOT/tests/bootvar.py" "$W/$name.vars" "http://10.0.2.2:$HTTP_PORT/$name.iso" \
+            | sed "s/^/net-ovmf: [$name] /" || die "[$name] no URI boot option written"
+    fi
     qemu-system-x86_64 -machine q35,accel="$accel" -cpu "$cpu" -m 1024 \
         -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
         -drive if=pflash,format=raw,file="$W/$name.vars" \
@@ -1057,6 +1080,37 @@ boot release "$host_cpu" "" 404 good \
 grep -qE "Start PXE over IPv4|Station IP address is" "$W/release.txt" \
     && say "[release] the firmware's PXE ran on the NIC after the fall-through" \
     || say "note: no PXE banner on the console (the payload's banner is the evidence)"
+
+# #172: UEFI HTTP boot, the Orion O6N's way in. The stub serves the ISO
+# with the type EDK2 mounts as a RAM disk (it also goes by `.iso`).
+mkdir -p "$W/http"
+cat > "$W/http.py" <<'PY'
+import http.server, os, sys
+os.chdir(sys.argv[1])
+class H(http.server.SimpleHTTPRequestHandler):
+    extensions_map = {".iso": "application/vnd.efi-iso", "": "application/octet-stream"}
+    def log_message(self, fmt, *args):
+        open(sys.argv[2], "a").write("http: " + (fmt % args) + "\n")
+s = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
+open(sys.argv[3], "w").write(str(s.server_address[1]))
+s.serve_forever()
+PY
+python3 "$W/http.py" "$W/http" "$W/stub.log" "$W/http.port" &
+HTTP_PID=$!
+for _ in $(seq 50); do [[ -s "$W/http.port" ]] && break; sleep 0.1; done
+HTTP_PORT=$(cat "$W/http.port" 2>/dev/null) || die "the HTTP boot stub did not start"
+BOOT_HTTP=1 BOOT_CONF="update = http://10.0.2.2:$PORT/api/v1/boothelpers/stormbootx-test" \
+boot httpboot "$host_cpu" "" ok good \
+    "stub:http: \"GET /httpboot.iso" \
+    "NVMe/TCP boot extension" \
+    "media       : a RAM disk (UEFI HTTP boot): the downloaded ISO, gone at reset" \
+    "tcp4        : smoltcp over SNP (nic 0 " \
+    "update      : the boot medium is a RAM disk (UEFI HTTP boot); the served ISO is what updates, not this copy" \
+    "blockio     : 96 MiB read in all" \
+    "is there a TCP/IP stack in this firmware" \
+    "not:no network boot" \
+    "stub:POST /api/v1/synonyms/boothost/"
+kill "$HTTP_PID" 2>/dev/null || true
 
 # #167: stormbootx's own API and the hold, driven from the host.
 # shellcheck source=tests/api-boots.sh

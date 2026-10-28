@@ -7,7 +7,8 @@
 //! next boot would have done:
 //!
 //! 1. **find** the stick: a removable or USB disk whose FAT ESP carries
-//!    `EFI/BOOT/BOOTX64.EFI` and `stormboot/`. Never a disk that is mounted
+//!    `EFI/BOOT/BOOTX64.EFI` (`BOOTAA64.EFI` built for arm64, #172) and
+//!    `stormboot/`. Never a disk that is mounted
 //!    (the root's, a pallet's), that something holds (dm, md), or that carries
 //!    a stormblock slab (`STRMSLAB` at its start or at a partition's): the
 //!    node's system disk is refused three ways before anything is opened
@@ -300,7 +301,7 @@ fn find(o: &Opts, r: &mut Report) -> Result<Option<PathBuf>, String> {
         for (pname, dev) in looks {
             match has_markers(&dev, &o.mnt) {
                 Ok(true) => {
-                    r.say("find", format!("{pname}: a stormbootx stick (EFI/BOOT/BOOTX64.EFI and stormboot/)"));
+                    r.say("find", format!("{pname}: a stormbootx stick ({} and stormboot/)", manifest::BOOTLOADER));
                     found.push(dev);
                 }
                 Ok(false) => r.say("find", format!("{pname}: no stormbootx ESP")),
@@ -378,7 +379,7 @@ fn mounted_devs(proc_: &Path) -> Vec<String> {
 /// Mount read-only, look for both markers, unmount.
 fn has_markers(dev: &Path, mnt: &Path) -> Result<bool, String> {
     mount_vfat(dev, mnt, MS_RDONLY | MS_NOSUID | MS_NODEV | MS_NOEXEC)?;
-    let ok = find_ci(mnt, "EFI/BOOT/BOOTX64.EFI").is_some_and(|p| p.is_file())
+    let ok = find_ci(mnt, manifest::BOOTLOADER).is_some_and(|p| p.is_file())
         && find_ci(mnt, "stormboot").is_some_and(|p| p.is_dir());
     umount(mnt)?;
     Ok(ok)
@@ -581,7 +582,7 @@ fn nv_min(o: &Opts) -> u64 {
 fn update(o: &Opts, root: &Path, r: &mut Report) -> Result<(), String> {
     let vol = Medium { root };
     if !vol.exists(manifest::BOOTLOADER) || !vol.exists("stormboot") {
-        return Err(format!("{} carries no stormbootx (EFI/BOOT/BOOTX64.EFI and stormboot/)", root.display()));
+        return Err(format!("{} carries no stormbootx ({} and stormboot/)", root.display(), manifest::BOOTLOADER));
     }
     let main_conf = vol.text(CONF)?.unwrap_or_default();
     let local = vol.text(LOCAL_CONF)?.unwrap_or_default();
@@ -789,6 +790,7 @@ fn update(o: &Opts, root: &Path, r: &mut Report) -> Result<(), String> {
 /// `media =` line where it has one (`rustnic …` or `fw`), else the drivers it
 /// carries (a medium with NIC drivers is a rustnic one; the iPXE `normal`
 /// media's drivers went with #91), else the firmware-drivers medium.
+#[cfg(not(target_arch = "aarch64"))]
 fn family(vol: &Medium, conf: &str) -> (&'static str, String) {
     match manifest::conf_field(conf, "media").map(|m| m.split_whitespace().next().unwrap_or("")) {
         Some("rustnic") => return ("stormbootx-rustnic", "media = rustnic".into()),
@@ -805,6 +807,13 @@ fn family(vol: &Medium, conf: &str) -> (&'static str, String) {
     } else {
         ("stormbootx", "no media = and no NIC drivers on the stick".into())
     }
+}
+
+/// Built for arm64 (#172), the stick is the arm64 medium's: there is one
+/// arm64 family, `stormbootx-arm64`.
+#[cfg(target_arch = "aarch64")]
+fn family(_vol: &Medium, _conf: &str) -> (&'static str, String) {
+    ("stormbootx-arm64", "an arm64 stick".into())
 }
 
 fn current(r: &mut Report, why: &str) -> Result<(), String> {

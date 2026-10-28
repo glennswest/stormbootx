@@ -186,6 +186,11 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
     if let Some(m) = config::stated_media() {
         uefi::println!("media       : {m}");
     }
+    // UEFI HTTP boot (#172: the Orion O6N, whose PXE never sends TFTP): the
+    // firmware downloaded the medium's ISO and mounted it in memory.
+    if first && config::boot_from_ram_disk() {
+        uefi::println!("media       : a RAM disk (UEFI HTTP boot): the downloaded ISO, gone at reset");
+    }
     // Who reads the attached image's ESP (#37), read here with the rest of the
     // media, not after the attach: once an image is attached, the boot opens
     // nothing on the media again, as before #37 (#46).
