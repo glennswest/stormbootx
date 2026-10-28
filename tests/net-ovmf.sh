@@ -71,7 +71,7 @@
 #      and must say `1 of 1 NIC(s) given back`; the next boot option, the
 #      firmware's PXE on the same NIC, must then lease from slirp and start
 #      the payload over TFTP.
-#   8. UEFI HTTP boot (#172: the Orion O6N's PXE never sends TFTP): no CD;
+#   (#172) `httpboot`, before 7: UEFI HTTP boot (#172: the Orion O6N's PXE never sends TFTP): no CD;
 #      the firmware's IPv4 stack on, a boot option `Uri(http://…/x.iso)`
 #      written into the variable store (tests/bootvar.py) and an HTTP stub
 #      serving the medium's ISO as `application/vnd.efi-iso`. OVMF's HTTP
@@ -1060,27 +1060,6 @@ for kb in 64 128 192 256; do
     fi
 done
 
-# #68: a fall-through gives the NICs back. The firmware's own IPv4 stack is
-# on, so stormbootx's exclusive SNP open first takes the NIC from the
-# firmware's MNP; the claim 404s and the media names no fallback, so it
-# falls through, and the next boot option is the firmware's PXE on that
-# NIC, which must lease and TFTP the payload, which then starts.
-# The medium is built as the goldens are (#36): no fallback namespace, so
-# the 404 alone falls through, with nothing attached.
-BOOT_NOFALLBACK=1 BOOT_PXE=1 WAIT_FOR="is there a TCP/IP stack in this firmware" BOOT_SETTLE=3 \
-boot release "$host_cpu" "" 404 good \
-    "tcp4        : smoltcp over SNP (nic " \
-    "fallback    : none (a claim that finds nothing falls through to the local disk)" \
-    "no network boot: no claim gave this machine an image, and the media names no fallback (fallback = none)" \
-    "not:attaching   : " \
-    "not:blockio     : published on handle" \
-    "net         : 1 of 1 NIC(s) given back to the firmware (exclusive SNP closed, reconnected)" \
-    "is there a TCP/IP stack in this firmware" \
-    "not:SNP not closed"
-grep -qE "Start PXE over IPv4|Station IP address is" "$W/release.txt" \
-    && say "[release] the firmware's PXE ran on the NIC after the fall-through" \
-    || say "note: no PXE banner on the console (the payload's banner is the evidence)"
-
 # #172: UEFI HTTP boot, the Orion O6N's way in. The stub serves the ISO
 # with the type EDK2 mounts as a RAM disk (it also goes by `.iso`).
 mkdir -p "$W/http"
@@ -1111,6 +1090,29 @@ boot httpboot "$host_cpu" "" ok good \
     "not:no network boot" \
     "stub:POST /api/v1/synonyms/boothost/"
 kill "$HTTP_PID" 2>/dev/null || true
+# It claims (`ok`); the release boot after it 404s, which the API boots
+# (#167) need the stub left at (#175).
+
+# #68: a fall-through gives the NICs back. The firmware's own IPv4 stack is
+# on, so stormbootx's exclusive SNP open first takes the NIC from the
+# firmware's MNP; the claim 404s and the media names no fallback, so it
+# falls through, and the next boot option is the firmware's PXE on that
+# NIC, which must lease and TFTP the payload, which then starts.
+# The medium is built as the goldens are (#36): no fallback namespace, so
+# the 404 alone falls through, with nothing attached.
+BOOT_NOFALLBACK=1 BOOT_PXE=1 WAIT_FOR="is there a TCP/IP stack in this firmware" BOOT_SETTLE=3 \
+boot release "$host_cpu" "" 404 good \
+    "tcp4        : smoltcp over SNP (nic " \
+    "fallback    : none (a claim that finds nothing falls through to the local disk)" \
+    "no network boot: no claim gave this machine an image, and the media names no fallback (fallback = none)" \
+    "not:attaching   : " \
+    "not:blockio     : published on handle" \
+    "net         : 1 of 1 NIC(s) given back to the firmware (exclusive SNP closed, reconnected)" \
+    "is there a TCP/IP stack in this firmware" \
+    "not:SNP not closed"
+grep -qE "Start PXE over IPv4|Station IP address is" "$W/release.txt" \
+    && say "[release] the firmware's PXE ran on the NIC after the fall-through" \
+    || say "note: no PXE banner on the console (the payload's banner is the evidence)"
 
 # #167: stormbootx's own API and the hold, driven from the host.
 # shellcheck source=tests/api-boots.sh
