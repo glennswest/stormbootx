@@ -39,6 +39,7 @@
 //! an ESP that is already there (a directory) instead of finding and mounting
 //! a stick. Mounting needs root, which a node's boot.d task has.
 
+use std::ffi::c_char;
 use std::fmt::Write as _;
 use std::fs;
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -414,12 +415,13 @@ const MS_NOSUID: u64 = 2;
 const MS_NODEV: u64 = 4;
 const MS_NOEXEC: u64 = 8;
 
+// `c_char`: i8 on x86_64, u8 on aarch64 (#172).
 extern "C" {
     #[link_name = "mount"]
-    fn sys_mount(src: *const i8, target: *const i8, fstype: *const i8, flags: u64, data: *const u8) -> i32;
-    fn umount2(target: *const i8, flags: i32) -> i32;
+    fn sys_mount(src: *const c_char, target: *const c_char, fstype: *const c_char, flags: u64, data: *const u8) -> i32;
+    fn umount2(target: *const c_char, flags: i32) -> i32;
     fn sync();
-    fn statvfs(path: *const i8, buf: *mut StatVfs) -> i32;
+    fn statvfs(path: *const c_char, buf: *mut StatVfs) -> i32;
 }
 
 /// musl's `struct statvfs` on 64-bit Linux, with room to spare.
