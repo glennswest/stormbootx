@@ -1202,6 +1202,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   REPRO_MEDIA="stormbootx stormbootx-rustnic stormbootx-disk stormbootx-rustnic-disk" tests/repro.sh && \
   deploy/build-golden.sh stormbootx-arm64 $PWD/t/arm && \
   EFI_NAME=BOOTAA64.EFI tests/iso-layout.sh t/arm/boot/stormbootx-arm64.iso && \
+  deploy/build-golden.sh stormbootx-arm64-disk $PWD/t/armdisk && \
   tests/update-ovmf.sh $R/tcp4probe.efi'
 ```
 

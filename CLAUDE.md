@@ -56,6 +56,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   REPRO_MEDIA="stormbootx stormbootx-rustnic stormbootx-disk stormbootx-rustnic-disk" tests/repro.sh && \
   deploy/build-golden.sh stormbootx-arm64 $PWD/t/arm && \
   EFI_NAME=BOOTAA64.EFI tests/iso-layout.sh t/arm/boot/stormbootx-arm64.iso && \
+  deploy/build-golden.sh stormbootx-arm64-disk $PWD/t/armdisk && \
   tests/update-ovmf.sh $R/tcp4probe.efi'
 ```
 
@@ -104,6 +105,11 @@ ISO names an `update =`, which must be skipped as read-only (#83). With
 (#108): `prefer_media_drivers = virtio` must take a transitional and a
 modern-only virtio-net NIC from OVMF's drivers and carry the claim and the
 attach over stormnic-virtio, and without the key the firmware keeps it.
+Its `httpboot` boot (#172) has no CD: `tests/bootvar.py` writes a
+`Uri(http://…/httpboot.iso)` boot option and BootNext into OVMF's variable
+store, the firmware's HTTP boot downloads the ISO into a RAM disk, and
+stormbootx must say `media : a RAM disk`, decline the self-update for it,
+claim, attach and start the payload. Never name a stub `http.py` (#173).
 
 A boot that has not started stormbootx (its banner on serial) after
 `START_LIMIT` (60) seconds never does (#124): net-ovmf and screen-ovmf print
