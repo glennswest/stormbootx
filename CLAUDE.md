@@ -609,6 +609,28 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#172 — the Orion O6N (arm64, no BMC, PXE/TFTP broken in its
+      UEFI v1.2.1, HTTP boot works): stormbootx-arm64 from a USB stick or
+      UEFI HTTP boot, with stormnic-realtek on the arm64 media (P1, the
+      master, 2026-10-28). In progress.** Plan, this repo:
+      1. `stormbootx-arm64-disk` golden: the arm64 medium on a 64 MiB GPT
+         stick, as `stormbootx-disk` (built and layout-checked in sc-build).
+      2. `stormbootx-stick` for aarch64-unknown-linux-musl: the markers and
+         messages use `manifest::BOOTLOADER` (BOOTAA64.EFI there), the
+         family is `stormbootx-arm64`; the stick golden carries
+         `bin/stormbootx-stick-arm64` beside the x86 one.
+      3. UEFI HTTP boot serves the **ISO** (EDK2 mounts it as a RAM disk, so
+         `stormboot.conf`, drivers and `startup.nsh` come with it; a bare
+         `.efi` would have no media). Test: OVMF HTTP-boots the ISO from a
+         stub HTTP server (a URI boot option), stormbootx runs with the
+         ISO's conf, the self-update declines a RAM disk. Serving it
+         (stormcentral) and the DHCP `HTTPClient` answer (microdns) are
+         filed there.
+      4. stormnic-realtek's aarch64 build on the arm64 media with
+         `prefer_media_drivers = realtek`: **blocked**, the driver repo is
+         empty (stormnic-realtek#1, #2). The arm64 boot under AAVMF waits on
+         stormcentral#604 (the template bake).
+
 - [ ] **#166 — install from an attached release ISO, no forge, no network
       (P1, the master for the owner, 2026-10-21). Waiting on the owner
       (2026-10-28).** The reader is ready: mkfs.iso.rs v0.1.0's
