@@ -1938,6 +1938,23 @@ then.
       Pre-v0.14.0 media seen in the latest consoles: server8 rustnic v0.10.0
       and server3 rustnic v0.12.0. server4 is on v0.14.0. Whether those are
       sticks or BMC media is not in the console.
+      **2026-10-28, metal (server1, X9, its real USB stick; consoles
+      `server1-20261021-204056.log` … `-20261028-184850.log`):** stormcentral
+      promoted `stormbootx-rustnic` serial 2 = v0.29.0
+      (`golden-stormbootx-rustnic-7b965157e7f6353b`), canaries
+      `ac:1f:6b:8a:a7:9c` and `f4:52:14:84:b7:e0`, both server1's NICs.
+      stormbootx-stick (#161) verified stormcentral's signature and wrote
+      the stick (`v0.0.0 -> v0.29.0 (serial 2), 6 file(s), 659 KB`);
+      the next firmware boot printed `serial 2 on trial, start 1 of 2`,
+      `passed its trial (the engine's intent is local)`, `good:2`; every
+      boot since `current (serial 2, v0.29.0)`. Seen on metal: a
+      stormcentral-signed manifest, a real stick, a canary promotion, a
+      trial passed. **Not seen on metal:** the firmware's own fetch,
+      `.new`/`.prev` swap and restart (`selfupdate.rs`), which needs a
+      promotion newer than the stick (serial 3, e.g. v0.35.0's rustnic
+      golden, server1 a canary). Driver retire and a short medium happen
+      only when a release does that; update-ovmf covers them. Proposed
+      after #92 (the next promotion); asked the master by note.
 
 - [x] **#90 — the claim names the boot agent (P2, stormcentral#286).
       Closed 2026-10-06.** Every claim body carries `"agent":{"name":

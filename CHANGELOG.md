@@ -5,6 +5,7 @@
 
 ### 2026-10-28
 - **docs:** #166 withdrawn (the master, for the owner): an attached release ISO boots the release itself and its initramfs lays the system half (stormblock#442); the work plan says so. No code change.
+- **docs:** #89: the work plan records server1's metal self-update (stormcentral's serial 2 = v0.29.0 to a canary, written by stormbootx-stick, trial passed); the firmware's own swap still waits on a newer promotion.
 
 ## [v0.35.0] — 2026-10-28
 
