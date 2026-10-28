@@ -1123,7 +1123,10 @@ stormbootx-stick [--dry-run] [--status FILE] [--update URL] [--mac MAC]
 an ESP already mounted at DIR. The roots are for tests. The manifest, the
 rules and the keys are `src/manifest.rs` and `src/sha256.rs`, included by
 path: one implementation, the medium's. Built by `deploy/build-golden.sh
-stormbootx-stick` (golden `stormbootx-stick`: `bin/stormbootx-stick`), and
+stormbootx-stick` (golden `stormbootx-stick`: `bin/stormbootx-stick`, and
+`bin/stormbootx-stick-arm64` for an arm64 node's stick, #172: it looks for
+`BOOTAA64.EFI` and, with no `update =`, takes the `stormbootx-arm64`
+boothelper), and
 tested by `tests/stick.sh` (a test key, signed releases from a local HTTP
 stub, a directory as the ESP, and a machine of image files for the refusals).
 A stick too small to take the new set beside the old is refused for room;
@@ -1253,6 +1256,25 @@ mtools, which must be on the `PATH`.
 `ed25519-compact` at 2.6.0 (verify only, no default features, #83).
 Bump them deliberately, in their own commit.
 
+### UEFI HTTP boot (#172)
+
+A machine whose firmware's PXE is broken (the Radxa Orion O6N's UEFI v1.2.1
+leases and never sends TFTP) or that has no BMC for virtual media boots the
+medium's **ISO** over UEFI HTTP boot. Serve the golden's
+`boot/<golden>.iso` (`stormbootx-arm64` on arm64) with `Content-Type:
+application/vnd.efi-iso` (or at least a `.iso` URL), and point the
+firmware at it: a boot option with the URI (the firmware's HTTP boot setup
+page), or a DHCP server answering the `HTTPClient` class with the URL.
+EDK2 downloads the ISO into a RAM disk and starts its `BOOTX64.EFI` /
+`BOOTAA64.EFI`, so `stormboot.conf`, the drivers and `install-config.yaml`
+come with it as on any medium. A bare `.efi` would come with none, so the
+ISO, not the binary, is what is served. stormbootx says `media : a RAM
+disk (UEFI HTTP boot)` and takes the NIC from the firmware's stack as it
+always does; the self-update leaves the RAM disk alone (the served ISO is
+what updates). `tests/net-ovmf.sh`'s `httpboot` boot is this under OVMF,
+with the URI boot option written into the variable store by
+`tests/bootvar.py`.
+
 ### Getting it onto a stick
 
 Packaging only; nothing here runs at boot. What ships is a **golden** (see
@@ -1352,7 +1374,9 @@ does nothing else, for stormcentral to run into the volume it mounts:
 | `stormbootx-rustnic` | `bin/stormbootx.efi`, `boot/stormbootx-rustnic.iso` (BMC virtual media), `media/`, `media.files`, `SHA256SUMS`, `BUILD` |
 | `stormbootx-disk` | `boot/stormbootx-disk.img` (USB stick, the `stormbootx` medium), `SHA256SUMS`, `BUILD` |
 | `stormbootx-rustnic-disk` | `boot/stormbootx-rustnic-disk.img` (USB stick, the `stormbootx-rustnic` medium), `SHA256SUMS`, `BUILD` |
-| `stormbootx-arm64` | `bin/stormbootx.efi` (aarch64), `boot/stormbootx-arm64.iso` (`\EFI\BOOT\BOOTAA64.EFI`, the fw medium for arm64 hosts), `media/`, `media.files`, `SHA256SUMS`, `BUILD` (#84; not registered yet) |
+| `stormbootx-arm64` | `bin/stormbootx.efi` (aarch64), `boot/stormbootx-arm64.iso` (`\EFI\BOOT\BOOTAA64.EFI`, the fw medium for arm64 hosts), `media/`, `media.files`, `SHA256SUMS`, `BUILD` (#84; not registered yet). The ISO is also what UEFI HTTP boot serves (#172). |
+| `stormbootx-arm64-disk` | `boot/stormbootx-arm64-disk.img` (USB stick, the `stormbootx-arm64` medium: 64 MiB GPT ESP, `BOOTAA64.EFI`), `SHA256SUMS`, `BUILD` (#172; not registered yet) |
+| `stormbootx-stick` | `bin/stormbootx-stick` (x86_64), `bin/stormbootx-stick-arm64` (aarch64, #172), static musl, `SHA256SUMS`, `BUILD` |
 | `nic-drivers` | `bin/stormnic-ixgbe.efi`, `bin/stormnic-mlx4.efi`, `bin/stormnic-virtio.efi`, `STORMNIC-SOURCE.txt`, `SHA256SUMS`, `BUILD` (an EFI boothelper; no medium takes it as an input since #52, and it holds no iPXE since #91) |
 
 `media/` is the medium's files as a tree (`EFI/BOOT/BOOTX64.EFI`,

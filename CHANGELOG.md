@@ -3,6 +3,12 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-10-28
+- **feat:** UEFI HTTP boot of the medium's ISO (#172, the Orion O6N): an image loaded from a RAM disk prints `media : a RAM disk (UEFI HTTP boot)`, and the self-update declines it (the served ISO is what updates).
+- **feat:** `stormbootx-arm64-disk` golden (#172): the arm64 medium on a 64 MiB GPT USB stick (`BOOTAA64.EFI`, `update =` the `stormbootx-arm64` boothelper).
+- **feat:** `stormbootx-stick` for arm64 (#172): `bin/stormbootx-stick-arm64` (aarch64-unknown-linux-musl, linked with rust-lld) in the `stormbootx-stick` golden; it looks for `BOOTAA64.EFI` and its family is `stormbootx-arm64`.
+- **test:** `tests/net-ovmf.sh` `httpboot`: OVMF HTTP-boots the ISO from a stub (a `Uri()` boot option written by `tests/bootvar.py`), and stormbootx runs off the RAM disk, claims, attaches and starts the payload.
+
 ## [v0.34.0] — 2026-10-22
 
 ### Added
