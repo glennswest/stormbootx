@@ -1084,7 +1084,7 @@ grep -qE "Start PXE over IPv4|Station IP address is" "$W/release.txt" \
 # #172: UEFI HTTP boot, the Orion O6N's way in. The stub serves the ISO
 # with the type EDK2 mounts as a RAM disk (it also goes by `.iso`).
 mkdir -p "$W/http"
-cat > "$W/http.py" <<'PY'
+cat > "$W/httpstub.py" <<'PY'
 import http.server, os, sys
 os.chdir(sys.argv[1])
 class H(http.server.SimpleHTTPRequestHandler):
@@ -1095,7 +1095,7 @@ s = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
 open(sys.argv[3], "w").write(str(s.server_address[1]))
 s.serve_forever()
 PY
-python3 "$W/http.py" "$W/http" "$W/stub.log" "$W/http.port" &
+python3 "$W/httpstub.py" "$W/http" "$W/stub.log" "$W/http.port" &
 HTTP_PID=$!
 for _ in $(seq 50); do [[ -s "$W/http.port" ]] && break; sleep 0.1; done
 HTTP_PORT=$(cat "$W/http.port" 2>/dev/null) || die "the HTTP boot stub did not start"
