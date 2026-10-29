@@ -1953,8 +1953,11 @@ then.
       `.new`/`.prev` swap and restart (`selfupdate.rs`), which needs a
       promotion newer than the stick (serial 3, e.g. v0.35.0's rustnic
       golden, server1 a canary). Driver retire and a short medium happen
-      only when a release does that; update-ovmf covers them. Proposed
-      after #92 (the next promotion); asked the master by note.
+      only when a release does that; update-ovmf covers them. #92 went
+      `in_release`, so the queue let #89 go; now `wait-hardware` server1
+      (2026-10-28): promote `golden-stormbootx-rustnic-30f13448364db159`
+      (v0.35.0) as serial 3 to server1's MAC and boot it; pass is
+      `v0.29.0 -> v0.35.0 … restarting into it`, then `good:3`.
 
 - [x] **#90 — the claim names the boot agent (P2, stormcentral#286).
       Closed 2026-10-06.** Every claim body carries `"agent":{"name":
