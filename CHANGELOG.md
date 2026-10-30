@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-10-30
+- **docs:** refreshed from the code since 2026-10-23: CLAUDE.md's module map names `config::boot_from_ram_disk` (UEFI HTTP boot, #172) and the arm64 stick updater; README already carried v0.35.0's HTTP boot, arm64 disk and stick goldens (checked against `src/`, `deploy/build-golden.sh`). No promise of the docs found that the code does not keep.
+
 ### 2026-10-28
 - **docs:** #166 withdrawn (the master, for the owner): an attached release ISO boots the release itself and its initramfs lays the system half (stormblock#442); the work plan says so. No code change.
 - **docs:** #89: the work plan records server1's metal self-update (stormcentral's serial 2 = v0.29.0 to a canary, written by stormbootx-stick, trial passed); the firmware's own swap still waits on a newer promotion.

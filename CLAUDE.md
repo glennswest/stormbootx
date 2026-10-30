@@ -284,9 +284,9 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/espfs.rs` | a read-only `EFI_SIMPLE_FILE_SYSTEM` over `esp.rs` on the bridged ESP's partition handle (#42), so the bootloader opens its other files; `withdraw` before the disk goes |
 | `src/espprobe.rs` | third binary: who can read a 4K ESP; booted under OVMF by `tests/esp-ovmf.sh` |
 | `src/sha256.rs` | the digest, because `EFI_HASH2` is optional |
-| `src/config.rs` | the target, read from the media rather than compiled in; `local.conf` read before `stormboot.conf` (#83) |
+| `src/config.rs` | the target, read from the media rather than compiled in; `local.conf` read before `stormboot.conf` (#83); `boot_from_ram_disk` (#172: the image's volume has a RAM-disk device-path node, i.e. UEFI HTTP boot of the ISO; `media : a RAM disk (UEFI HTTP boot): the downloaded ISO, gone at reset`, and `selfupdate` declines it) |
 | `src/shell.rs` | timed, never-forced failure console before the fall-through |
-| `crates/stormbootx-stick` | the node's stick updater (#151): static musl Linux; `src/manifest.rs` and `src/sha256.rs` by path; find (sysfs, refusals), verify, decide, apply as `selfupdate.rs`; `tests/stick.sh` |
+| `crates/stormbootx-stick` | the node's stick updater (#151): static musl Linux; `src/manifest.rs` and `src/sha256.rs` by path; find (sysfs, refusals), verify, decide, apply as `selfupdate.rs`; built for x86_64 and, since #172, aarch64 (`bin/stormbootx-stick-arm64`, `BOOTAA64.EFI`, family `stormbootx-arm64`); `tests/stick.sh` |
 | `src/ui.rs` | the boot panel (#144): its own `ConOut` in the system table; every line to the serial consoles and F2, the steps drawn on the screen consoles; `end` hands the screen back |
 | `src/connectx.rs` | which Mellanox ids have a FEC to read, which are ConnectX-3s with none (#25), and the scan's closing line (core-only, host-tested) |
 | `src/mlxfec.rs` | ConnectX FEC NV read; write only on a `fec =` recovery stick |
