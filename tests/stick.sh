@@ -37,7 +37,7 @@ die() { say "FAIL: $*"; exit 1; }
 for c in cargo openssl python3; do command -v "$c" >/dev/null || die "$c is not installed"; done
 
 T=$(mktemp -d "${TMPDIR:-/tmp}/stick.XXXXXX")
-trap 'kill "${srv:-0}" 2>/dev/null || true; rm -rf "$T"' EXIT
+trap '{ [[ -z "${srv:-}" ]] || kill "$srv" 2>/dev/null || true; }; rm -rf "$T"' EXIT
 TARGET=x86_64-unknown-linux-musl
 rustup target list --installed 2>/dev/null | grep -qx "$TARGET" || rustup target add "$TARGET" >/dev/null
 
