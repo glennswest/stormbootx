@@ -615,6 +615,24 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#180 — server7 (X9, 12.58) at the EFI Shell after its warm reset (P1,
+      the operator, 2026-11-03). In progress.** From the console
+      (`server7-20261103-200951.log`): the install booted the network image
+      and laid the disk with no second POST, so the 21:07Z warm reset was the
+      **first firmware boot** on `intent local`: not cold against warm. The
+      stick (fs1) is v0.24.0, before #145, so it returned to the shell;
+      `startup.nsh`'s loop then went on and started **a second agent, v0.10.0
+      from the BMC's virtual CD (fs2)**, which returned too. Why #83 did not
+      reach it: v0.24.0's own updater has #148's bug (`no DNS server to look
+      up`), and the node's stormbootx-stick 0.34.0 was told `serial 2 is for
+      its 2 canaries only` (#92's second promotion has not happened). Plan,
+      this repo: (1) `startup.nsh` starts one medium only, once one came
+      back; shell-ovmf `SECOND_CD=1`, failing first on the old script;
+      (2) a `stormbootx <version> (<commit>)` line on the screen after the
+      panel is cleared, on the return and on the hand-over to the local disk;
+      (3) release, goldens. Elsewhere: the master widens the promotion and
+      takes v0.10.0 off server7's BMC (`stormcentral note`).
+
 - [ ] **#172 — the Orion O6N (arm64, no BMC, PXE/TFTP broken in its
       UEFI v1.2.1, HTTP boot works): stormbootx-arm64 from a USB stick or
       UEFI HTTP boot, with stormnic-realtek on the arm64 media (P1, the
