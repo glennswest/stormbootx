@@ -26,8 +26,10 @@
 # network) and must start that file itself rather than return to the shell.
 #
 # SECOND_CD=1 (#180) is server7's layout: a second stormbootx medium mapped
-# after the first (its stick and a BMC's old virtual CD). The first returns
-# (no network, no local disk) and the script must stop there: exactly one
+# after the first (its stick and a BMC's old virtual CD). The shell's disk is
+# removable here: fixed, it would be the "local disk" stormbootx starts, and
+# the shell would run the script again. The first medium returns (no network,
+# no local disk) and the script must stop there: exactly one
 # `starting stormbootx from`, then `back at the shell`. SCREEN_PNG=1 prints
 # the screen at that moment as a base64 PNG line (`shell-ovmf: png …`).
 #
@@ -107,7 +109,7 @@ cd-last)  CD_ADDR=0x6; SH_ADDR=0x4 ;;
 *) die "LAYOUT: cd-first or cd-last" ;;
 esac
 
-if [[ -n "${LOCAL_EFI:-}" ]]; then
+if [[ -n "${LOCAL_EFI:-}${SECOND_CD:-}" ]]; then
     # Removable as a stick is, without USB: a USB stick was not always
     # enumerated before BDS looked for it (Boot0002 Not Found).
     shdev=(-device virtio-scsi-pci,id=shscsi,addr="$SH_ADDR"
