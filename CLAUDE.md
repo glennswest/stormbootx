@@ -636,6 +636,18 @@ then.
       panel is cleared, on the return and on the hand-over to the local disk;
       (3) release, goldens. Elsewhere: the master widens the promotion and
       takes v0.10.0 off server7's BMC (`stormcentral note`).
+      **State (2026-11-03): this repo's side done, released v0.35.1 (4c8cc88);
+      goldens requested.** Negative control on the old script (`SC_BUILD_EXPECT_FAIL`):
+      `startup.nsh started stormbootx 2 time(s)`, fs1 then fs2. sc-build of
+      72c4eb0: no warnings, the full suite; `1 time(s)` under both shells, and
+      a screendump at the shell showing `stormbootx 0.35.0: returning to what
+      started it (nothing booted)` above `back at the shell`. The tag built
+      `--locked`: shell-ovmf `SECOND_CD` and `LOCAL_EFI`, stick.sh, the
+      rustnic-disk golden. #181 was this work's own trap (`kill "${qemu:-0}"`
+      is `kill 0` with `qemu` unset: the job's process group, reported as a
+      lost job). **Left:** the master's promotion to every medium and server7
+      booting through it (`wait-hardware`). **Not run:** Aptio 4's own shell
+      on the new script (`set -v`; if it refuses, the old behaviour, by design).
 
 - [ ] **#172 — the Orion O6N (arm64, no BMC, PXE/TFTP broken in its
       UEFI v1.2.1, HTTP boot works): stormbootx-arm64 from a USB stick or
