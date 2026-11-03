@@ -58,7 +58,7 @@ done
 [[ -s "$ISO" ]] || die "no ISO at $ISO"
 
 W=$(mktemp -d "${TMPDIR:-/tmp}/shell-ovmf.XXXXXX")
-trap 'kill "${qemu:-0}" 2>/dev/null || true; rm -rf "$W"' EXIT
+trap '{ [[ -z "${qemu:-}" ]] || kill "$qemu" 2>/dev/null || true; }; rm -rf "$W"' EXIT
 
 case "$SHELL_ARG" in
 old)

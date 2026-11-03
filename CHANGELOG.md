@@ -6,6 +6,7 @@
 ### 2026-11-03
 - **fix:** `startup.nsh` starts one medium only (#180). When a stormbootx returned, its `for` loop went on to the next `fsN`: on server7 the stick's v0.24.0 fell through, then a BMC's v0.10.0 CD started and fell through too. A shell with no `set -v` behaves as before.
 - **feat:** stormbootx's last line on the screen names the build (#180): `stormbootx <version> (<commit>): handing over to the local disk's bootloader` or `…: returning to what started it (nothing booted)`. Clearing the panel removed its header, and a log's banner has scrolled off by then.
+- **fix:** `tests/shell-ovmf.sh`, `tests/screen-ovmf.sh`: the exit trap never `kill 0`s: with `qemu` unset that killed the job's whole process group, which the build VM reports as a lost job (#181, from #180's first version of the trap in shell-ovmf; screen-ovmf had the same pattern unreached).
 - **test:** `tests/shell-ovmf.sh` `SECOND_CD=1` (a second medium mapped after the first) and `SCREEN_PNG=1`.
 
 ### 2026-10-30

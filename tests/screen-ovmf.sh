@@ -34,7 +34,7 @@ command -v python3 >/dev/null || die "python3 is not installed"
 [[ -s "$ISO" ]] || die "no ISO at $ISO"
 
 W=$(mktemp -d "${TMPDIR:-/tmp}/screen-ovmf.XXXXXX")
-trap 'kill "${qemu:-0}" 2>/dev/null || true; rm -rf "$W"' EXIT
+trap '{ [[ -z "${qemu:-}" ]] || kill "$qemu" 2>/dev/null || true; }; rm -rf "$W"' EXIT
 accel=tcg
 [[ -w /dev/kvm ]] && accel=kvm
 S=(python3 "$HERE/screen.py")
