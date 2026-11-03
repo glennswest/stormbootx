@@ -3,6 +3,15 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+## [v0.35.1] — 2026-11-03
+
+### Fixed
+- `startup.nsh` starts one medium only: a stormbootx that returned is no longer followed by the next `fsN`'s (#180).
+- The tests' exit trap never kills its own process group (#181).
+
+### Changed
+- stormbootx's last line on the screen names the build (#180).
+
 ### 2026-11-03
 - **fix:** `startup.nsh` starts one medium only (#180). When a stormbootx returned, its `for` loop went on to the next `fsN`: on server7 the stick's v0.24.0 fell through, then a BMC's v0.10.0 CD started and fell through too. A shell with no `set -v` behaves as before.
 - **feat:** stormbootx's last line on the screen names the build (#180): `stormbootx <version> (<commit>): handing over to the local disk's bootloader` or `…: returning to what started it (nothing booted)`. Clearing the panel removed its header, and a log's banner has scrolled off by then.
