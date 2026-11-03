@@ -25,6 +25,12 @@
 # \EFI\BOOT\BOOTX64.EFI, the installed disk. stormbootx falls through (no
 # network) and must start that file itself rather than return to the shell.
 #
+# SECOND_CD=1 (#180) is server7's layout: a second stormbootx medium mapped
+# after the first (its stick and a BMC's old virtual CD). The first returns
+# (no network, no local disk) and the script must stop there: exactly one
+# `starting stormbootx from`, then `back at the shell`. SCREEN_PNG=1 prints
+# the screen at that moment as a base64 PNG line (`shell-ovmf: png …`).
+#
 # Needs qemu-system-x86_64, OVMF, mkfs.fat, mtools, sfdisk and curl (old).
 # Unprivileged; everything is under $TMPDIR and deleted on exit.
 set -euo pipefail
@@ -50,7 +56,7 @@ done
 [[ -s "$ISO" ]] || die "no ISO at $ISO"
 
 W=$(mktemp -d "${TMPDIR:-/tmp}/shell-ovmf.XXXXXX")
-trap 'rm -rf "$W"' EXIT
+trap 'kill "${qemu:-0}" 2>/dev/null || true; rm -rf "$W"' EXIT
 
 case "$SHELL_ARG" in
 old)
@@ -114,19 +120,48 @@ cp "$OVMF_VARS" "$W/vars.fd"
 accel=tcg
 [[ -w /dev/kvm ]] && accel=kvm
 say "booting $(basename "$SHELL_EFI") ($SHELL_ARG) with $(basename "$ISO"), $LAYOUT, under OVMF ($accel, up to ${LIMIT}s)"
-timeout "$LIMIT" qemu-system-x86_64 -machine q35,accel="$accel" -m 512 \
-    -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
-    -drive if=pflash,format=raw,file="$W/vars.fd" \
-    -device virtio-scsi-pci,id=scsi,addr="$CD_ADDR" \
-    -drive if=none,id=cd,media=cdrom,format=raw,readonly=on,file="$ISO" \
-    -device scsi-cd,drive=cd,bus=scsi.0,bootindex=1 \
-    -drive if=none,id=sh,format=raw,file="$W/shell.img" \
-    "${shdev[@]}" "${ldisk[@]}" \
-    -net none \
-    -display none -serial file:"$W/serial.log" -no-reboot || true
+qargs=(-machine q35,accel="$accel" -m 512
+    -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE"
+    -drive if=pflash,format=raw,file="$W/vars.fd"
+    -device virtio-scsi-pci,id=scsi,addr="$CD_ADDR"
+    -drive if=none,id=cd,media=cdrom,format=raw,readonly=on,file="$ISO"
+    -device scsi-cd,drive=cd,bus=scsi.0,scsi-id=0,bootindex=1
+    -drive if=none,id=sh,format=raw,file="$W/shell.img"
+    "${shdev[@]}" "${ldisk[@]}"
+    -net none
+    -display none -serial file:"$W/serial.log" -no-reboot)
+if [[ -n "${SECOND_CD:-}" ]]; then
+    # The script's last line ends the wait: everything that was going to
+    # start has started and returned.
+    qemu-system-x86_64 "${qargs[@]}" \
+        -drive if=none,id=cd2,media=cdrom,format=raw,readonly=on,file="$ISO" \
+        -device scsi-cd,drive=cd2,bus=scsi.0,scsi-id=1,bootindex=3 \
+        -monitor unix:"$W/mon",server,nowait &
+    qemu=$!
+    t=0
+    until grep -q "startup.nsh: back at the shell" "$W/serial.log" 2>/dev/null; do
+        kill -0 "$qemu" 2>/dev/null || break
+        (( t < LIMIT )) || break
+        sleep 1; t=$((t + 1))
+    done
+    sleep 2
+    if [[ -n "${SCREEN_PNG:-}" ]]; then
+        python3 "$(dirname "$0")/screen.py" dump "$W/mon" "$W/end.ppm"
+        say "png end $(python3 "$(dirname "$0")/screen.py" png "$W/end.ppm")"
+    fi
+    kill "$qemu" 2>/dev/null || true; wait "$qemu" 2>/dev/null || true
+else
+    timeout "$LIMIT" qemu-system-x86_64 "${qargs[@]}" || true
+fi
 
 tr -d '\r' < "$W/serial.log" | sed 's/\x1b\[[0-9;?]*[A-Za-z]//g' > "$W/console.txt"
 fail=0
+if [[ -n "${SECOND_CD:-}" ]]; then
+    starts=$(grep -cF "startup.nsh: starting stormbootx from" "$W/console.txt" || true)
+    say "startup.nsh started stormbootx $starts time(s)"
+    [[ $starts == 1 ]] || { say "it must start one medium only"; fail=1; }
+    set -- "$@" "startup.nsh: back at the shell"
+fi
 for want in "startup.nsh: starting stormbootx from" "$@"; do
     if grep -qF -- "$want" "$W/console.txt"; then
         say "found: $want"
