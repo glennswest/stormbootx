@@ -1239,5 +1239,6 @@ fn fall_through(err: &str, local: Local) -> Status {
     // and a ConOut that does not point into this image.
     ui::end();
     netlog::end();
+    ui::end_saying("returning to what started it (nothing booted)");
     Status::ABORTED
 }

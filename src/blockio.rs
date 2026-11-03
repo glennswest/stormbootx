@@ -376,7 +376,7 @@ pub fn boot_local(reader: EspReader) -> Result<(), String> {
     // No espfs here: it would take the firmware's FAT off a local partition
     // for good, and stormuefi opens nothing on its ESP.
     let esp_path = crate::espboot::partition_path(disk_path, &loader.partition)?;
-    crate::ui::end();
+    crate::ui::end_saying("handing over to the local disk's bootloader");
     crate::espboot::start(&esp_path, &loader, "the local disk (read by stormbootx)")
 }
 
@@ -415,7 +415,7 @@ fn local_firmware_boot(disk_path: &DevicePath, number: u32) -> Loaded {
             Ok(loaded) => {
                 uefi::println!("boot        : starting {} from the local disk", crate::espboot::BOOTLOADER);
                 // The local OS's bootloader gets the screen (#144).
-                crate::ui::end();
+                crate::ui::end_saying("handing over to the local disk's bootloader");
                 Loaded::Ran(match boot::start_image(loaded) {
                     Ok(()) => String::from("the local disk's bootloader exited"),
                     Err(e) => format!("the local disk's bootloader returned {e:?}"),

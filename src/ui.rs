@@ -208,10 +208,7 @@ pub fn begin() {
     boot::stall(core::time::Duration::from_millis(10));
     let ticks_per_ms = ((crate::entropy::ticks() - t0) / 10).max(1);
 
-    let title = match option_env!("STORMBOOTX_BUILD") {
-        Some(b) => format!("stormbootx {} ({b})", env!("CARGO_PKG_VERSION")),
-        None => format!("stormbootx {}", env!("CARGO_PKG_VERSION")),
-    };
+    let title = build();
     let line = || Line { state: State::Pending, detail: String::new(), start: 0, end: 0 };
     let mut u = Ui {
         st,
@@ -321,6 +318,23 @@ pub fn end() {
     if let Some(u) = ui() {
         u.screens.clear();
     }
+}
+
+/// This binary's version and commit.
+fn build() -> String {
+    match option_env!("STORMBOOTX_BUILD") {
+        Some(b) => format!("stormbootx {} ({b})", env!("CARGO_PKG_VERSION")),
+        None => format!("stormbootx {}", env!("CARGO_PKG_VERSION")),
+    }
+}
+
+/// `end`, then one line naming this build on the screen it hands over (#180).
+/// `end` clears the panel and its header, and a log's banner has scrolled off
+/// by now, so what is on the screen afterwards would not say which stormbootx
+/// ran: a machine can hold several (a stick, a BMC's old CD).
+pub fn end_saying(what: &str) {
+    end();
+    uefi::println!("{}: {what}", build());
 }
 
 fn now(u: &Ui) -> u64 {

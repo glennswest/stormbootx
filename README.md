@@ -960,6 +960,11 @@ ends, and a `local` intent end in `fall_through`:
 7. If nothing started, or what started came back, it returns `EFI_ABORTED`,
    so the boot manager (or the shell) tries the next thing.
 
+The panel is cleared when stormbootx hands over, so its last line on the
+screen names the build (#180): `stormbootx <version> (<commit>): handing over
+to the local disk's bootloader`, or `…: returning to what started it (nothing
+booted)`.
+
 The console (`src/shell.rs`):
 
 | Command | Does |
@@ -1196,7 +1201,9 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   scripts/build-boot-agent.sh --iso --binary $R/stormbootx.efi --media shelltest --output $PWD/t/s.iso && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso old "media       : shelltest" && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso ovmf "media       : shelltest" && \
-  LOCAL_EFI=$R/tcp4probe.efi LIMIT=120 tests/shell-ovmf.sh t/s.iso old "from the local disk" "EFI\BOOT lists" && \
+  LOCAL_EFI=$R/tcp4probe.efi LIMIT=120 tests/shell-ovmf.sh t/s.iso old "from the local disk" "handing over to the local disk" "EFI\BOOT lists" && \
+  SECOND_CD=1 SCREEN_PNG=1 LIMIT=180 tests/shell-ovmf.sh t/s.iso old "returning to what started it" && \
+  SECOND_CD=1 LIMIT=180 tests/shell-ovmf.sh t/s.iso ovmf "returning to what started it" && \
   tests/screen-ovmf.sh t/s.iso && \
   tests/stick.sh && deploy/build-golden.sh stormbootx-stick $PWD/t/stick && \
   REPRO_MEDIA="stormbootx stormbootx-rustnic stormbootx-disk stormbootx-rustnic-disk" tests/repro.sh && \
@@ -1295,7 +1302,10 @@ firmware's EFI Shell, which runs it. It looks through `fs0`..`fs7` for the
 volume carrying both `\EFI\BOOT\BOOTX64.EFI` and
 `\stormboot\stormboot.conf`, and starts that `BOOTX64.EFI`. The second file
 is the mark: a local disk's ESP has a `BOOTX64.EFI` too (stormuefi on an
-installed disk, a stale Windows), never a `stormboot.conf`. The script uses
+installed disk, a stale Windows), never a `stormboot.conf`. It starts one
+medium only (#180): once a stormbootx has returned, the script does not go on
+to the next `fsN` (server7's stick returned, then a BMC's v0.10.0 CD started).
+The script uses
 only what the EDK shell 2.31 (EFI 1.10 mode, what AMI Aptio 4 carries) and
 Shell 2.x both take. `tests/shell-ovmf.sh ISO old|ovmf 'LINE' …` boots an
 ISO this way under OVMF, with a decoy ESP mapped before the CD. `old` is

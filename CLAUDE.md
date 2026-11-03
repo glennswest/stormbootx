@@ -48,7 +48,9 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   scripts/build-boot-agent.sh --iso --binary $R/stormbootx.efi --media shelltest --output $PWD/t/s.iso && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso old "media       : shelltest" && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso ovmf "media       : shelltest" && \
-  LOCAL_EFI=$R/tcp4probe.efi LIMIT=120 tests/shell-ovmf.sh t/s.iso old "from the local disk" "EFI\BOOT lists" && \
+  LOCAL_EFI=$R/tcp4probe.efi LIMIT=120 tests/shell-ovmf.sh t/s.iso old "from the local disk" "handing over to the local disk" "EFI\BOOT lists" && \
+  SECOND_CD=1 SCREEN_PNG=1 LIMIT=180 tests/shell-ovmf.sh t/s.iso old "returning to what started it" && \
+  SECOND_CD=1 LIMIT=180 tests/shell-ovmf.sh t/s.iso ovmf "returning to what started it" && \
   tests/screen-ovmf.sh t/s.iso && \
   tests/stick.sh && deploy/build-golden.sh stormbootx-stick $PWD/t/stick && \
   deploy/build-golden.sh stormbootx $PWD/t/fw && scripts/build-stormboot-serve.sh $PWD/t/serve && \
@@ -131,6 +133,8 @@ CD carries a bootindex after the shell's; without it the CD is never mapped.
 With `LOCAL_EFI=FILE` (#145) the shell sits on a USB stick and a fixed disk
 carries FILE as its `BOOTX64.EFI`: the fall-through must start it (the
 command uses tcp4probe, whose `boot fs : \EFI\BOOT lists …` proves it ran).
+With `SECOND_CD=1` (#180) a second medium is mapped after the first, and
+`startup.nsh` must start only one; `SCREEN_PNG=1` prints the screen as a PNG.
 
 `tests/stick.sh` (#151) builds `stormbootx-stick` for
 `x86_64-unknown-linux-musl` with a test key and runs it against signed

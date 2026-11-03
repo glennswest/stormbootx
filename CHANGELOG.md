@@ -3,6 +3,11 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-03
+- **fix:** `startup.nsh` starts one medium only (#180). When a stormbootx returned, its `for` loop went on to the next `fsN`: on server7 the stick's v0.24.0 fell through, then a BMC's v0.10.0 CD started and fell through too. A shell with no `set -v` behaves as before.
+- **feat:** stormbootx's last line on the screen names the build (#180): `stormbootx <version> (<commit>): handing over to the local disk's bootloader` or `…: returning to what started it (nothing booted)`. Clearing the panel removed its header, and a log's banner has scrolled off by then.
+- **test:** `tests/shell-ovmf.sh` `SECOND_CD=1` (a second medium mapped after the first) and `SCREEN_PNG=1`.
+
 ### 2026-10-30
 - **docs:** refreshed from the code since 2026-10-23: CLAUDE.md's module map names `config::boot_from_ram_disk` (UEFI HTTP boot, #172) and the arm64 stick updater; README already carried v0.35.0's HTTP boot, arm64 disk and stick goldens (checked against `src/`, `deploy/build-golden.sh`). No promise of the docs found that the code does not keep.
 
