@@ -55,6 +55,7 @@ use uefi::Identify;
 use uefi::boot::{self, OpenProtocolAttributes, OpenProtocolParams, SearchType};
 use uefi::proto::pci::PciIoAddress;
 use uefi::proto::pci::root_bridge::PciRootBridgeIo;
+use uefi_raw::protocol::pci::root_bridge::PciRootBridgeIoProtocol;
 
 use crate::connectx;
 use crate::entropy;
@@ -789,7 +790,14 @@ pub fn apply(want: Option<Fec>) -> Summary {
         }) else {
             continue;
         };
-        for (addr, device) in mellanox_functions(&mut bridge) {
+        let (first, last) = match buses_of(&bridge) {
+            Some(r) => (r.0, format!("{:02x}", r.1)),
+            None => (0, String::from("?")),
+        };
+        let (functions, mellanox) = scan(&mut bridge, first);
+        // What was looked at (#186): "no ConnectX" means nothing without it.
+        uefi::println!("  root bridge buses {first:02x}-{last}: {functions} function(s)");
+        for (addr, device) in mellanox {
             seen += 1;
             let loc = format!("{:02x}:{:02x}.{}", addr.bus, addr.dev, addr.fun);
             let model = match connectx::kind(device) {
@@ -861,7 +869,8 @@ pub fn connectx_devfns() -> Vec<(u8, u8)> {
         }) else {
             continue;
         };
-        for (addr, device) in mellanox_functions(&mut bridge) {
+        let first = first_bus(&bridge);
+        for (addr, device) in scan(&mut bridge, first).1 {
             if matches!(connectx::kind(device), connectx::Kind::Fec(_)) {
                 out.push((addr.dev, addr.fun));
             }
@@ -969,55 +978,49 @@ fn addr_device(br: &mut PciRootBridgeIo, addr: PciIoAddress) -> u16 {
     br.pci().read_one::<u32>(a).map(|v| (v >> 16) as u16).unwrap_or(0)
 }
 
-/// Every Mellanox function on this root bridge, as (address, device id).
-///
-/// The same discovered walk as the shell's `pci`: start at bus 0, follow
-/// bridges, never renumber anything.
-fn mellanox_functions(br: &mut PciRootBridgeIo) -> Vec<(PciIoAddress, u16)> {
-    let mut out = Vec::new();
-    let mut buses: Vec<u8> = vec![0];
-    let mut seen: Vec<u8> = Vec::new();
-    while let Some(bus) = buses.pop() {
-        if seen.contains(&bus) {
-            continue;
-        }
-        seen.push(bus);
-        for dev in 0..32u8 {
-            for fun in 0..8u8 {
-                let mut addr = PciIoAddress::new(bus, dev, fun);
-                addr.reg = 0;
-                let Ok(id) = br.pci().read_one::<u32>(addr) else { continue };
-                let vendor = (id & 0xffff) as u16;
-                if vendor == 0xffff || vendor == 0 {
-                    if fun == 0 {
-                        break;
-                    }
-                    continue;
-                }
-                addr.reg = 0x0c;
-                let header = br
-                    .pci()
-                    .read_one::<u32>(addr)
-                    .map(|v| ((v >> 16) & 0xff) as u8)
-                    .unwrap_or(0);
-                if (header & 0x7f) == 0x01 {
-                    addr.reg = 0x18;
-                    if let Ok(v) = br.pci().read_one::<u32>(addr) {
-                        let secondary = ((v >> 8) & 0xff) as u8;
-                        if secondary != 0 {
-                            buses.push(secondary);
-                        }
-                    }
-                }
-                if vendor == VENDOR_MELLANOX {
-                    addr.reg = 0;
-                    out.push((addr, (id >> 16) as u16));
-                }
-                if fun == 0 && (header & 0x80) == 0 {
-                    break;
-                }
-            }
-        }
+/// The first and last bus of this root bridge, from its `Configuration()`
+/// (#186). Not the uefi crate's `configuration()`: its parser panics on a tag it
+/// doesn't know, and this is on every machine's boot path.
+fn buses_of(br: &PciRootBridgeIo) -> Option<(u8, u8)> {
+    let raw = core::ptr::from_ref(br).cast::<PciRootBridgeIoProtocol>();
+    let mut table: *const core::ffi::c_void = core::ptr::null();
+    // SAFETY: `PciRootBridgeIo` is `repr(transparent)` over the raw protocol,
+    // and the firmware owns the table it hands back.
+    let status = unsafe { ((*raw).configuration)(raw, &mut table) };
+    if status != uefi_raw::Status::SUCCESS || table.is_null() {
+        return None;
     }
-    out
+    let table = table.cast::<u8>();
+    // SAFETY: `bus_range` stops at the table's end tag.
+    connectx::bus_range(|i| unsafe { table.add(i).read_unaligned() })
+}
+
+/// Where a walk of this root bridge starts: its first bus, else 0 when the
+/// firmware names no range.
+pub fn first_bus(br: &PciRootBridgeIo) -> u8 {
+    buses_of(br).map_or(0, |r| r.0)
+}
+
+/// How many functions this root bridge has from `first` on, and its Mellanox
+/// ones as (address, device id).
+fn scan(br: &mut PciRootBridgeIo, first: u8) -> (usize, Vec<(PciIoAddress, u16)>) {
+    let mut functions = 0;
+    let mut out = Vec::new();
+    connectx::walk(
+        first,
+        |bus, dev, fun, reg| {
+            let mut a = PciIoAddress::new(bus, dev, fun);
+            a.reg = reg;
+            br.pci().read_one::<u32>(a).ok()
+        },
+        |bus, dev, fun, vendor, device| {
+            functions += 1;
+            if vendor == VENDOR_MELLANOX {
+                let mut a = PciIoAddress::new(bus, dev, fun);
+                a.reg = 0;
+                out.push((a, device));
+            }
+        },
+    );
+    (functions, out)
 }

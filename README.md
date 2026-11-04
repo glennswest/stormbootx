@@ -175,7 +175,10 @@ console; a machine with no screen console gets it anyway.
    writes that value and warm-resets once. The next boot then finds nothing to
    change. A ConnectX-3 or -3 Pro (the X9 blades', 10/40G) has no FEC setting
    and says `ConnectX-3 (15b3:1003): no FEC to report`. "no ConnectX on the
-   bus" means no Mellanox function at all (#25, `src/connectx.rs`). The
+   bus" means no Mellanox function at all (#25, `src/connectx.rs`), and a
+   `root bridge buses 80-bf: N function(s)` line per bridge says what was
+   looked at: each walk starts at its bridge's first bus, from `Configuration()`
+   (#186; an EPYC's bridges start at 00, 40, 80 and c0). The
    step never holds the boot (#138): it has 15 s of real time (60 s for a
    `fec =` write), every wait in it checks that, and a card still being read
    when it runs out says `gave up after N s: the FEC step's 15.0 s budget is

@@ -71,6 +71,9 @@
 #      and must say `1 of 1 NIC(s) given back`; the next boot option, the
 #      firmware's PXE on the same NIC, must then lease from slirp and start
 #      the payload over TFTP.
+#   (#186) `pxb`: a second root bridge at bus 0x40; the FEC step's walk must start
+#      there and count its root port and the device behind it. QEMU has no
+#      ConnectX, so the Mellanox match itself is connectx.rs's host test.
 #   (#172) `httpboot`, before 7: UEFI HTTP boot (#172: the Orion O6N's PXE never sends TFTP): no CD;
 #      the firmware's IPv4 stack on, a boot option `Uri(http://…/x.iso)`
 #      written into the variable store (tests/bootvar.py) and an HTTP stub
@@ -613,6 +616,9 @@ BOOT_CONF=
 # stub; `off` sends nothing).
 BOOT_SYSLOG=
 BOOT_NICDEV=
+# BOOT_PXB=1 (#186): a second PCI root bridge, its buses from 0x40 as an EPYC's
+# are, with a root port and one device behind it.
+BOOT_PXB=
 # BOOT_HTTP=iso (#172): no CD; the ISO is HTTP-booted by the firmware from
 # the HTTP stub, by a URI boot option in the variable store. BOOT_HTTP=img
 # (#185): the GPT + FAT32 stick image instead.
@@ -675,6 +681,8 @@ boot() {
         extra+=(-device virtio-rng-pci)
     fi
     [[ $name == shipped ]] && extra+=("${LOCAL_DRIVES[@]}")
+    [[ -n $BOOT_PXB ]] && extra+=(-device pxb-pcie,id=pxb1,bus_nr=64,bus=pcie.0
+        -device pcie-root-port,id=rp40,bus=pxb1,chassis=40,slot=0 -device virtio-rng-pci,bus=rp40)
     [[ -n "$BOOT_DISK" ]] && extra+=(-device virtio-scsi-pci,id=scsi0
         -drive if=none,id=d0,format=raw,file="$BOOT_DISK" -device scsi-hd,drive=d0,bus=scsi0.0,bootindex=2)
     say "[$name] booting under OVMF ($accel, cpu $cpu, rng ${rng:-as shipped}, up to ${LIMIT}s)"
@@ -1156,6 +1164,14 @@ for kb in 64 128 192 256; do
         die "[ic$kb] neither reassembled nor refused: $(grep -F 'install cfg' "$W/ic$kb.txt" | tr '\n' ' ')"
     fi
 done
+
+# #186: firmware refuses a config read outside a root bridge's bus range, so a
+# walk from bus 0 sees 0 functions here.
+BOOT_PXB=1 \
+boot pxb "$host_cpu" "" 404 good \
+    "  root bridge buses 00-" \
+    "  root bridge buses 40-ff: 2 function(s)" \
+    "  no ConnectX on the bus"
 
 # #172: UEFI HTTP boot, the Orion O6N's way in. The stub serves the ISO
 # with the type EDK2 mounts as a RAM disk (it also goes by `.iso`).

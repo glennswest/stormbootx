@@ -226,7 +226,8 @@ claim, its SMBIOS parse (BMC, CPU, memory) and its JSON under the engine's
 16 KiB; it alone carries `extern crate alloc` (it builds strings).
 `src/connectx.rs` (#25) is the tenth: which Mellanox ids `mlxfec` reads
 FEC from, which are ConnectX-3s with none, when "no ConnectX" is true, and
-which ids `prefer_media_drivers = mlx5` takes (#131).
+which ids `prefer_media_drivers = mlx5` takes (#131), and where to look (#186: a root
+bridge's bus range from its `Configuration()` table, and the walk from it).
 `src/command.rs` (#167) is the eleventh: the signed command's text and body,
 the verbs, and the API's HTTP request parser; `extern crate alloc` like
 `inventory.rs`. The signature check is `api.rs`'s (ed25519-compact).
@@ -645,6 +646,21 @@ pushed, but there is no `chore(release)`, tag or `component build` before
 then.
 
 ### Open, no external blocker
+
+- [ ] **#186 — `no ConnectX on the bus` on the R6415's ConnectX-4 Lx (P1, the
+      master, 2026-11-04). In progress.** Cause (forge1's console): the card is
+      at `84:00.x` under a root bridge whose buses start at 0x80 (EPYC: 00, 40,
+      80, c0), and `mlxfec` starts each bridge's walk at bus 0, which EDK2
+      refuses outside a bridge's range. Not the id list: 1015 is known. Plan:
+      read each bridge's bus range from `Configuration()` (our own parser in
+      `connectx.rs`: uefi 0.39's panics on a tag it doesn't know, and a panic
+      here would stop the boot), walk from there (`connectx::walk`, host-tested
+      on the R6415's shape), the shell's `pci` too, and a line per bridge on the
+      console. Test: net-ovmf `pxb`, a `pxb-pcie` root at bus 0x40. **The issue's
+      other half is not done by this:** it asks for "the same FEC pin as on the
+      R230", and there is none: the boot path only reads (self-heal off since
+      0.3.6, the load-bearing facts). A boot-time write is the owner's to
+      decide; asked on #186 once the finder is out.
 
 - [x] **#185 — the Dell R6415 (BIOS 1.12.2) refuses the hybrid ISO on USB and
       HTTP boot; a hand-built GPT + FAT32 stick boots (P1, the master,

@@ -242,10 +242,11 @@ fn pci(args: &[&str]) {
         let Ok(mut bridge) = boot::open_protocol_exclusive::<PciRootBridgeIo>(*h) else {
             continue;
         };
-        // Buses are discovered rather than swept: start at 0 and add whatever
-        // sits behind each bridge. A blind 0..=255 sweep is 65k config reads
-        // through firmware, and most of them address nothing.
-        let mut buses: Vec<u8> = alloc::vec![0];
+        // Buses are discovered rather than swept: start at this root bridge's
+        // first bus (#186: not always 0) and add whatever sits behind each
+        // bridge. A blind 0..=255 sweep is 65k config reads through firmware,
+        // and most of them address nothing.
+        let mut buses: Vec<u8> = alloc::vec![crate::mlxfec::first_bus(&bridge)];
         let mut seen: Vec<u8> = Vec::new();
         while let Some(bus) = buses.pop() {
             if seen.contains(&bus) {
