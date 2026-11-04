@@ -3,6 +3,15 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+
+## [v0.38.0] — 2026-11-04
+
+### Added
+- `boot/<golden>-usb.img` in every ISO golden (#185): a GPT + FAT32 stick, because a Dell R6415 (BIOS 1.12.2) refuses the hybrid ISO on a stick and over HTTP boot. `build-boot-agent.sh --fat 32`.
+
+### Fixed
+- The RAM-disk lines say `image`, not `ISO`: UEFI HTTP boot can mount either (#185).
+
 ### 2026-11-04
 - **feat:** `boot/<golden>-usb.img` in every ISO golden (#185): a protective MBR, a GPT and one 64 MiB real FAT32 ESP (`build-boot-agent.sh --fat 32`) with the ISO's files, because a Dell R6415 (BIOS 1.12.2) refuses the hybrid ISO on a stick and over HTTP boot and boots this layout. The ISO and the FAT16 `-disk` goldens are unchanged.
 - **fix:** The RAM-disk lines say `the downloaded image` and `the served image`, not ISO: UEFI HTTP boot can mount either (#185).
