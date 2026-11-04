@@ -701,6 +701,9 @@ then.
       boot on these goldens writes RS, and on 2026-09-07 RS written to that card
       left its ports lit and unlinked (the switch's latch may have been part of
       that; never told apart). The way back: `fec_pin = off` and `fec default`.
+      **Handed off:** goldens requested at fbd62ce; `wait-hardware` forge1 (first
+      `writing rs`, `warm-resetting once`, then `the last boot's pin held`, port 1
+      linked); the master told to boot it before the R230. Closes on that boot.
 
 - [x] **#185 — the Dell R6415 (BIOS 1.12.2) refuses the hybrid ISO on USB and
       HTTP boot; a hand-built GPT + FAT32 stick boots (P1, the master,
