@@ -3,11 +3,15 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+## [v0.38.1] — 2026-11-04
+
+### Fixed
+- The ConnectX scan finds a card behind a root bridge whose buses do not start at 0 (#186).
+
 ### 2026-11-04
 - **fix:** The ConnectX scan finds a card behind a root bridge whose buses do not start at 0 (#186): the R6415's EPYC has bridges at 00, 40, 80 and c0 and its ConnectX-4 Lx at 84:00.x, and `no ConnectX on the bus` came from every walk starting at bus 0. Each walk now starts at the bridge's first bus, from `Configuration()`; the shell's `pci` too.
 - **feat:** `nic fec` prints `root bridge buses XX-YY: N function(s)` per bridge, so `no ConnectX` says what was looked at (#186).
 - **test:** `connectx.rs` host tests on the R6415's shape, the descriptor table and a bridge loop; net-ovmf `pxb`, a second root bridge at bus 0x40 (#186).
-
 
 ## [v0.38.0] — 2026-11-04
 
