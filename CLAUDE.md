@@ -619,6 +619,21 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#183 — claim on the engine's boot port, falling back to `api_port`
+      (P2, stormcos#374's option A, stormblock#524). In progress.** Plan:
+      `boot_port` (default 9089, `off`). The health read at the start of the
+      claim picks the port for the whole boot, so a claim is never retried on a
+      second port (it would mint a second clone). No lease: no second try.
+      Boot port's budget 15 s after the lease, so a port that drops SYNs costs
+      that once. `engine : reached <addr>:<port> (the boot port|api_port)`.
+      **`rd.stormblock.boothost=` is not ours to keep:** nothing here or in
+      stormuefi writes a kernel line (grep of stormuefi, stormcos, stormblock);
+      the initramfs discovers the appliance, `BOOTPORT` 9090. So the volatile
+      `StormBootEngine = <addr>:<port>` (as #76), and stormblock#524 is asked to
+      read it. Test: net-ovmf `bootport` (second stub, the first sees nothing),
+      `bootport-silent` (listens, never answers), every other boot the refused
+      fallback; laptop-ovmf the real stormboot-serve with no boot port.
+
 - [ ] **#180 — server7 (X9, 12.58) at the EFI Shell after its warm reset (P1,
       the operator, 2026-11-03). In progress.** From the console
       (`server7-20261103-200951.log`): the install booted the network image
