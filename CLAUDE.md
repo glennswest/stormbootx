@@ -619,6 +619,22 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#131 — `prefer_media_drivers = mlx5`: stormnic-mlx5 takes a
+      ConnectX-4/5/6 from FlexBoot (P1, blocks stormnic-mlx5#1). In progress.**
+      Plan: an `mlx5` family in `drivers.rs`, its seven ids in `connectx.rs`
+      (host-tested, the driver's `DEVICES` at 66de545; no 1021, which it does
+      not claim). Pin 66de545 in `build-nic-drivers.sh`, **off by default**: it
+      has never run on a card, so it joins the rustnic media only after the Dell
+      boot passes. A test golden, `stormbootx-mlx5test`: rustnic plus mlx5,
+      `prefer_media_drivers = virtio,mlx5`, `nic_verbose`, no `update =`. Each
+      take is announced before the disconnect (a hang must name itself), and
+      what is left on the handle afterwards is printed (the issue's HII/NII/AIP
+      question, and the driver's `Supported` declines on an SNP). Give-back says
+      if the firmware did not take it back. Test: QEMU has no ConnectX, so
+      net-ovmf loads the real driver under the virtio family's file name, where
+      it must decline and the firmware get the NIC back. Registering the golden
+      is the master's (`stormcentral note`).
+
 - [x] **#183 — claim on the engine's boot port, falling back to `api_port`
       (P2, stormcos#374's option A, stormblock#524). Released v0.36.0.** Plan:
       `boot_port` (default 9089, `off`). The health read at the start of the
