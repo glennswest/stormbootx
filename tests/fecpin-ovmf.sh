@@ -61,12 +61,13 @@ boot() {
     [[ -e "$vars" ]] || cp "$OVMF_VARS" "$vars"
     local log="$T/$name.log" txt="$T/$name.txt"
     : > "$log"
-    # No -no-reboot: the warm reset is what is being tested.
+    # No -no-reboot: the warm reset is what is being tested. A removable
+    # scsi-hd, not USB: OVMF sometimes misses a USB stick (99f9e4b, and here).
     qemu-system-x86_64 -machine q35,accel="$accel" -m 512 \
         -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
         -drive if=pflash,format=raw,file="$vars" \
         -drive if=none,id=stick,format=raw,file="$T/$name.img" \
-        -device qemu-xhci,id=xhci -device usb-storage,bus=xhci.0,drive=stick,removable=on,bootindex=1 \
+        -device virtio-scsi-pci,id=scsi -device scsi-hd,drive=stick,bus=scsi.0,removable=on,bootindex=1 \
         -net none -display none -serial file:"$log" &
     qemu=$!
     local waited=0
