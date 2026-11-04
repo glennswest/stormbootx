@@ -628,6 +628,21 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#185 — the Dell R6415 (BIOS 1.12.2) refuses the hybrid ISO on USB and
+      HTTP boot; a hand-built GPT + FAT32 stick boots (P1, the master,
+      2026-11-04). In progress.** Plan: `build-boot-agent.sh --fat 32` (a real
+      FAT32: `-F 32 -s 1`, over 65,525 clusters, since a FAT32 label on FAT16's
+      cluster count is what Aptio misread, stormcos#188; hidden sectors 2048,
+      where the partition starts). Every ISO golden also writes
+      `boot/<golden>-usb.img`: GPT, 64 MiB FAT32 ESP, the same files as its
+      `media/`. The `-disk` goldens stay FAT16: the blades boot those.
+      `tests/usb-layout.sh IMG [TREE]` checks it, media-ovmf boots it as a USB
+      stick, net-ovmf's `httpimg` HTTP-boots it as `application/vnd.efi-img`,
+      update-boots' `fat32` takes a self-update on it. **stormcentral's
+      `MEDIA_BUILD` keeps only `boot/<comp>.iso` and `media/`**, so the
+      `-usb.img` does not survive into a drive golden until stormcentral takes
+      it: filed there.
+
 - [x] **#131 — `prefer_media_drivers = mlx5`: stormnic-mlx5 takes a
       ConnectX-4/5/6 from FlexBoot (P1, blocked stormnic-mlx5#1). Released
       v0.37.0.** An `mlx5` family in `drivers.rs`, its seven ids in `connectx.rs`
