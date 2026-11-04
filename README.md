@@ -1215,11 +1215,18 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   SECOND_CD=1 LIMIT=180 tests/shell-ovmf.sh t/s.iso ovmf "returning to what started it" && \
   tests/screen-ovmf.sh t/s.iso && \
   tests/stick.sh && deploy/build-golden.sh stormbootx-stick $PWD/t/stick && \
+  deploy/build-golden.sh stormbootx $PWD/t/fw && \
+  tests/usb-layout.sh t/fw/boot/stormbootx-usb.img t/fw/media && ! tests/usb-layout.sh t/fw/boot/stormbootx.img && \
+  NIC=virtio tests/media-ovmf.sh t/fw/boot/stormbootx-usb.img "media       : fw" "fallback    : none" && \
+  deploy/build-golden.sh stormbootx-rustnic $PWD/t/rn && tests/usb-layout.sh t/rn/boot/stormbootx-rustnic-usb.img t/rn/media && \
+  NIC=virtio tests/media-ovmf.sh t/rn/boot/stormbootx-rustnic-usb.img "media       : rustnic" "; stormnic-virtio.efi drives it" && \
   deploy/build-golden.sh stormbootx-mlx5test $PWD/t/mlx5 && tests/iso-layout.sh t/mlx5/boot/stormbootx-mlx5test.iso && \
+  tests/usb-layout.sh t/mlx5/boot/stormbootx-mlx5test-usb.img t/mlx5/media && \
   NIC=virtio tests/media-ovmf.sh t/mlx5/boot/stormbootx-mlx5test.iso "mlx5@66de545 test" "stormnic drivers verbose" "stormnic-mlx5.efi started" "; stormnic-virtio.efi drives it" "prefer    : mlx5: no such NIC on this machine" && \
   REPRO_MEDIA="stormbootx stormbootx-rustnic stormbootx-disk stormbootx-rustnic-disk stormbootx-mlx5test" tests/repro.sh && \
   deploy/build-golden.sh stormbootx-arm64 $PWD/t/arm && \
   EFI_NAME=BOOTAA64.EFI tests/iso-layout.sh t/arm/boot/stormbootx-arm64.iso && \
+  EFI_NAME=BOOTAA64.EFI tests/usb-layout.sh t/arm/boot/stormbootx-arm64-usb.img t/arm/media && \
   deploy/build-golden.sh stormbootx-arm64-disk $PWD/t/armdisk && \
   tests/update-ovmf.sh $R/tcp4probe.efi'
 ```
@@ -1292,7 +1299,9 @@ disk (UEFI HTTP boot)` and takes the NIC from the firmware's stack as it
 always does; the self-update leaves the RAM disk alone (the served ISO is
 what updates). `tests/net-ovmf.sh`'s `httpboot` boot is this under OVMF,
 with the URI boot option written into the variable store by
-`tests/bootvar.py`.
+`tests/bootvar.py`. Its `httpimg` boot does the same with the FAT32 stick
+image (#185) as `application/vnd.efi-img` (or a `.img` URL), for firmware that
+refuses the ISO. That has run under OVMF only, not on the R6415's HTTP boot.
 
 ### Getting it onto a stick
 
@@ -1305,6 +1314,15 @@ is isohybrid the way Debian's netinst is (an MBR `0xef` partition and a GPT
 entry over `/esp.img`), and the ESP is at `mkfs.fat`'s own geometry (4 MiB:
 FAT12, 2 KiB clusters): AMI Aptio 4 hung at POST A2 on the old pure El Torito
 FAT16 ESP (#55); `tests/iso-layout.sh ISO…` checks both.
+
+**Dell 14G: use the stick image, not the ISO** (#185). A PowerEdge R6415
+(BIOS 1.12.2) refuses the hybrid ISO written raw to a USB stick and over UEFI
+HTTP boot (`Boot Failed`, nothing from stormbootx on the console), and starts
+the same binary from a GPT stick with a FAT32 ESP. Every ISO golden carries
+that stick as `boot/<golden>-usb.img`: a protective MBR, a GPT and one 64 MiB
+FAT32 ESP at LBA 2048 with the same files as the ISO (`--size 64 --fat 32`;
+`tests/usb-layout.sh IMG [TREE]` checks it). `dd` it whole onto a stick; it
+updates itself as any stick does.
 
 Every medium carries `\startup.nsh` (`media/startup.nsh`, #60) at the root
 of its ESP, and of the ISO9660 tree. A machine with no boot option for the
@@ -1394,7 +1412,7 @@ does nothing else, for stormcentral to run into the volume it mounts:
 
 | golden | tree |
 |---|---|
-| `stormbootx` | `bin/stormbootx.efi`, `bin/tcp4probe.efi`, `boot/stormbootx.iso` (BMC virtual media), `boot/stormbootx.img` (USB), `boot/tcp4probe.iso`, `media/`, `media.files`, `SHA256SUMS`, `BUILD` |
+| `stormbootx` | `bin/stormbootx.efi`, `bin/tcp4probe.efi`, `boot/stormbootx.iso` (BMC virtual media), `boot/stormbootx.img` (USB), `boot/stormbootx-usb.img` (USB, FAT32, #185), `boot/tcp4probe.iso`, `media/`, `media.files`, `SHA256SUMS`, `BUILD` |
 | `stormbootx-rustnic` | `bin/stormbootx.efi`, `boot/stormbootx-rustnic.iso` (BMC virtual media), `media/`, `media.files`, `SHA256SUMS`, `BUILD` |
 | `stormbootx-disk` | `boot/stormbootx-disk.img` (USB stick, the `stormbootx` medium), `SHA256SUMS`, `BUILD` |
 | `stormbootx-rustnic-disk` | `boot/stormbootx-rustnic-disk.img` (USB stick, the `stormbootx-rustnic` medium), `SHA256SUMS`, `BUILD` |
@@ -1427,7 +1445,10 @@ with rustup), no `qemu-system-aarch64` and no AAVMF, so the arm64 binary is
 compiled and its medium checked (`EFI_NAME=BOOTAA64.EFI
 tests/iso-layout.sh`), but not yet booted.
 
-**The USB sticks are their own goldens** (#41, owner on #35; #97).
+**The USB sticks are their own goldens** (#41, owner on #35; #97), at FAT16,
+which the blades boot; the FAT32 stick a Dell 14G needs is `boot/<golden>-usb.img`
+inside each ISO golden (#185), which stormcentral does not keep yet (it takes
+only `boot/<comp>.iso` and `media/` from a media golden).
 `stormbootx-disk` and `stormbootx-rustnic-disk` each hold one image, a GPT
 disk with a 64 MiB FAT16 ESP at 512-byte sectors carrying the same files as
 the family's ISO. `dd` it whole onto a stick. Its `update =` names the

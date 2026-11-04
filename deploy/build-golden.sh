@@ -29,6 +29,7 @@
 #   bin/tcp4probe.efi       the per-model diagnostic
 #   boot/stormbootx.iso     El Torito UEFI ISO, for BMC virtual media
 #   boot/stormbootx.img     GPT disk image, for a USB stick
+#   boot/stormbootx-usb.img GPT + FAT32 stick (#185), what a Dell 14G boots
 #   boot/tcp4probe.iso      a diagnostic ISO that boots tcp4probe
 #   media/                  the medium's files as a tree (#83): EFI/BOOT/BOOTX64.EFI,
 #                           stormboot/stormboot.conf, stormboot/drivers/*, startup.nsh
@@ -47,6 +48,7 @@
 # stormbootx-rustnic golden (#45): the same agent with the Rust NIC drivers,
 # for machines whose firmware has no UEFI driver for their NICs (the X9 blades):
 #   bin/stormbootx.efi
+#   boot/stormbootx-rustnic-usb.img  the same medium on a GPT + FAT32 stick (#185)
 #   boot/stormbootx-rustnic.iso   carries stormnic-ixgbe.efi (STORMNIC_IXGBE_REF),
 #                                 stormnic-mlx4.efi (STORMNIC_MLX4_REF, #34) and
 #                                 stormnic-virtio.efi (STORMNIC_VIRTIO_REF, #108,
@@ -61,6 +63,7 @@
 # stormbootx-mlx5test golden (#131): a test medium, for the master's boot of
 # stormnic-mlx5#1 on the Dell, never promoted and never in a release:
 #   bin/stormbootx.efi
+#   boot/stormbootx-mlx5test-usb.img  the same medium on a stick (#185)
 #   boot/stormbootx-mlx5test.iso  the rustnic medium plus stormnic-mlx5.efi,
 #                                 prefer_media_drivers = virtio,mlx5,
 #                                 nic_verbose, and no update =
@@ -85,6 +88,7 @@
 # stormbootx-arm64 golden (#84, owner 2026-10-09): the fw medium for arm64
 # hosts, its own golden so an arm64 failure never holds up the x86 ones:
 #   bin/stormbootx.efi            the agent built for aarch64-unknown-uefi
+#   boot/stormbootx-arm64-usb.img the same medium on a stick (#185)
 #   boot/stormbootx-arm64.iso     \EFI\BOOT\BOOTAA64.EFI, \stormboot\ (the
 #                                 install-config slot, #79), startup.nsh
 #   media/, media.files           as above (#83), BOOTAA64.EFI in place of
@@ -110,6 +114,12 @@
 #   STORMNIC-SOURCE.txt     each Rust driver's commit and digest
 #   SHA256SUMS, BUILD
 #   No iPXE, in this golden or any other (owner on #81; #91).
+#
+# boot/<golden>-usb.img (#185, #97), beside every ISO: the Dell R6415 (BIOS
+# 1.12.2) refuses the hybrid ISO written to a stick and over HTTP boot, and
+# boots a GPT disk with one 64 MiB FAT32 ESP. The same files as the ISO, the
+# same `update =`. Not the -disk goldens: those are FAT16, which the blades
+# boot, and no one has booted FAT16 on that Dell.
 #
 # Every .efi of ours is built through scripts/cargo-repro.sh (#53), so one
 # commit gives the same bytes in every golden whatever path its build drive
@@ -215,6 +225,12 @@ aarch64_target() {
     rustup target add "$t" >/dev/null
 }
 
+# The medium just built as an ISO, as a GPT + FAT32 stick (#185). ARGS are the
+# ISO's, with no --iso, --tree or --output.
+usb_image() {
+    "$ROOT/scripts/build-boot-agent.sh" "$@" --size 64 --fat 32 --output "$OUT/boot/$GOLDEN-usb.img"
+}
+
 # A disk golden holds the image and nothing else.
 only_the_image() {
     local extra
@@ -253,6 +269,7 @@ stormbootx)
            --update "$(update_url stormbootx)")
     "$ROOT/scripts/build-boot-agent.sh" --iso "${agent[@]}" --output "$OUT/boot/stormbootx.iso"
     "$ROOT/scripts/build-boot-agent.sh" "${agent[@]}" --tree "$OUT/media" --output "$OUT/boot/stormbootx.img"
+    usb_image "${agent[@]}"
     media_files
     "$ROOT/scripts/build-boot-agent.sh" --iso --probe --binary "$OUT/bin/tcp4probe.efi" \
         --output "$OUT/boot/tcp4probe.iso"
@@ -271,11 +288,12 @@ stormbootx-rustnic)
     # (#34), stormnic-virtio for VMs, taking their NICs from OVMF's
     # VirtioNetDxe (#108), and no iPXE at all (#91).
     rustnic_drivers
-    "$ROOT/scripts/build-boot-agent.sh" --iso --binary "$OUT/bin/stormbootx.efi" \
-        --drivers "$WORK/media-drivers" --prefer-media-drivers virtio --dns 192.168.31.252 \
-        --no-fallback --syslog "$SYSLOG_TARGET" --hold "$HOLD" --media "$RUSTNIC_LABEL" \
-        --update "$(update_url stormbootx-rustnic)" --tree "$OUT/media" \
+    agent=(--binary "$OUT/bin/stormbootx.efi" --drivers "$WORK/media-drivers" --prefer-media-drivers virtio
+           --dns 192.168.31.252 --no-fallback --syslog "$SYSLOG_TARGET" --hold "$HOLD" --media "$RUSTNIC_LABEL"
+           --update "$(update_url stormbootx-rustnic)")
+    "$ROOT/scripts/build-boot-agent.sh" --iso "${agent[@]}" --tree "$OUT/media" \
         --output "$OUT/boot/stormbootx-rustnic.iso"
+    usb_image "${agent[@]}"
     media_files
     seal "drivers  = $(cd "$WORK/media-drivers" && ls *.efi | tr '\n' ' ')(built here)
 stormnic = $(cat "$WORK/drivers/STORMNIC-SOURCE.txt")"
@@ -290,10 +308,11 @@ stormbootx-mlx5test)
     STORMNIC_DRIVERS="ixgbe mlx4 virtio mlx5" rustnic_drivers
     [[ -f "$WORK/drivers/stormnic-mlx5.efi" ]] || die "no stormnic-mlx5.efi was built"
     # No --update: a test medium never takes a promotion, or is one.
-    "$ROOT/scripts/build-boot-agent.sh" --iso --binary "$OUT/bin/stormbootx.efi" \
-        --drivers "$WORK/media-drivers" --prefer-media-drivers virtio,mlx5 --nic-verbose \
-        --dns 192.168.31.252 --no-fallback --syslog "$SYSLOG_TARGET" --hold "$HOLD" \
-        --media "$RUSTNIC_LABEL" --tree "$OUT/media" --output "$OUT/boot/$GOLDEN.iso"
+    agent=(--binary "$OUT/bin/stormbootx.efi" --drivers "$WORK/media-drivers" --prefer-media-drivers virtio,mlx5
+           --nic-verbose --dns 192.168.31.252 --no-fallback --syslog "$SYSLOG_TARGET" --hold "$HOLD"
+           --media "$RUSTNIC_LABEL")
+    "$ROOT/scripts/build-boot-agent.sh" --iso "${agent[@]}" --tree "$OUT/media" --output "$OUT/boot/$GOLDEN.iso"
+    usb_image "${agent[@]}"
     media_files
     grep -qx 'nic_verbose = true' "$OUT/media/stormboot/stormboot.conf" || die "$GOLDEN is not verbose"
     ! grep -q '^update' "$OUT/media/stormboot/stormboot.conf" || die "$GOLDEN names an update"
@@ -332,10 +351,11 @@ stormbootx-arm64)
     REL="${CARGO_TARGET_DIR:-$ROOT/target}/aarch64-unknown-uefi/release"
     mkdir -p "$OUT/bin" "$OUT/boot"
     cp "$REL/stormbootx.efi" "$OUT/bin/"
-    "$ROOT/scripts/build-boot-agent.sh" --iso --arch arm64 --binary "$OUT/bin/stormbootx.efi" \
-        --dns 192.168.31.252 --no-fallback --syslog "$SYSLOG_TARGET" --hold "$HOLD" --media "fw arm64" \
-        --update "$(update_url stormbootx-arm64)" --tree "$OUT/media" \
+    agent=(--arch arm64 --binary "$OUT/bin/stormbootx.efi" --dns 192.168.31.252 --no-fallback
+           --syslog "$SYSLOG_TARGET" --hold "$HOLD" --media "fw arm64" --update "$(update_url stormbootx-arm64)")
+    "$ROOT/scripts/build-boot-agent.sh" --iso "${agent[@]}" --tree "$OUT/media" \
         --output "$OUT/boot/stormbootx-arm64.iso"
+    usb_image "${agent[@]}"
     media_files
     [[ -f "$OUT/media/EFI/BOOT/BOOTAA64.EFI" && ! -e "$OUT/media/EFI/BOOT/BOOTX64.EFI" ]] \
         || die "the arm64 medium must carry BOOTAA64.EFI and no BOOTX64.EFI"

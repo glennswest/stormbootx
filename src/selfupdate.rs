@@ -313,7 +313,7 @@ fn try_update(mac: Option<&str>) -> Result<(), String> {
     // be gone and fetched again on every boot. The served ISO is what
     // updates (a new golden at the URL).
     if config::boot_from_ram_disk() {
-        return Err("the boot medium is a RAM disk (UEFI HTTP boot); the served ISO is what updates, not this copy".to_string());
+        return Err("the boot medium is a RAM disk (UEFI HTTP boot); the served image is what updates, not this copy".to_string());
     }
     let mut vol = Vol::mount().map_err(|e| format!("the boot medium cannot be opened ({e})"))?;
     let info = vol.fs_info()?;

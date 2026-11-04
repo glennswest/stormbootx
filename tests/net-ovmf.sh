@@ -79,6 +79,8 @@
 #      must say `media : a RAM disk`, read the ISO's conf, take the NIC from
 #      the firmware's stack, decline the self-update for the RAM disk, claim,
 #      attach and start the payload.
+#      `httpimg` (#185): the same with the GPT + FAT32 stick image, served as
+#      `application/vnd.efi-img`, the other kind of RAM disk EDK2 mounts.
 #
 # Boots 1 and 2 must show the stack, a lease from slirp, the engine's version from
 # the stub, the attach, a blockio progress line and the payload's banner; the
@@ -611,8 +613,9 @@ BOOT_CONF=
 # stub; `off` sends nothing).
 BOOT_SYSLOG=
 BOOT_NICDEV=
-# BOOT_HTTP=1 (#172): no CD; the ISO is HTTP-booted by the firmware from
-# the HTTP stub, by a URI boot option in the variable store.
+# BOOT_HTTP=iso (#172): no CD; the ISO is HTTP-booted by the firmware from
+# the HTTP stub, by a URI boot option in the variable store. BOOT_HTTP=img
+# (#185): the GPT + FAT32 stick image instead.
 BOOT_HTTP=
 boot() {
     local name=$1 cpu=$2 rng=$3 claim=$4 ntp=$5; shift 5
@@ -641,6 +644,8 @@ boot() {
     # And the log's collector (#162).
     [[ $name == shipped ]] && args+=(--syslog "10.0.2.2:$SYSLOG_PORT")
     [[ -n "$BOOT_SYSLOG" ]] && args+=(--syslog "$BOOT_SYSLOG")
+    # args[0] is --iso; a later --output wins.
+    [[ $BOOT_HTTP == img ]] && { iso="$W/$name.img"; args=("${args[@]:1}" --size 64 --fat 32 --output "$iso"); }
     "$ROOT/scripts/build-boot-agent.sh" "${args[@]}" >/dev/null
     [[ $name == jitter ]] && write_install_config "$iso"
     [[ -n "$BOOT_IC" ]] && write_install_config "$iso" "$BOOT_IC"
@@ -664,7 +669,7 @@ boot() {
         extra+=(-device virtio-rng-pci)
     fi
     if [[ -n $BOOT_HTTP ]]; then
-        cp "$iso" "$W/http/$name.iso"
+        cp "$iso" "$W/http/$name.$BOOT_HTTP"
         media=()
         nicopt=,bootindex=1 ipv4=yes
         extra+=(-device virtio-rng-pci)
@@ -679,7 +684,7 @@ boot() {
     : > "$log"; : > "$W/$name.debug"
     cp "$OVMF_VARS" "$W/$name.vars"
     if [[ -n $BOOT_HTTP ]]; then
-        python3 "$ROOT/tests/bootvar.py" "$W/$name.vars" "http://10.0.2.2:$HTTP_PORT/$name.iso" \
+        python3 "$ROOT/tests/bootvar.py" "$W/$name.vars" "http://10.0.2.2:$HTTP_PORT/$name.$BOOT_HTTP" \
             | sed "s/^/net-ovmf: [$name] /" || die "[$name] no URI boot option written"
     fi
     qemu-system-x86_64 -machine q35,accel="$accel" -cpu "$cpu" -m 1024 \
@@ -1159,7 +1164,7 @@ cat > "$W/httpstub.py" <<'PY'
 import http.server, os, sys
 os.chdir(sys.argv[1])
 class H(http.server.SimpleHTTPRequestHandler):
-    extensions_map = {".iso": "application/vnd.efi-iso", "": "application/octet-stream"}
+    extensions_map = {".iso": "application/vnd.efi-iso", ".img": "application/vnd.efi-img", "": "application/octet-stream"}
     def log_message(self, fmt, *args):
         open(sys.argv[2], "a").write("http: " + (fmt % args) + "\n")
 s = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
@@ -1170,13 +1175,23 @@ python3 "$W/httpstub.py" "$W/http" "$W/stub.log" "$W/http.port" &
 HTTP_PID=$!
 for _ in $(seq 50); do [[ -s "$W/http.port" ]] && break; sleep 0.1; done
 HTTP_PORT=$(cat "$W/http.port" 2>/dev/null) || die "the HTTP boot stub did not start"
-BOOT_HTTP=1 BOOT_CONF="update = http://10.0.2.2:$PORT/api/v1/boothelpers/stormbootx-test" \
+BOOT_HTTP=iso BOOT_CONF="update = http://10.0.2.2:$PORT/api/v1/boothelpers/stormbootx-test" \
 boot httpboot "$host_cpu" "" ok good \
     "stub:http: \"GET /httpboot.iso" \
     "NVMe/TCP boot extension" \
-    "media       : a RAM disk (UEFI HTTP boot): the downloaded ISO, gone at reset" \
+    "media       : a RAM disk (UEFI HTTP boot): the downloaded image, gone at reset" \
     "tcp4        : smoltcp over SNP (nic 0 " \
-    "update      : the boot medium is a RAM disk (UEFI HTTP boot); the served ISO is what updates, not this copy" \
+    "update      : the boot medium is a RAM disk (UEFI HTTP boot); the served image is what updates, not this copy" \
+    "blockio     : 96 MiB read in all" \
+    "is there a TCP/IP stack in this firmware" \
+    "not:no network boot" \
+    "stub:POST /api/v1/synonyms/boothost/"
+# #185: the stick image over the same path; a Dell that refuses the ISO boots
+# this layout from a stick. Not run: that Dell's HTTP boot.
+BOOT_HTTP=img \
+boot httpimg "$host_cpu" "" ok good \
+    "stub:http: \"GET /httpimg.img" \
+    "media       : a RAM disk (UEFI HTTP boot): the downloaded image, gone at reset" \
     "blockio     : 96 MiB read in all" \
     "is there a TCP/IP stack in this firmware" \
     "not:no network boot" \

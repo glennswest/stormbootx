@@ -54,12 +54,18 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   tests/screen-ovmf.sh t/s.iso && \
   tests/stick.sh && deploy/build-golden.sh stormbootx-stick $PWD/t/stick && \
   deploy/build-golden.sh stormbootx $PWD/t/fw && scripts/build-stormboot-serve.sh $PWD/t/serve && \
+  tests/usb-layout.sh t/fw/boot/stormbootx-usb.img t/fw/media && ! tests/usb-layout.sh t/fw/boot/stormbootx.img && \
+  NIC=virtio tests/media-ovmf.sh t/fw/boot/stormbootx-usb.img "media       : fw" "fallback    : none" && \
+  deploy/build-golden.sh stormbootx-rustnic $PWD/t/rn && tests/usb-layout.sh t/rn/boot/stormbootx-rustnic-usb.img t/rn/media && \
+  NIC=virtio tests/media-ovmf.sh t/rn/boot/stormbootx-rustnic-usb.img "media       : rustnic" "; stormnic-virtio.efi drives it" && \
   tests/laptop-ovmf.sh t/fw/boot/stormbootx.iso $R/tcp4probe.efi t/serve/stormboot-serve && \
   deploy/build-golden.sh stormbootx-mlx5test $PWD/t/mlx5 && tests/iso-layout.sh t/mlx5/boot/stormbootx-mlx5test.iso && \
+  tests/usb-layout.sh t/mlx5/boot/stormbootx-mlx5test-usb.img t/mlx5/media && \
   NIC=virtio tests/media-ovmf.sh t/mlx5/boot/stormbootx-mlx5test.iso "mlx5@66de545 test" "stormnic drivers verbose" "stormnic-mlx5.efi started" "; stormnic-virtio.efi drives it" "prefer    : mlx5: no such NIC on this machine" && \
   REPRO_MEDIA="stormbootx stormbootx-rustnic stormbootx-disk stormbootx-rustnic-disk stormbootx-mlx5test" tests/repro.sh && \
   deploy/build-golden.sh stormbootx-arm64 $PWD/t/arm && \
   EFI_NAME=BOOTAA64.EFI tests/iso-layout.sh t/arm/boot/stormbootx-arm64.iso && \
+  EFI_NAME=BOOTAA64.EFI tests/usb-layout.sh t/arm/boot/stormbootx-arm64-usb.img t/arm/media && \
   deploy/build-golden.sh stormbootx-arm64-disk $PWD/t/armdisk && \
   tests/update-ovmf.sh $R/tcp4probe.efi'
 ```
@@ -85,7 +91,7 @@ may come from the clock, a random number or the build user.
 
 `tests/update-ovmf.sh` (#83) must stay last: it rebuilds `stormbootx.efi`
 with an Ed25519 test key compiled in (`STORMBOOTX_UPDATE_TEST_KEY`) and boots
-a writable GPT medium on a USB stick twelve times through
+a writable GPT medium on a USB stick thirteen times through
 `tests/update-boots.sh`, sourced by `net-ovmf.sh` for its stubs (#89):
 an `update =` naming a host must be looked up at the lease's DNS server
 (#148);
@@ -97,7 +103,8 @@ signature refused; serial 5 written, restarted, trial passed on the attach;
 serial 5 `current`; serial 6 refused as another machine's canary, then taken
 as this one's, retiring a driver; serial 7 refused for room; serial 8 (a
 dead NVMe port in its conf) fails two trial starts and the third puts serial
-6 back. mtools checks the disk after each boot.
+6 back; a fresh FAT32 medium (#185) takes serial 5 and passes its trial. mtools
+checks the disk after each boot.
 
 `tests/net-ovmf.sh` (#56) boots stormbootx under OVMF with no firmware
 network stack, against a stub engine, a stub NVMe/TCP target (4096-byte
@@ -113,7 +120,8 @@ Its `httpboot` boot (#172) has no CD: `tests/bootvar.py` writes a
 `Uri(http://…/httpboot.iso)` boot option and BootNext into OVMF's variable
 store, the firmware's HTTP boot downloads the ISO into a RAM disk, and
 stormbootx must say `media : a RAM disk`, decline the self-update for it,
-claim, attach and start the payload. Never name a stub `http.py` (#173).
+claim, attach and start the payload. `httpimg` (#185) does it with the
+FAT32 stick image, as `application/vnd.efi-img`. Never name a stub `http.py` (#173).
 
 A boot that has not started stormbootx (its banner on serial) after
 `START_LIMIT` (60) seconds never does (#124): net-ovmf and screen-ovmf print
@@ -168,7 +176,9 @@ details and Esc back, and no panel text in the serial log. `SCREEN_PNG=1`
 (it and net-ovmf's `shipped` boot) prints each dump as a base64 PNG line.
 
 `tests/iso-layout.sh ISO …` checks an ISO is isohybrid with a FAT12 ESP,
-the layout Aptio 4 boots (#55). `tests/media-ovmf.sh ISO 'LINE' …` boots a media ISO under OVMF and requires
+the layout Aptio 4 boots (#55). `tests/usb-layout.sh IMG [TREE]` (#185) checks
+a golden's `-usb.img` is a GPT with one real FAT32 ESP, the layout the R6415
+boots, with its `media/` files byte for byte. `tests/media-ovmf.sh ISO 'LINE' …` boots a media ISO under OVMF and requires
 console lines (#45: `media : …`); build the goldens under `t/` in the same
 job to use it. `NIC=virtio` gives it a virtio-net NIC (#108).
 
@@ -297,7 +307,7 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/espfs.rs` | a read-only `EFI_SIMPLE_FILE_SYSTEM` over `esp.rs` on the bridged ESP's partition handle (#42), so the bootloader opens its other files; `withdraw` before the disk goes |
 | `src/espprobe.rs` | third binary: who can read a 4K ESP; booted under OVMF by `tests/esp-ovmf.sh` |
 | `src/sha256.rs` | the digest, because `EFI_HASH2` is optional |
-| `src/config.rs` | the target, read from the media rather than compiled in; `local.conf` read before `stormboot.conf` (#83); `boot_from_ram_disk` (#172: the image's volume has a RAM-disk device-path node, i.e. UEFI HTTP boot of the ISO; `media : a RAM disk (UEFI HTTP boot): the downloaded ISO, gone at reset`, and `selfupdate` declines it) |
+| `src/config.rs` | the target, read from the media rather than compiled in; `local.conf` read before `stormboot.conf` (#83); `boot_from_ram_disk` (#172: the image's volume has a RAM-disk device-path node, i.e. UEFI HTTP boot of the ISO; `media : a RAM disk (UEFI HTTP boot): the downloaded image, gone at reset`, and `selfupdate` declines it) |
 | `src/shell.rs` | timed, never-forced failure console before the fall-through |
 | `crates/stormbootx-stick` | the node's stick updater (#151): static musl Linux; `src/manifest.rs` and `src/sha256.rs` by path; find (sysfs, refusals), verify, decide, apply as `selfupdate.rs`; built for x86_64 and, since #172, aarch64 (`bin/stormbootx-stick-arm64`, `BOOTAA64.EFI`, family `stormbootx-arm64`); `tests/stick.sh` |
 | `src/ui.rs` | the boot panel (#144): its own `ConOut` in the system table; every line to the serial consoles and F2, the steps drawn on the screen consoles; `end` hands the screen back |
@@ -452,6 +462,14 @@ These have each cost a debugging session. Do not "simplify" them away.
   `Nic::prime` sends our own ARP requests for the router, the lease's DNS
   and NTP servers, and each connection's next hop. smoltcp fills its cache
   from any reply aimed at us. Don't take it out to "let smoltcp do ARP".
+- **A Dell 14G refuses the hybrid ISO off a stick and over HTTP boot** (#185,
+  R6415, BIOS 1.12.2, 2026-11-04): `Boot Failed`, nothing of ours on the
+  console; a hand-built GPT + FAT32 stick with the same binary started at
+  once. So `boot/<golden>-usb.img`. The ISO stays hybrid with a FAT12 ESP for
+  Aptio 4 (#55), and the `-disk` goldens stay FAT16 for the blades: a change to
+  any of them answers to a firmware nobody here can emulate. **stormcentral's
+  media build keeps only `boot/<comp>.iso` and `media/`:** a new file in the
+  tree does not reach a drive golden unless stormcentral takes it.
 - **Link-down early in UEFI is not evidence of anything.** A 25G RS link needs
   seconds to come up after a reset, and `snp.media_present` sampled once at
   that moment reads a perfectly healthy card as dark. This is the same fact as

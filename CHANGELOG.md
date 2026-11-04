@@ -3,6 +3,12 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-04
+- **feat:** `boot/<golden>-usb.img` in every ISO golden (#185): a protective MBR, a GPT and one 64 MiB real FAT32 ESP (`build-boot-agent.sh --fat 32`) with the ISO's files, because a Dell R6415 (BIOS 1.12.2) refuses the hybrid ISO on a stick and over HTTP boot and boots this layout. The ISO and the FAT16 `-disk` goldens are unchanged.
+- **fix:** The RAM-disk lines say `the downloaded image` and `the served image`, not ISO: UEFI HTTP boot can mount either (#185).
+- **test:** `tests/usb-layout.sh`; `media-ovmf` boots the `-usb.img` as a USB stick; net-ovmf `httpimg` HTTP-boots it as `application/vnd.efi-img`; update-boots `fat32` takes a self-update and passes its trial on it (#185).
+- **docs:** README: a Dell 14G needs the stick image, not the ISO (#185).
+
 ## [v0.37.0] — 2026-11-04
 
 ### Added

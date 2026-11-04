@@ -37,6 +37,8 @@
 #   bad2      trial start 2 falls through
 #   revert    the third start puts serial 6 back and chain-loads it; serial 6
 #             refuses 8 (failed here), attaches, and hands down failed:8
+#   fat32     a fresh FAT32 medium, the golden's -usb.img (#185), takes serial 5
+#             and passes its trial
 
 command -v openssl >/dev/null || die "openssl is not installed"
 command -v mtype >/dev/null || die "mtools is not installed"
@@ -322,3 +324,19 @@ same /startup.nsh "$W/rel6/startup.nsh"
 same /stormboot/drivers/README.txt "$W/rel6/stormboot/drivers/README.txt"
 state_has "serial = 6"
 state_has "failed = 8"
+
+# #185: the same update and trial on the -usb.img's FAT32 ESP (a fresh medium
+# and a fresh floor): rename, write and free-space through the firmware's FAT.
+IMG="$W/media32.img"
+"$ROOT/scripts/build-boot-agent.sh" --binary "$EFI" --engine 10.0.2.2 --api-port "$PORT" \
+    --port "$NVME_PORT" --nsid 1 --ntp "10.0.2.2:$NTP_PORT" --update "$URL" \
+    --size 64 --fat 32 --output "$IMG" >/dev/null
+cp "$OVMF_VARS" "$W/update.vars"
+release 5 "$UPDATE_KEY"
+uboot fat32 "${attached[@]}" \
+    "-> v$TV (golden-stormbootx-test-5, serial 5), " \
+    "update      : serial 5 passed its trial (attached); it stays"
+same /EFI/BOOT/BOOTX64.EFI "$W/rel5/EFI/BOOT/BOOTX64.EFI"
+same /EFI/BOOT/BOOTX64.EFI.prev "$W/A.efi"
+same /stormboot/stormboot.conf "$W/rel5/stormboot/stormboot.conf"
+state_has "serial = 5"

@@ -36,6 +36,7 @@ NQN="nqn.2026-09.lo.g16:stormcos"
 NSID="2"
 API_PORT="9090"                              # engine API on the portal host
 ESP_MIB="4"
+FAT=""
 OUTDIR="$(cd "$(dirname "$0")/.." && pwd)/tmp/images"
 OUTPUT=""
 BIN=""
@@ -110,6 +111,8 @@ Options:
   --no-fallback    no nqn/nsid: a claim that finds nothing falls straight
                    through to the local disk (`fallback = none`, #36; the goldens)
   --size MIB       ESP size (default 4; mkfs.fat picks FAT12/16 by size)
+  --fat 32         a real FAT32 ESP on a GPT image (#185: the golden's -usb.img);
+                   needs --size 34 or more, no --iso
   --arch ARCH      x86_64 (default) or arm64 (#84): the target built and the
                    removable-media name it is laid down as (BOOTX64.EFI or
                    BOOTAA64.EFI); a --binary must be built for it
@@ -145,6 +148,7 @@ while [[ $# -gt 0 ]]; do
         --nsid)   NSID="$2"; shift 2 ;;
         --no-fallback) NOFALLBACK=1; shift ;;
         --size)   ESP_MIB="$2"; shift 2 ;;
+        --fat)    FAT="$2"; shift 2 ;;
         --binary) BIN="$2"; shift 2 ;;
         --arch)   ARCH="$2"; shift 2 ;;
         --output) OUTPUT="$2"; shift 2 ;;
@@ -161,6 +165,15 @@ case "$ARCH" in
 esac
 
 [[ -z "$NOFALLBACK" || "$PIN" == "no" ]] || die "--no-fallback and --pin: a pinned stick's namespace is its only target"
+
+# FAT32 is decided by the cluster count as well as the label: under 65,525
+# clusters a reader may take it for FAT16 (stormcos#188: Aptio 4 misread a
+# FAT32-labelled ESP of 16,384). At one sector a cluster, 34 MiB clears that.
+if [[ -n "$FAT" ]]; then
+    [[ "$FAT" == 32 ]] || die "--fat: only 32 (without it, mkfs.fat picks FAT12/16 by size)"
+    [[ "$ISO" == "no" ]] || die "--fat 32 and --iso: the ISO's ESP stays FAT12 (#55)"
+    (( ESP_MIB >= 34 )) || die "--fat 32 needs --size 34 or more: under that it is not a real FAT32"
+fi
 
 if [[ "$ISO" == "yes" ]]; then
     OUTPUT="${OUTPUT:-$OUTDIR/stormbootx.iso}"
@@ -473,7 +486,7 @@ find "$STAGE" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 # identifier below.
 SEED="$( (cd "$STAGE" && find . -type f | LC_ALL=C sort | while read -r f; do
     printf '%s %s\n' "$(sha256sum < "$f" | cut -d' ' -f1)" "$f"; done
-    printf 'media %s %s\n' "$EFI_NAME" "$ISO") | sha256sum | cut -d' ' -f1)"
+    printf 'media %s %s%s\n' "$EFI_NAME" "$ISO" "${FAT:+ fat$FAT}") | sha256sum | cut -d' ' -f1)"
 # A GUID from the seed and a name: version 4 and RFC 4122 variant bits, as a
 # random one would carry.
 seed_guid() {
@@ -486,6 +499,9 @@ seed_guid() {
 ESP="$WORK/esp.img"
 truncate -s "${ESP_MIB}M" "$ESP"
 fat=(-n STORMBOOTX -i "${SEED:0:8}")
+# One sector a cluster (stated: mkfs.fat's default moves between versions), and
+# the hidden sectors the partition starts at, as a FAT made on the stick says.
+[[ -n "$FAT" ]] && fat+=(-F 32 -s 1 -h 2048)
 # dosfstools 4.2's --invariant also fixes the label entry's time.
 help="$(mkfs.fat --help 2>&1 || true)"
 [[ $help == *--invariant* ]] && fat+=(--invariant)

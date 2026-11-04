@@ -6,7 +6,8 @@
 #   NIC=virtio tests/media-ovmf.sh …   (one virtio-net NIC, #108)
 #
 # An `.img` (a disk golden, #41) is booted as a USB stick (qemu-xhci +
-# usb-storage, removable), the way the X9 blades boot theirs.
+# usb-storage, removable), the way the X9 blades boot theirs; so is a golden's
+# FAT32 `-usb.img` (#185).
 #
 # Each argument after the ISO is a fixed string that must appear on the serial
 # console within the time limit. Fedora's OVMF has no TCP4, so the boot never
