@@ -667,6 +667,16 @@ then.
       **Left:** the issue also asks for "the same FEC pin as on the R230", and
       there is none: the boot path only reads (self-heal off since 0.3.6, the
       load-bearing facts). A boot-time write is the owner's: asked on #186.
+      **Decided (the master, quoting the owner, 2026-11-04): option 2, pin at
+      boot.** Plan: `fec_pin = rs` (`--fec-pin`; every golden, the binary's
+      default off) compares each port's NV next-boot value with RS and nothing
+      else: no link read reaches it. A difference is written once, then one warm
+      reset. `StormBootFecPin` (NV) is set before the write, so a card that
+      loses the pin, or a write that hangs, cannot loop: the next boot says so
+      and boots on. A read showing RS clears it, so does `fec_pin = off`. A
+      `fec =` stick wins. `src/connectx.rs` `pin_action` host-tested;
+      `src/fecpin.rs`; `tests/fecpin-ovmf.sh` with a test card compiled in
+      (`STORMBOOTX_FEC_TEST`, no golden), since QEMU has no ConnectX.
 
 - [x] **#185 — the Dell R6415 (BIOS 1.12.2) refuses the hybrid ISO on USB and
       HTTP boot; a hand-built GPT + FAT32 stick boots (P1, the master,
