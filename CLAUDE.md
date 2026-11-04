@@ -619,8 +619,8 @@ then.
 
 ### Open, no external blocker
 
-- [ ] **#183 — claim on the engine's boot port, falling back to `api_port`
-      (P2, stormcos#374's option A, stormblock#524). In progress.** Plan:
+- [x] **#183 — claim on the engine's boot port, falling back to `api_port`
+      (P2, stormcos#374's option A, stormblock#524). Released v0.36.0.** Plan:
       `boot_port` (default 9089, `off`). The health read at the start of the
       claim picks the port for the whole boot, so a claim is never retried on a
       second port (it would mint a second clone). No lease: no second try.
@@ -633,6 +633,17 @@ then.
       read it. Test: net-ovmf `bootport` (second stub, the first sees nothing),
       `bootport-silent` (listens, never answers), every other boot the refused
       fallback; laptop-ovmf the real stormboot-serve with no boot port.
+      **State (2026-11-03):** sc-build of 3b65aff (1227 s): no warnings, the
+      full suite. `bootport`: `reached 10.0.2.2:44557 (the boot port)`, health,
+      intent, command and claim there, 96 MiB read, `api_port` saw nothing,
+      `StormBootEngine` handed down. `shipped`: `10.0.2.2:9089 refused the
+      connection (reset)`, then `reached …(api_port)`, lease+engine 28 ms.
+      `bootport-silent`: `no reply within 15 s`, then api_port. laptop-ovmf:
+      the real stormboot-serve the same. **Not run:** a real engine with a boot
+      port (stormblock#524 not landed; 9089 is still its proposal), metal, a
+      port that drops SYNs (slirp can't; the same budget as the silent reply).
+      **Left elsewhere:** the initramfs reading `StormBootEngine`
+      (stormblock#524; until then it discovers on `BOOTPORT` 9090).
 
 - [ ] **#180 — server7 (X9, 12.58) at the EFI Shell after its warm reset (P1,
       the operator, 2026-11-03). In progress.** From the console
@@ -2415,7 +2426,7 @@ then.
 
 ## Status
 
-v0.35.1 (#180: `startup.nsh` starts one medium only; the last screen line names the build). v0.35.0 (#172: UEFI HTTP boot of the ISO, the arm64 USB stick and stick updater). v0.34.0 (#167: `maint` claims and boots the maintenance image, stormblock#497). v0.33.1 (#167: the intent's host is a name; laptop-ovmf boots the real command record). v0.33.0 (#167 phase 1: stormbootx's own API on port 9180, Ed25519-signed commands, the hold on a failed boot; goldens `hold = 120`). v0.32.0 (#167's inventory v2, #168's ARP priming and timing line, #99's parked cap9 in 50 ms). v0.29.0 (#151: stormbootx-stick; released, frozen until 2026-10-17, then the master promotes it). v0.28.2 was #130 (reproducible media); v0.28.0 was #144 (the boot panel); v0.27.0 was #148 (the self-update resolves its host); v0.26.0 was #145 (the fall-through starts the local disk itself); v0.25.0 was #128: #4, #10, #17, #25, #36, #42, #53, #67 and #138. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
+v0.36.0 (#183: the engine's boot port, falling back to `api_port`; `StormBootEngine`). v0.35.1 (#180: `startup.nsh` starts one medium only; the last screen line names the build). v0.35.0 (#172: UEFI HTTP boot of the ISO, the arm64 USB stick and stick updater). v0.34.0 (#167: `maint` claims and boots the maintenance image, stormblock#497). v0.33.1 (#167: the intent's host is a name; laptop-ovmf boots the real command record). v0.33.0 (#167 phase 1: stormbootx's own API on port 9180, Ed25519-signed commands, the hold on a failed boot; goldens `hold = 120`). v0.32.0 (#167's inventory v2, #168's ARP priming and timing line, #99's parked cap9 in 50 ms). v0.29.0 (#151: stormbootx-stick; released, frozen until 2026-10-17, then the master promotes it). v0.28.2 was #130 (reproducible media); v0.28.0 was #144 (the boot panel); v0.27.0 was #148 (the self-update resolves its host); v0.26.0 was #145 (the fall-through starts the local disk itself); v0.25.0 was #128: #4, #10, #17, #25, #36, #42, #53, #67 and #138. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
 (and the same day, the full chain: chain-load into stormuefi and a running
 stormcos kernel), on a
 Dell PowerEdge R230 (service tag C2NR0Q2) booting the agent over iDRAC virtual
