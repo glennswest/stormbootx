@@ -3,6 +3,14 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+## [v0.37.0] — 2026-11-04
+
+### Added
+- `prefer_media_drivers = mlx5` (#131) and the `stormbootx-mlx5test` test golden, for stormnic-mlx5#1's boot on the Dell. The shipped media do not carry the driver.
+
+### Changed
+- A take-over is announced before its disconnect, says what is left on the handle, and says when a give-back left a NIC with no driver (#131).
+
 ### 2026-11-04
 - **feat:** `prefer_media_drivers = mlx5` (#131): stormnic-mlx5 can take a ConnectX-4/4 Lx/5/6 from FlexBoot, by the same leaf-first disconnect and give-back as virtio. ConnectX-7 is left out: the driver does not claim it. Pinned at 66de545 and built only when named, never in the default set.
 - **feat:** The `stormbootx-mlx5test` golden (#131): the rustnic medium plus stormnic-mlx5, both families, verbose, no `update =`, for stormnic-mlx5#1's boot on the Dell. Every other golden refuses the driver.

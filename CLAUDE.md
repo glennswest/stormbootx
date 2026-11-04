@@ -628,21 +628,30 @@ then.
 
 ### Open, no external blocker
 
-- [ ] **#131 — `prefer_media_drivers = mlx5`: stormnic-mlx5 takes a
-      ConnectX-4/5/6 from FlexBoot (P1, blocks stormnic-mlx5#1). In progress.**
-      Plan: an `mlx5` family in `drivers.rs`, its seven ids in `connectx.rs`
+- [x] **#131 — `prefer_media_drivers = mlx5`: stormnic-mlx5 takes a
+      ConnectX-4/5/6 from FlexBoot (P1, blocked stormnic-mlx5#1). Released
+      v0.37.0.** An `mlx5` family in `drivers.rs`, its seven ids in `connectx.rs`
       (host-tested, the driver's `DEVICES` at 66de545; no 1021, which it does
-      not claim). Pin 66de545 in `build-nic-drivers.sh`, **off by default**: it
-      has never run on a card, so it joins the rustnic media only after the Dell
-      boot passes. A test golden, `stormbootx-mlx5test`: rustnic plus mlx5,
-      `prefer_media_drivers = virtio,mlx5`, `nic_verbose`, no `update =`. Each
-      take is announced before the disconnect (a hang must name itself), and
-      what is left on the handle afterwards is printed (the issue's HII/NII/AIP
-      question, and the driver's `Supported` declines on an SNP). Give-back says
-      if the firmware did not take it back. Test: QEMU has no ConnectX, so
-      net-ovmf loads the real driver under the virtio family's file name, where
-      it must decline and the firmware get the NIC back. Registering the golden
-      is the master's (`stormcentral note`).
+      not claim). 66de545 pinned in `build-nic-drivers.sh`, **off by default**:
+      it has never run on a card, so it joins the rustnic media only after the
+      Dell boot passes, and every other golden refuses it. Test golden
+      `stormbootx-mlx5test`: rustnic plus mlx5, `prefer_media_drivers =
+      virtio,mlx5`, `nic_verbose`, no `update =`. A take is announced before the
+      disconnect, `after the disconnect:` says what is left on the handle, and a
+      give-back the firmware refuses says `this NIC has no driver`.
+      **State (2026-11-04):** sc-build of 8c1ad5f (1273 s): no warnings, the
+      full suite, connectx 5/5. net-ovmf `mlx5-giveback` (the real driver under
+      the virtio file name): `taking it from Virtio PCI Driver`, `did not bind;
+      given back to Virtio PCI Driver`, `nic 0: driver Virtio Network Driver`,
+      leased. `mlx5-none`, `mlx5-absent`. The test medium: `iso-layout`, under
+      OVMF `mlx5@66de545 test`, verbose, the driver started, virtio taken,
+      `mlx5: no such NIC`; `REPRO_MEDIA` the same bytes from both builds.
+      Negative control: `stormbootx-rustnic` with mlx5 built dies naming #131.
+      **Not run:** any ConnectX. Whether FlexBoot lets go, and what it leaves on
+      PciIo, is the first line of stormnic-mlx5#1's boot on the Dell. **Left
+      elsewhere:** the master registers `stormbootx-mlx5test` (`note` sent);
+      stormnic-mlx5#1 asks `wait-hardware`; moving it to the default set is
+      stormnic-mlx5#1's to say, on #73.
 
 - [x] **#183 — claim on the engine's boot port, falling back to `api_port`
       (P2, stormcos#374's option A, stormblock#524). Released v0.36.0.** Plan:
@@ -2451,7 +2460,7 @@ then.
 
 ## Status
 
-v0.36.0 (#183: the engine's boot port, falling back to `api_port`; `StormBootEngine`). v0.35.1 (#180: `startup.nsh` starts one medium only; the last screen line names the build). v0.35.0 (#172: UEFI HTTP boot of the ISO, the arm64 USB stick and stick updater). v0.34.0 (#167: `maint` claims and boots the maintenance image, stormblock#497). v0.33.1 (#167: the intent's host is a name; laptop-ovmf boots the real command record). v0.33.0 (#167 phase 1: stormbootx's own API on port 9180, Ed25519-signed commands, the hold on a failed boot; goldens `hold = 120`). v0.32.0 (#167's inventory v2, #168's ARP priming and timing line, #99's parked cap9 in 50 ms). v0.29.0 (#151: stormbootx-stick; released, frozen until 2026-10-17, then the master promotes it). v0.28.2 was #130 (reproducible media); v0.28.0 was #144 (the boot panel); v0.27.0 was #148 (the self-update resolves its host); v0.26.0 was #145 (the fall-through starts the local disk itself); v0.25.0 was #128: #4, #10, #17, #25, #36, #42, #53, #67 and #138. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
+v0.37.0 (#131: `prefer_media_drivers = mlx5`, the `stormbootx-mlx5test` medium). v0.36.0 (#183: the engine's boot port, falling back to `api_port`; `StormBootEngine`). v0.35.1 (#180: `startup.nsh` starts one medium only; the last screen line names the build). v0.35.0 (#172: UEFI HTTP boot of the ISO, the arm64 USB stick and stick updater). v0.34.0 (#167: `maint` claims and boots the maintenance image, stormblock#497). v0.33.1 (#167: the intent's host is a name; laptop-ovmf boots the real command record). v0.33.0 (#167 phase 1: stormbootx's own API on port 9180, Ed25519-signed commands, the hold on a failed boot; goldens `hold = 120`). v0.32.0 (#167's inventory v2, #168's ARP priming and timing line, #99's parked cap9 in 50 ms). v0.29.0 (#151: stormbootx-stick; released, frozen until 2026-10-17, then the master promotes it). v0.28.2 was #130 (reproducible media); v0.28.0 was #144 (the boot panel); v0.27.0 was #148 (the self-update resolves its host); v0.26.0 was #145 (the fall-through starts the local disk itself); v0.25.0 was #128: #4, #10, #17, #25, #36, #42, #53, #67 and #138. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
 (and the same day, the full chain: chain-load into stormuefi and a running
 stormcos kernel), on a
 Dell PowerEdge R230 (service tag C2NR0Q2) booting the agent over iDRAC virtual

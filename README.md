@@ -1498,13 +1498,14 @@ it. Each take is announced before the disconnect, so a Stop or Start that never
 returns has named itself, and the console says what the firmware's driver left:
 
 ```
-    [  4 s] 0000:02:00.0 15b3:1015: taking it from Mellanox ConnectX Driver for stormnic-mlx5.efi
-              after the disconnect: nothing left on the handle
-    [  9 s] 0000:02:00.0 15b3:1015: taken from Mellanox ConnectX Driver; stormnic-mlx5.efi drives it
+    [  3 s] 0000:00:02.0 1af4:1000: taking it from Virtio PCI Driver for stormnic-virtio.efi
+              after the disconnect: PCI I/O open by driver handle 0x3f7feb18 (attributes 0x1), PCI I/O open by Sata Controller Init Driver (attributes 0x2)
+    [  3 s] 0000:00:02.0 1af4:1000: taken from Virtio PCI Driver; stormnic-virtio.efi drives it
 ```
 
-(The shape of those lines, with this card's names filled in: no ConnectX has run
-it yet.) A driver that declines gives the NIC back; if the firmware's driver does
+(That is OVMF with virtio: no ConnectX has run it yet. Opens at attributes 0x1 and
+0x2 are lookups and hold nothing; a `BY_DRIVER` open is 0x10, and an `SNP on the
+handle` would make stormnic-mlx5 decline.) A driver that declines gives the NIC back; if the firmware's driver does
 not take it again the line says `this NIC has no driver`, and the boot goes on
 over any other. The rustnic media builds its own drivers and takes no nic-drivers golden. Each ISO's `stormboot.conf` names the variant, and the console
 prints it under the banner:
