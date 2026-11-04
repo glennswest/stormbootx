@@ -2,7 +2,7 @@
 //! console says about the others (#25).
 //!
 //! A ConnectX-4 or later physical function has the 25G-and-up NV FEC
-//! configuration `mlxfec` reads (and on a recovery stick writes). A
+//! configuration `mlxfec` reads (and for `fec_pin` or a recovery stick writes). A
 //! ConnectX-3 or ConnectX-3 Pro (the Supermicro X9 blades' 10/40G card) has
 //! no RS-FEC at all: it is a ConnectX, and it has nothing to report. That is
 //! a different line from a Mellanox function this code doesn't know (a
@@ -79,6 +79,34 @@ pub fn kind(device: u16) -> Kind {
 /// its own line already.
 pub fn closing_line(mellanox_seen: usize) -> Option<&'static str> {
     (mellanox_seen == 0).then_some("no ConnectX on the bus")
+}
+
+/// What the FEC pin does this boot (#186).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pin {
+    /// Nothing to write, and no record to settle.
+    Nothing,
+    /// The last boot's write is what the card now says: forget the record.
+    Held,
+    /// A port differs and no pin has been tried: write, then one warm reset.
+    Write,
+    /// A port differs after a pin was tried: say so, and never write or reset.
+    Stuck,
+}
+
+/// The pin's whole decision. Its inputs are what the card's NV said (`ports`
+/// read, `differ` of them with another next-boot value than RS, `failed` reads)
+/// and whether a pin was already tried. **Link state is not an input, by the
+/// owner's terms and on purpose**: one early link sample is what cost the R230
+/// its 25G ports on 2026-09-07. A record is forgotten only on a whole read saying
+/// RS, so a card that went missing or a failed read cannot re-arm the write.
+pub fn pin_action(ports: usize, differ: usize, failed: usize, tried: bool) -> Pin {
+    match (differ > 0, tried) {
+        (true, false) => Pin::Write,
+        (true, true) => Pin::Stuck,
+        (false, true) if ports > 0 && failed == 0 => Pin::Held,
+        (false, _) => Pin::Nothing,
+    }
 }
 
 const TAG_QWORD: u8 = 0x8a;
@@ -273,6 +301,45 @@ mod tests {
         assert_eq!(range_of(&[0x88, 0, 0, 2]), None);
         assert_eq!(range_of(&qword(0, 0, 0xff, 0x100)), None);
         assert_eq!(range_of(&qword(2, 0x100, 0, 1)), None);
+    }
+
+    /// Boots of a machine, with a card whose NV keeps a write or doesn't.
+    /// Returns how many boots wrote, each write being one warm reset.
+    fn resets(keeps_it: bool, boots: usize) -> usize {
+        let (mut next_is_rs, mut tried, mut resets) = (false, false, 0);
+        for _ in 0..boots {
+            match pin_action(1, !next_is_rs as usize, 0, tried) {
+                Pin::Write => {
+                    tried = true;
+                    next_is_rs = keeps_it;
+                    resets += 1;
+                }
+                Pin::Held => tried = false,
+                Pin::Nothing | Pin::Stuck => {}
+            }
+        }
+        resets
+    }
+
+    #[test]
+    fn the_pin_resets_once_whether_or_not_the_card_keeps_it() {
+        assert_eq!(resets(true, 10), 1);
+        assert_eq!(resets(false, 10), 1);
+    }
+
+    #[test]
+    fn the_pin_writes_only_a_difference_and_only_once() {
+        assert_eq!(pin_action(2, 0, 0, false), Pin::Nothing);
+        assert_eq!(pin_action(2, 1, 0, false), Pin::Write);
+        assert_eq!(pin_action(2, 1, 0, true), Pin::Stuck);
+        assert_eq!(pin_action(2, 0, 0, true), Pin::Held);
+    }
+
+    #[test]
+    fn a_missing_card_or_a_failed_read_keeps_the_record() {
+        assert_eq!(pin_action(0, 0, 0, true), Pin::Nothing);
+        assert_eq!(pin_action(1, 0, 1, true), Pin::Nothing);
+        assert_eq!(pin_action(0, 0, 1, false), Pin::Nothing);
     }
 
     #[test]

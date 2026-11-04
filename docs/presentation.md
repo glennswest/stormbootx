@@ -146,8 +146,9 @@ Any failure on any arrow → **fall through to the local disk**.
   claims as the machine stormbootx claimed as.
 - **Self-update** (`selfupdate.rs`, `manifest.rs`, #83): a writable medium
   takes a newer Ed25519-signed release from stormcentral, on trial.
-- **NIC FEC report** (`mlxfec.rs`, `connectx.rs`): prints each ConnectX
-  port's FEC, read-only; a ConnectX-3 says it has none (#25).
+- **NIC FEC report and pin** (`mlxfec.rs`, `fecpin.rs`): prints each ConnectX
+  port's FEC; `fec_pin = rs` writes one whose NV value differs, one warm reset,
+  no link state read (#186). A ConnectX-3 says it has none (#25).
 
 ---
 

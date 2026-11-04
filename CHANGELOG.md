@@ -3,6 +3,10 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-04
+- **feat:** The FEC pin at boot (#186, the owner's choice, reversing the read-only boot of 2026-09-07): `fec_pin = rs` (`build-boot-agent.sh --fec-pin`, every golden) writes RS to a ConnectX port whose NV next-boot value differs, says which port, from what and why, and warm-resets once. No link state is read. `StormBootFecPin` (NV) is set before the write, so a card that loses the value costs one reset and a line on each boot after; `fec_pin = off` forgets it. A `fec =` stick wins.
+- **test:** `connectx.rs` `pin_action` host tests; `tests/fecpin-ovmf.sh`, real warm resets and the NV variable with a pretend card (`STORMBOOTX_FEC_TEST`, refused by `build-golden.sh`), because QEMU has no ConnectX (#186).
+
 ## [v0.38.1] — 2026-11-04
 
 ### Fixed

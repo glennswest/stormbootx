@@ -51,7 +51,8 @@ as a NIC driver (#26; absent on ordinary media). It writes to these:
 | What | When |
 |---|---|
 | the attached clone on the engine | the booted OS writes to its disk, and the BlockIO handle is read-write |
-| the ConnectX NV FEC setting | only with `fec =` on a recovery stick, or `fec MODE` typed at the failure console; followed by a warm reset |
+| the ConnectX NV FEC setting | with `fec_pin = rs` (every golden, #186) when a port's next-boot value is not RS; with `fec =` on a recovery stick; or `fec MODE` typed at the failure console; followed by a warm reset |
+| `StormBootFecPin`, a non-volatile variable | set when the FEC pin writes, kept until a read shows RS or the media says `fec_pin = off` (#186) |
 | the hardware clock (RTC), through UEFI `SetTime` | a boot whose NTP server answers while the RTC is more than a second off (#77); UTC, time zone and daylight left as the firmware had them |
 | **volatile** EFI variables, `StormBootTag`, `StormBootHostNqn`, `StormBootClock`, `StormBootUpdate` and `StormBootInstallConfig` (+ its chunks) | every boot that names the machine, attaches an image, asks NTP, has a self-update state or finds an `install-config.yaml` on the media (#76, #77, #83, #79); gone at the next reset |
 | its own boot medium: `\EFI\BOOT\BOOTX64.EFI`, `\startup.nsh`, `\stormboot\stormboot.conf`, `\stormboot\drivers\*` (with `*.new`/`*.prev` copies), `\stormboot\state`, and `\stormboot\local.conf` only to keep a `name =` | a writable medium (USB stick, local ESP) with `update =`, when a newer signed release verifies, and the starts of its trial (#83, *Self-update*) |
@@ -170,10 +171,21 @@ console; a machine with no screen console gets it anyway.
      through.
    - The console prints the source, plus the SMBIOS model when there is one,
      and a `mac` line after step 4.
-3. **NIC FEC report** (`src/mlxfec.rs`). It prints every ConnectX port's
-   current and next-boot FEC, read only. If `fec =` is set in the conf, it
-   writes that value and warm-resets once. The next boot then finds nothing to
-   change. A ConnectX-3 or -3 Pro (the X9 blades', 10/40G) has no FEC setting
+3. **NIC FEC report and pin** (`src/mlxfec.rs`, `src/fecpin.rs`). It prints
+   every ConnectX port's current and next-boot FEC. With `fec_pin = rs` (every
+   golden; the owner's choice on #186, 2026-11-04, reversing the read-only boot
+   of 2026-09-07), a port whose **NV next-boot value** is not RS is written RS,
+   the console says which port, from what and why, and the machine warm-resets
+   once. No link state is read for this: a single link sample is what cost the
+   R230 its ports on 2026-09-07. `StormBootFecPin` (NV) is set before the write,
+   so a card that loses the value or a write that hangs costs one reset:
+   the next boot prints `the last boot's pin did not hold`, writes nothing and
+   goes on. `the last boot's pin held` clears it. The way back is `fec_pin = off`
+   on the media or in `local.conf` (it also forgets the record), then `fec default`
+   or a `fec =` stick; without `off`, the next boot pins again. A warm reset uses
+   up one of a self-update trial's starts. If `fec =` is set in the conf, the pin
+   stands aside; that value is written, with one warm reset, and the next boot
+   finds nothing to change. A ConnectX-3 or -3 Pro (the X9 blades', 10/40G) has no FEC setting
    and says `ConnectX-3 (15b3:1003): no FEC to report`. "no ConnectX on the
    bus" means no Mellanox function at all (#25, `src/connectx.rs`), and a
    `root bridge buses 80-bf: N function(s)` line per bridge says what was

@@ -157,17 +157,23 @@ pub(crate) fn open_fs(handle: Handle) -> Option<ScopedProtocol<SimpleFileSystem>
     boot::open_protocol_exclusive::<SimpleFileSystem>(handle).ok()
 }
 
+/// `fec_pin =` (#186): `rs` pins every ConnectX port's NV FEC at boot, `off`
+/// says not to and forgets the last pin's record, lower-cased. The binary's
+/// default is `None`, nothing; every golden says `rs`.
+pub fn stated_fec_pin() -> Option<String> {
+    Some(field(&conf_text()?, "fec_pin")?.to_ascii_lowercase())
+}
+
 /// The FEC mode stated in the config file, read on its own.
 ///
 /// Read here, before the rest of the configuration, for the same reason
 /// `stated_tag` is: the card has to be settled before the network is asked for
 /// anything, and a write costs a warm reset.
 ///
-/// **Absent on every normal stick, and that is the point.** Nothing in this
-/// binary decides on its own that a card's persistent config needs rewriting —
-/// the boot path once did, from a single link sample, and pinned a card whose
-/// ports then lit and never linked (`main.rs` step 2b). This is the deliberate
-/// way back: a recovery stick says `fec = default`, writes it once, warm-resets,
+/// **Absent on every normal stick.** The boot path once decided on its own,
+/// from a single link sample, and pinned a card whose ports then lit and never
+/// linked (`main.rs` step 2b); the pin it has now (`fec_pin`, #186) reads no
+/// link. This is the deliberate way back: a recovery stick says `fec = default`, writes it once, warm-resets,
 /// and finds nothing to do on the boot after. An unparseable value is ignored
 /// rather than guessed at — writing the wrong FEC is what made this necessary.
 pub fn stated_fec() -> Option<crate::mlxfec::Fec> {

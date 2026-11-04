@@ -71,6 +71,7 @@ mod intent;
 mod inventory;
 mod logwire;
 mod manifest;
+mod fecpin;
 mod mlxfec;
 mod net;
 mod netlog;
@@ -254,17 +255,14 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
         uefi::println!("model       : {model}");
     }
 
-    // 1b. Read and report the NIC's 25G FEC, before the network is used. This
-    //     is a diagnostic, not a fix: on 2026-09-06 the flaky-SR-link problem
-    //     turned out to be switch-side — the fabric (Dell S5148F) was pinned to
-    //     `fec off`, and the ConnectX's device-default already *negotiates*
-    //     cl108-rs, so setting the switch to `CL108-RS` matched both ends and
-    //     the links (including a port dead for days) came up stable. The card
-    //     needed no change. The write path exists in `mlxfec` and works, but
-    //     nothing on the boot path calls it: `apply(None)` reads and reports,
-    //     and that is all this does. See step 2b for why the one thing that
-    //     did write was switched off. Nothing here is fatal; an unrecognised
-    //     card is named and skipped.
+    // 1b. Read and report the NIC's 25G FEC, before the network is used, and
+    //     pin it when the media says `fec_pin = rs` (#186, the owner's choice,
+    //     2026-11-04; `fecpin.rs`). Only the card's NV value decides that: see
+    //     step 2b for what a link sample did. On 2026-09-06 the flaky-SR-link
+    //     problem turned out to be switch-side — the fabric (Dell S5148F) was
+    //     pinned to `fec off`, and the ConnectX's device-default already
+    //     *negotiates* cl108-rs, so setting the switch to `CL108-RS` matched both
+    //     ends. Nothing here is fatal; an unrecognised card is named and skipped.
     ui::machine(&format!(
         "{}   serial {}",
         smbios::model().unwrap_or_else(|| String::from("unknown machine")),
@@ -273,8 +271,12 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
     ui::step(ui::Step::Nic, "NIC drivers and links");
     if first {
         uefi::println!("nic fec     :");
-        let _ = mlxfec::apply(None);
+        let read = fecpin::read();
         profile::mark("nic fec");
+        // A `fec =` stick is an operator saying something else.
+        if config::stated_fec().is_none() {
+            fecpin::at_boot(&read);
+        }
     }
 
     //     A recovery stick, and only a recovery stick, may state `fec = MODE`
@@ -409,9 +411,8 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
     //     problem the card does not have.
     //
     //     `mlxfec` keeps the write path — it works, it is hard-won, and #7's
-    //     history is in it. Reading is still done, above. If this is ever
-    //     revived it needs a settle wait before it believes "all down", and a
-    //     reason to prefer pinning over the device default.
+    //     history is in it. The owner brought a write back on #186 (step 1b):
+    //     the card's own NV value decides it, and no link sample ever may.
 
     // 3. What should I boot?
     // The DNS name the network gives this machine (#23): full name, the host

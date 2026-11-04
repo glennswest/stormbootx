@@ -17,6 +17,9 @@
 //! configuration TLV that decides the FEC at the next NIC reset. Nothing here
 //! talks to the driver, and the driver never notices.
 //!
+//! The boot path writes only for `fec_pin = rs` (#186, `fecpin.rs`), a `fec =`
+//! recovery stick, or `fec MODE` typed at the failure console.
+//!
 //! The value written is a *next-boot* value. Firmware reads NV configuration
 //! when the card resets, so a write is followed by MFRL (the firmware's own
 //! "prepare for warm boot" request, exactly what `mlxconfig` sends) and one
@@ -215,9 +218,22 @@ pub struct Port {
     pub next: Fec,
 }
 
+/// One port read, and where.
+#[derive(Clone, Debug)]
+pub struct PortAt {
+    /// `84:00.0`.
+    pub loc: String,
+    pub port: Port,
+}
+
 /// What happened across the bus.
 #[derive(Default, Debug)]
 pub struct Summary {
+    /// Every port read, for the FEC pin (#186).
+    pub ports: Vec<PortAt>,
+    /// What was written, for the console and the pin's record:
+    /// `84:00.0 port 1: device-default -> rs`.
+    pub wrote: Vec<String>,
     /// ConnectX cards that were queried.
     pub cards: usize,
     /// Ports whose next-boot value was written this boot and read back as
@@ -232,9 +248,6 @@ pub struct Summary {
 
 impl Summary {
     /// Whether this boot changed something that only a reset will apply.
-    ///
-    /// Nothing on the boot path writes any more, so nothing there asks for a
-    /// reset; the shell's `fec` command is what uses this now.
     pub fn reset_needed(&self) -> bool {
         self.written > 0
     }
@@ -928,6 +941,7 @@ fn card_fec(
     let mut port_no = 1u8;
     while port_no <= 2 {
         let Some(p) = dev.port(port_no)? else { break };
+        sum.ports.push(PortAt { loc: String::from(loc), port: p.clone() });
         let mut line = format!(
             "  {loc}  {model} port {}: current {}, next boot {}",
             p.port,
@@ -946,6 +960,7 @@ fn card_fec(
             Some(w) => match dev.set_port(p.port, w) {
                 Ok(back) if back == w => {
                     sum.written += 1;
+                    sum.wrote.push(format!("{loc} port {}: {} -> {}", p.port, p.next.name(), w.name()));
                     line.push_str(&format!(" — wrote {}", w.name()));
                 }
                 Ok(back) => {

@@ -124,15 +124,14 @@ fn help() {
 
 /// Read, and on request write, the ConnectX NV FEC override.
 ///
-/// This is the **only** thing in stormbootx that writes FEC, and it is driven
-/// by a person typing it. The boot path used to do it on its own and that is
-/// what put the R230's card here: a one-shot link sample read a healthy card as
-/// all-down and pinned RS on both ports, after which they lit but never linked
-/// against a switch on `fec CL108-RS`. Card-side persistent config is an
-/// operator decision, not a boot-time guess — see `main.rs` step 2b.
+/// Driven by a person typing it. The boot path's own write is `fec_pin` (#186),
+/// which reads no link. An earlier one read a one-shot link sample: it took a
+/// healthy card as all-down and pinned RS on both ports, after which they lit
+/// but never linked against a switch on `fec CL108-RS` — see `main.rs` step 2b.
 ///
 /// `fec default` is the way back: value 0, what the card shipped with and what
-/// carried these links for 16 h 51 m before anything wrote to them.
+/// carried these links for 16 h 51 m before anything wrote to them. On a medium
+/// with `fec_pin = rs` the next boot writes rs again: say `fec_pin = off` too.
 fn fec(args: &[&str]) {
     let Some(mode) = args.first() else {
         crate::mlxfec::apply(None);

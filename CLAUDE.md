@@ -55,7 +55,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   tests/stick.sh && deploy/build-golden.sh stormbootx-stick $PWD/t/stick && \
   deploy/build-golden.sh stormbootx $PWD/t/fw && scripts/build-stormboot-serve.sh $PWD/t/serve && \
   tests/usb-layout.sh t/fw/boot/stormbootx-usb.img t/fw/media && ! tests/usb-layout.sh t/fw/boot/stormbootx.img && \
-  NIC=virtio tests/media-ovmf.sh t/fw/boot/stormbootx-usb.img "media       : fw" "fallback    : none" && \
+  NIC=virtio tests/media-ovmf.sh t/fw/boot/stormbootx-usb.img "media       : fw" "fallback    : none" "fec pin     : rs (\\stormboot\\stormboot.conf): 0 port(s) read" && \
   deploy/build-golden.sh stormbootx-rustnic $PWD/t/rn && tests/usb-layout.sh t/rn/boot/stormbootx-rustnic-usb.img t/rn/media && \
   NIC=virtio tests/media-ovmf.sh t/rn/boot/stormbootx-rustnic-usb.img "media       : rustnic" "; stormnic-virtio.efi drives it" && \
   tests/laptop-ovmf.sh t/fw/boot/stormbootx.iso $R/tcp4probe.efi t/serve/stormboot-serve && \
@@ -67,6 +67,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   EFI_NAME=BOOTAA64.EFI tests/iso-layout.sh t/arm/boot/stormbootx-arm64.iso && \
   EFI_NAME=BOOTAA64.EFI tests/usb-layout.sh t/arm/boot/stormbootx-arm64-usb.img t/arm/media && \
   deploy/build-golden.sh stormbootx-arm64-disk $PWD/t/armdisk && \
+  tests/fecpin-ovmf.sh && \
   tests/update-ovmf.sh $R/tcp4probe.efi'
 ```
 
@@ -174,6 +175,13 @@ network and checks the panel through QEMU monitor screendumps
 (`tests/screen.py`): the header bar drawn, the failed step red, F2 to the
 details and Esc back, and no panel text in the serial log. `SCREEN_PNG=1`
 (it and net-ovmf's `shipped` boot) prints each dump as a base64 PNG line.
+
+`tests/fecpin-ovmf.sh` (#186) builds stormbootx with a pretend card
+(`STORMBOOTX_FEC_TEST`, in its own target dir; `build-golden.sh` refuses it) and
+boots six times with no `-no-reboot`: a write and one real warm reset, a card that
+forgets the value (one reset, never two), `fec_pin = off` on that machine, a
+refused write, a card already on RS, and no `fec_pin`. QEMU has no ConnectX, so
+mlxfec's own read and write are not in it.
 
 `tests/iso-layout.sh ISO …` checks an ISO is isohybrid with a FAT12 ESP,
 the layout Aptio 4 boots (#55). `tests/usb-layout.sh IMG [TREE]` (#185) checks
@@ -312,8 +320,9 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/shell.rs` | timed, never-forced failure console before the fall-through |
 | `crates/stormbootx-stick` | the node's stick updater (#151): static musl Linux; `src/manifest.rs` and `src/sha256.rs` by path; find (sysfs, refusals), verify, decide, apply as `selfupdate.rs`; built for x86_64 and, since #172, aarch64 (`bin/stormbootx-stick-arm64`, `BOOTAA64.EFI`, family `stormbootx-arm64`); `tests/stick.sh` |
 | `src/ui.rs` | the boot panel (#144): its own `ConOut` in the system table; every line to the serial consoles and F2, the steps drawn on the screen consoles; `end` hands the screen back |
-| `src/connectx.rs` | which Mellanox ids have a FEC to read, which are ConnectX-3s with none (#25), and the scan's closing line (core-only, host-tested) |
-| `src/mlxfec.rs` | ConnectX FEC NV read; write only on a `fec =` recovery stick |
+| `src/connectx.rs` | which Mellanox ids have a FEC to read, which are ConnectX-3s with none (#25), the scan's closing line, and `pin_action`, the pin's decision (#186) (core-only, host-tested) |
+| `src/mlxfec.rs` | ConnectX FEC NV read and write: the pin, a `fec =` recovery stick, the shell's `fec` |
+| `src/fecpin.rs` | the FEC pin at boot (#186): `fec_pin = rs`, the one warm reset, `StormBootFecPin`; a pretend card under `STORMBOOTX_FEC_TEST` for `tests/fecpin-ovmf.sh` |
 | `src/tcp4probe.rs` | second binary: does this machine's firmware carry TCP4? |
 
 ## Load-bearing facts
@@ -487,11 +496,15 @@ These have each cost a debugging session. Do not "simplify" them away.
   in the **`dswfecfix`** repo, running on the switch under cron; do not
   re-implement the recovery here, and do not read a dark 25G link on this
   fabric as evidence about stormbootx until that log has been checked.
-- **Persistent config on the NIC is not stormbootx's to change at boot.** The
-  card negotiates what it needs; a wrong fabric is fixed on the fabric, where
-  the change is visible, reversible and applies to every host at once. A
-  boot-time NV write is invisible, per-machine, survives reinstall, and can
-  only be undone from the thing it just broke the network on.
+- **The boot writes the NIC's persistent config only under `fec_pin = rs`, the
+  owner's decision (#186, 2026-11-04, reversing 2026-09-07's rule), and only on
+  the card's own NV value.** The argument it overrode still stands: a wrong
+  fabric is fixed on the fabric, and a boot-time NV write is invisible,
+  per-machine, survives reinstall, and can only be undone from the thing it just
+  broke the network on. So the pin never reads a link (`connectx::pin_action`
+  takes no link state), resets at most once per difference
+  (`StormBootFecPin`, set before the write), and says what it wrote on the
+  console and on the next boot. Don't add a link input or drop the record.
 
 - **The self-update believes the signature and nothing else** (#83). The
   manifest is fetched over plain HTTP from a name DHCP's DNS resolves, so
@@ -648,7 +661,7 @@ then.
 ### Open, no external blocker
 
 - [ ] **#186 — `no ConnectX on the bus` on the R6415's ConnectX-4 Lx (P1, the
-      master, 2026-11-04). Finder released v0.38.1; the pin is the owner's.**
+      master, 2026-11-04). Finder released v0.38.1; the pin in progress.**
       Cause (forge1's console): the card is at `84:00.x` under a root bridge
       whose buses start at 0x80 (EPYC: 00, 40, 80, c0), and `mlxfec` started each
       bridge's walk at bus 0, which EDK2 refuses outside a bridge's range. Not
