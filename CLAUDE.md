@@ -270,7 +270,7 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/dhcp4.rs` | tcp4probe only since #56: DHCP through the firmware's `EFI_DHCP4` |
 | `src/nvme.rs` | the NVMe/TCP initiator's UEFI end: `TcpSocket` as its `Transport`, `boot::stall` (#10) |
 | `crates/nvme-tcp-initiator` | the NVMe/TCP initiator itself (#10): `no_std` + `alloc`, no dependencies, generic over a `Transport` and a `Platform`, shared with stormboot4bios; reads up to 8 in flight (#100); host tests against a fake controller (`cargo test -p nvme-tcp-initiator`) |
-| `src/handoff.rs` | `StormBootTag`/`StormBootHostNqn`, volatile EFI variables naming the machine to Linux's initramfs (#76, stormblock#249); `StormBootClock` (#77); `StormBootUpdate` (#83); `StormBootInstallConfig` + chunks (#79) |
+| `src/handoff.rs` | `StormBootTag`/`StormBootHostNqn`, volatile EFI variables naming the machine to Linux's initramfs (#76, stormblock#249); `StormBootEngine` (#183); `StormBootClock` (#77); `StormBootUpdate` (#83); `StormBootInstallConfig` + chunks (#79) |
 | `src/selfupdate.rs` | the boot medium updates itself (#83): trial count and revert at start; fetch, Ed25519 check, `*.new`/`*.prev` swap and restart after `net::up`; `mark_good` after the attach; `StormBootMinSerial` (NV) |
 | `src/manifest.rs` | the self-update's signed manifest, `RELEASE_KEYS` (stormcentral's, #86), `\stormboot\state`, trial and serial decisions, HTTP framing, `update =` (core-only, host-tested) |
 | `src/installconf.rs` | `install-config.yaml` (#79): the media slot, the chunk variables' names and the `v1:<len>:<N>:<sha256>` header (core-only, host-tested) |
@@ -280,7 +280,7 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/intent.rs` | the boot intent (`install`/`local`/`auto`) read before the claim; every doubt is `auto` |
 | `src/inventory.rs` | the firmware inventory with the claim (#4, #20, #167 `"v":2`): SMBIOS Type 0/1/2/4/17/38/42, ATA IDENTIFY, NVMe Identify, SCSI INQUIRY and VPD parsers, partition kinds, the JSON and its budget, the console lines (core-only, host-tested) |
 | `src/hardware.rs` | what the inventory is collected from: the stack's NICs, their drivers and MTU, PCI class 01 (connected first), BlockIO disks with `EFI_DISK_INFO`, NVMe pass-thru, `EFI_SCSI_IO` VPD and their GPT/MBR and ESP `\EFI`, the SMBIOS table; once, before anything is attached |
-| `src/registry.rs` | read the intent; claim `boothost/<tag>`, or `boothost/default` by MAC, every claim naming the agent (#90); read the engine's version. The old sbregistry `/v1/clones/claim` path was removed (#17) |
+| `src/registry.rs` | `find_engine`: the boot port, else `api_port`, for the whole boot (#183); read the intent; claim `boothost/<tag>`, or `boothost/default` by MAC, every claim naming the agent (#90); read the engine's version. The old sbregistry `/v1/clones/claim` path was removed (#17) |
 | `src/dnsname.rs` | the machine's DNS name (#23): DHCP options 12/15/6, PTR query and answer over DNS/TCP |
 | `src/universal.rs` | universal boot (#15): is the engine new enough, which MAC is the machine's, what host the reply named; which SMBIOS serial is a placeholder (#7, matches stormipmi) |
 | `src/esp.rs` | the attached ESP read without the firmware's FAT (#37): GPT, FAT12/16/32 at 512..4096-byte sectors; listings, reads at any position and lookups from a directory for `espfs.rs` (#42); `partitions`, every GPT entry, for the inventory (#167) |

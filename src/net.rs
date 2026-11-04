@@ -995,6 +995,22 @@ pub fn wait_lease(secs: u32) -> bool {
     }
 }
 
+/// Bring the stack up if nothing has, and wait for a first lease: what
+/// `connect_within` waits for, and the same words when none comes. For a
+/// connection whose own budget must not be spent on DHCP (#183).
+pub fn lease_within(secs: u32) -> Result<(), String> {
+    if net().is_err() {
+        up(crate::config::stated_rng())?;
+    }
+    if wait_lease(secs) {
+        return Ok(());
+    }
+    Err(format!(
+        "no address after {secs} s: nothing answered DHCP on any of {} NIC(s)",
+        net()?.nics.len()
+    ))
+}
+
 /// Pump the stack for `ms` milliseconds: leases, the log's sends and the
 /// API's connections (#167). The hold loop's heartbeat.
 pub fn pump(ms: u64) {

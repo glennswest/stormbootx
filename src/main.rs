@@ -104,6 +104,7 @@ const DEFAULTS: config::Defaults = config::Defaults {
     nqn: "nqn.2026-09.lo.g16:stormcos",
     nsid: 2, // drives[1] = stormcos-sno-10.21.img
     api_port: 9090, // the engine API on the same host as the portal
+    boot_port: 9089, // its plain boot-only port, asked first (#183, stormblock#524)
 };
 
 fn banner(line: &str) {
@@ -448,7 +449,6 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
         let mut maint = false;
         let claimed = if cfg.claim {
             let [a, b, c, d] = cfg.portal;
-            let host = format!("{a}.{b}.{c}.{d}:{}", cfg.api_port);
 
             // The engine's version first. It is the first request of the boot,
             // so it is also what brings the network up, and it says which
@@ -457,8 +457,16 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
             // each machine claiming the default a clone of its own; one from
             // before stormblock#200 would give them all one, so anything but
             // a version after 19.3.0 is "no".
-            ui::step(ui::Step::Engine, &host);
-            let (version, iface) = registry::engine_version(cfg.portal, cfg.api_port, &host);
+            //
+            // That read also picks the port (#183): the boot port, else
+            // `api_port`, for every request of this boot. The initramfs is told
+            // which answered, since it claims from the same place.
+            ui::step(ui::Step::Engine, &format!("{a}.{b}.{c}.{d}"));
+            let registry::Engine { port: engine_port, host, version, iface } =
+                registry::find_engine(cfg.portal, cfg.boot_port, cfg.api_port);
+            if version.is_ok() {
+                handoff::set_engine(&host);
+            }
             profile::mark("lease+engine");
             engine_answered = version.is_ok();
             match &version {
@@ -555,7 +563,7 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
                 let last = intent_keys.len().saturating_sub(1);
                 let mut found = None;
                 for (i, key) in intent_keys.iter().enumerate() {
-                    let r = registry::boot_intent(cfg.portal, cfg.api_port, &host, key);
+                    let r = registry::boot_intent(cfg.portal, engine_port, &host, key);
                     let not_found = matches!(&r, Ok((s, b)) if intent::from_reply(*s, b) == intent::Reply::NotFound);
                     if not_found && i < last {
                         uefi::println!("intent      : none under {key}");
@@ -604,7 +612,7 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
             }
             // A command for this machine (#167): one the API took, else the
             // engine's record under the name the intent answered for.
-            api::engine(cfg.portal, cfg.api_port, &host, &intent_key);
+            api::engine(cfg.portal, engine_port, &host, &intent_key);
             let told = match ask {
                 api::Claim::Intent => after_command(api::checkpoint(true))?,
                 a => a,
@@ -673,7 +681,7 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
             let claim_as = |name: &str, hints: bool| {
                 uefi::println!("claim       : {}/{name} at {host}{what}", registry::BOOTHOST_NS);
                 let (m, s) = if hints { (mac_colon.as_deref(), serial.as_deref()) } else { (None, None) };
-                registry::claim_boothost(cfg.portal, cfg.api_port, &host, name, m, s, image)
+                registry::claim_boothost(cfg.portal, engine_port, &host, name, m, s, image)
             };
             let claimed_ok = |a: registry::Attach, name: &str| {
                 match (&a.host, a.maint) {
@@ -723,7 +731,7 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
                             );
                             match registry::claim_default(
                                 cfg.portal,
-                                cfg.api_port,
+                                engine_port,
                                 &host,
                                 colon,
                                 serial.as_deref(),

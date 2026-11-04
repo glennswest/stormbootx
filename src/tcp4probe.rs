@@ -95,6 +95,7 @@ fn handed_down() {
     for (name, label) in [
         (uefi::cstr16!("StormBootTag"), "StormBootTag"),
         (uefi::cstr16!("StormBootHostNqn"), "StormBootHostNqn"),
+        (uefi::cstr16!("StormBootEngine"), "StormBootEngine"),
         (uefi::cstr16!("StormBootClock"), "StormBootClock"),
         (uefi::cstr16!("StormBootUpdate"), "StormBootUpdate"),
     ] {

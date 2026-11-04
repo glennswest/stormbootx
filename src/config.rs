@@ -90,6 +90,10 @@ pub struct Config {
     /// claims its own image by service tag. The NVMe portal and the API are the
     /// same host — one serves the bytes, the other says which bytes.
     pub api_port: u16,
+    /// The engine's plain boot-only port (#183, stormblock#524), asked before
+    /// `api_port`: the management API goes TLS, which firmware cannot speak.
+    /// `None` is `boot_port = off`, or the same port as `api_port`.
+    pub boot_port: Option<u16>,
     /// Whether to claim by service tag at all. `claim = no` leaves a machine on
     /// whatever `nqn`/`nsid` resolution produced, which is what a stick pinned
     /// to one namespace wants.
@@ -127,6 +131,8 @@ pub struct Defaults {
     pub nsid: u32,
     /// Engine management API port on the portal host.
     pub api_port: u16,
+    /// The engine's boot-only port on the portal host (#183).
+    pub boot_port: u16,
 }
 
 pub fn parse_ipv4(s: &str) -> Option<[u8; 4]> {
@@ -399,6 +405,7 @@ pub fn resolve(d: &Defaults) -> Config {
         nqn: d.nqn.to_string(),
         nsid: d.nsid,
         api_port: d.api_port,
+        boot_port: Some(d.boot_port),
         tag: None,
         claim: true,
         fallback: true,
@@ -424,6 +431,18 @@ pub fn resolve(d: &Defaults) -> Config {
     if let Some(p) = file.and_then(|t| field(t, "api_port")).and_then(|s| s.parse().ok()) {
         cfg.api_port = p;
     }
+    // `off` asks `api_port` alone; anything else unreadable keeps the default,
+    // which only costs a refused connection.
+    match file.and_then(|t| field(t, "boot_port")).as_deref() {
+        Some("off") => cfg.boot_port = None,
+        Some(v) => {
+            if let Ok(p) = v.parse() {
+                cfg.boot_port = Some(p);
+            }
+        }
+        None => {}
+    }
+    cfg.boot_port = cfg.boot_port.filter(|p| *p != cfg.api_port);
     // Off only when the file says so. The claim is how a machine is told which
     // image it runs, so a stick that says nothing should still ask.
     if let Some(v) = file.and_then(|t| field(t, "claim")) {

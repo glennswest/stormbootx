@@ -198,10 +198,13 @@ console; a machine with no screen console gets it anyway.
    line either way.
 5. **Where and which.** `config::resolve` gives the portal from the conf,
    falling back to compiled defaults. Unless the conf says `claim = no`, it
-   first reads the machine's **boot intent** (`src/intent.rs`):
+   first finds the engine (`/api/v1/health`) on its plain boot port, else on
+   `api_port`, and uses that port for the whole boot (#183, *Ports*), printed
+   as `engine : reached <addr>:<port> (the boot port)` or `(api_port)`. Then
+   it reads the machine's **boot intent** (`src/intent.rs`):
 
    ```
-   GET http://<portal>:<api_port>/api/v1/synonyms/boothost/<name>/intent
+   GET http://<portal>:<boot_port or api_port>/api/v1/synonyms/boothost/<name>/intent
        → 200 {"host":"server1","intent":"local","updated_at":…}  or 404
 
    (A stated name is the only one asked. Otherwise it goes down the names the
@@ -441,6 +444,9 @@ console; a machine with no screen console gets it anyway.
      never a serial or a MAC guess. Set as soon as the claim is decided, so a
      failed attach that falls through still names the machine.
    - `StormBootHostNqn`: the host NQN of step 6, once the attach worked.
+   - `StormBootEngine` (#183): `<addr>:<port>` where the engine answered, so
+     the initramfs can claim from the same port (stormblock#524). stormbootx
+     writes no kernel line, so `rd.stormblock.boothost=` is not its to set.
    - `StormBootClock` (#77): `synced:<NTP server address>` or `unsynced`,
      from step 5a (or the fall-through).
    - `StormBootUpdate` (#83): the boot medium's self-update, `serial:<n>`,
@@ -994,6 +1000,7 @@ others.
 | `nsid` | `2` | namespace if the claim fails or is off |
 | `fallback` | on | `none` (or `no`/`off`/`false`/`0`): no `nqn`/`nsid` is attached when no claim answers; the boot falls through to the local disk (#36). Every golden writes it; `build-boot-agent.sh --no-fallback` |
 | `api_port` | `9090` | engine API port on the portal host |
+| `boot_port` | `9089` | the engine's plain boot-only port, asked first; refused, silent or not an engine, the boot uses `api_port` (#183, stormblock#524). `off` asks `api_port` alone |
 | `claim` | `yes` | `no` / `false` / `0` / `off` skips the claim |
 | `name` (or `tag`) | none (DNS name, then MAC, then SMBIOS) | states the identity; the only name claimed |
 | `dns` | none | DNS server for the PTR of the machine's own address, when its DHCP reply names none or cannot be read (#26); `build-boot-agent.sh --dns` |
@@ -1045,6 +1052,7 @@ It touches nothing else:
   ```
   portal   = 192.168.1.50          # the laptop's IPv4 address on the node's network
   api_port = 9090                  # stormboot-serve --http-port
+  boot_port = off                  # stormboot-serve has one port; saves 15 s where a firewall drops 9089
   name     = server8               # the --host it serves; leave it out to claim by MAC (--host server8=MAC)
   syslog   = 192.168.1.50:5514     # the app's log collector (#162): the boot shows live
   update   = off                   # no stormcentral here; the medium keeps the app's version
@@ -1357,14 +1365,14 @@ the console and the log. Its outbound connections:
 
 | To | Default | Set by |
 |---|---|---|
-| engine API (health, intent read, claim) | `<portal>:9090`, HTTP/1.1 | `api_port` |
+| engine, boot verbs (health, intent read, claim) | `<portal>:9089`, HTTP/1.1; else `<portal>:9090` when that gives no health answer within 15 s of a lease (#183) | `boot_port`, `api_port` |
 | DNS server (PTR of its own address, #23) | option 6 of its DHCP lease, TCP 53 | DHCP, else `dns` |
 | DNS server (A record of the NTP server, when it is named, #77) | the same server, UDP 53 | DHCP, else `dns` |
 | NTP server (one SNTP exchange, #77) | DHCP option 42, else `pool.ntp.org`, UDP 123 | DHCP, else `ntp` |
 | NVMe/TCP portal (attach) | `<portal>:4420`, or what the claim returns | `port`, or the claim reply |
 | stormcentral (the self-update's manifest, signature and files, #83) | the `update =` URL, HTTP/1.1; its host looked up over UDP 53 | `update` |
 | the stormcast group (the boot's log, #162) | `239.255.42.1:5514`, UDP, TTL 4, on every NIC with a lease | `syslog = off` stops it |
-| the engine's host record (a command, #167, stormblock#494) | `<portal>:9090`, `GET …/command`, `POST …/command/done` | `api_port` |
+| the engine's host record (a command, #167, stormblock#494) | the port health answered on, `GET …/command`, `POST …/command/done` | `boot_port`, `api_port` |
 | a syslog collector (the boot's log, #162) | none; the goldens name `stormcentral.g8.lo:5514`, UDP, its host looked up over UDP 53 | `syslog`, else `install-config.yaml`'s `syslog:` |
 
 The portal defaults to `192.168.31.202` (forge). Since stormblock v17.0.0 the

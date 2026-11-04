@@ -12,6 +12,7 @@
 //! |---|---|
 //! | `StormBootTag` | the name claimed on: the reply's host, else the name claimed |
 //! | `StormBootHostNqn` | the host NQN the namespace was attached as |
+//! | `StormBootEngine` | `<addr>:<port>` where the engine answered: its boot port, else `api_port` (#183) |
 //! | `StormBootClock` | `synced:<NTP server address>` or `unsynced` (#77, `clock.rs`) |
 //! | `StormBootUpdate` | the medium's self-update (#83, `selfupdate.rs`): `serial:<n>`, `trial:<n>:<start>`, `good:<n>` or `failed:<n>` |
 //! | `StormBootInstallConfig` (+ `…0`..`…<N-1>`) | the media's `install-config.yaml` (#79): `v1:<length>:<N>:<sha256>`, the bytes in `N` chunks (`installconf.rs`) |
@@ -44,6 +45,13 @@ pub fn set_tag(name: Option<&str>) {
 /// `StormBootHostNqn`.
 pub fn set_host_nqn(nqn: &str) {
     set(cstr16!("StormBootHostNqn"), "StormBootHostNqn", nqn);
+}
+
+/// `StormBootEngine` (#183): where the engine answered this boot. The initramfs
+/// claims again from Linux, and no kernel line comes from here, so this is how
+/// it can learn the port firmware found (stormblock#524).
+pub fn set_engine(host: &str) {
+    set(cstr16!("StormBootEngine"), "StormBootEngine", host);
 }
 
 /// `StormBootClock` (#77): whether the RTC was checked against NTP and is

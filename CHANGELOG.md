@@ -3,6 +3,10 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-03
+- **feat:** The engine's boot port (#183, stormcos#374, stormblock#524): `boot_port` (default 9089, `off`) is asked first and `api_port` is the fallback, decided once per boot by the health read, so a new stick still boots from an engine with no boot port. `engine : reached <addr>:<port> (the boot port|api_port)` says which. The volatile `StormBootEngine = <addr>:<port>` hands it to the initramfs.
+- **test:** `net-ovmf` `bootport` (every request on the boot port, `api_port` sees none), `bootport-silent`, `bootport-off`; `shipped` and `laptop-ovmf` (the real stormboot-serve) the fallback.
+
 ## [v0.35.1] — 2026-11-03
 
 ### Fixed

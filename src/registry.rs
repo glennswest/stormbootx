@@ -114,11 +114,21 @@ fn request_on(
     patience: Option<u32>,
 ) -> Result<(String, Option<Interface>), String> {
     let mut sock = TcpSocket::connect(server, port)?;
-    let iface = sock.interface();
     if let Some(secs) = patience {
         sock.patient(secs);
     }
+    exchange(sock, host, method, path, body)
+}
 
+/// One HTTP/1.1 request on a connected socket, and the whole reply.
+fn exchange(
+    mut sock: TcpSocket,
+    host: &str,
+    method: &str,
+    path: &str,
+    body: Option<&str>,
+) -> Result<(String, Option<Interface>), String> {
+    let iface = sock.interface();
     let mut req = format!("{method} {path} HTTP/1.1\r\nHost: {host}\r\n");
     req.push_str("User-Agent: stormbootx\r\nAccept: application/json\r\nConnection: close\r\n");
     if let Some(b) = body {
@@ -324,18 +334,80 @@ pub fn claim_default(
     attach_from(body).map_err(|e| (status, e))
 }
 
+/// How long the boot port gets once there is a lease (#183), for the connect
+/// and for the reply. A port that drops SYNs (a laptop's firewall) costs this
+/// once a boot. It has to outlast 5 s per NIC with a lease and the wrong wire
+/// (`net.rs`), because a boot port missed that way is `api_port` found, and
+/// once :9090 is TLS that is an engine this boot cannot talk to.
+const BOOT_PORT_SECS: u32 = 15;
+
+/// Where this boot talks to the engine, and what it answered there.
+pub struct Engine {
+    pub port: u16,
+    /// `<addr>:<port>`, the `Host:` of every request.
+    pub host: String,
+    pub version: Result<String, String>,
+    pub iface: Option<Interface>,
+}
+
+/// Find the engine: its boot port if it has one, else `api_port` (#183,
+/// stormblock#524). The management API on `api_port` goes TLS, and only the
+/// boot verbs stay plain, on the boot port; an engine from before that has only
+/// `api_port`.
+///
+/// Health decides once, and every later request of the boot goes to that port.
+/// Falling back per request would mean retrying a claim on a second port, and a
+/// claim that was slow rather than lost has minted a clone. Anything but a
+/// health answer moves on, not just a refusal: what else listens on a port is
+/// not the engine. With no lease there is nothing to learn from a second port.
+pub fn find_engine(server: [u8; 4], boot_port: Option<u16>, api_port: u16) -> Engine {
+    let [a, b, c, d] = server;
+    let addr = |p: u16| format!("{a}.{b}.{c}.{d}:{p}");
+    let api_host = addr(api_port);
+    let mut boot_error = None;
+    if let Some(port) = boot_port {
+        if let Err(e) = crate::net::lease_within(30) {
+            return Engine { port: api_port, host: api_host, version: Err(e), iface: None };
+        }
+        let host = addr(port);
+        let (version, iface) = engine_version(server, port, &host, BOOT_PORT_SECS);
+        match version {
+            Ok(_) => {
+                uefi::println!("engine      : reached {host} (the boot port)");
+                return Engine { port, host, version, iface };
+            }
+            Err(e) => {
+                uefi::println!("engine      : no boot port at {host} ({e}); asking api_port");
+                boot_error = Some(e);
+            }
+        }
+    }
+    let (version, iface) = engine_version(server, api_port, &api_host, 30);
+    if version.is_ok() {
+        uefi::println!("engine      : reached {api_host} (api_port)");
+    }
+    let version = version.map_err(|e| match boot_error {
+        Some(b) => format!("{e}; the boot port: {b}"),
+        None => e,
+    });
+    Engine { port: api_port, host: api_host, version, iface }
+}
+
 /// The engine's version, from `GET /api/v1/health` — the one read on its API
 /// that needs no token (stormblock#107) — and the interface that reached it.
 ///
 /// It is the first request of a boot, so it is also what brings the network
 /// up; the interface comes back even when the version does not, because the
 /// DHCP name (#23) is read from that interface's lease.
-pub fn engine_version(
+fn engine_version(
     server: [u8; 4],
     port: u16,
     host: &str,
+    secs: u32,
 ) -> (Result<String, String>, Option<Interface>) {
-    let (response, iface) = match request_on(server, port, host, "GET", "/api/v1/health", None, None) {
+    let reply = TcpSocket::connect_within(server, port, secs)
+        .and_then(|sock| exchange(sock, host, "GET", "/api/v1/health", None));
+    let (response, iface) = match reply {
         Ok(r) => r,
         Err(e) => return (Err(e), None),
     };

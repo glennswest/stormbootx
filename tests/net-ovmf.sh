@@ -116,6 +116,8 @@ command -v python3 >/dev/null || die "python3 is not installed"
 
 W=$(mktemp -d "${TMPDIR:-/tmp}/net-ovmf.XXXXXX")
 STUB_PID=""
+BOOTPORT_PID=""
+SILENT_PID=""
 NVME_PID=""
 BLANK_PID=""
 NTP_PID=""
@@ -124,6 +126,8 @@ HTTP_PID=""
 cleanup() {
     [[ -n "$HTTP_PID" ]] && kill "$HTTP_PID" 2>/dev/null
     [[ -n "$STUB_PID" ]] && kill "$STUB_PID" 2>/dev/null
+    [[ -n "$BOOTPORT_PID" ]] && kill "$BOOTPORT_PID" 2>/dev/null
+    [[ -n "$SILENT_PID" ]] && kill "$SILENT_PID" 2>/dev/null
     [[ -n "$NTP_PID" ]] && kill "$NTP_PID" 2>/dev/null
     [[ -n "$SYSLOG_PID" ]] && kill "$SYSLOG_PID" 2>/dev/null
     [[ -n "$NVME_PID" ]] && kill "$NVME_PID" 2>/dev/null
@@ -137,6 +141,8 @@ cat > "$W/stub.py" <<'PY'
 import http.server, json, os, sys, time
 log = open(sys.argv[1], "a", buffering=1)
 W = os.path.dirname(sys.argv[1])
+# A second stub, the engine's boot port (#183), marks what it saw.
+TAG = sys.argv[3] + ": " if len(sys.argv) > 3 else ""
 class H(http.server.BaseHTTPRequestHandler):
     def reply(self, code, body):
         data = json.dumps(body).encode()
@@ -147,7 +153,7 @@ class H(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
     def do_GET(self):
-        log.write("GET %s\n" % self.path)
+        log.write("%sGET %s\n" % (TAG, self.path))
         # The self-update's boothelper (#83): whatever is published in serve/.
         pre = "/api/v1/boothelpers/stormbootx-test/"
         if self.path.startswith(pre):
@@ -189,7 +195,7 @@ class H(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         n = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(n).decode(errors="replace")
-        log.write("POST %s %s\n" % (self.path, body))
+        log.write("%sPOST %s %s\n" % (TAG, self.path, body))
         if self.path.endswith("/command/done"):
             self.reply(200, {})
             return
@@ -257,6 +263,17 @@ STUB_PID=$!
 for _ in $(seq 50); do [[ -s "$W/stub.port" ]] && break; sleep 0.1; done
 PORT=$(cat "$W/stub.port" 2>/dev/null) || die "the stub engine did not start"
 say "stub engine on 127.0.0.1:$PORT (10.0.2.2:$PORT from the guest)"
+# The engine's boot port (#183), the same stub; and a port that takes the
+# connection and never answers.
+python3 "$W/stub.py" "$W/stub.log" "$W/bootport.port" bootport &
+BOOTPORT_PID=$!
+python3 -c 'import socket,sys,time
+s = socket.socket(); s.bind(("127.0.0.1", 0)); s.listen(8)
+open(sys.argv[1], "w").write(str(s.getsockname()[1])); time.sleep(100000)' "$W/silent.port" &
+SILENT_PID=$!
+for _ in $(seq 50); do [[ -s "$W/bootport.port" && -s "$W/silent.port" ]] && break; sleep 0.1; done
+ENGINE_BOOT_PORT=$(cat "$W/bootport.port" 2>/dev/null) || die "the boot-port stub did not start"
+SILENT_PORT=$(cat "$W/silent.port" 2>/dev/null) || die "the silent port did not start"
 
 # The disk: a 128 MiB FAT16 at 4096-byte sectors (the shape stormblock lays
 # on a 4K release), the payload padded to 96 MiB, in a GPT at 4096-byte blocks.
@@ -786,6 +803,9 @@ common=(
 host_cpu=max
 [[ $accel == kvm ]] && host_cpu=host
 boot shipped "$host_cpu" "" 404 good "${common[@]}" "rng         : " \
+    "engine      : no boot port at 10.0.2.2:9089 (" \
+    "engine      : reached 10.0.2.2:$PORT (api_port)" \
+    "handed down : StormBootEngine = 10.0.2.2:$PORT  (attributes 0x6)" \
     "handoff     : StormBootHostNqn = nqn.2026-09.lo.storm:host-" \
     "handed down : StormBootHostNqn = nqn.2026-09.lo.storm:host-" \
     "clock       : was " \
@@ -913,6 +933,38 @@ boot slowclaim "$host_cpu" "" ok good \
     "not:no reply within" \
     "not:no HTTP status line" \
     "not:no network boot"
+
+# #183: an engine with a boot port takes every request of the boot, and the
+# initramfs is told so; the other stub, its api_port, sees nothing. (Every other
+# boot here is the engine with none: the default 9089 refused, api_port used.)
+BOOT_CONF="boot_port = $ENGINE_BOOT_PORT" \
+boot bootport "$host_cpu" "" ok good \
+    "engine      : reached 10.0.2.2:$ENGINE_BOOT_PORT (the boot port)" \
+    "claim       : boothost/default as 52:54:00:12:34:56 at 10.0.2.2:$ENGINE_BOOT_PORT" \
+    "handoff     : StormBootEngine = 10.0.2.2:$ENGINE_BOOT_PORT" \
+    "handed down : StormBootEngine = 10.0.2.2:$ENGINE_BOOT_PORT  (attributes 0x6)" \
+    "stub:bootport: GET /api/v1/health" \
+    "stub:bootport: GET /api/v1/synonyms/boothost/525400123456/intent" \
+    "stub:/command" \
+    "stub:bootport: POST /api/v1/synonyms/boothost/default/claim" \
+    "blockio     : 96 MiB read in all" \
+    "is there a TCP/IP stack in this firmware" \
+    "not:(api_port)"
+grep -qE '^(GET|POST) ' "$W/stub.log" && die "[bootport] api_port was asked too"
+say "[bootport] api_port saw nothing"
+# A listener that never answers is not an engine: api_port, within the budget.
+BOOT_CONF="boot_port = $SILENT_PORT" \
+boot bootport-silent "$host_cpu" "" ok good \
+    "engine      : no boot port at 10.0.2.2:$SILENT_PORT (" \
+    "engine      : reached 10.0.2.2:$PORT (api_port)" \
+    "stub:GET /api/v1/health" \
+    "handed down : StormBootEngine = 10.0.2.2:$PORT  (attributes 0x6)" \
+    "is there a TCP/IP stack in this firmware"
+# `off` asks api_port alone.
+BOOT_CONF="boot_port = off" STOP_AT="engine      : stormblock 19.4.0" BOOT_SETTLE=1 \
+boot bootport-off "$host_cpu" "" ok good \
+    "engine      : reached 10.0.2.2:$PORT (api_port)" \
+    "not:no boot port at"
 
 # #54: an attach that boots nothing, on a machine with one blank local disk.
 # The fall-through must take the attached disk back before returning, or

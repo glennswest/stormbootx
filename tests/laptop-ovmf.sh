@@ -289,6 +289,8 @@ app_conf() { # [name = …]
 
 attached=(
     "engine      : stormblock 2"
+    "engine      : reached 10.0.2.2:$HTTP_PORT (api_port)"
+    "handed down : StormBootEngine = 10.0.2.2:$HTTP_PORT  (attributes 0x6)"
     "  (universal boot)"
     "intent      : install"
     "  portal    : 10.0.2.2:$NVME_PORT  nsid "

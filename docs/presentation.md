@@ -193,6 +193,7 @@ Read from the volume it booted from. `key = value`, each key independent.
 |---|---|---|
 | `portal` | `192.168.31.202` | portal and engine host |
 | `port` / `api_port` | `4420` / `9090` | NVMe/TCP / engine API |
+| `boot_port` | `9089` | engine's boot-only port, asked first (`off`) |
 | `nqn` / `nsid` | `…lo.g16:stormcos` / `2` | used only if the claim fails or is off |
 | `fallback` | on | `none`: no `nqn`/`nsid` attach; every golden (#36) |
 | `claim` | `yes` | `no` pins the stick to `nqn`/`nsid` |
