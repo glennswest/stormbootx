@@ -646,20 +646,25 @@ then.
 
 ### Open, no external blocker
 
-- [ ] **#185 — the Dell R6415 (BIOS 1.12.2) refuses the hybrid ISO on USB and
+- [x] **#185 — the Dell R6415 (BIOS 1.12.2) refuses the hybrid ISO on USB and
       HTTP boot; a hand-built GPT + FAT32 stick boots (P1, the master,
-      2026-11-04). In progress.** Plan: `build-boot-agent.sh --fat 32` (a real
-      FAT32: `-F 32 -s 1`, over 65,525 clusters, since a FAT32 label on FAT16's
-      cluster count is what Aptio misread, stormcos#188; hidden sectors 2048,
-      where the partition starts). Every ISO golden also writes
-      `boot/<golden>-usb.img`: GPT, 64 MiB FAT32 ESP, the same files as its
-      `media/`. The `-disk` goldens stay FAT16: the blades boot those.
-      `tests/usb-layout.sh IMG [TREE]` checks it, media-ovmf boots it as a USB
-      stick, net-ovmf's `httpimg` HTTP-boots it as `application/vnd.efi-img`,
-      update-boots' `fat32` takes a self-update on it. **stormcentral's
-      `MEDIA_BUILD` keeps only `boot/<comp>.iso` and `media/`**, so the
-      `-usb.img` does not survive into a drive golden until stormcentral takes
-      it: filed there.
+      2026-11-04). Released v0.38.0.** `build-boot-agent.sh --fat 32` (a real
+      FAT32: `-F 32 -s 1`, 129,022 clusters, since a FAT32 label on FAT16's
+      cluster count is what Aptio misread, stormcos#188; hidden sectors 2048).
+      Every ISO golden also writes `boot/<golden>-usb.img`: GPT, 64 MiB FAT32
+      ESP, the same files as its `media/`. The `-disk` goldens stay FAT16: the
+      blades boot those.
+      **State (2026-11-04):** sc-build of 33a63d7 (1411 s): no warnings, the
+      full suite. `usb-layout` PASS on the fw, rustnic, mlx5test and arm64
+      images, and FAIL on the old 4 MiB `stormbootx.img` (the negative control);
+      `media-ovmf` booted the fw and rustnic images as USB sticks; net-ovmf
+      `httpimg` mounted it as `VirtualDisk`, attached and read 96 MiB;
+      update-boots `fat32` took serial 5 and passed its trial; `REPRO_MEDIA` the
+      same bytes from both builds.
+      **Not run:** the R6415 on this image (the layout copies its hand-built
+      stick, but no golden's image has booted there), its HTTP boot of an `.img`.
+      **Left elsewhere:** stormcentral#1192: its media build drops `-usb.img`
+      until it keeps and serves it.
 
 - [x] **#131 — `prefer_media_drivers = mlx5`: stormnic-mlx5 takes a
       ConnectX-4/5/6 from FlexBoot (P1, blocked stormnic-mlx5#1). Released
@@ -2493,7 +2498,7 @@ then.
 
 ## Status
 
-v0.37.0 (#131: `prefer_media_drivers = mlx5`, the `stormbootx-mlx5test` medium). v0.36.0 (#183: the engine's boot port, falling back to `api_port`; `StormBootEngine`). v0.35.1 (#180: `startup.nsh` starts one medium only; the last screen line names the build). v0.35.0 (#172: UEFI HTTP boot of the ISO, the arm64 USB stick and stick updater). v0.34.0 (#167: `maint` claims and boots the maintenance image, stormblock#497). v0.33.1 (#167: the intent's host is a name; laptop-ovmf boots the real command record). v0.33.0 (#167 phase 1: stormbootx's own API on port 9180, Ed25519-signed commands, the hold on a failed boot; goldens `hold = 120`). v0.32.0 (#167's inventory v2, #168's ARP priming and timing line, #99's parked cap9 in 50 ms). v0.29.0 (#151: stormbootx-stick; released, frozen until 2026-10-17, then the master promotes it). v0.28.2 was #130 (reproducible media); v0.28.0 was #144 (the boot panel); v0.27.0 was #148 (the self-update resolves its host); v0.26.0 was #145 (the fall-through starts the local disk itself); v0.25.0 was #128: #4, #10, #17, #25, #36, #42, #53, #67 and #138. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
+v0.38.0 (#185: `boot/<golden>-usb.img`, the GPT + FAT32 stick a Dell 14G boots). v0.37.0 (#131: `prefer_media_drivers = mlx5`, the `stormbootx-mlx5test` medium). v0.36.0 (#183: the engine's boot port, falling back to `api_port`; `StormBootEngine`). v0.35.1 (#180: `startup.nsh` starts one medium only; the last screen line names the build). v0.35.0 (#172: UEFI HTTP boot of the ISO, the arm64 USB stick and stick updater). v0.34.0 (#167: `maint` claims and boots the maintenance image, stormblock#497). v0.33.1 (#167: the intent's host is a name; laptop-ovmf boots the real command record). v0.33.0 (#167 phase 1: stormbootx's own API on port 9180, Ed25519-signed commands, the hold on a failed boot; goldens `hold = 120`). v0.32.0 (#167's inventory v2, #168's ARP priming and timing line, #99's parked cap9 in 50 ms). v0.29.0 (#151: stormbootx-stick; released, frozen until 2026-10-17, then the master promotes it). v0.28.2 was #130 (reproducible media); v0.28.0 was #144 (the boot panel); v0.27.0 was #148 (the self-update resolves its host); v0.26.0 was #145 (the fall-through starts the local disk itself); v0.25.0 was #128: #4, #10, #17, #25, #36, #42, #53, #67 and #138. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
 (and the same day, the full chain: chain-load into stormuefi and a running
 stormcos kernel), on a
 Dell PowerEdge R230 (service tag C2NR0Q2) booting the agent over iDRAC virtual
