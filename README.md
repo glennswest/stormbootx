@@ -1031,7 +1031,8 @@ others.
 | `nic_verbose` | `false` | `true`: the stormnic drivers print their whole bring-up trace instead of one line per NIC (#80). stormbootx sets the volatile `StormnicVerbose` variable (GUID `ce1479a2-eab9-4176-b0ad-c909ea5b8e0b`, `BOOTSERVICE_ACCESS`, one byte `01`) before it loads `\stormboot\drivers`; gone at the next reset, never in NVRAM. For debugging a machine without a rebuild; no golden sets it. `build-boot-agent.sh --nic-verbose`. From the EFI shell instead: `setvar StormnicVerbose -guid ce1479a2-eab9-4176-b0ad-c909ea5b8e0b -bs =01` |
 | `prefer_media_drivers` | none | media driver families that take their NICs from the firmware's own driver (#108): `virtio` (stormnic-virtio over OVMF's VirtioNetDxe), `mlx5` (stormnic-mlx5 over FlexBoot, #131; the test medium only). `virtio` is set on the rustnic media; without it the platform's drivers win. `build-boot-agent.sh --prefer-media-drivers` |
 | `media` | none | the media's label, printed under the banner (`media : fw`); written by the golden build, `build-boot-agent.sh --media` |
-| `fec` | none | **recovery sticks only**: write this FEC and warm-reset |
+| `fec` | none | **recovery sticks only**: write this FEC and warm-reset; the pin stands aside |
+| `fec_pin` | none (nothing pinned) | `rs`: a ConnectX port whose NV next-boot FEC is not RS is written RS, with one warm reset (#186; every golden). `off`: never, and forget the last pin's record. `build-boot-agent.sh --fec-pin` |
 | `update` | none (no self-update) | `http://host[:port]/path` of this medium's release on stormcentral, or `off` to pin the medium (#83, *Self-update*); written by the golden build, `build-boot-agent.sh --update` |
 | `api` | `9180` | the port stormbootx's own API answers on (#167), or `off` |
 | `command_key` | none | an Ed25519 public key (64 hex digits) whose signed commands are taken, beside stormcentral's (#167); the laptop app writes its own into `local.conf`; `build-boot-agent.sh --command-key` |
@@ -1583,7 +1584,7 @@ HTTP with no credential to a node registry that is moving to TLS with auth
   `selfupdate.rs`.
 - The FEC self-heal (automatic write on "all ports down") was switched off in
   0.3.6. It was triggered by a single link sample. The reasoning is in
-  `main.rs` step 2b.
+  `main.rs` step 2b. `fec_pin` (#186) is a different write: it reads no link.
 
 ## Status
 
