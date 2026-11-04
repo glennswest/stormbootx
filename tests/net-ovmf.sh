@@ -1170,7 +1170,7 @@ done
 BOOT_PXB=1 \
 boot pxb "$host_cpu" "" 404 good \
     "  root bridge buses 00-" \
-    "  root bridge buses 40-ff: 2 function(s)" \
+    "  root bridge buses 40-41: 2 function(s)" \
     "  no ConnectX on the bus"
 
 # #172: UEFI HTTP boot, the Orion O6N's way in. The stub serves the ISO
