@@ -43,8 +43,8 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   cargo test -p nvme-tcp-initiator && \
   R=${CARGO_TARGET_DIR:-target}/x86_64-unknown-uefi/release && \
   tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi && \
-  STORMNIC_DRIVERS=virtio scripts/build-nic-drivers.sh $PWD/t/nd && \
-  VIRTIO_EFI=t/nd/stormnic-virtio.efi tests/net-ovmf.sh $R/stormbootx.efi $R/tcp4probe.efi && \
+  STORMNIC_DRIVERS="virtio mlx5" scripts/build-nic-drivers.sh $PWD/t/nd && \
+  VIRTIO_EFI=t/nd/stormnic-virtio.efi MLX5_EFI=t/nd/stormnic-mlx5.efi tests/net-ovmf.sh $R/stormbootx.efi $R/tcp4probe.efi && \
   scripts/build-boot-agent.sh --iso --binary $R/stormbootx.efi --media shelltest --output $PWD/t/s.iso && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso old "media       : shelltest" && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso ovmf "media       : shelltest" && \
@@ -55,7 +55,9 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   tests/stick.sh && deploy/build-golden.sh stormbootx-stick $PWD/t/stick && \
   deploy/build-golden.sh stormbootx $PWD/t/fw && scripts/build-stormboot-serve.sh $PWD/t/serve && \
   tests/laptop-ovmf.sh t/fw/boot/stormbootx.iso $R/tcp4probe.efi t/serve/stormboot-serve && \
-  REPRO_MEDIA="stormbootx stormbootx-rustnic stormbootx-disk stormbootx-rustnic-disk" tests/repro.sh && \
+  deploy/build-golden.sh stormbootx-mlx5test $PWD/t/mlx5 && tests/iso-layout.sh t/mlx5/boot/stormbootx-mlx5test.iso && \
+  NIC=virtio tests/media-ovmf.sh t/mlx5/boot/stormbootx-mlx5test.iso "mlx5@66de545 test" "stormnic drivers verbose" "stormnic-mlx5.efi started" "; stormnic-virtio.efi drives it" "prefer    : mlx5: no such NIC on this machine" && \
+  REPRO_MEDIA="stormbootx stormbootx-rustnic stormbootx-disk stormbootx-rustnic-disk stormbootx-mlx5test" tests/repro.sh && \
   deploy/build-golden.sh stormbootx-arm64 $PWD/t/arm && \
   EFI_NAME=BOOTAA64.EFI tests/iso-layout.sh t/arm/boot/stormbootx-arm64.iso && \
   deploy/build-golden.sh stormbootx-arm64-disk $PWD/t/armdisk && \
@@ -124,6 +126,12 @@ tests attach the ISO as a `scsi-cd` on virtio-scsi with a bootindex, as
 shell-ovmf always has (it never stalled). It was not PEI: the console
 showed only its first 90 lines, which the debug port's PEI lines fill. A
 failing boot prints the debug port's tail too. Never `-cdrom` in a test.
+
+With `MLX5_EFI` net-ovmf boots three more (#131): QEMU has no ConnectX, so
+`mlx5-giveback` loads the real stormnic-mlx5 under the virtio family's file
+name, where it must decline the NIC and the firmware must have it back and carry
+the boot, the failure the Dell can hit; `mlx5-none` both families on one medium;
+`mlx5-absent` the key with no driver.
 
 `tests/shell-ovmf.sh ISO old|ovmf 'LINE' …` (#60) boots an ISO from an
 EFI Shell with no boot option for it, and requires its `startup.nsh` to
@@ -207,7 +215,8 @@ includes it and `sha256.rs` by `#[path]` to read the hand-down back.
 claim, its SMBIOS parse (BMC, CPU, memory) and its JSON under the engine's
 16 KiB; it alone carries `extern crate alloc` (it builds strings).
 `src/connectx.rs` (#25) is the tenth: which Mellanox ids `mlxfec` reads
-FEC from, which are ConnectX-3s with none, and when "no ConnectX" is true.
+FEC from, which are ConnectX-3s with none, when "no ConnectX" is true, and
+which ids `prefer_media_drivers = mlx5` takes (#131).
 `src/command.rs` (#167) is the eleventh: the signed command's text and body,
 the verbs, and the API's HTTP request parser; `extern crate alloc` like
 `inventory.rs`. The signature check is `api.rs`'s (ed25519-compact).
@@ -236,7 +245,7 @@ deliberately, in its own commit, and rebuild.
 default in `tmp/images` in the checkout. Nothing in the agent creates media.
 
 **What ships is a golden, never a file on a build VM** (owner, 2026-09-28, #21).
-`deploy/build-golden.sh stormbootx|stormbootx-rustnic|stormbootx-disk|stormbootx-rustnic-disk|stormbootx-arm64|nic-drivers OUT` writes that golden's tree
+`deploy/build-golden.sh stormbootx|stormbootx-rustnic|stormbootx-disk|stormbootx-rustnic-disk|stormbootx-mlx5test|stormbootx-arm64|nic-drivers OUT` writes that golden's tree
 into OUT and nothing else (README, *How it ships*). Every build gets a fresh
 drive, and anything left on the VM is destroyed, so never write outside the job
 (no `/build/images`, no `/build/stormbuild/images`). To look at media in an
@@ -266,7 +275,7 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/snpwatch.rs` | which driver is under each SNP (named before the first call), and a `TPL_NOTIFY` timer that names an SNP call that has not returned (#88) |
 | `src/entropy.rs` | randomness for the ISN, DHCP xid and ports: firmware `EFI_RNG`, then RDSEED/RDRAND (RNDR on aarch64), then jitter through SHA-256; never fails |
 | `src/tcp4.rs` | tcp4probe only since #56: a blocking socket over the firmware's TCP4 |
-| `src/drivers.rs` | load NIC drivers from `\stormboot\drivers` on the media (#26), after the platform's own bind; `take_over` gives a `prefer_media_drivers` family its NICs (#108); `nic_verbose` sets `StormnicVerbose` before the drivers load (#80) |
+| `src/drivers.rs` | load NIC drivers from `\stormboot\drivers` on the media (#26), after the platform's own bind; `take_over` gives a `prefer_media_drivers` family (`virtio`, `mlx5`) its NICs (#108, #131); `nic_verbose` sets `StormnicVerbose` before the drivers load (#80) |
 | `src/dhcp4.rs` | tcp4probe only since #56: DHCP through the firmware's `EFI_DHCP4` |
 | `src/nvme.rs` | the NVMe/TCP initiator's UEFI end: `TcpSocket` as its `Transport`, `boot::stall` (#10) |
 | `crates/nvme-tcp-initiator` | the NVMe/TCP initiator itself (#10): `no_std` + `alloc`, no dependencies, generic over a `Transport` and a `Platform`, shared with stormboot4bios; reads up to 8 in flight (#100); host tests against a fake controller (`cargo test -p nvme-tcp-initiator`) |

@@ -1085,6 +1085,46 @@ else
     say "note: VIRTIO_EFI not set; the stormnic-virtio boots (#108) are skipped"
 fi
 
+# #131: `prefer_media_drivers = mlx5`. QEMU has no ConnectX, so a boot can't
+# bind stormnic-mlx5. What it can do: load the real driver, and run the failure
+# the Dell can hit, a take the driver then declines. Under the virtio family's
+# file name it declines a virtio NIC, and the firmware must have it back and
+# carry the boot. MLX5_EFI names the driver.
+if [[ -n "${MLX5_EFI:-}" && -n "${VIRTIO_EFI:-}" ]]; then
+    [[ -s "$MLX5_EFI" ]] || die "no stormnic-mlx5 driver at $MLX5_EFI"
+    mkdir -p "$W/mdrv" "$W/mback"
+    cp "$VIRTIO_EFI" "$W/mdrv/stormnic-virtio.efi"
+    cp "$MLX5_EFI" "$W/mdrv/stormnic-mlx5.efi"
+    cp "$MLX5_EFI" "$W/mback/stormnic-virtio.efi"
+    BOOT_DRIVERS="$W/mback" BOOT_PREFER=virtio STOP_AT="engine      : stormblock 19.4.0" BOOT_SETTLE=1 \
+    boot mlx5-giveback "$host_cpu" "" 404 good \
+        "stormnic-virtio.efi started" \
+        ": taking it from " \
+        "after the disconnect: " \
+        "stormnic-virtio.efi did not bind; given back to " \
+        "nic 0: driver Virtio Network Driver" \
+        "nic 0: leased 10.0.2.15/24 gw 10.0.2.2" \
+        "not:this NIC has no driver"
+    # Both families on one medium, as stormbootx-mlx5test: virtio is taken,
+    # and mlx5 finds no ConnectX and touches nothing.
+    BOOT_DRIVERS="$W/mdrv" BOOT_PREFER=virtio,mlx5 STOP_AT="engine      : stormblock 19.4.0" BOOT_SETTLE=1 \
+    boot mlx5-none "$host_cpu" "" 404 good \
+        "stormnic-mlx5.efi started" \
+        "prefer    : mlx5: no such NIC on this machine" \
+        "; stormnic-virtio.efi drives it" \
+        "nic 0: leased 10.0.2.15/24 gw 10.0.2.2" \
+        "not:stormnic-mlx5: "
+    # The key without the driver: nothing is taken.
+    mkdir -p "$W/nomlx5" && cp "$VIRTIO_EFI" "$W/nomlx5/stormnic-virtio.efi"
+    BOOT_DRIVERS="$W/nomlx5" BOOT_PREFER=mlx5 STOP_AT="engine      : stormblock 19.4.0" BOOT_SETTLE=1 \
+    boot mlx5-absent "$host_cpu" "" 404 good \
+        "prefer    : mlx5, but stormnic-mlx5.efi was not started from the media; the firmware keeps its NICs" \
+        "nic 0: driver Virtio Network Driver" \
+        "not:taking it from"
+else
+    say "note: MLX5_EFI not set; the prefer_media_drivers = mlx5 boots (#131) are skipped"
+fi
+
 # #93: how large an install-config.yaml OVMF's volatile variable store takes.
 # Each size is handed down in 768-byte chunks and the payload reassembles it.
 # Measured 2026-10-08: OVMF takes every size up to storminstall's 256 KiB cap

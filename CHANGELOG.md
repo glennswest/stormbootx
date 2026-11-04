@@ -3,6 +3,12 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-04
+- **feat:** `prefer_media_drivers = mlx5` (#131): stormnic-mlx5 can take a ConnectX-4/4 Lx/5/6 from FlexBoot, by the same leaf-first disconnect and give-back as virtio. ConnectX-7 is left out: the driver does not claim it. Pinned at 66de545 and built only when named, never in the default set.
+- **feat:** The `stormbootx-mlx5test` golden (#131): the rustnic medium plus stormnic-mlx5, both families, verbose, no `update =`, for stormnic-mlx5#1's boot on the Dell. Every other golden refuses the driver.
+- **feat:** A take is announced before its disconnect, and `after the disconnect:` says what is left on the PCI handle (#131). A give-back the firmware does not accept now says `this NIC has no driver`, where it used to say `given back`. `prefer : <family>: no such NIC on this machine` when there is none.
+- **test:** net-ovmf's `mlx5-giveback`, `mlx5-none` and `mlx5-absent` boots (#131); the test medium is in the sc-build command and `REPRO_MEDIA`.
+
 ## [v0.36.0] — 2026-11-03
 
 ### Added

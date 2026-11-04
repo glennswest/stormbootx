@@ -34,6 +34,13 @@
 //! nothing is taken from anyone; virtio IDs exist only in VMs, so on metal the
 //! key changes nothing.
 //!
+//! `prefer_media_drivers = mlx5` (#131) does the same for a ConnectX-4/5/6,
+//! whose firmware's FlexBoot UEFI driver holds it, for stormnic-mlx5. That one
+//! is metal: a card nothing here has taken yet. So each take is announced before
+//! its disconnect, as a driver's start is, and what the firmware's driver left
+//! on the handle is printed: stormnic-mlx5's `Supported` declines a function
+//! that still carries an SNP.
+//!
 //! Nothing here is fatal. A missing directory is the normal case; a driver
 //! that will not load or start is reported and skipped, and the boot goes on
 //! to find TCP4 or fall through exactly as it would have.
@@ -74,17 +81,31 @@ struct Family {
     ids: &'static [(u16, u16)],
 }
 
-/// Only virtio-net today: the one NIC a firmware always has a driver for
-/// (every OVMF's VirtioNetDxe) that a stormnic driver also drives. Modern
-/// virtio 1.x and transitional; the driver declines a transitional device
-/// without the 1.x capabilities, and then the firmware's is given it back.
-const FAMILIES: &[Family] = &[Family {
-    name: "virtio",
-    file: "stormnic-virtio.efi",
-    ids: &[(0x1af4, 0x1041), (0x1af4, 0x1000)],
-}];
+/// virtio-net: the one NIC a firmware always has a driver for (every OVMF's
+/// VirtioNetDxe). Modern virtio 1.x and transitional; the driver declines a
+/// transitional device without the 1.x capabilities, and then the firmware's
+/// is given it back. mlx5: a ConnectX-4/5/6 under FlexBoot (#131).
+const FAMILIES: &[Family] = &[
+    Family {
+        name: "virtio",
+        file: "stormnic-virtio.efi",
+        ids: &[(0x1af4, 0x1041), (0x1af4, 0x1000)],
+    },
+    Family {
+        name: "mlx5",
+        file: "stormnic-mlx5.efi",
+        ids: crate::connectx::MLX5_TAKE_OVER,
+    },
+];
 
 const PCI_IO: Guid = guid!("4cf5b200-68b8-4ca5-9eec-b23e3f50029a");
+const DEVICE_PATH: Guid = guid!("09576e91-6d3f-11d2-8e39-00a0c969723b");
+/// What a NIC's firmware driver may leave on the PCI handle itself (#131).
+const LEFT_BEHIND: &[(Guid, &str)] = &[
+    (crate::net::SNP, "SNP"),
+    (guid!("e18541cd-f755-4f73-928d-643c8a79b229"), "NII"),
+    (guid!("e5dd1403-d622-c24e-8488-c71b17f5e802"), "ADAPTER_INFORMATION"),
+];
 const BY_CHILD_CONTROLLER: u32 = 0x08;
 const BY_DRIVER: u32 = 0x10;
 
@@ -184,7 +205,7 @@ fn take_over(loaded: &[Loaded], t0: Option<u32>) {
     let prefer = crate::config::stated_prefer_media_drivers();
     for want in &prefer {
         let Some(family) = FAMILIES.iter().find(|f| f.name == want.as_str()) else {
-            uefi::println!("    prefer    : no media driver family `{want}` (virtio); ignored");
+            uefi::println!("    prefer    : no media driver family `{want}` (virtio, mlx5); ignored");
             continue;
         };
         let image = loaded
@@ -195,7 +216,17 @@ fn take_over(loaded: &[Loaded], t0: Option<u32>) {
             uefi::println!("    prefer    : {want}, but {} was not started from the media; the firmware keeps its NICs", family.file);
             continue;
         };
-        for (pci, at, device) in network_functions(family.ids) {
+        let functions = network_functions(family.ids);
+        if functions.is_empty() {
+            uefi::println!("    prefer    : {want}: no such NIC on this machine");
+        }
+        for (pci, at, device) in functions {
+            let theirs = holders(pci, image.as_ptr());
+            if !theirs.is_empty() {
+                // Before the disconnect: a firmware driver's Stop, or our
+                // Start, that never returns must have named itself (#131).
+                uefi::println!("    [{:>3} s] {at} {:04x}:{:04x}: taking it from {} for {}", elapsed(t0), device.0, device.1, names_of(&theirs), family.file);
+            }
             let line = take_one(pci, image.as_ptr(), family.file);
             uefi::println!("    [{:>3} s] {at} {:04x}:{:04x}: {line}", elapsed(t0), device.0, device.1);
         }
@@ -232,15 +263,58 @@ fn take_one(pci: uefi_raw::Handle, ours: uefi_raw::Handle, file: &str) -> String
     }
     if !holders(pci, ours).is_empty() {
         crate::net::connect(pci);
-        return format!("{names} would not let go after 3 passes; left with it");
+        return format!("{names} would not let go after 3 passes; left with it ({})", left_on(pci));
     }
+    uefi::println!("              after the disconnect: {}", left_on(pci));
     connect_with(bs, pci, ours);
     if holders(pci, ptr::null_mut()).contains(&ours) {
         format!("taken from {names}; {file} drives it")
     } else {
         // Never leave a NIC with no driver: the firmware's binds it again.
         crate::net::connect(pci);
-        format!("{file} did not bind; given back to {names}")
+        if holders(pci, ptr::null_mut()).is_empty() {
+            format!("{file} did not bind, and {names} did not take it back; this NIC has no driver")
+        } else {
+            format!("{file} did not bind; given back to {names}")
+        }
+    }
+}
+
+/// What is left on a PCI function's handle once the drivers came off (#131):
+/// who still has its PCI I/O open, and any network protocol on the handle
+/// itself. Children went with the drivers that made them, by `holders`.
+fn left_on(pci: uefi_raw::Handle) -> String {
+    let Some(bs) = crate::snpwatch::bs() else { return "no boot services".into() };
+    let mut parts: Vec<String> = Vec::new();
+    let mut other = 0usize;
+    for (g, e) in crate::snpwatch::opens(bs, pci) {
+        if g == PCI_IO {
+            let who = crate::snpwatch::name_of(e.agent_handle).unwrap_or_else(|| format!("driver handle {:p}", e.agent_handle));
+            parts.push(format!("PCI I/O open by {who} (attributes {:#x})", e.attributes));
+        }
+    }
+    let mut guids: *mut *const uefi_raw::Guid = ptr::null_mut();
+    let mut count = 0usize;
+    unsafe {
+        if (bs.protocols_per_handle)(pci, &mut guids, &mut count) == Status::SUCCESS && !guids.is_null() {
+            for i in 0..count {
+                let g = *(*guids.add(i) as *const Guid);
+                if let Some((_, name)) = LEFT_BEHIND.iter().find(|(known, _)| *known == g) {
+                    parts.push(format!("{name} on the handle"));
+                } else if g != PCI_IO && g != DEVICE_PATH {
+                    other += 1;
+                }
+            }
+            let _ = (bs.free_pool)(guids as *mut u8);
+        }
+    }
+    if other > 0 {
+        parts.push(format!("{other} other protocol(s) on the handle"));
+    }
+    if parts.is_empty() {
+        String::from("nothing left on the handle")
+    } else {
+        parts.join(", ")
     }
 }
 

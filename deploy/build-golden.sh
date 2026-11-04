@@ -9,6 +9,7 @@
 #   deploy/build-golden.sh stormbootx-arm64-disk OUT
 #   deploy/build-golden.sh nic-drivers        OUT
 #   deploy/build-golden.sh stormbootx-stick   OUT
+#   deploy/build-golden.sh stormbootx-mlx5test OUT
 #
 # Everything is a golden (owner, 2026-09-28; #21, stormcentral#126): the boot
 # media is a golden, and so are the NIC drivers it carries. This script is the
@@ -56,6 +57,17 @@
 #   Built here from the pins in scripts/build-nic-drivers.sh, never from a
 #   nic-drivers golden, so the drivers are the commit's. The console says
 #   `media : rustnic ixgbe@<sha> mlx4@<sha> virtio@<sha>`.
+#
+# stormbootx-mlx5test golden (#131): a test medium, for the master's boot of
+# stormnic-mlx5#1 on the Dell, never promoted and never in a release:
+#   bin/stormbootx.efi
+#   boot/stormbootx-mlx5test.iso  the rustnic medium plus stormnic-mlx5.efi,
+#                                 prefer_media_drivers = virtio,mlx5,
+#                                 nic_verbose, and no update =
+#   media/, media.files, SHA256SUMS, BUILD  as above
+#
+#   stormnic-mlx5 joins the rustnic media only after that boot passes, and
+#   every other golden refuses it until then.
 #
 # stormbootx-disk and stormbootx-rustnic-disk goldens (#41, owner on #35;
 # #97): the USB stick of each family, its own golden beside the ISO:
@@ -108,7 +120,7 @@ say() { printf '==> %s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
 GOLDEN="${1:-}"; OUT="${2:-}"
-[[ -n "$GOLDEN" && -n "$OUT" ]] || die "usage: $0 stormbootx|stormbootx-rustnic|stormbootx-disk|stormbootx-rustnic-disk|stormbootx-arm64|stormbootx-arm64-disk|nic-drivers|stormbootx-stick OUT [--drivers DIR]"
+[[ -n "$GOLDEN" && -n "$OUT" ]] || die "usage: $0 stormbootx|stormbootx-rustnic|stormbootx-disk|stormbootx-rustnic-disk|stormbootx-mlx5test|stormbootx-arm64|stormbootx-arm64-disk|nic-drivers|stormbootx-stick OUT [--drivers DIR]"
 shift 2
 DRIVERS=""
 while [[ $# -gt 0 ]]; do
@@ -183,10 +195,14 @@ rustnic_drivers() {
         [[ -f "$WORK/drivers/$d.efi" ]] || die "no $d.efi was built"
     done
     ! compgen -G "$WORK/drivers/ipxe-*.efi" >/dev/null || die "an iPXE driver reached the rustnic media"
+    # Not run on a card yet: the test medium only (#131).
+    [[ $GOLDEN == stormbootx-mlx5test || ! -e "$WORK/drivers/stormnic-mlx5.efi" ]] \
+        || die "stormnic-mlx5 reached $GOLDEN; only stormbootx-mlx5test carries it (#131)"
     mkdir -p "$WORK/media-drivers"
     cp "$WORK/drivers/"*.efi "$WORK/drivers/STORMNIC-SOURCE.txt" "$WORK/media-drivers/"
     pin() { sed -n "s/^$1=\"\(.......\).*\"/\1/p" "$ROOT/scripts/build-nic-drivers.sh"; }
     RUSTNIC_LABEL="rustnic ixgbe@$(pin STORMNIC_IXGBE_REF) mlx4@$(pin STORMNIC_MLX4_REF) virtio@$(pin STORMNIC_VIRTIO_REF)"
+    [[ $GOLDEN != stormbootx-mlx5test ]] || RUSTNIC_LABEL+=" mlx5@$(pin STORMNIC_MLX5_REF) test"
 }
 
 # The aarch64 std, from rustup when the toolchain lacks it (#84; the build
@@ -216,6 +232,7 @@ nic-drivers)
     cp "$WORK/drivers/"*.efi "$OUT/bin/"
     cp "$WORK/drivers/STORMNIC-SOURCE.txt" "$OUT/"
     ! compgen -G "$OUT/bin/ipxe-*" >/dev/null || die "an iPXE driver reached the nic-drivers golden"
+    [[ ! -e "$OUT/bin/stormnic-mlx5.efi" ]] || die "stormnic-mlx5 reached $GOLDEN; only stormbootx-mlx5test carries it (#131)"
     seal "stormnic = $(cat "$WORK/drivers/STORMNIC-SOURCE.txt")"
     ;;
 stormbootx)
@@ -260,6 +277,26 @@ stormbootx-rustnic)
         --update "$(update_url stormbootx-rustnic)" --tree "$OUT/media" \
         --output "$OUT/boot/stormbootx-rustnic.iso"
     media_files
+    seal "drivers  = $(cd "$WORK/media-drivers" && ls *.efi | tr '\n' ' ')(built here)
+stormnic = $(cat "$WORK/drivers/STORMNIC-SOURCE.txt")"
+    ;;
+stormbootx-mlx5test)
+    [[ -z "$DRIVERS" ]] || die "$GOLDEN builds its own drivers from the commit's pins; no --drivers"
+    say "building stormbootx for x86_64-unknown-uefi"
+    ( cd "$ROOT" && scripts/cargo-repro.sh build --locked --release --target x86_64-unknown-uefi --bin stormbootx )
+    REL="${CARGO_TARGET_DIR:-$ROOT/target}/x86_64-unknown-uefi/release"
+    mkdir -p "$OUT/bin" "$OUT/boot"
+    cp "$REL/stormbootx.efi" "$OUT/bin/"
+    STORMNIC_DRIVERS="ixgbe mlx4 virtio mlx5" rustnic_drivers
+    [[ -f "$WORK/drivers/stormnic-mlx5.efi" ]] || die "no stormnic-mlx5.efi was built"
+    # No --update: a test medium never takes a promotion, or is one.
+    "$ROOT/scripts/build-boot-agent.sh" --iso --binary "$OUT/bin/stormbootx.efi" \
+        --drivers "$WORK/media-drivers" --prefer-media-drivers virtio,mlx5 --nic-verbose \
+        --dns 192.168.31.252 --no-fallback --syslog "$SYSLOG_TARGET" --hold "$HOLD" \
+        --media "$RUSTNIC_LABEL" --tree "$OUT/media" --output "$OUT/boot/$GOLDEN.iso"
+    media_files
+    grep -qx 'nic_verbose = true' "$OUT/media/stormboot/stormboot.conf" || die "$GOLDEN is not verbose"
+    ! grep -q '^update' "$OUT/media/stormboot/stormboot.conf" || die "$GOLDEN names an update"
     seal "drivers  = $(cd "$WORK/media-drivers" && ls *.efi | tr '\n' ' ')(built here)
 stormnic = $(cat "$WORK/drivers/STORMNIC-SOURCE.txt")"
     ;;

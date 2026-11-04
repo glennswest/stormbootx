@@ -11,6 +11,9 @@
 #   mlx4  -> stormnic-mlx4.efi    Mellanox ConnectX-3
 #   virtio -> stormnic-virtio.efi virtio-net (VMs: pve, OVMF), bound only
 #                                 with `prefer_media_drivers = virtio` (#108)
+#   mlx5  -> stormnic-mlx5.efi    Mellanox ConnectX-4/5/6, only when asked for:
+#                                 it has never run on a card, so only the
+#                                 stormbootx-mlx5test medium carries it (#131)
 #
 # No iPXE (owner on #81, 2026-10-02: "I dont want the ipxe code. Move to
 # ours."; #91). A machine whose firmware has its own NIC driver boots the
@@ -85,9 +88,15 @@ STORMNIC_VIRTIO_REPO="https://github.com/glennswest/stormnic-virtio.git"
 # OVMF's VirtioNetDxe holds the NIC before the media drivers load, so it binds
 # only where the media says `prefer_media_drivers = virtio` (#108).
 STORMNIC_VIRTIO_REF="1a04808aea492e508c0c66d4134b06532405e0b8"
+STORMNIC_MLX5_REPO="https://github.com/glennswest/stormnic-mlx5.git"
+# 66de545 (#131, #73): the ConnectX-4/4 Lx/5/6 driver, reproducible and
+# --locked, never yet run on a card (stormnic-mlx5#1). Not in the default set
+# until the Dell's boot passes; FlexBoot holds that card, so it binds only where
+# the media says `prefer_media_drivers = mlx5`.
+STORMNIC_MLX5_REF="66de5456520e40bda00cbbfc0e03e1f7e5fa6b2f"
 read -r -a STORMNIC_DRIVERS <<< "${STORMNIC_DRIVERS:-ixgbe mlx4 virtio}"
 for d in "${STORMNIC_DRIVERS[@]}"; do
-    [[ "$d" == ixgbe || "$d" == mlx4 || "$d" == virtio ]] || die "STORMNIC_DRIVERS: no Rust driver '$d' (ixgbe, mlx4, virtio)"
+    [[ "$d" == ixgbe || "$d" == mlx4 || "$d" == virtio || "$d" == mlx5 ]] || die "STORMNIC_DRIVERS: no Rust driver '$d' (ixgbe, mlx4, virtio, mlx5)"
 done
 wanted() { local d; for d in "${STORMNIC_DRIVERS[@]}"; do [[ "$d" == "$1" ]] && return 0; done; return 1; }
 OUTDIR="${1:-$(cd "$(dirname "$0")/.." && pwd)/tmp/drivers}"
@@ -145,3 +154,4 @@ rm -f "$OUTDIR/STORMNIC-SOURCE.txt" "$OUTDIR/IPXE-SOURCE.txt" "$OUTDIR"/ipxe-*.e
 build_stormnic stormnic-ixgbe "$STORMNIC_IXGBE_REPO" "$STORMNIC_IXGBE_REF" ixgbe
 build_stormnic stormnic-mlx4 "$STORMNIC_MLX4_REPO" "$STORMNIC_MLX4_REF" mlx4
 build_stormnic stormnic-virtio "$STORMNIC_VIRTIO_REPO" "$STORMNIC_VIRTIO_REF" virtio
+build_stormnic stormnic-mlx5 "$STORMNIC_MLX5_REPO" "$STORMNIC_MLX5_REF" mlx5

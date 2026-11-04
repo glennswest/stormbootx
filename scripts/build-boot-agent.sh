@@ -90,10 +90,11 @@ Options:
   --portal ADDR    NVMe/TCP portal, with --pin (default 192.168.31.202)
   --engine ADDR    the portal and engine host, claim still on (tests/net-ovmf.sh)
   --nic-verbose    the stormnic drivers print their whole bring-up trace
-                   (`nic_verbose = true`, #80); a debugging medium, never a golden
+                   (`nic_verbose = true`, #80); a debugging medium, never a
+                   golden that ships (stormbootx-mlx5test is a test one, #131)
   --prefer-media-drivers FAMILIES
                    these media drivers take their NICs from the firmware's
-                   driver (#108): comma-separated, today only `virtio`
+                   driver (#108): comma-separated, `virtio` and `mlx5` (#131)
   --esp READER     who reads the attached ESP (#37): auto (default),
                    firmware or stormbootx (the bridge and its filesystem, #42;
                    tests/net-ovmf.sh)
@@ -385,7 +386,7 @@ fi
 if [[ -n "$PREFER" ]]; then
     [[ -n "$DRIVERS" ]] || die "--prefer-media-drivers needs --drivers"
     for f in ${PREFER//,/ }; do
-        [[ "$f" == virtio ]] || die "--prefer-media-drivers: no family '$f' (virtio)"
+        [[ "$f" == virtio || "$f" == mlx5 ]] || die "--prefer-media-drivers: no family '$f' (virtio, mlx5)"
     done
     cat >> "$WORK/stormboot.conf" <<CONF
 

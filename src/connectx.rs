@@ -32,6 +32,21 @@ pub const WITH_FEC: &[(u16, &str)] = &[
 /// ConnectX parts with no FEC setting: 10/40G, no RS-FEC (#25).
 pub const WITHOUT_FEC: &[(u16, &str)] = &[(0x1003, "ConnectX-3"), (0x1007, "ConnectX-3 Pro")];
 
+/// The physical functions stormnic-mlx5 claims (its `DEVICES`, at the pin in
+/// `scripts/build-nic-drivers.sh`), which `prefer_media_drivers = mlx5` takes
+/// from the firmware's driver (#131). ConnectX-7 (1021) has a FEC to read and is
+/// not here: the driver does not claim it, and a take it would decline only
+/// disturbs a working NIC.
+pub const MLX5_TAKE_OVER: &[(u16, u16)] = &[
+    (0x15b3, 0x1013),
+    (0x15b3, 0x1015),
+    (0x15b3, 0x1017),
+    (0x15b3, 0x1019),
+    (0x15b3, 0x101b),
+    (0x15b3, 0x101d),
+    (0x15b3, 0x101f),
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     /// A part whose FEC `mlxfec` reads.
@@ -70,6 +85,22 @@ mod tests {
         assert_eq!(kind(0x1007), Kind::NoFec("ConnectX-3 Pro"));
         // server1's console (#25): one function seen, so no "no ConnectX".
         assert_eq!(closing_line(1), None);
+    }
+
+    #[test]
+    fn mlx5_takes_what_its_driver_claims_and_nothing_else() {
+        assert_eq!(MLX5_TAKE_OVER.len(), 7);
+        // The R230's card.
+        assert!(MLX5_TAKE_OVER.contains(&(0x15b3, 0x1015)));
+        for &(vendor, device) in MLX5_TAKE_OVER {
+            assert_eq!(vendor, 0x15b3);
+            // Each a known physical function: never a VF, whose id is unknown.
+            assert!(matches!(kind(device), Kind::Fec(_)), "{device:04x}");
+        }
+        // The driver does not claim ConnectX-7, and mlx4's parts are not mlx5.
+        for device in [0x1021, 0x1003, 0x1007, 0x1016] {
+            assert!(!MLX5_TAKE_OVER.contains(&(0x15b3, device)), "{device:04x}");
+        }
     }
 
     #[test]

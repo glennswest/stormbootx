@@ -125,8 +125,8 @@ Any failure on any arrow → **fall through to the local disk**.
   ESP; the bridge is the fallback.
 - **NIC drivers from the media** (`drivers.rs`, #26): every `*.efi` in
   `\stormboot\drivers` is started after the platform's own drivers bind, so
-  it only takes NICs nothing else drives, except `prefer_media_drivers =
-  virtio` (#108), which takes VMs' virtio-net from OVMF's driver. Each step
+  it only takes NICs nothing else drives, except `prefer_media_drivers`
+  (#108, #131), which takes VMs' virtio-net from OVMF's driver. Each step
   is printed, and a hung SNP call is named (`snpwatch.rs`, #88).
 - **Network** (`net.rs`, `entropy.rs`, #56): its own TCP/IP, smoltcp on each
   NIC's SNP (opened exclusively), with no firmware TCP4 anywhere. DHCP on
@@ -206,7 +206,7 @@ Read from the volume it booted from. `key = value`, each key independent.
 | `esp` | `auto` | who reads the ESP: firmware then stormbootx, or one alone (#37) |
 | `fec` | — | recovery sticks only: write FEC, warm-reset |
 | `nic_verbose` | `false` | stormnic drivers print their full trace (#80) |
-| `prefer_media_drivers` | — | `virtio`: take virtio-net from OVMF (#108) |
+| `prefer_media_drivers` | — | `virtio`, `mlx5`: take NICs from firmware (#108, #131) |
 | `update` | — | the self-update's URL, or `off` (#83) |
 | `version`, `commit` | — | written on the media for storminstall; not read (#94) |
 
