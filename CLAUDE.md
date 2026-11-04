@@ -648,19 +648,25 @@ then.
 ### Open, no external blocker
 
 - [ ] **#186 — `no ConnectX on the bus` on the R6415's ConnectX-4 Lx (P1, the
-      master, 2026-11-04). In progress.** Cause (forge1's console): the card is
-      at `84:00.x` under a root bridge whose buses start at 0x80 (EPYC: 00, 40,
-      80, c0), and `mlxfec` starts each bridge's walk at bus 0, which EDK2
-      refuses outside a bridge's range. Not the id list: 1015 is known. Plan:
-      read each bridge's bus range from `Configuration()` (our own parser in
-      `connectx.rs`: uefi 0.39's panics on a tag it doesn't know, and a panic
-      here would stop the boot), walk from there (`connectx::walk`, host-tested
-      on the R6415's shape), the shell's `pci` too, and a line per bridge on the
-      console. Test: net-ovmf `pxb`, a `pxb-pcie` root at bus 0x40. **The issue's
-      other half is not done by this:** it asks for "the same FEC pin as on the
-      R230", and there is none: the boot path only reads (self-heal off since
-      0.3.6, the load-bearing facts). A boot-time write is the owner's to
-      decide; asked on #186 once the finder is out.
+      master, 2026-11-04). Finder released v0.38.1; the pin is the owner's.**
+      Cause (forge1's console): the card is at `84:00.x` under a root bridge
+      whose buses start at 0x80 (EPYC: 00, 40, 80, c0), and `mlxfec` started each
+      bridge's walk at bus 0, which EDK2 refuses outside a bridge's range. Not
+      the id list: 1015 is known. Each walk now starts at the bridge's first bus
+      from `Configuration()` (our own parser in `connectx.rs`: uefi 0.39's panics
+      on a tag it doesn't know), the shell's `pci` too, and `root bridge buses
+      XX-YY: N function(s)` per bridge on the console.
+      **State (2026-11-04):** sc-build of 84d19cf (1417 s, the second run; the
+      first died on the build VM's DNS, `Could not resolve host: github.com`): no
+      warnings, the full suite, connectx 11 host tests (the R6415's shape found
+      from bus 0x80, missed from bus 0). net-ovmf `pxb` (a `pxb-pcie` root at 0x40):
+      `root bridge buses 40-41: 2 function(s)`. Negative control, the walk forced
+      to bus 0 (branch deleted): `40-41: 0 function(s)`, failed as expected.
+      **Not run:** the R6415, or any card found through a non-zero root bridge:
+      QEMU has no ConnectX, so the read itself has only run on the R230.
+      **Left:** the issue also asks for "the same FEC pin as on the R230", and
+      there is none: the boot path only reads (self-heal off since 0.3.6, the
+      load-bearing facts). A boot-time write is the owner's: asked on #186.
 
 - [x] **#185 — the Dell R6415 (BIOS 1.12.2) refuses the hybrid ISO on USB and
       HTTP boot; a hand-built GPT + FAT32 stick boots (P1, the master,
@@ -2514,7 +2520,7 @@ then.
 
 ## Status
 
-v0.38.0 (#185: `boot/<golden>-usb.img`, the GPT + FAT32 stick a Dell 14G boots). v0.37.0 (#131: `prefer_media_drivers = mlx5`, the `stormbootx-mlx5test` medium). v0.36.0 (#183: the engine's boot port, falling back to `api_port`; `StormBootEngine`). v0.35.1 (#180: `startup.nsh` starts one medium only; the last screen line names the build). v0.35.0 (#172: UEFI HTTP boot of the ISO, the arm64 USB stick and stick updater). v0.34.0 (#167: `maint` claims and boots the maintenance image, stormblock#497). v0.33.1 (#167: the intent's host is a name; laptop-ovmf boots the real command record). v0.33.0 (#167 phase 1: stormbootx's own API on port 9180, Ed25519-signed commands, the hold on a failed boot; goldens `hold = 120`). v0.32.0 (#167's inventory v2, #168's ARP priming and timing line, #99's parked cap9 in 50 ms). v0.29.0 (#151: stormbootx-stick; released, frozen until 2026-10-17, then the master promotes it). v0.28.2 was #130 (reproducible media); v0.28.0 was #144 (the boot panel); v0.27.0 was #148 (the self-update resolves its host); v0.26.0 was #145 (the fall-through starts the local disk itself); v0.25.0 was #128: #4, #10, #17, #25, #36, #42, #53, #67 and #138. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
+v0.38.1 (#186: the ConnectX scan starts at each root bridge's first bus). v0.38.0 (#185: `boot/<golden>-usb.img`, the GPT + FAT32 stick a Dell 14G boots). v0.37.0 (#131: `prefer_media_drivers = mlx5`, the `stormbootx-mlx5test` medium). v0.36.0 (#183: the engine's boot port, falling back to `api_port`; `StormBootEngine`). v0.35.1 (#180: `startup.nsh` starts one medium only; the last screen line names the build). v0.35.0 (#172: UEFI HTTP boot of the ISO, the arm64 USB stick and stick updater). v0.34.0 (#167: `maint` claims and boots the maintenance image, stormblock#497). v0.33.1 (#167: the intent's host is a name; laptop-ovmf boots the real command record). v0.33.0 (#167 phase 1: stormbootx's own API on port 9180, Ed25519-signed commands, the hold on a failed boot; goldens `hold = 120`). v0.32.0 (#167's inventory v2, #168's ARP priming and timing line, #99's parked cap9 in 50 ms). v0.29.0 (#151: stormbootx-stick; released, frozen until 2026-10-17, then the master promotes it). v0.28.2 was #130 (reproducible media); v0.28.0 was #144 (the boot panel); v0.27.0 was #148 (the self-update resolves its host); v0.26.0 was #145 (the fall-through starts the local disk itself); v0.25.0 was #128: #4, #10, #17, #25, #36, #42, #53, #67 and #138. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
 (and the same day, the full chain: chain-load into stormuefi and a running
 stormcos kernel), on a
 Dell PowerEdge R230 (service tag C2NR0Q2) booting the agent over iDRAC virtual
