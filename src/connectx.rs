@@ -195,6 +195,19 @@ pub fn walk(
     }
 }
 
+/// Tries (1 ms apart) after which one plausible ticket that never moved is
+/// the UEFI driver's parked lock, not a holder about to let go (#99): the
+/// whole cooperative wait cost the Dell 2 s per ConnectX-4 Lx function.
+pub const PARKED_TRIES: u32 = 50;
+
+/// Is the cap9 lock parked, so that waiting longer only costs time? `moved`
+/// counts the held value changing. A live holder's value moves and gets the
+/// whole wait; 0 is no holder, and all ones is a read that never reached the
+/// card, so neither is a ticket to take over.
+pub fn parked(tries: u32, moved: u32, held: u32) -> bool {
+    tries >= PARKED_TRIES && moved == 0 && held != 0 && held != 0xffff_ffff
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -384,5 +397,43 @@ mod tests {
     fn no_connectx_only_when_nothing_from_mellanox() {
         assert_eq!(closing_line(0), Some("no ConnectX on the bus"));
         assert_eq!(closing_line(3), None);
+    }
+
+    /// How many tries a run of held values takes to be called parked, or
+    /// `None` if it never is; counted as `vsc_lock_timed` counts them.
+    fn tries_until_parked(held: impl Fn(u32) -> u32, limit: u32) -> Option<u32> {
+        let (mut last, mut moved) = (0, 0);
+        for i in 0..limit {
+            let now = held(i);
+            if i > 0 && now != last {
+                moved += 1;
+            }
+            last = now;
+            if parked(i + 1, moved, last) {
+                return Some(i + 1);
+            }
+        }
+        None
+    }
+
+    #[test]
+    fn a_parked_lock_is_known_after_50_tries_not_the_whole_wait() {
+        // The R230's values: 0x3, 0x7 on a cold boot, 0x462, 0x466 on a warm one.
+        for ticket in [0x3, 0x7, 0x462, 0x466] {
+            assert_eq!(tries_until_parked(|_| ticket, 2048), Some(PARKED_TRIES));
+        }
+    }
+
+    #[test]
+    fn a_value_that_moves_keeps_the_whole_wait() {
+        assert_eq!(tries_until_parked(|i| 3 + i, 2048), None);
+        // Once, late: the holder is alive, however still it looked before.
+        assert_eq!(tries_until_parked(|i| if i < 40 { 3 } else { 7 }, 2048), None);
+    }
+
+    #[test]
+    fn no_holder_and_a_dead_read_are_never_parked() {
+        assert_eq!(tries_until_parked(|_| 0, 2048), None);
+        assert_eq!(tries_until_parked(|_| 0xffff_ffff, 2048), None);
     }
 }

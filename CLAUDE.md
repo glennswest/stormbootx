@@ -660,6 +660,15 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#99 — a parked cap9 lock cost the full wait per port (P2). Code in
+      v0.32.0 (02d57cc); the metal check is the master's.** No console shows it
+      yet (2026-11-06): C2NR0Q2's newest is v0.24.0 (`cap9 parked at 0x3`, `0x7`,
+      and `0x462`, `0x466` on a warm boot, all unchanged values the rule takes),
+      and forge1's `nic fec 143 ms` on v0.37.0 is `no ConnectX on the bus`
+      (#186), so it never touched the lock. The rule is now `connectx::parked`,
+      host-tested. `wait-hardware` C2NR0Q2; pass is `nic fec` near 0.5 s against
+      ~4.3 s, `parked … for 0.0 s` per function. Closes on that boot.
+
 - [x] **#189 — a clean `local` intent waited 5 s at `press c`, every reboot of
       every machine (P2, stormcos#804 fix 11). Released v0.39.1.** `Stop::Local`
       (the intent or a command asked for the local disk, nothing failed) with a

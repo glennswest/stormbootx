@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-06
+- **test:** The parked cap9 rule moved to `connectx::parked` and host-tested (#99): the R230's tickets are taken after 50 tries, a value that moves keeps the whole wait, 0 and all ones are never parked. No change in behaviour.
+
 ## [v0.39.1] — 2026-11-06
 
 ### Fixed
