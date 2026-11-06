@@ -660,15 +660,21 @@ then.
 
 ### Open, no external blocker
 
-- [ ] **#189 — a clean `local` intent waits 5 s at `press c`, every reboot of
-      every machine (P2, stormcos#804 fix 11). In progress.** Plan: `Stop::Local`
+- [x] **#189 — a clean `local` intent waited 5 s at `press c`, every reboot of
+      every machine (P2, stormcos#804 fix 11). Released v0.39.1.** `Stop::Local`
       (the intent or a command asked for the local disk, nothing failed) with a
-      local disk that can boot (`blockio::local_bootloader`) does not wait: only
-      a `c` already pressed during the boot opens the console (`shell::pressed`).
-      Every failure, and a `local` with nothing local to boot, keeps the 5 s.
-      The `timing :` line gets its own `clock` after `fall-through`, so the
-      target (under 300 ms) does not hide NTP. Test: net-ovmf `localdisk`,
-      `localdisk-key`, `localdisk-fail`.
+      local disk that can boot (`blockio::local_bootloader`) does not wait: a `c`
+      already pressed during the boot opens the console (`shell::pressed`). Every
+      failure, and a `local` with nothing local to boot, keeps the 5 s. `timing :`
+      gives the fall-through's clock its own `clock`.
+      **State (2026-11-06):** sc-build of 9217160 (1878 s): no warnings, the full
+      suite; net-ovmf `localdisk` `fall-through 53 ms`, its bootloader started;
+      `localdisk-key` a `c` sent during the boot opened the console;
+      `localdisk-fail` 6.80 s (the 5 s and the failed claims, 1.8 s), `intent`
+      (no disk that boots) kept `press c`. Negative control, the wait forced back
+      (branch deleted): `fall-through 5.04 s`, failed as expected.
+      **Not run:** metal: the next reboot's `timing :` line on an X9 (5.36 s
+      before, so 360 ms beside the wait; `clock` now apart) and a Dell.
 
 - [ ] **#186 — `no ConnectX on the bus` on the R6415's ConnectX-4 Lx (P1, the
       master, 2026-11-04). Finder released v0.38.1; the pin in progress.**
@@ -2567,7 +2573,7 @@ then.
 
 ## Status
 
-v0.39.0 (#186: `fec_pin = rs` on every golden, the FEC pin at boot). v0.38.1 (#186: the ConnectX scan starts at each root bridge's first bus). v0.38.0 (#185: `boot/<golden>-usb.img`, the GPT + FAT32 stick a Dell 14G boots). v0.37.0 (#131: `prefer_media_drivers = mlx5`, the `stormbootx-mlx5test` medium). v0.36.0 (#183: the engine's boot port, falling back to `api_port`; `StormBootEngine`). v0.35.1 (#180: `startup.nsh` starts one medium only; the last screen line names the build). v0.35.0 (#172: UEFI HTTP boot of the ISO, the arm64 USB stick and stick updater). v0.34.0 (#167: `maint` claims and boots the maintenance image, stormblock#497). v0.33.1 (#167: the intent's host is a name; laptop-ovmf boots the real command record). v0.33.0 (#167 phase 1: stormbootx's own API on port 9180, Ed25519-signed commands, the hold on a failed boot; goldens `hold = 120`). v0.32.0 (#167's inventory v2, #168's ARP priming and timing line, #99's parked cap9 in 50 ms). v0.29.0 (#151: stormbootx-stick; released, frozen until 2026-10-17, then the master promotes it). v0.28.2 was #130 (reproducible media); v0.28.0 was #144 (the boot panel); v0.27.0 was #148 (the self-update resolves its host); v0.26.0 was #145 (the fall-through starts the local disk itself); v0.25.0 was #128: #4, #10, #17, #25, #36, #42, #53, #67 and #138. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
+v0.39.1 (#189: a clean `local` with a disk that boots does not wait at `press c`). v0.39.0 (#186: `fec_pin = rs` on every golden, the FEC pin at boot). v0.38.1 (#186: the ConnectX scan starts at each root bridge's first bus). v0.38.0 (#185: `boot/<golden>-usb.img`, the GPT + FAT32 stick a Dell 14G boots). v0.37.0 (#131: `prefer_media_drivers = mlx5`, the `stormbootx-mlx5test` medium). v0.36.0 (#183: the engine's boot port, falling back to `api_port`; `StormBootEngine`). v0.35.1 (#180: `startup.nsh` starts one medium only; the last screen line names the build). v0.35.0 (#172: UEFI HTTP boot of the ISO, the arm64 USB stick and stick updater). v0.34.0 (#167: `maint` claims and boots the maintenance image, stormblock#497). v0.33.1 (#167: the intent's host is a name; laptop-ovmf boots the real command record). v0.33.0 (#167 phase 1: stormbootx's own API on port 9180, Ed25519-signed commands, the hold on a failed boot; goldens `hold = 120`). v0.32.0 (#167's inventory v2, #168's ARP priming and timing line, #99's parked cap9 in 50 ms). v0.29.0 (#151: stormbootx-stick; released, frozen until 2026-10-17, then the master promotes it). v0.28.2 was #130 (reproducible media); v0.28.0 was #144 (the boot panel); v0.27.0 was #148 (the self-update resolves its host); v0.26.0 was #145 (the fall-through starts the local disk itself); v0.25.0 was #128: #4, #10, #17, #25, #36, #42, #53, #67 and #138. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
 (and the same day, the full chain: chain-load into stormuefi and a running
 stormcos kernel), on a
 Dell PowerEdge R230 (service tag C2NR0Q2) booting the agent over iDRAC virtual
