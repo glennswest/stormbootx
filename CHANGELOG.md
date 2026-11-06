@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-06
+- **docs:** Refreshed from the code since 2026-10-30: README status line and golden table (arm64 media are registered), `docs/presentation.md` version and status (v0.39.0). Config keys, ports and shipping already matched the code (`fec_pin`, `boot_port`, `prefer_media_drivers = mlx5`, `-usb.img`).
+
 ## [v0.39.0] — 2026-11-04
 
 ### Added

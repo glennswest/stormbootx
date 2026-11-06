@@ -1433,8 +1433,8 @@ does nothing else, for stormcentral to run into the volume it mounts:
 | `stormbootx-disk` | `boot/stormbootx-disk.img` (USB stick, the `stormbootx` medium), `SHA256SUMS`, `BUILD` |
 | `stormbootx-rustnic-disk` | `boot/stormbootx-rustnic-disk.img` (USB stick, the `stormbootx-rustnic` medium), `SHA256SUMS`, `BUILD` |
 | `stormbootx-mlx5test` | a test medium, never promoted or released (#131): `boot/stormbootx-mlx5test.iso`, the rustnic medium plus `stormnic-mlx5.efi`, `prefer_media_drivers = virtio,mlx5`, `nic_verbose`, no `update =`; `bin/stormbootx.efi`, `media/`, `media.files`, `SHA256SUMS`, `BUILD` |
-| `stormbootx-arm64` | `bin/stormbootx.efi` (aarch64), `boot/stormbootx-arm64.iso` (`\EFI\BOOT\BOOTAA64.EFI`, the fw medium for arm64 hosts), `media/`, `media.files`, `SHA256SUMS`, `BUILD` (#84; not registered yet). The ISO is also what UEFI HTTP boot serves (#172). |
-| `stormbootx-arm64-disk` | `boot/stormbootx-arm64-disk.img` (USB stick, the `stormbootx-arm64` medium: 64 MiB GPT ESP, `BOOTAA64.EFI`), `SHA256SUMS`, `BUILD` (#172; not registered yet) |
+| `stormbootx-arm64` | `bin/stormbootx.efi` (aarch64), `boot/stormbootx-arm64.iso` (`\EFI\BOOT\BOOTAA64.EFI`, the fw medium for arm64 hosts), `media/`, `media.files`, `SHA256SUMS`, `BUILD` (#84; registered as a media component). The ISO is also what UEFI HTTP boot serves (#172). |
+| `stormbootx-arm64-disk` | `boot/stormbootx-arm64-disk.img` (USB stick, the `stormbootx-arm64` medium: 64 MiB GPT ESP, `BOOTAA64.EFI`), `SHA256SUMS`, `BUILD` (#172; registered as a media component) |
 | `stormbootx-stick` | `bin/stormbootx-stick` (x86_64), `bin/stormbootx-stick-arm64` (aarch64, #172), static musl, `SHA256SUMS`, `BUILD` |
 | `nic-drivers` | `bin/stormnic-ixgbe.efi`, `bin/stormnic-mlx4.efi`, `bin/stormnic-virtio.efi`, `STORMNIC-SOURCE.txt`, `SHA256SUMS`, `BUILD` (an EFI boothelper; no medium takes it as an input since #52, and it holds no iPXE since #91) |
 
@@ -1588,10 +1588,10 @@ HTTP with no credential to a node registry that is moving to TLS with auth
 
 ## Status
 
-v0.29.0 (#151: `stormbootx-stick`; v0.28.x: the boot panel #144 and
+v0.39.0 (#186: `fec_pin = rs`, the FEC pin at boot; v0.38.1 the ConnectX scan per root bridge; v0.38.0 #185 `-usb.img` sticks; v0.37.0 #131 `prefer_media_drivers = mlx5`; v0.36.0 #183 the engine's boot port; v0.35.x #172/#180 HTTP boot, arm64 stick, one-medium `startup.nsh`; v0.33–0.34 #167 the API and `maint`; v0.29.0 #151: `stormbootx-stick`; v0.28.x: the boot panel #144 and
 reproducible media #130; v0.27.0 #148 the self-update's lease wait; v0.26.0
 #145 the fall-through starts the local disk; v0.25.0 #138's FEC-step budget).
-The master has frozen releases until 2026-10-17, when it promotes v0.29.0. Running on hardware since 2026-09-05. A Dell PowerEdge R230 (C2NR0Q2)
+The release freeze of 2026-10-14..17 is over. Running on hardware since 2026-09-05. A Dell PowerEdge R230 (C2NR0Q2)
 booted the ISO over iDRAC virtual media, claimed `boothost/C2NR0Q2` and
 attached a 32 GiB 4K clone from forge over 25 GbE. The console of that first
 attach, verbatim (the build before chain-loading, ea26be1):
