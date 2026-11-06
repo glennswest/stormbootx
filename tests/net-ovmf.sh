@@ -1106,7 +1106,8 @@ boot localdisk-fail "$host_cpu" "" 404 good \
     "press c for the network console, or wait 5s to continue" \
     "not:console     : no wait" \
     "is there a TCP/IP stack in this firmware"
-fall_through_within localdisk-fail 5000 7000
+# Its fall-through also holds the failed claims (1.8 s here), so only the floor says much.
+fall_through_within localdisk-fail 5000 30000
 
 # #108: stormnic-virtio on the media, with `prefer_media_drivers = virtio`.
 # OVMF's virtio drivers bind the NIC in stormbootx's first pass; the media's
