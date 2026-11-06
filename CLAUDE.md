@@ -660,6 +660,16 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#189 — a clean `local` intent waits 5 s at `press c`, every reboot of
+      every machine (P2, stormcos#804 fix 11). In progress.** Plan: `Stop::Local`
+      (the intent or a command asked for the local disk, nothing failed) with a
+      local disk that can boot (`blockio::local_bootloader`) does not wait: only
+      a `c` already pressed during the boot opens the console (`shell::pressed`).
+      Every failure, and a `local` with nothing local to boot, keeps the 5 s.
+      The `timing :` line gets its own `clock` after `fall-through`, so the
+      target (under 300 ms) does not hide NTP. Test: net-ovmf `localdisk`,
+      `localdisk-key`, `localdisk-fail`.
+
 - [ ] **#186 — `no ConnectX on the bus` on the R6415's ConnectX-4 Lx (P1, the
       master, 2026-11-04). Finder released v0.38.1; the pin in progress.**
       Cause (forge1's console): the card is at `84:00.x` under a root bridge
