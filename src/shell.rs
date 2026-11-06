@@ -15,6 +15,9 @@
 //! stop at a prompt because nobody was watching, so the offer is a timed one
 //! and silence takes the normal path. That is the same rule as everywhere else
 //! here: one provisioning outage must not become a fleet outage.
+//!
+//! The ordinary reboot, a `local` intent with a disk that boots, does not wait
+//! at all (#189); only a `c` already pressed takes the console there.
 
 use alloc::format;
 use alloc::string::String;
@@ -40,6 +43,20 @@ pub fn offer(secs: u32) -> bool {
         boot::stall(core::time::Duration::from_millis(100));
     }
     false
+}
+
+/// Was `c` pressed during the boot? Waits for nothing (#189): the keys already
+/// there, and a bound so a console that never stops sending can't hold a boot.
+pub fn pressed() -> bool {
+    let mut seen = false;
+    for _ in 0..64 {
+        match read_char() {
+            Some('c') | Some('C') => seen = true,
+            Some(_) => {}
+            None => break,
+        }
+    }
+    seen
 }
 
 fn read_char() -> Option<char> {

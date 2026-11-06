@@ -1105,7 +1105,7 @@ fn main() -> Status {
             Err(s) => s,
         };
         let (why, how, retry) = match stop {
-            Stop::Local(why) => return fall_through(&why, local),
+            Stop::Local(why) => return fall_through(&why, local, true),
             Stop::Retry(i) => {
                 withdraw();
                 (pass, ask) = (pass + 1, i);
@@ -1118,7 +1118,7 @@ fn main() -> Status {
             }
         };
         if how == api::Hold::Off || !net::leased() {
-            return fall_through(&why, local);
+            return fall_through(&why, local, false);
         }
         withdraw();
         // A machine with nothing local that boots holds until a command:
@@ -1132,7 +1132,7 @@ fn main() -> Status {
             (h, _) => h,
         };
         match api::hold(&why, how, retry) {
-            api::After::FallThrough => return fall_through(&why, local),
+            api::After::FallThrough => return fall_through(&why, local, false),
             api::After::Retry(i) => (pass, ask) = (pass + 1, i),
         }
     }
@@ -1183,7 +1183,10 @@ struct Local {
 /// started came back), because it is the conventional signal to the boot
 /// manager that this option did not boot anything and the next one should be
 /// tried. It is the fall-through, not a complaint.
-fn fall_through(err: &str, local: Local) -> Status {
+///
+/// `asked`: nothing failed, the local disk is what the intent or a command
+/// asked for. Then there is no console wait (#189), when that disk can boot.
+fn fall_through(err: &str, local: Local, asked: bool) -> Status {
     // The attached disk first (#54): its BlockIO lives in this image, which
     // the firmware unloads when this returns, and it is not a local disk.
     withdraw();
@@ -1202,18 +1205,38 @@ fn fall_through(err: &str, local: Local) -> Status {
     // Offered on a timer and never forced: a machine that reboots unattended
     // must not stop at a prompt because nobody was watching. Silence takes the
     // path it would have taken anyway.
+    //
+    // Not on the ordinary reboot (#189): a `local` intent with a disk that
+    // boots is every reboot of every machine, and nobody is being waited for.
+    // A `c` pressed during the boot still opens the console. A `local` with
+    // nothing local to boot is trouble, and keeps the wait.
+    let no_wait = asked
+        && match blockio::local_bootloader() {
+            Ok(_) => true,
+            Err(why) => {
+                uefi::println!("local       : nothing to boot ({why}); the console's wait stays");
+                false
+            }
+        };
     // What happened, to the collectors, before anything waits (#162).
     netlog::flush();
-    if shell::offer(5) {
+    let console = if no_wait {
+        uefi::println!("console     : no wait, the local disk was asked for (a c pressed during the boot opens it)");
+        shell::pressed()
+    } else {
+        shell::offer(5)
+    };
+    if console {
         // The console is interactive: the screen is the firmware's again.
         ui::suspend();
         shell::run();
         ui::resume();
     }
+    profile::mark("fall-through");
     // The local disk's OS needs the right time too (#77). Once per boot: a
     // claim that got this far has already done it. Nothing waits for a lease.
     clock::sync();
-    profile::mark("fall-through");
+    profile::mark("clock");
     profile::print();
     netlog::flush();
     // Give the NICs back, so a later boot option (PXE, HTTP boot) finds the

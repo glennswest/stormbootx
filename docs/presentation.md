@@ -157,7 +157,8 @@ Any failure on any arrow → **fall through to the local disk**.
 A boot path must never need the network in order to boot without it.
 
 1. Prints `no network boot: <reason>`.
-2. Offers a console for **5 s** (`press c`); silence continues.
+2. Offers a console for **5 s** (`press c`); silence continues. A clean
+   `local` with a disk that boots does not wait (#189).
 3. Sets the clock from NTP if the boot has not (#77), then gives the NICs
    back to the firmware (`net::release`, #56).
 4. Local disk present → falls through at once. None → says so, waits 30 s.

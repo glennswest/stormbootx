@@ -4,6 +4,8 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-11-06
+- **perf:** A clean `local` boot does not wait 5 s at `press c` (#189): when the intent or a command asked for the local disk and it can boot, the fall-through goes straight on, and a `c` pressed during the boot still opens the console. A failure, or a `local` with nothing local to boot, keeps the 5 s. The `timing :` line gives the fall-through's clock its own `clock` entry.
+- **test:** net-ovmf `localdisk`, `localdisk-key`, `localdisk-fail` (#189).
 - **docs:** Refreshed from the code since 2026-10-30: README status line and golden table (arm64 media are registered), `docs/presentation.md` version and status (v0.39.0). Config keys, ports and shipping already matched the code (`fec_pin`, `boot_port`, `prefer_media_drivers = mlx5`, `-usb.img`).
 
 ## [v0.39.0] — 2026-11-04

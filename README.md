@@ -745,7 +745,8 @@ media's NIC drivers and connecting every handle (a driver's `Start` runs in
 it). `nics` is opening the SNPs. `lease+engine` waits for DHCP and reads the
 engine's version, and `claim` covers the claim and its inventory. A boot
 that falls through ends at `fall-through`, which includes the network
-console's wait.
+console's wait when it has one (under 300 ms on a clean `local`, #189), and
+then `clock`.
 
 
 **stormbootx's own TCP/IP (#56, `src/net.rs`).** The firmware's `EFI_TCP4` is
@@ -823,7 +824,8 @@ published BlockIO (about 105–120 MiB/s, KVM) and starts it. Its boots
 | `newhost` | no name from DHCP or PTR: claims `boothost/default` by MAC and boots as `mac-525400123456` (#15) |
 | `noesp` | an attach that boots nothing: `blockio : withdrawn`, one local disk counted, no CPU exception in BDS after (#54) |
 | `nolease` | a NIC on a dead hub: one `waiting for a lease` line a second (#88) |
-| `intent` | told `local`: no claim POST, nothing attached (#11) |
+| `intent` | told `local`: no claim POST, nothing attached (#11); no disk that boots, so the console's 5 s stays (#189) |
+| `localdisk`, `localdisk-key`, `localdisk-fail` | told `local` with a disk that boots: no wait, `fall-through` under 300 ms, its bootloader started; a `c` sent during the boot opens the console; a failed claim on that disk still waits 5 s (#189) |
 | `bridge` | `esp = stormbootx`: the payload starts from stormbootx's own read of the ESP and finds the read-only filesystem as its volume (#42) |
 | `ic64` … `ic256` | install-configs of 64, 128, 192 and 256 KiB, each reassembled by the payload (#93) |
 | `release` | no fallback namespace and the claim 404s: falls through, gives the NIC back, and the firmware's PXE on it boots the payload (#36, #68) |
@@ -956,7 +958,11 @@ ends, and a `local` intent end in `fall_through`:
    `blockio : N handle(s) an earlier start published are still installed`.
 1. It prints `no network boot: <reason>`.
 2. It offers a console: *press c within 5 s*. Silence continues, so an
-   unattended machine never stops at a prompt.
+   unattended machine never stops at a prompt. Not on the ordinary reboot
+   (#189): when nothing failed (a `local` intent, a `local` command) and a
+   local disk can boot, it does not wait (`console : no wait, …`), and only a
+   `c` pressed during the boot opens the console. A `local` with nothing local
+   to boot keeps the wait.
 3. It sets the clock from NTP if the boot has not yet (step 5a, #77), so the
    local disk's OS gets the right time too.
 4. It gives every NIC back to the firmware (`net::release`, #56), so a later

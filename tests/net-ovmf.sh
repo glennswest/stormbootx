@@ -64,6 +64,8 @@
 #   (#167) `api` and `apirecord` (tests/api-boots.sh): a failed boot holds
 #      with its API up, and signed commands from the host and the engine's
 #      record are taken, refused, done once, and reported;
+#      With a local disk that boots there is no console wait (#189); a failure
+#      on that disk keeps its 5 s; a `c` pressed during the boot opens it.
 #   7. a fall-through gives the NIC back (#68): the firmware's own IPv4
 #      stack is on (with a virtio-rng, which its drivers need), the claim
 #      404s and the medium names no fallback namespace, as the goldens don't
@@ -623,6 +625,8 @@ BOOT_PXB=
 # the HTTP stub, by a URI boot option in the variable store. BOOT_HTTP=img
 # (#185): the GPT + FAT32 stick image instead.
 BOOT_HTTP=
+# BOOT_KEY (#189): a key sent to the keyboard from stormbootx's start.
+BOOT_KEY=
 boot() {
     local name=$1 cpu=$2 rng=$3 claim=$4 ntp=$5; shift 5
     # NET_ONLY=<name>: run that boot alone (a rerun of one failure).
@@ -707,6 +711,15 @@ boot() {
         -monitor unix:"$W/$name.mon",server,nowait \
         -display none -serial file:"$log" -no-reboot &
     qemu=$! t=0
+    # BOOT_KEY (#189): a person pressing that key once stormbootx has started,
+    # until the console comes up or the VM ends.
+    if [[ -n $BOOT_KEY ]]; then
+        ( while kill -0 "$qemu" 2>/dev/null && ! grep -q "stormbootx console\." "$log" 2>/dev/null; do
+              grep -q "NVMe/TCP boot extension" "$log" 2>/dev/null \
+                  && python3 "$ROOT/tests/screen.py" key "$W/$name.mon" "$BOOT_KEY" >/dev/null 2>&1
+              sleep 0.2
+          done ) &
+    fi
     # Stop once the payload has spoken, or at a fall-through.
     local stuck=
     while kill -0 "$qemu" 2>/dev/null && (( t < LIMIT )); do
@@ -1039,7 +1052,61 @@ boot intent "$host_cpu" "" ok good \
     "stub:GET /api/v1/synonyms/boothost/525400123456/intent" \
     "not-stub:/claim" \
     "not:blockio     : published on handle" \
-    "not:claim       : boothost/"
+    "not:claim       : boothost/" \
+    "local       : nothing to boot (" \
+    "press c for the network console, or wait 5s to continue"
+
+# #189: the ordinary reboot: `local`, and a local disk that boots (the payload
+# as its BOOTX64.EFI). No wait: `fall-through` under 300 ms in the timing line.
+# A `c` pressed during the boot still opens the console. A failure on the same
+# disk keeps its 5 s.
+truncate -s 40M "$W/localboot.img"
+sfdisk --quiet --label gpt "$W/localboot.img" <<PARTS
+start=2048, size=32768, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B
+PARTS
+rm -f "$W/localboot-esp.img"
+mkfs.fat -C -F 16 -n LOCALESP "$W/localboot-esp.img" 16384 >/dev/null
+mmd -i "$W/localboot-esp.img" ::/EFI ::/EFI/BOOT
+mcopy -i "$W/localboot-esp.img" "$PAYLOAD" ::/EFI/BOOT/BOOTX64.EFI
+dd if="$W/localboot-esp.img" of="$W/localboot.img" bs=1M seek=1 conv=notrunc status=none
+
+# fall_through_ms NAME: the `fall-through` of NAME's timing line, in ms.
+fall_through_ms() {
+    sed -n 's/^timing .*fall-through \([0-9.]*\) \(ms\|s\).*/\1 \2/p' "$W/$1.txt" | head -1 \
+        | awk '{ print ($2 == "s") ? int($1 * 1000) : int($1) }'
+}
+# fall_through_within NAME MIN MAX: it took at least MIN and under MAX ms.
+fall_through_within() {
+    [[ -z "${NET_ONLY:-}" || "$NET_ONLY" == "$1" ]] || return 0
+    local ms; ms=$(fall_through_ms "$1")
+    [[ -n $ms ]] || die "[$1] no fall-through in its timing line"
+    (( ms >= $2 && ms < $3 )) || die "[$1] fall-through took $ms ms, not $2..$3 ms"
+    say "[$1] fall-through $ms ms (wanted $2..$3)"
+}
+BOOT_INTENT=local BOOT_DISK="$W/localboot.img" WAIT_FOR="is there a TCP/IP stack in this firmware" \
+boot localdisk "$host_cpu" "" ok good \
+    "intent      : local" \
+    "console     : no wait, the local disk was asked for" \
+    "not:press c for the network console" \
+    "not:stormbootx console." \
+    "not-stub:/claim" \
+    "boot        : starting \\EFI\\BOOT\\BOOTX64.EFI from the local disk" \
+    "is there a TCP/IP stack in this firmware"
+fall_through_within localdisk 0 300
+
+BOOT_INTENT=local BOOT_DISK="$W/localboot.img" BOOT_KEY=c WAIT_FOR="stormbootx console\\." \
+boot localdisk-key "$host_cpu" "" ok good \
+    "console     : no wait, the local disk was asked for" \
+    "stormbootx console." \
+    "not:press c for the network console"
+
+BOOT_NOFALLBACK=1 BOOT_DISK="$W/localboot.img" WAIT_FOR="is there a TCP/IP stack in this firmware" \
+boot localdisk-fail "$host_cpu" "" 404 good \
+    "no network boot: no claim gave this machine an image" \
+    "press c for the network console, or wait 5s to continue" \
+    "not:console     : no wait" \
+    "is there a TCP/IP stack in this firmware"
+fall_through_within localdisk-fail 5000 7000
 
 # #108: stormnic-virtio on the media, with `prefer_media_drivers = virtio`.
 # OVMF's virtio drivers bind the NIC in stormbootx's first pass; the media's
