@@ -3,6 +3,11 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+## [v0.39.1] — 2026-11-06
+
+### Fixed
+- A clean `local` boot no longer waits 5 s at `press c` on every reboot (#189). A failure keeps the wait.
+
 ### 2026-11-06
 - **perf:** A clean `local` boot does not wait 5 s at `press c` (#189): when the intent or a command asked for the local disk and it can boot, the fall-through goes straight on, and a `c` pressed during the boot still opens the console. A failure, or a `local` with nothing local to boot, keeps the 5 s. The `timing :` line gives the fall-through's clock its own `clock` entry.
 - **test:** net-ovmf `localdisk`, `localdisk-key`, `localdisk-fail` (#189).
