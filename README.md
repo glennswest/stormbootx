@@ -1594,7 +1594,7 @@ HTTP with no credential to a node registry that is moving to TLS with auth
 
 ## Status
 
-v0.39.0 (#186: `fec_pin = rs`, the FEC pin at boot; v0.38.1 the ConnectX scan per root bridge; v0.38.0 #185 `-usb.img` sticks; v0.37.0 #131 `prefer_media_drivers = mlx5`; v0.36.0 #183 the engine's boot port; v0.35.x #172/#180 HTTP boot, arm64 stick, one-medium `startup.nsh`; v0.33–0.34 #167 the API and `maint`; v0.29.0 #151: `stormbootx-stick`; v0.28.x: the boot panel #144 and
+v0.39.1 (#189: a clean `local` with a disk that boots does not wait at `press c`). v0.39.0 (#186: `fec_pin = rs`, the FEC pin at boot; v0.38.1 the ConnectX scan per root bridge; v0.38.0 #185 `-usb.img` sticks; v0.37.0 #131 `prefer_media_drivers = mlx5`; v0.36.0 #183 the engine's boot port; v0.35.x #172/#180 HTTP boot, arm64 stick, one-medium `startup.nsh`; v0.33–0.34 #167 the API and `maint`; v0.29.0 #151: `stormbootx-stick`; v0.28.x: the boot panel #144 and
 reproducible media #130; v0.27.0 #148 the self-update's lease wait; v0.26.0
 #145 the fall-through starts the local disk; v0.25.0 #138's FEC-step budget).
 The release freeze of 2026-10-14..17 is over. Running on hardware since 2026-09-05. A Dell PowerEdge R230 (C2NR0Q2)
