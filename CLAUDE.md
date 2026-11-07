@@ -2231,14 +2231,24 @@ then.
       `-device igb`.
 
 - [ ] **#70 — stormnic-e1000e, a Rust 82574L/82579/I217–I219 UEFI driver
-      (P3, owner). Blocked on stormnic-e1000e#1 (2026-10-08, P3).** The owner (2026-10-07) had the repo created and **paused**, drivers at low priority; its first issue is P3, and this item is moved behind it. History: was waiting on the owner (2026-10-06) for the
-      master to create `glennswest/stormnic-e1000e` (as for stormnic-virtio,
-      #75). Verified in a VM: dev's QEMU has `-device e1000e` (82574L,
-      `8086:10d3`), and OVMF has no e1000e driver of its own. The issue's
-      named IDs are right; "15B7+" is not a range (I219 IDs are scattered
-      across 24 generations; listed on #70). This repo's side, once it
-      binds: pin it in `build-nic-drivers.sh` and add an OVMF boot on
-      `-device e1000e`.
+      (P3, owner). In progress (2026-11-07).** stormnic-e1000e#1 closed:
+      d0bc5ec (v0.1.0, 67 IDs, verified on QEMU's 82574L under OVMF, the PCH
+      parts in simulation only). Plan, this repo:
+      1. `build-nic-drivers.sh`: pin d0bc5ec, `e1000e` in the default
+         `STORMNIC_DRIVERS` (so on the rustnic media and the nic-drivers
+         golden); after the build, its `src/ids.rs` must list exactly
+         `drivers.rs`'s e1000e IDs, so a pin bump that adds one fails.
+      2. `drivers.rs`: an `e1000e` family (the 67 `8086:` IDs) for
+         `prefer_media_drivers = e1000e`; `build-boot-agent.sh` accepts it.
+         **No golden says `prefer_media_drivers = e1000e`:** on metal these
+         NICs carry Intel's own UNDI driver, and taking a PCH part from it
+         with a driver never run on one is the mlx5 rule (#131). The rustnic
+         media carry it for a NIC nothing else drives.
+      3. net-ovmf (`E1000E_EFI`): `e1000e` (QEMU `-device e1000e` with no
+         option ROM: our driver binds it alone and carries the whole boot),
+         `e1000e-take` (iPXE's ROM holds it; `prefer_media_drivers = e1000e`
+         takes it), `e1000e-kept` (the ROM, no key: the firmware keeps it).
+      4. docs, CHANGELOG, sc-build, release, goldens.
 
 - [ ] **#71 — stormnic-i40e, a Rust X710/XL710/XXV710/X722 UEFI driver
       (P3, owner). Blocked on stormnic-i40e#1 (2026-10-08, P3).** The owner (2026-10-07) had the repo created and **paused**, drivers at low priority; its first issue is P3, and this item is moved behind it. History: was waiting on the owner (2026-10-06).** Same
