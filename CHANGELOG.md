@@ -3,6 +3,11 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+## [v0.39.2] — 2026-11-07
+
+### Changed
+- The rustnic media carry stormnic-ixgbe 4b4813d (#192): jumbo frames on the Intel 10G, so a lease offering DHCP option 26 runs at 9000 (#165).
+
 ### 2026-11-07
 - **build:** The rustnic media pin stormnic-ixgbe 4b4813d (#192, was 728b328): jumbo frames (stormnic-ixgbe#33), the SNP's `MaxPacketSize` 9000, so a lease offering DHCP option 26 runs the 82599 at 9000 (#165's close condition, on an X9 blade).
 
