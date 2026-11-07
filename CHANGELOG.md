@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-07
+- **build:** The rustnic media pin stormnic-ixgbe 4b4813d (#192, was 728b328): jumbo frames (stormnic-ixgbe#33), the SNP's `MaxPacketSize` 9000, so a lease offering DHCP option 26 runs the 82599 at 9000 (#165's close condition, on an X9 blade).
+
 ### 2026-11-06
 - **test:** The parked cap9 rule moved to `connectx::parked` and host-tested (#99): the R230's tickets are taken after 50 tries, a value that moves keeps the whole wait, 0 and all ones are never parked. No change in behaviour.
 

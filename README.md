@@ -287,7 +287,7 @@ console; a machine with no screen console gets it anyway.
 
    ```
    "agent": {"name":"stormbootx","version":"0.19.0","commit":"649dd07",
-             "media":"rustnic ixgbe@728b328 mlx4@04e7d2c virtio@1a04808",
+             "media":"rustnic ixgbe@4b4813d mlx4@04e7d2c virtio@1a04808",
              "update_serial":5,"update":"serial:5"}
    ```
 
@@ -1501,7 +1501,9 @@ EEMNGCTL.CFG_DONE never sets is logged and `Start` continues, as on server3's
 one line per bound NIC (MAC, link speed, or `link down after N ms` with
 LINKS/AUTOC/AUTOC2/ESDP), plus warnings, and the full bring-up trace only
 when the volatile EFI variable `StormnicVerbose` is set (stormnic-ixgbe#22
-and #26); a linked boot is about 3 s faster (stormnic-ixgbe#24). Since #34 it
+and #26); a linked boot is about 3 s faster (stormnic-ixgbe#24). Since #192
+(stormnic-ixgbe 4b4813d) its SNP carries 9000-byte frames (stormnic-ixgbe#33),
+so a lease offering DHCP option 26 runs the Intel 10G at 9000 (#165). Since #34 it
 also carries `stormnic-mlx4.efi` for the ConnectX-3, built `--locked` from
 `STORMNIC_MLX4_REF`. Since #50 (stormnic-mlx4 v0.2.0) its `Start` brings up the
 ConnectX-3, keeps it, and installs `EFI_SIMPLE_NETWORK_PROTOCOL` on a child
@@ -1555,7 +1557,7 @@ prints it under the banner:
 
 ```
 media       : fw
-media       : rustnic ixgbe@728b328 mlx4@04e7d2c virtio@1a04808
+media       : rustnic ixgbe@4b4813d mlx4@04e7d2c virtio@1a04808
 ```
 
 The fw medium's `BUILD` says `drivers = none`, and a `--drivers` given to

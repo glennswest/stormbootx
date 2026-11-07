@@ -660,6 +660,15 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#192 — the rustnic media pin stormnic-ixgbe 4b4813d (jumbo frames,
+      stormnic-ixgbe#33, for #165) (P0). In progress.** Pin bumped from
+      728b328 in `build-nic-drivers.sh`; stormbootx's own side of #165 was
+      done in 5367332 (option 26; `net.rs` sizes its receive buffer from the
+      SNP's `MaxPacketSize`, so nothing else changes). Plan: sc-build (the full
+      suite builds the rustnic golden and boots it under OVMF; no Intel NIC
+      there), release, rustnic goldens, then #165 `wait-hardware` on an X9
+      blade: `mtu 9000 (DHCP option 26)` and `path MTU 9000, jumbo`.
+
 - [ ] **#99 — a parked cap9 lock cost the full wait per port (P2). Code in
       v0.32.0 (02d57cc); the metal check is the master's.** No console shows it
       yet (2026-11-06): C2NR0Q2's newest is v0.24.0 (`cap9 parked at 0x3`, `0x7`,

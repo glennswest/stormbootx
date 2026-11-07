@@ -36,6 +36,11 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 # Each driver from a pinned commit of its own repo, bumped deliberately in its
 # own commit: a driver on boot media changes only when someone changes its pin.
 STORMNIC_IXGBE_REPO="https://github.com/glennswest/stormnic-ixgbe.git"
+# 4b4813d (#192): jumbo frames (stormnic-ixgbe#33): the SNP reports
+# MaxPacketSize 9000, Rings::start sets MAXFRS.MFS 9022 and HLREG0.JUMBOEN,
+# and the RX/TX buffers are 9 KB (DMA region 145 pages, was 33), so a g16
+# lease offering DHCP option 26 runs the 82599 at 9000 (#165). Also the uefi
+# crate's log capped at WARN (INFO when verbose, stormnic-ixgbe#8).
 # 728b328 (#101): a quiet console by default (stormnic-ixgbe#22): one line per
 # bound NIC (MAC, link speed or `link down after N ms (LINKS, AUTOC, AUTOC2,
 # ESDP)`, SNP installed) plus warnings, and the full trace only when the
@@ -57,7 +62,7 @@ STORMNIC_IXGBE_REPO="https://github.com/glennswest/stormnic-ixgbe.git"
 # On top of 0dd4267's SNP on a child handle (#4), 2afd319's rings (#3),
 # 9476135's PHY and link code (#13, 25 device IDs) and 884cf18's bring-up
 # (#2); builds --locked (#47, #48, #51, #63, #65).
-STORMNIC_IXGBE_REF="728b328a086d34faef8238c1b12e9966b18e9ee4"
+STORMNIC_IXGBE_REF="4b4813dfea457a53b68fdc5a438125ae94c50795"
 STORMNIC_MLX4_REPO="https://github.com/glennswest/stormnic-mlx4.git"
 # 04e7d2c (v0.2.5, #104): a quiet console (stormnic-mlx4#16), one line per
 # port (MAC, link up 10G XFI or no link, SNP installed) plus every warning and
