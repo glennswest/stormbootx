@@ -287,7 +287,7 @@ console; a machine with no screen console gets it anyway.
 
    ```
    "agent": {"name":"stormbootx","version":"0.19.0","commit":"649dd07",
-             "media":"rustnic ixgbe@4b4813d mlx4@04e7d2c virtio@1a04808",
+             "media":"rustnic ixgbe@4b4813d mlx4@04e7d2c virtio@1a04808 e1000e@d0bc5ec",
              "update_serial":5,"update":"serial:5"}
    ```
 
@@ -830,6 +830,7 @@ published BlockIO (about 105–120 MiB/s, KVM) and starts it. Its boots
 | `ic64` … `ic256` | install-configs of 64, 128, 192 and 256 KiB, each reassembled by the payload (#93) |
 | `release` | no fallback namespace and the claim 404s: falls through, gives the NIC back, and the firmware's PXE on it boots the payload (#36, #68) |
 | `virtio`, `virtio-modern`, `virtio-kept`, `virtio-verbose` | with `VIRTIO_EFI`: `prefer_media_drivers = virtio` takes a transitional and a modern-only virtio-net NIC for stormnic-virtio and attaches over it; without the key the firmware keeps it; `nic_verbose` prints the driver's trace (#108, #80) |
+| `e1000e`, `e1000e-take`, `e1000e-kept` | with `E1000E_EFI`: QEMU's e1000e (82574L) with no option ROM, which OVMF has no driver for: stormnic-e1000e binds it with no key and carries the whole boot (lease, claim, 96 MiB attach); with QEMU's iPXE ROM, `prefer_media_drivers = e1000e` takes it from iPXE, and without the key iPXE keeps it (#70) |
 | `mlx5-giveback`, `mlx5-none`, `mlx5-absent` | with `MLX5_EFI`: the real stormnic-mlx5 under the virtio family's file name declines the NIC, and the firmware gets it back and carries the boot; both families on one medium: virtio taken, `mlx5: no such NIC`; the key with no driver takes nothing (#131). QEMU has no ConnectX |
 
 ## The NVMe/TCP initiator
@@ -1035,7 +1036,7 @@ others.
 | `esp` | `auto` | who reads the attached ESP (#37): `auto` (firmware, then stormbootx), `firmware`, or `stormbootx` (the bridge and its read-only filesystem, #42); `build-boot-agent.sh --esp` |
 | `rng` | `firmware` | the first entropy source tried (#56): `firmware`, `cpu` (skip `EFI_RNG`) or `jitter` (skip both); `build-boot-agent.sh --rng` |
 | `nic_verbose` | `false` | `true`: the stormnic drivers print their whole bring-up trace instead of one line per NIC (#80). stormbootx sets the volatile `StormnicVerbose` variable (GUID `ce1479a2-eab9-4176-b0ad-c909ea5b8e0b`, `BOOTSERVICE_ACCESS`, one byte `01`) before it loads `\stormboot\drivers`; gone at the next reset, never in NVRAM. For debugging a machine without a rebuild; no golden sets it. `build-boot-agent.sh --nic-verbose`. From the EFI shell instead: `setvar StormnicVerbose -guid ce1479a2-eab9-4176-b0ad-c909ea5b8e0b -bs =01` |
-| `prefer_media_drivers` | none | media driver families that take their NICs from the firmware's own driver (#108): `virtio` (stormnic-virtio over OVMF's VirtioNetDxe), `mlx5` (stormnic-mlx5 over FlexBoot, #131; the test medium only). `virtio` is set on the rustnic media; without it the platform's drivers win. `build-boot-agent.sh --prefer-media-drivers` |
+| `prefer_media_drivers` | none | media driver families that take their NICs from the firmware's own driver (#108): `virtio` (stormnic-virtio over OVMF's VirtioNetDxe), `mlx5` (stormnic-mlx5 over FlexBoot, #131; the test medium only), `e1000e` (stormnic-e1000e over Intel's UNDI or iPXE, #70; no golden sets it). `virtio` is set on the rustnic media; without it the platform's drivers win. `build-boot-agent.sh --prefer-media-drivers` |
 | `media` | none | the media's label, printed under the banner (`media : fw`); written by the golden build, `build-boot-agent.sh --media` |
 | `fec` | none | **recovery sticks only**: write this FEC and warm-reset; the pin stands aside |
 | `fec_pin` | none (nothing pinned) | `rs`: a ConnectX port whose NV next-boot FEC is not RS is written RS, with one warm reset (#186; every golden). `off`: never, and forget the last pin's record. `build-boot-agent.sh --fec-pin` |
@@ -1386,8 +1387,11 @@ drive and is deleted with it. Nothing is kept.
 pinned commit of its own repo: `stormnic-ixgbe.efi` (Intel 82599/X540/X552,
 `STORMNIC_IXGBE_REF`), `stormnic-mlx4.efi` (ConnectX-3,
 `STORMNIC_MLX4_REF`) and `stormnic-virtio.efi` (virtio-net, VMs only,
-`STORMNIC_VIRTIO_REF`, #108), beside a `STORMNIC-SOURCE.txt` naming each
-commit and digest. `STORMNIC_DRIVERS` (default `ixgbe mlx4 virtio`) picks
+`STORMNIC_VIRTIO_REF`, #108) and `stormnic-e1000e.efi` (Intel 82574L,
+82579, I217/I218/I219, `STORMNIC_E1000E_REF`, #70), beside a
+`STORMNIC-SOURCE.txt` naming each commit and digest; stormnic-e1000e's
+`src/ids.rs` must list exactly the IDs of `drivers.rs`'s e1000e family, or
+the build fails. `STORMNIC_DRIVERS` (default `ixgbe mlx4 virtio e1000e`) picks
 which; `STORMNIC_DRIVERS=virtio` builds one. `mlx5` (`stormnic-mlx5.efi`,
 ConnectX-4/5/6, `STORMNIC_MLX5_REF`, #131) is built only when named: it has
 never run on a card. It checks each is a PE
@@ -1553,12 +1557,21 @@ returns has named itself, and the console says what the firmware's driver left:
 0x2 are lookups and hold nothing; a `BY_DRIVER` open is 0x10, and an `SNP on the
 handle` would make stormnic-mlx5 decline.) A driver that declines gives the NIC back; if the firmware's driver does
 not take it again the line says `this NIC has no driver`, and the boot goes on
-over any other. The rustnic media builds its own drivers and takes no nic-drivers golden. Each ISO's `stormboot.conf` names the variant, and the console
+over any other.
+
+`prefer_media_drivers = e1000e` (#70) takes an Intel 82574L or chipset GbE
+(the 67 `8086:` IDs stormnic-e1000e binds) from Intel's UNDI driver or a NIC's
+iPXE ROM. No golden says it: the rustnic media carry stormnic-e1000e for an
+e1000e nothing else drives (an 82574L with no UEFI ROM), and taking one from
+the firmware waits until the driver has run on a real chipset part (only
+QEMU's 82574L so far; the PCH parts in simulation).
+
+The rustnic media builds its own drivers and takes no nic-drivers golden. Each ISO's `stormboot.conf` names the variant, and the console
 prints it under the banner:
 
 ```
 media       : fw
-media       : rustnic ixgbe@4b4813d mlx4@04e7d2c virtio@1a04808
+media       : rustnic ixgbe@4b4813d mlx4@04e7d2c virtio@1a04808 e1000e@d0bc5ec
 ```
 
 The fw medium's `BUILD` says `drivers = none`, and a `--drivers` given to

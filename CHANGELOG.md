@@ -3,6 +3,11 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-07
+- **build:** The rustnic media and the nic-drivers golden carry stormnic-e1000e d0bc5ec (v0.1.0, #70): Intel 82574L, 82579 and I217/I218/I219, for an e1000e nothing else drives. `build-nic-drivers.sh` fails if its `src/ids.rs` and `drivers.rs`'s list differ.
+- **feat:** `prefer_media_drivers = e1000e` (#70) takes those NICs from Intel's UNDI or iPXE for stormnic-e1000e; no golden sets it.
+- **test:** net-ovmf's `e1000e`, `e1000e-take`, `e1000e-kept` boots (`E1000E_EFI`), and `NIC=e1000e` in media-ovmf: the rustnic stick drives QEMU's 82574L.
+
 ## [v0.39.2] — 2026-11-07
 
 ### Changed

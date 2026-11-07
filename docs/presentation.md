@@ -208,7 +208,7 @@ Read from the volume it booted from. `key = value`, each key independent.
 | `esp` | `auto` | who reads the ESP: firmware then stormbootx, or one alone (#37) |
 | `fec`, `fec_pin` | — | a recovery stick's FEC; `rs` pins NV FEC at boot (#186) |
 | `nic_verbose` | `false` | stormnic drivers print their full trace (#80) |
-| `prefer_media_drivers` | — | `virtio`, `mlx5`: take NICs from firmware (#108, #131) |
+| `prefer_media_drivers` | — | `virtio`, `mlx5`, `e1000e`: take NICs from firmware (#108, #131, #70) |
 | `update` | — | the self-update's URL, or `off` (#83) |
 | `version`, `commit` | — | written on the media for storminstall; not read (#94) |
 
