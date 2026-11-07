@@ -618,6 +618,11 @@ BOOT_CONF=
 # stub; `off` sends nothing).
 BOOT_SYSLOG=
 BOOT_NICDEV=
+# BOOT_NIC (#70): the NIC's QEMU model (default virtio-net-pci), and
+# BOOT_NIC_ROM=1 keeps QEMU's own option ROM on it (iPXE's EFI driver; e1000e's
+# is efi-e1000e.rom). Without it the NIC has none, as every other boot.
+BOOT_NIC=
+BOOT_NIC_ROM=
 # BOOT_PXB=1 (#186): a second PCI root bridge, its buses from 0x40 as an EPYC's
 # are, with a root port and one device behind it.
 BOOT_PXB=
@@ -704,7 +709,7 @@ boot() {
         -drive if=pflash,format=raw,file="$W/$name.vars" \
         -fw_cfg name=opt/org.tianocore/IPv4Support,string=$ipv4 \
         -fw_cfg name=opt/org.tianocore/IPv6Support,string=no \
-        "${net[@]}" -device virtio-net-pci,netdev=n0,romfile=$nicopt${BOOT_NICDEV:+,$BOOT_NICDEV} \
+        "${net[@]}" -device "${BOOT_NIC:-virtio-net-pci},netdev=n0$([[ -n $BOOT_NIC_ROM ]] || echo ,romfile=)$nicopt${BOOT_NICDEV:+,$BOOT_NICDEV}" \
         -object filter-dump,id=fd0,netdev=n0,file="$W/$name.pcap" \
         "${media[@]}" "${extra[@]}" \
         -debugcon file:"$W/$name.debug" -global isa-debugcon.iobase=0x402 \
@@ -1204,6 +1209,52 @@ if [[ -n "${MLX5_EFI:-}" && -n "${VIRTIO_EFI:-}" ]]; then
         "not:taking it from"
 else
     say "note: MLX5_EFI not set; the prefer_media_drivers = mlx5 boots (#131) are skipped"
+fi
+
+# #70: stormnic-e1000e. QEMU's e1000e is an 82574L (8086:10d3), and OVMF has
+# no driver for it. With no option ROM nothing else drives it, so the media's
+# driver binds it in the platform's own pass, with no key, and must carry the
+# whole boot: lease, claim, the 96 MiB attach, the payload. With QEMU's iPXE
+# ROM on it, iPXE's EFI driver holds it first: `prefer_media_drivers = e1000e`
+# takes it from iPXE, and without the key iPXE keeps it. E1000E_EFI names the
+# driver.
+if [[ -n "${E1000E_EFI:-}" ]]; then
+    [[ -s "$E1000E_EFI" ]] || die "no stormnic-e1000e driver at $E1000E_EFI"
+    mkdir -p "$W/edrv" && cp "$E1000E_EFI" "$W/edrv/stormnic-e1000e.efi"
+    e1000e=(
+        "starting stormnic-e1000e.efi"
+        "stormnic-e1000e.efi started"
+        "stormnic-e1000e 0.1.0: "
+        " 8086:10d3 82574L Gigabit Network Connection: MAC "
+        ", SNP installed"
+        "nic 0: driver stormnic-e1000e.efi"
+        "nic 0: leased 10.0.2.15/24 gw 10.0.2.2"
+        "not:would not let go"
+        "not:nic 0: driver Virtio"
+    )
+    BOOT_DRIVERS="$W/edrv" BOOT_NIC=e1000e \
+    boot e1000e "$host_cpu" "" ok good "${e1000e[@]}" \
+        "not:taken from" \
+        "booting stubhost's image" \
+        "stub:\"media_driver\":true" \
+        "blockio     : 96 MiB read in all" \
+        "is there a TCP/IP stack in this firmware"
+    BOOT_DRIVERS="$W/edrv" BOOT_NIC=e1000e BOOT_NIC_ROM=1 BOOT_PREFER=e1000e \
+    STOP_AT="engine      : stormblock 19.4.0" BOOT_SETTLE=1 \
+    boot e1000e-take "$host_cpu" "" 404 good "${e1000e[@]}" \
+        " 8086:10d3: taking it from " \
+        "; stormnic-e1000e.efi drives it" \
+        "not:given back to"
+    BOOT_DRIVERS="$W/edrv" BOOT_NIC=e1000e BOOT_NIC_ROM=1 \
+    STOP_AT="engine      : stormblock 19.4.0" BOOT_SETTLE=1 \
+    boot e1000e-kept "$host_cpu" "" 404 good \
+        "stormnic-e1000e.efi started" \
+        "nic 0: driver " \
+        "not:nic 0: driver stormnic-e1000e.efi" \
+        "not:taken from" \
+        "not:SNP installed"
+else
+    say "note: E1000E_EFI not set; the stormnic-e1000e boots (#70) are skipped"
 fi
 
 # #93: how large an install-config.yaml OVMF's volatile variable store takes.

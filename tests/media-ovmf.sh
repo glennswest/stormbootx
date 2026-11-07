@@ -4,6 +4,7 @@
 #   tests/media-ovmf.sh ISO 'EXPECTED LINE' ['ANOTHER' ...]
 #   tests/media-ovmf.sh IMG 'EXPECTED LINE' ['ANOTHER' ...]
 #   NIC=virtio tests/media-ovmf.sh …   (one virtio-net NIC, #108)
+#   NIC=e1000e tests/media-ovmf.sh …   (one e1000e, an 82574L, #70)
 #
 # An `.img` (a disk golden, #41) is booted as a USB stick (qemu-xhci +
 # usb-storage, removable), the way the X9 blades boot theirs; so is a golden's
@@ -41,9 +42,16 @@ esac
 
 # NIC=virtio gives the VM one virtio-net NIC (no option ROM), so a rustnic
 # medium's stormnic-virtio can be seen taking it from OVMF's driver (#108).
+# NIC=e1000e an 82574L with no option ROM, which OVMF has no driver for, so
+# only a rustnic medium's stormnic-e1000e can drive it (#70).
 # Otherwise there is no NIC at all.
 net=(-net none)
-[[ "${NIC:-}" == virtio ]] && net=(-netdev user,id=n0 -device virtio-net-pci,netdev=n0,romfile=)
+case "${NIC:-}" in
+    virtio) net=(-netdev user,id=n0 -device virtio-net-pci,netdev=n0,romfile=) ;;
+    e1000e) net=(-netdev user,id=n0 -device e1000e,netdev=n0,romfile=) ;;
+    "") ;;
+    *) die "NIC=$NIC: virtio or e1000e" ;;
+esac
 
 W=$(mktemp -d "${TMPDIR:-/tmp}/media-ovmf.XXXXXX")
 trap 'rm -rf "$W"' EXIT

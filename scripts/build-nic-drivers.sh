@@ -14,6 +14,9 @@
 #   mlx5  -> stormnic-mlx5.efi    Mellanox ConnectX-4/5/6, only when asked for:
 #                                 it has never run on a card, so only the
 #                                 stormbootx-mlx5test medium carries it (#131)
+#   e1000e -> stormnic-e1000e.efi Intel 82574L, 82579, I217/I218/I219 (#70);
+#                                 binds a NIC nothing else drives, and takes one
+#                                 only with `prefer_media_drivers = e1000e`
 #
 # No iPXE (owner on #81, 2026-10-02: "I dont want the ipxe code. Move to
 # ours."; #91). A machine whose firmware has its own NIC driver boots the
@@ -22,7 +25,7 @@
 #   scripts/build-nic-drivers.sh [OUTDIR]     (default tmp/drivers in the checkout)
 #   scripts/build-boot-agent.sh --iso --drivers tmp/drivers
 #
-# STORMNIC_DRIVERS (default "ixgbe mlx4 virtio") picks which are built. What ships is
+# STORMNIC_DRIVERS (default "ixgbe mlx4 virtio e1000e") picks which are built. What ships is
 # the stormbootx-rustnic medium and the nic-drivers golden
 # (deploy/build-golden.sh).
 #
@@ -99,9 +102,22 @@ STORMNIC_MLX5_REPO="https://github.com/glennswest/stormnic-mlx5.git"
 # until the Dell's boot passes; FlexBoot holds that card, so it binds only where
 # the media says `prefer_media_drivers = mlx5`.
 STORMNIC_MLX5_REF="66de5456520e40bda00cbbfc0e03e1f7e5fa6b2f"
-read -r -a STORMNIC_DRIVERS <<< "${STORMNIC_DRIVERS:-ixgbe mlx4 virtio}"
+STORMNIC_E1000E_REPO="https://github.com/glennswest/stormnic-e1000e.git"
+# d0bc5ec (v0.1.0, #70, stormnic-e1000e#1): SNP for the 82574L and the PCH
+# 82579/I217/I218/I219, 67 device IDs listed from pci.ids 2026.11.06
+# (src/ids.rs). Holds PciIo BY_DRIVER | EXCLUSIVE and declines a function
+# another driver holds, one console line per NIC, quiesced at every exit and
+# at ExitBootServices. Verified on QEMU's e1000e (8086:10d3) under OVMF, alone
+# and taken from iPXE's ROM; the PCH parts in simulation only (their line says
+# so), and Linux's I219 work-arounds (ULP exit, ring flush) are not done.
+# Intel's UNDI (or iPXE's ROM) holds these NICs on most machines, so on the
+# media it drives only a NIC nothing else does, unless the media says
+# `prefer_media_drivers = e1000e`; no golden says it.
+STORMNIC_E1000E_REF="d0bc5ecb6280c33cc0600f51b98c7c6c5ae954d8"
+read -r -a STORMNIC_DRIVERS <<< "${STORMNIC_DRIVERS:-ixgbe mlx4 virtio e1000e}"
 for d in "${STORMNIC_DRIVERS[@]}"; do
-    [[ "$d" == ixgbe || "$d" == mlx4 || "$d" == virtio || "$d" == mlx5 ]] || die "STORMNIC_DRIVERS: no Rust driver '$d' (ixgbe, mlx4, virtio, mlx5)"
+    [[ "$d" == ixgbe || "$d" == mlx4 || "$d" == virtio || "$d" == mlx5 || "$d" == e1000e ]] \
+        || die "STORMNIC_DRIVERS: no Rust driver '$d' (ixgbe, mlx4, virtio, mlx5, e1000e)"
 done
 wanted() { local d; for d in "${STORMNIC_DRIVERS[@]}"; do [[ "$d" == "$1" ]] && return 0; done; return 1; }
 OUTDIR="${1:-$(cd "$(dirname "$0")/.." && pwd)/tmp/drivers}"
@@ -153,6 +169,19 @@ build_stormnic() {
     cp "$efi" "$OUTDIR/$name.efi"
     say "driver  $(du -h "$efi" | cut -f1)  $OUTDIR/$name.efi  (subsystem $sub)"
     printf '%s %s %s%s\n' "$name" "$ref" "$(sha256sum "$efi" | cut -d' ' -f1)" "${lock:+ locked}" >> "$OUTDIR/STORMNIC-SOURCE.txt"
+    [[ $short != e1000e ]] || same_e1000e_ids "$WORK/$name/src/ids.rs"
+}
+# `prefer_media_drivers = e1000e` takes the functions src/drivers.rs lists;
+# the driver binds the ones its src/ids.rs lists. A pin that changes one
+# must change the other (#70).
+same_e1000e_ids() {
+    local theirs ours
+    theirs=$(grep -oE 'device: 0x[0-9a-fA-F]{4}' "$1" | sed 's/.*0x//' | tr A-F a-f | LC_ALL=C sort -u)
+    ours=$(sed -n '/^const E1000E_IDS/,/^\];/p' "$(dirname "$0")/../src/drivers.rs" \
+        | grep -oE '0x8086, 0x[0-9a-fA-F]{4}' | sed 's/.*0x//' | tr A-F a-f | LC_ALL=C sort -u)
+    [[ -n "$theirs" && "$theirs" == "$ours" ]] || die "stormnic-e1000e's src/ids.rs and src/drivers.rs E1000E_IDS differ:
+$(diff <(printf '%s\n' "$theirs") <(printf '%s\n' "$ours") | grep '^[<>]')"
+    say "  stormnic-e1000e: $(wc -l <<< "$theirs") device IDs, the same as src/drivers.rs"
 }
 # An OUTDIR from before #91 may still hold iPXE; nothing here may carry it on.
 rm -f "$OUTDIR/STORMNIC-SOURCE.txt" "$OUTDIR/IPXE-SOURCE.txt" "$OUTDIR"/ipxe-*.efi "$OUTDIR"/*.efi.off
@@ -160,3 +189,4 @@ build_stormnic stormnic-ixgbe "$STORMNIC_IXGBE_REPO" "$STORMNIC_IXGBE_REF" ixgbe
 build_stormnic stormnic-mlx4 "$STORMNIC_MLX4_REPO" "$STORMNIC_MLX4_REF" mlx4
 build_stormnic stormnic-virtio "$STORMNIC_VIRTIO_REPO" "$STORMNIC_VIRTIO_REF" virtio
 build_stormnic stormnic-mlx5 "$STORMNIC_MLX5_REPO" "$STORMNIC_MLX5_REF" mlx5
+build_stormnic stormnic-e1000e "$STORMNIC_E1000E_REPO" "$STORMNIC_E1000E_REF" e1000e

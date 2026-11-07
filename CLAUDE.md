@@ -43,8 +43,8 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   cargo test -p nvme-tcp-initiator && \
   R=${CARGO_TARGET_DIR:-target}/x86_64-unknown-uefi/release && \
   tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi && \
-  STORMNIC_DRIVERS="virtio mlx5" scripts/build-nic-drivers.sh $PWD/t/nd && \
-  VIRTIO_EFI=t/nd/stormnic-virtio.efi MLX5_EFI=t/nd/stormnic-mlx5.efi tests/net-ovmf.sh $R/stormbootx.efi $R/tcp4probe.efi && \
+  STORMNIC_DRIVERS="virtio mlx5 e1000e" scripts/build-nic-drivers.sh $PWD/t/nd && \
+  VIRTIO_EFI=t/nd/stormnic-virtio.efi MLX5_EFI=t/nd/stormnic-mlx5.efi E1000E_EFI=t/nd/stormnic-e1000e.efi tests/net-ovmf.sh $R/stormbootx.efi $R/tcp4probe.efi && \
   scripts/build-boot-agent.sh --iso --binary $R/stormbootx.efi --media shelltest --output $PWD/t/s.iso && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso old "media       : shelltest" && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso ovmf "media       : shelltest" && \
@@ -58,6 +58,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   NIC=virtio tests/media-ovmf.sh t/fw/boot/stormbootx-usb.img "media       : fw" "fallback    : none" "fec pin     : rs (\\stormboot\\stormboot.conf): 0 port(s) read" && \
   deploy/build-golden.sh stormbootx-rustnic $PWD/t/rn && tests/usb-layout.sh t/rn/boot/stormbootx-rustnic-usb.img t/rn/media && \
   NIC=virtio tests/media-ovmf.sh t/rn/boot/stormbootx-rustnic-usb.img "media       : rustnic" "; stormnic-virtio.efi drives it" && \
+  NIC=e1000e tests/media-ovmf.sh t/rn/boot/stormbootx-rustnic-usb.img "e1000e@d0bc5ec" "stormnic-e1000e 0.1.0: " "nic 0: driver stormnic-e1000e.efi" && \
   tests/laptop-ovmf.sh t/fw/boot/stormbootx.iso $R/tcp4probe.efi t/serve/stormboot-serve && \
   deploy/build-golden.sh stormbootx-mlx5test $PWD/t/mlx5 && tests/iso-layout.sh t/mlx5/boot/stormbootx-mlx5test.iso && \
   tests/usb-layout.sh t/mlx5/boot/stormbootx-mlx5test-usb.img t/mlx5/media && \

@@ -98,7 +98,8 @@ Options:
                    golden that ships (stormbootx-mlx5test is a test one, #131)
   --prefer-media-drivers FAMILIES
                    these media drivers take their NICs from the firmware's
-                   driver (#108): comma-separated, `virtio` and `mlx5` (#131)
+                   driver (#108): comma-separated, `virtio`, `mlx5` (#131)
+                   and `e1000e` (#70)
   --esp READER     who reads the attached ESP (#37): auto (default),
                    firmware or stormbootx (the bridge and its filesystem, #42;
                    tests/net-ovmf.sh)
@@ -414,7 +415,7 @@ fi
 if [[ -n "$PREFER" ]]; then
     [[ -n "$DRIVERS" ]] || die "--prefer-media-drivers needs --drivers"
     for f in ${PREFER//,/ }; do
-        [[ "$f" == virtio || "$f" == mlx5 ]] || die "--prefer-media-drivers: no family '$f' (virtio, mlx5)"
+        [[ "$f" == virtio || "$f" == mlx5 || "$f" == e1000e ]] || die "--prefer-media-drivers: no family '$f' (virtio, mlx5, e1000e)"
     done
     cat >> "$WORK/stormboot.conf" <<CONF
 

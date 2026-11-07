@@ -41,6 +41,12 @@
 //! on the handle is printed: stormnic-mlx5's `Supported` declines a function
 //! that still carries an SNP.
 //!
+//! `prefer_media_drivers = e1000e` (#70) takes an Intel 82574L, 82579 or
+//! I217/I218/I219 from whatever holds it (Intel's UNDI, a NIC's iPXE ROM) for
+//! stormnic-e1000e. The rustnic media carry that driver without the key: it
+//! drives an e1000e nothing else does, and no golden takes one from the
+//! firmware, since the PCH parts have run only in simulation.
+//!
 //! Nothing here is fatal. A missing directory is the normal case; a driver
 //! that will not load or start is reported and skipped, and the boot goes on
 //! to find TCP4 or fall through exactly as it would have.
@@ -84,7 +90,8 @@ struct Family {
 /// virtio-net: the one NIC a firmware always has a driver for (every OVMF's
 /// VirtioNetDxe). Modern virtio 1.x and transitional; the driver declines a
 /// transitional device without the 1.x capabilities, and then the firmware's
-/// is given it back. mlx5: a ConnectX-4/5/6 under FlexBoot (#131).
+/// is given it back. mlx5: a ConnectX-4/5/6 under FlexBoot (#131). e1000e:
+/// an Intel 82574L or chipset GbE under Intel's UNDI or iPXE (#70).
 const FAMILIES: &[Family] = &[
     Family {
         name: "virtio",
@@ -96,6 +103,31 @@ const FAMILIES: &[Family] = &[
         file: "stormnic-mlx5.efi",
         ids: crate::connectx::MLX5_TAKE_OVER,
     },
+    Family {
+        name: "e1000e",
+        file: "stormnic-e1000e.efi",
+        ids: E1000E_IDS,
+    },
+];
+
+/// What stormnic-e1000e binds (its `src/ids.rs` at the pinned commit, from
+/// pci.ids 2026.11.06): the 82574L (10d3, 10f6) and the chipset LAN parts,
+/// 82579, I217, I218, I219 and the 400/500/800-series IDs. Listed, never a
+/// range: the I219's IDs are scattered over 29 generations.
+/// `scripts/build-nic-drivers.sh` fails when the two lists differ.
+const E1000E_IDS: &[(u16, u16)] = &[
+    (0x8086, 0x0d4c), (0x8086, 0x0d4d), (0x8086, 0x0d4e), (0x8086, 0x0d4f), (0x8086, 0x0d53), (0x8086, 0x0d55),
+    (0x8086, 0x0dc5), (0x8086, 0x0dc6), (0x8086, 0x0dc7), (0x8086, 0x0dc8), (0x8086, 0x10d3), (0x8086, 0x10f6),
+    (0x8086, 0x1502), (0x8086, 0x1503), (0x8086, 0x153a), (0x8086, 0x153b), (0x8086, 0x1559), (0x8086, 0x155a),
+    (0x8086, 0x156f), (0x8086, 0x1570), (0x8086, 0x15a0), (0x8086, 0x15a1), (0x8086, 0x15a2), (0x8086, 0x15a3),
+    (0x8086, 0x15b7), (0x8086, 0x15b8), (0x8086, 0x15b9), (0x8086, 0x15bb), (0x8086, 0x15bc), (0x8086, 0x15bd),
+    (0x8086, 0x15be), (0x8086, 0x15d6), (0x8086, 0x15d7), (0x8086, 0x15d8), (0x8086, 0x15df), (0x8086, 0x15e0),
+    (0x8086, 0x15e1), (0x8086, 0x15e2), (0x8086, 0x15e3), (0x8086, 0x15f4), (0x8086, 0x15f5), (0x8086, 0x15f9),
+    (0x8086, 0x15fa), (0x8086, 0x15fb), (0x8086, 0x15fc), (0x8086, 0x1a1c), (0x8086, 0x1a1d), (0x8086, 0x1a1e),
+    (0x8086, 0x1a1f), (0x8086, 0x550a), (0x8086, 0x550b), (0x8086, 0x550c), (0x8086, 0x550d), (0x8086, 0x550e),
+    (0x8086, 0x550f), (0x8086, 0x5510), (0x8086, 0x5511), (0x8086, 0x57a0), (0x8086, 0x57a1), (0x8086, 0x57b3),
+    (0x8086, 0x57b4), (0x8086, 0x57b5), (0x8086, 0x57b6), (0x8086, 0x57b7), (0x8086, 0x57b8), (0x8086, 0x57b9),
+    (0x8086, 0x57ba),
 ];
 
 const PCI_IO: Guid = guid!("4cf5b200-68b8-4ca5-9eec-b23e3f50029a");
@@ -205,7 +237,7 @@ fn take_over(loaded: &[Loaded], t0: Option<u32>) {
     let prefer = crate::config::stated_prefer_media_drivers();
     for want in &prefer {
         let Some(family) = FAMILIES.iter().find(|f| f.name == want.as_str()) else {
-            uefi::println!("    prefer    : no media driver family `{want}` (virtio, mlx5); ignored");
+            uefi::println!("    prefer    : no media driver family `{want}` (virtio, mlx5, e1000e); ignored");
             continue;
         };
         let image = loaded
