@@ -660,14 +660,19 @@ then.
 
 ### Open, no external blocker
 
-- [ ] **#192 — the rustnic media pin stormnic-ixgbe 4b4813d (jumbo frames,
-      stormnic-ixgbe#33, for #165) (P0). In progress.** Pin bumped from
-      728b328 in `build-nic-drivers.sh`; stormbootx's own side of #165 was
-      done in 5367332 (option 26; `net.rs` sizes its receive buffer from the
-      SNP's `MaxPacketSize`, so nothing else changes). Plan: sc-build (the full
-      suite builds the rustnic golden and boots it under OVMF; no Intel NIC
-      there), release, rustnic goldens, then #165 `wait-hardware` on an X9
-      blade: `mtu 9000 (DHCP option 26)` and `path MTU 9000, jumbo`.
+- [x] **#192 — the rustnic media pin stormnic-ixgbe 4b4813d (jumbo frames,
+      stormnic-ixgbe#33, for #165) (P0). Released v0.39.2 (49395f0).** Pin
+      bumped from 728b328 in `build-nic-drivers.sh` (e00ee3c); stormbootx's
+      side of #165 was already done (5367332: option 26, and `net.rs` sizes
+      its receive buffer from the SNP's `MaxPacketSize`).
+      **State (2026-11-07):** sc-build of e00ee3c (1683 s): no warnings, the
+      full suite; the rustnic tree's `STORMNIC-SOURCE.txt` names 4b4813d, its
+      stick under OVMF `media : rustnic ixgbe@4b4813d …`; `REPRO_MEDIA` the
+      same bytes from both builds. The tag `--locked`: the rustnic golden,
+      usb/iso-layout, `stormbootx 0.39.2` under OVMF. Goldens requested
+      (stormbootx, -rustnic, -rustnic-disk, -stick, nic-drivers).
+      **Not run:** an 82599 at 9000 (OVMF has no Intel NIC). That is #165's
+      close, `wait-hardware` on an X9 blade.
 
 - [ ] **#99 — a parked cap9 lock cost the full wait per port (P2). Code in
       v0.32.0 (02d57cc); the metal check is the master's.** No console shows it
@@ -2591,7 +2596,7 @@ then.
 
 ## Status
 
-v0.39.1 (#189: a clean `local` with a disk that boots does not wait at `press c`). v0.39.0 (#186: `fec_pin = rs` on every golden, the FEC pin at boot). v0.38.1 (#186: the ConnectX scan starts at each root bridge's first bus). v0.38.0 (#185: `boot/<golden>-usb.img`, the GPT + FAT32 stick a Dell 14G boots). v0.37.0 (#131: `prefer_media_drivers = mlx5`, the `stormbootx-mlx5test` medium). v0.36.0 (#183: the engine's boot port, falling back to `api_port`; `StormBootEngine`). v0.35.1 (#180: `startup.nsh` starts one medium only; the last screen line names the build). v0.35.0 (#172: UEFI HTTP boot of the ISO, the arm64 USB stick and stick updater). v0.34.0 (#167: `maint` claims and boots the maintenance image, stormblock#497). v0.33.1 (#167: the intent's host is a name; laptop-ovmf boots the real command record). v0.33.0 (#167 phase 1: stormbootx's own API on port 9180, Ed25519-signed commands, the hold on a failed boot; goldens `hold = 120`). v0.32.0 (#167's inventory v2, #168's ARP priming and timing line, #99's parked cap9 in 50 ms). v0.29.0 (#151: stormbootx-stick; released, frozen until 2026-10-17, then the master promotes it). v0.28.2 was #130 (reproducible media); v0.28.0 was #144 (the boot panel); v0.27.0 was #148 (the self-update resolves its host); v0.26.0 was #145 (the fall-through starts the local disk itself); v0.25.0 was #128: #4, #10, #17, #25, #36, #42, #53, #67 and #138. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
+v0.39.2 (#192: the rustnic media carry stormnic-ixgbe 4b4813d, jumbo frames). v0.39.1 (#189: a clean `local` with a disk that boots does not wait at `press c`). v0.39.0 (#186: `fec_pin = rs` on every golden, the FEC pin at boot). v0.38.1 (#186: the ConnectX scan starts at each root bridge's first bus). v0.38.0 (#185: `boot/<golden>-usb.img`, the GPT + FAT32 stick a Dell 14G boots). v0.37.0 (#131: `prefer_media_drivers = mlx5`, the `stormbootx-mlx5test` medium). v0.36.0 (#183: the engine's boot port, falling back to `api_port`; `StormBootEngine`). v0.35.1 (#180: `startup.nsh` starts one medium only; the last screen line names the build). v0.35.0 (#172: UEFI HTTP boot of the ISO, the arm64 USB stick and stick updater). v0.34.0 (#167: `maint` claims and boots the maintenance image, stormblock#497). v0.33.1 (#167: the intent's host is a name; laptop-ovmf boots the real command record). v0.33.0 (#167 phase 1: stormbootx's own API on port 9180, Ed25519-signed commands, the hold on a failed boot; goldens `hold = 120`). v0.32.0 (#167's inventory v2, #168's ARP priming and timing line, #99's parked cap9 in 50 ms). v0.29.0 (#151: stormbootx-stick; released, frozen until 2026-10-17, then the master promotes it). v0.28.2 was #130 (reproducible media); v0.28.0 was #144 (the boot panel); v0.27.0 was #148 (the self-update resolves its host); v0.26.0 was #145 (the fall-through starts the local disk itself); v0.25.0 was #128: #4, #10, #17, #25, #36, #42, #53, #67 and #138. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
 (and the same day, the full chain: chain-load into stormuefi and a running
 stormcos kernel), on a
 Dell PowerEdge R230 (service tag C2NR0Q2) booting the agent over iDRAC virtual
