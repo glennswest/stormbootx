@@ -1089,7 +1089,9 @@ then.
       drivers still carry 1500 (ixgbe#33, mlx4#26 open; the master's note
       said otherwise, corrected on #165), so #165 is proposed after
       stormnic-ixgbe#33: then pin it, sc-build, release, rustnic goldens,
-      `wait-hardware` on an X9.
+      `wait-hardware` on an X9. **2026-11-07:** pinned (#192, v0.39.2,
+      49395f0), goldens requested; `wait-hardware` server1 on the rustnic
+      golden. mlx4's 1500 (stormnic-mlx4#26) is still open.
 
 - [ ] **#162 — the log over the network (stormcast multicast + a unicast
       syslog target) once a NIC holds a lease (P1, the master, 2026-10-21).
