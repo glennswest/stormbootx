@@ -1610,7 +1610,7 @@ HTTP with no credential to a node registry that is moving to TLS with auth
 
 ## Status
 
-v0.39.2 (#192: the rustnic media carry stormnic-ixgbe 4b4813d, jumbo frames). v0.39.1 (#189: a clean `local` with a disk that boots does not wait at `press c`). v0.39.0 (#186: `fec_pin = rs`, the FEC pin at boot; v0.38.1 the ConnectX scan per root bridge; v0.38.0 #185 `-usb.img` sticks; v0.37.0 #131 `prefer_media_drivers = mlx5`; v0.36.0 #183 the engine's boot port; v0.35.x #172/#180 HTTP boot, arm64 stick, one-medium `startup.nsh`; v0.33–0.34 #167 the API and `maint`; v0.29.0 #151: `stormbootx-stick`; v0.28.x: the boot panel #144 and
+v0.40.0 (#70: the rustnic media carry stormnic-e1000e, `prefer_media_drivers = e1000e`). v0.39.2 (#192: the rustnic media carry stormnic-ixgbe 4b4813d, jumbo frames). v0.39.1 (#189: a clean `local` with a disk that boots does not wait at `press c`). v0.39.0 (#186: `fec_pin = rs`, the FEC pin at boot; v0.38.1 the ConnectX scan per root bridge; v0.38.0 #185 `-usb.img` sticks; v0.37.0 #131 `prefer_media_drivers = mlx5`; v0.36.0 #183 the engine's boot port; v0.35.x #172/#180 HTTP boot, arm64 stick, one-medium `startup.nsh`; v0.33–0.34 #167 the API and `maint`; v0.29.0 #151: `stormbootx-stick`; v0.28.x: the boot panel #144 and
 reproducible media #130; v0.27.0 #148 the self-update's lease wait; v0.26.0
 #145 the fall-through starts the local disk; v0.25.0 #138's FEC-step budget).
 The release freeze of 2026-10-14..17 is over. Running on hardware since 2026-09-05. A Dell PowerEdge R230 (C2NR0Q2)
@@ -1664,7 +1664,7 @@ Open issues:
 | #92, #89 | self-update on metal: stormcentral serves `stormbootx-rustnic` serial 1 = v0.14.0, which every newer medium declines as older (#96); the promotion of v0.29.0's rustnic golden (canary server1 first) is the master's, 2026-10-17 (#92); nothing is promoted for `stormbootx` |
 | #93 | install-config sizes on real firmware variable stores |
 | #100, #99 | boot time: one NVMe/TCP command in flight (~46 MiB/s on metal); mlxfec's wait on a parked cap9 lock |
-| #69–#74 | more Rust NIC drivers, paused by the owner at P3 (each behind its repo's first issue); stormnic-mlx5 is on the `stormbootx-mlx5test` medium (#131) until its Dell boot passes |
+| #69, #71–#74 | more Rust NIC drivers, paused by the owner at P3 (each behind its repo's first issue); stormnic-e1000e is on the rustnic media since v0.40.0 (#70); stormnic-mlx5 is on the `stormbootx-mlx5test` medium (#131) until its Dell boot passes |
 | #84 | arm64 media: built (`stormbootx-arm64`); booting it under AAVMF and registering the golden wait on stormcentral#604 |
 | #138 | the R230's NIC FEC step: v0.25.0's real-time budget is released, the metal boot is not seen |
 | #154 | `stormbootx-stick` writing a signed raw disk image when a stick has no room for a file update |

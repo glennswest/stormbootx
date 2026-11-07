@@ -2231,25 +2231,29 @@ then.
       binds: pin it in `build-nic-drivers.sh` and add an OVMF boot on
       `-device igb`.
 
-- [ ] **#70 — stormnic-e1000e, a Rust 82574L/82579/I217–I219 UEFI driver
-      (P3, owner). In progress (2026-11-07).** stormnic-e1000e#1 closed:
-      d0bc5ec (v0.1.0, 67 IDs, verified on QEMU's 82574L under OVMF, the PCH
-      parts in simulation only). Plan, this repo:
-      1. `build-nic-drivers.sh`: pin d0bc5ec, `e1000e` in the default
-         `STORMNIC_DRIVERS` (so on the rustnic media and the nic-drivers
-         golden); after the build, its `src/ids.rs` must list exactly
-         `drivers.rs`'s e1000e IDs, so a pin bump that adds one fails.
-      2. `drivers.rs`: an `e1000e` family (the 67 `8086:` IDs) for
-         `prefer_media_drivers = e1000e`; `build-boot-agent.sh` accepts it.
-         **No golden says `prefer_media_drivers = e1000e`:** on metal these
-         NICs carry Intel's own UNDI driver, and taking a PCH part from it
-         with a driver never run on one is the mlx5 rule (#131). The rustnic
-         media carry it for a NIC nothing else drives.
-      3. net-ovmf (`E1000E_EFI`): `e1000e` (QEMU `-device e1000e` with no
-         option ROM: our driver binds it alone and carries the whole boot),
-         `e1000e-take` (iPXE's ROM holds it; `prefer_media_drivers = e1000e`
-         takes it), `e1000e-kept` (the ROM, no key: the firmware keeps it).
-      4. docs, CHANGELOG, sc-build, release, goldens.
+- [x] **#70 — stormnic-e1000e, a Rust 82574L/82579/I217–I219 UEFI driver
+      (P3, owner). Released v0.40.0 (bf13e24), closed 2026-11-07.** Pinned
+      d0bc5ec (stormnic-e1000e v0.1.0, 67 IDs) in `build-nic-drivers.sh`, in
+      the default `STORMNIC_DRIVERS`, so on every rustnic medium and the
+      nic-drivers golden; the build fails if its `src/ids.rs` and
+      `drivers.rs`'s `E1000E_IDS` differ. An `e1000e` family for
+      `prefer_media_drivers = e1000e`, which **no golden sets**: on metal
+      Intel's UNDI holds these NICs, and the PCH parts have run only in
+      simulation (the mlx5 rule, #131). The media carry it for an e1000e
+      nothing else drives.
+      **State (2026-11-07):** sc-build of cdbb85a (2081 s): no warnings, the
+      full suite, `67 device IDs, the same as src/drivers.rs`; net-ovmf
+      `e1000e` (QEMU 82574L, no ROM): `stormnic-e1000e 0.1.0: … 8086:10d3
+      82574L …: link up 1000 Mb/s full duplex, … SNP installed`, `nic 0:
+      driver stormnic-e1000e.efi`, leased, claimed, 96 MiB read, payload
+      started; `e1000e-take` (iPXE's ROM): `taken from 808610d3.efidrv;
+      stormnic-e1000e.efi drives it`, leased; `e1000e-kept`: `nic 0: driver
+      808610d3.efidrv`; the rustnic stick under OVMF with `NIC=e1000e` drove
+      it; `REPRO_MEDIA` the same bytes. The tag `--locked`: net-ovmf
+      `e1000e`, rustnic golden layouts, media-ovmf `stormbootx 0.40.0`.
+      Goldens requested (stormbootx, -rustnic, -rustnic-disk, -stick,
+      nic-drivers). **Not run:** any real e1000e part (no test machine has
+      one), a PCH part at all.
 
 - [ ] **#71 — stormnic-i40e, a Rust X710/XL710/XXV710/X722 UEFI driver
       (P3, owner). Blocked on stormnic-i40e#1 (2026-10-08, P3).** The owner (2026-10-07) had the repo created and **paused**, drivers at low priority; its first issue is P3, and this item is moved behind it. History: was waiting on the owner (2026-10-06).** Same
@@ -2609,7 +2613,7 @@ then.
 
 ## Status
 
-v0.39.2 (#192: the rustnic media carry stormnic-ixgbe 4b4813d, jumbo frames). v0.39.1 (#189: a clean `local` with a disk that boots does not wait at `press c`). v0.39.0 (#186: `fec_pin = rs` on every golden, the FEC pin at boot). v0.38.1 (#186: the ConnectX scan starts at each root bridge's first bus). v0.38.0 (#185: `boot/<golden>-usb.img`, the GPT + FAT32 stick a Dell 14G boots). v0.37.0 (#131: `prefer_media_drivers = mlx5`, the `stormbootx-mlx5test` medium). v0.36.0 (#183: the engine's boot port, falling back to `api_port`; `StormBootEngine`). v0.35.1 (#180: `startup.nsh` starts one medium only; the last screen line names the build). v0.35.0 (#172: UEFI HTTP boot of the ISO, the arm64 USB stick and stick updater). v0.34.0 (#167: `maint` claims and boots the maintenance image, stormblock#497). v0.33.1 (#167: the intent's host is a name; laptop-ovmf boots the real command record). v0.33.0 (#167 phase 1: stormbootx's own API on port 9180, Ed25519-signed commands, the hold on a failed boot; goldens `hold = 120`). v0.32.0 (#167's inventory v2, #168's ARP priming and timing line, #99's parked cap9 in 50 ms). v0.29.0 (#151: stormbootx-stick; released, frozen until 2026-10-17, then the master promotes it). v0.28.2 was #130 (reproducible media); v0.28.0 was #144 (the boot panel); v0.27.0 was #148 (the self-update resolves its host); v0.26.0 was #145 (the fall-through starts the local disk itself); v0.25.0 was #128: #4, #10, #17, #25, #36, #42, #53, #67 and #138. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
+v0.40.0 (#70: the rustnic media carry stormnic-e1000e d0bc5ec; `prefer_media_drivers = e1000e`). v0.39.2 (#192: the rustnic media carry stormnic-ixgbe 4b4813d, jumbo frames). v0.39.1 (#189: a clean `local` with a disk that boots does not wait at `press c`). v0.39.0 (#186: `fec_pin = rs` on every golden, the FEC pin at boot). v0.38.1 (#186: the ConnectX scan starts at each root bridge's first bus). v0.38.0 (#185: `boot/<golden>-usb.img`, the GPT + FAT32 stick a Dell 14G boots). v0.37.0 (#131: `prefer_media_drivers = mlx5`, the `stormbootx-mlx5test` medium). v0.36.0 (#183: the engine's boot port, falling back to `api_port`; `StormBootEngine`). v0.35.1 (#180: `startup.nsh` starts one medium only; the last screen line names the build). v0.35.0 (#172: UEFI HTTP boot of the ISO, the arm64 USB stick and stick updater). v0.34.0 (#167: `maint` claims and boots the maintenance image, stormblock#497). v0.33.1 (#167: the intent's host is a name; laptop-ovmf boots the real command record). v0.33.0 (#167 phase 1: stormbootx's own API on port 9180, Ed25519-signed commands, the hold on a failed boot; goldens `hold = 120`). v0.32.0 (#167's inventory v2, #168's ARP priming and timing line, #99's parked cap9 in 50 ms). v0.29.0 (#151: stormbootx-stick; released, frozen until 2026-10-17, then the master promotes it). v0.28.2 was #130 (reproducible media); v0.28.0 was #144 (the boot panel); v0.27.0 was #148 (the self-update resolves its host); v0.26.0 was #145 (the fall-through starts the local disk itself); v0.25.0 was #128: #4, #10, #17, #25, #36, #42, #53, #67 and #138. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
 (and the same day, the full chain: chain-load into stormuefi and a running
 stormcos kernel), on a
 Dell PowerEdge R230 (service tag C2NR0Q2) booting the agent over iDRAC virtual

@@ -15,7 +15,7 @@ paginate: true
 
 **A UEFI boot agent that attaches a machine's image over NVMe/TCP and boots it.**
 
-v0.39.2 (2026-11-07) · `x86_64-unknown-uefi` · `no_std` · ~320 KB
+v0.40.0 (2026-11-07) · `x86_64-unknown-uefi` · `no_std` · ~320 KB
 
 No kernel, no initramfs, no PXE, no TFTP. It carries its own TCP/IP (smoltcp
 on the NIC driver's SNP), so it needs no network stack from the firmware.
@@ -288,7 +288,7 @@ smoltcp, through stormuefi to a running stormcos (#56, #68).
 
 ## Status
 
-- **v0.39.2** (2026-11-07), on metal since 2026-09-05 (v0.24.0 first). Since then: the API and `maint` (#167), HTTP boot and arm64 sticks (#172), `-usb.img` for the Dell R6415 (#185), `prefer_media_drivers = mlx5` (#131), the engine's boot port (#183), and the FEC pin at boot, `fec_pin = rs` (#186); jumbo frames on the Intel 10G (#192).
+- **v0.40.0** (2026-11-07), on metal since 2026-09-05 (v0.24.0 first). Since then: the API and `maint` (#167), HTTP boot and arm64 sticks (#172), `-usb.img` for the Dell R6415 (#185), `prefer_media_drivers = mlx5` (#131), the engine's boot port (#183), and the FEC pin at boot, `fec_pin = rs` (#186); jumbo frames on the Intel 10G (#192); stormnic-e1000e on the rustnic media (#70).
 - Intents (#11) and universal boot (#15) are in the binary and tested
   under OVMF against a stub engine, and inert until the engine serves
   them: forge runs stormblock 13.7.0 (2026-10-09), so every
