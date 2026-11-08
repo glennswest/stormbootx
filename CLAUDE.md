@@ -666,6 +666,10 @@ then.
       `build-nic-drivers.sh`; sc-build; the rustnic stick under OVMF must say
       `mlx4@f3d3bc2`, `REPRO_MEDIA` the same bytes. Then release, goldens,
       `wait-hardware` on an X9 (one `stormnic-mlx4 0.2.8: … port 1: …` line).
+      **State (2026-11-07):** pinned in cb9417c; its full sc-build (plus the
+      rustnic stick's `mlx4@f3d3bc2` and STORMNIC-SOURCE.txt) was running,
+      log in `tmp/sc195.log`, when P0 #197 took the session. Next: read that
+      result (or rerun the CLAUDE.md command), then release and goldens.
 
 - [x] **#192 — the rustnic media pin stormnic-ixgbe 4b4813d (jumbo frames,
       stormnic-ixgbe#33, for #165) (P0). Released v0.39.2 (49395f0).** Pin
