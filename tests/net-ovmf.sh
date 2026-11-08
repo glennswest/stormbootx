@@ -1257,6 +1257,31 @@ else
     say "note: E1000E_EFI not set; the stormnic-e1000e boots (#70) are skipped"
 fi
 
+# #69: stormnic-igb. QEMU's igb is an 82576 (8086:10c9), and OVMF has no driver
+# for it. With no option ROM nothing else drives it, so the media's driver
+# binds it with no key (there is no igb family) and must carry the whole boot.
+# IGB_EFI names the driver.
+if [[ -n "${IGB_EFI:-}" ]]; then
+    [[ -s "$IGB_EFI" ]] || die "no stormnic-igb driver at $IGB_EFI"
+    mkdir -p "$W/idrv" && cp "$IGB_EFI" "$W/idrv/stormnic-igb.efi"
+    BOOT_DRIVERS="$W/idrv" BOOT_NIC=igb \
+    boot igb "$host_cpu" "" ok good \
+        "starting stormnic-igb.efi" \
+        "stormnic-igb.efi started" \
+        "stormnic-igb 0.1.0: " \
+        " 8086:10c9 82576" \
+        ", SNP installed" \
+        "nic 0: driver stormnic-igb.efi" \
+        "nic 0: leased 10.0.2.15/24 gw 10.0.2.2" \
+        "not:taken from" \
+        "booting stubhost's image" \
+        "stub:\"media_driver\":true" \
+        "blockio     : 96 MiB read in all" \
+        "is there a TCP/IP stack in this firmware"
+else
+    say "note: IGB_EFI not set; the stormnic-igb boot (#69) is skipped"
+fi
+
 # #93: how large an install-config.yaml OVMF's volatile variable store takes.
 # Each size is handed down in 768-byte chunks and the payload reassembles it.
 # Measured 2026-10-08: OVMF takes every size up to storminstall's 256 KiB cap

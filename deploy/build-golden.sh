@@ -54,13 +54,15 @@
 #                                 stormnic-virtio.efi (STORMNIC_VIRTIO_REF, #108,
 #                                 with prefer_media_drivers = virtio),
 #                                 stormnic-e1000e.efi (STORMNIC_E1000E_REF, #70;
-#                                 a NIC nothing else drives), and no iPXE
+#                                 a NIC nothing else drives),
+#                                 stormnic-igb.efi (STORMNIC_IGB_REF, #69; the
+#                                 same), and no iPXE
 #   media/, media.files           as above (#83)
 #   SHA256SUMS, BUILD
 #
 #   Built here from the pins in scripts/build-nic-drivers.sh, never from a
 #   nic-drivers golden, so the drivers are the commit's. The console says
-#   `media : rustnic ixgbe@<sha> mlx4@<sha> virtio@<sha> e1000e@<sha>`.
+#   `media : rustnic ixgbe@<sha> mlx4@<sha> virtio@<sha> e1000e@<sha> igb@<sha>`.
 #
 # stormbootx-mlx5test golden (#131): a test medium, for the master's boot of
 # stormnic-mlx5#1 on the Dell, never promoted and never in a release:
@@ -208,7 +210,7 @@ media_files() {
 # into $WORK/media-drivers, and its `media =` label in RUSTNIC_LABEL.
 rustnic_drivers() {
     "$ROOT/scripts/build-nic-drivers.sh" "$WORK/drivers"
-    for d in stormnic-ixgbe stormnic-mlx4 stormnic-virtio stormnic-e1000e; do
+    for d in stormnic-ixgbe stormnic-mlx4 stormnic-virtio stormnic-e1000e stormnic-igb; do
         [[ -f "$WORK/drivers/$d.efi" ]] || die "no $d.efi was built"
     done
     ! compgen -G "$WORK/drivers/ipxe-*.efi" >/dev/null || die "an iPXE driver reached the rustnic media"
@@ -218,7 +220,7 @@ rustnic_drivers() {
     mkdir -p "$WORK/media-drivers"
     cp "$WORK/drivers/"*.efi "$WORK/drivers/STORMNIC-SOURCE.txt" "$WORK/media-drivers/"
     pin() { sed -n "s/^$1=\"\(.......\).*\"/\1/p" "$ROOT/scripts/build-nic-drivers.sh"; }
-    RUSTNIC_LABEL="rustnic ixgbe@$(pin STORMNIC_IXGBE_REF) mlx4@$(pin STORMNIC_MLX4_REF) virtio@$(pin STORMNIC_VIRTIO_REF) e1000e@$(pin STORMNIC_E1000E_REF)"
+    RUSTNIC_LABEL="rustnic ixgbe@$(pin STORMNIC_IXGBE_REF) mlx4@$(pin STORMNIC_MLX4_REF) virtio@$(pin STORMNIC_VIRTIO_REF) e1000e@$(pin STORMNIC_E1000E_REF) igb@$(pin STORMNIC_IGB_REF)"
     [[ $GOLDEN != stormbootx-mlx5test ]] || RUSTNIC_LABEL+=" mlx5@$(pin STORMNIC_MLX5_REF) test"
 }
 
@@ -248,7 +250,7 @@ only_the_image() {
 case "$GOLDEN" in
 nic-drivers)
     "$ROOT/scripts/build-nic-drivers.sh" "$WORK/drivers"
-    for d in stormnic-ixgbe stormnic-mlx4 stormnic-virtio stormnic-e1000e; do
+    for d in stormnic-ixgbe stormnic-mlx4 stormnic-virtio stormnic-e1000e stormnic-igb; do
         [[ -f "$WORK/drivers/$d.efi" ]] || die "no $d.efi was built"
     done
     mkdir -p "$OUT/bin"
@@ -294,7 +296,8 @@ stormbootx-rustnic)
     # stormnic-ixgbe for the Intel 10G, stormnic-mlx4 for the ConnectX-3
     # (#34), stormnic-virtio for VMs, taking their NICs from OVMF's
     # VirtioNetDxe (#108), stormnic-e1000e for an Intel 1G nothing else drives
-    # (#70; never taken from the firmware), and no iPXE at all (#91).
+    # (#70; never taken from the firmware), stormnic-igb likewise for an Intel
+    # igb (#69), and no iPXE at all (#91).
     rustnic_drivers
     agent=(--binary "$OUT/bin/stormbootx.efi" --drivers "$WORK/media-drivers" --prefer-media-drivers virtio
            --dns 192.168.31.252 --no-fallback --syslog "$SYSLOG_TARGET" --hold "$HOLD" --fec-pin "$FEC_PIN" --media "$RUSTNIC_LABEL"
@@ -313,7 +316,7 @@ stormbootx-mlx5test)
     REL="${CARGO_TARGET_DIR:-$ROOT/target}/x86_64-unknown-uefi/release"
     mkdir -p "$OUT/bin" "$OUT/boot"
     cp "$REL/stormbootx.efi" "$OUT/bin/"
-    STORMNIC_DRIVERS="ixgbe mlx4 virtio e1000e mlx5" rustnic_drivers
+    STORMNIC_DRIVERS="ixgbe mlx4 virtio e1000e igb mlx5" rustnic_drivers
     [[ -f "$WORK/drivers/stormnic-mlx5.efi" ]] || die "no stormnic-mlx5.efi was built"
     # No --update: a test medium never takes a promotion, or is one.
     agent=(--binary "$OUT/bin/stormbootx.efi" --drivers "$WORK/media-drivers" --prefer-media-drivers virtio,mlx5

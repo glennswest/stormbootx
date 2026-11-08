@@ -287,7 +287,7 @@ console; a machine with no screen console gets it anyway.
 
    ```
    "agent": {"name":"stormbootx","version":"0.19.0","commit":"649dd07",
-             "media":"rustnic ixgbe@4b4813d mlx4@f3d3bc2 virtio@1a04808 e1000e@d0bc5ec",
+             "media":"rustnic ixgbe@4b4813d mlx4@f3d3bc2 virtio@1a04808 e1000e@d0bc5ec igb@80c9ea5",
              "update_serial":5,"update":"serial:5"}
    ```
 
@@ -831,6 +831,7 @@ published BlockIO (about 105–120 MiB/s, KVM) and starts it. Its boots
 | `release` | no fallback namespace and the claim 404s: falls through, gives the NIC back, and the firmware's PXE on it boots the payload (#36, #68) |
 | `virtio`, `virtio-modern`, `virtio-kept`, `virtio-verbose` | with `VIRTIO_EFI`: `prefer_media_drivers = virtio` takes a transitional and a modern-only virtio-net NIC for stormnic-virtio and attaches over it; without the key the firmware keeps it; `nic_verbose` prints the driver's trace (#108, #80) |
 | `e1000e`, `e1000e-take`, `e1000e-kept` | with `E1000E_EFI`: QEMU's e1000e (82574L) with no option ROM, which OVMF has no driver for: stormnic-e1000e binds it with no key and carries the whole boot (lease, claim, 96 MiB attach); with QEMU's iPXE ROM, `prefer_media_drivers = e1000e` takes it from iPXE, and without the key iPXE keeps it (#70) |
+| `igb` | with `IGB_EFI`: QEMU's igb (82576, 8086:10c9) with no option ROM, which OVMF has no driver for: stormnic-igb binds it with no key (there is no igb family) and carries the whole boot (#69) |
 | `mlx5-giveback`, `mlx5-none`, `mlx5-absent` | with `MLX5_EFI`: the real stormnic-mlx5 under the virtio family's file name declines the NIC, and the firmware gets it back and carries the boot; both families on one medium: virtio taken, `mlx5: no such NIC`; the key with no driver takes nothing (#131). QEMU has no ConnectX |
 
 ## The NVMe/TCP initiator
@@ -1228,8 +1229,8 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   cargo test -p nvme-tcp-initiator && \
   R=${CARGO_TARGET_DIR:-target}/x86_64-unknown-uefi/release && \
   tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi && \
-  STORMNIC_DRIVERS="virtio mlx5 e1000e" scripts/build-nic-drivers.sh $PWD/t/nd && \
-  VIRTIO_EFI=t/nd/stormnic-virtio.efi MLX5_EFI=t/nd/stormnic-mlx5.efi E1000E_EFI=t/nd/stormnic-e1000e.efi tests/net-ovmf.sh $R/stormbootx.efi $R/tcp4probe.efi && \
+  STORMNIC_DRIVERS="virtio mlx5 e1000e igb" scripts/build-nic-drivers.sh $PWD/t/nd && \
+  VIRTIO_EFI=t/nd/stormnic-virtio.efi MLX5_EFI=t/nd/stormnic-mlx5.efi E1000E_EFI=t/nd/stormnic-e1000e.efi IGB_EFI=t/nd/stormnic-igb.efi tests/net-ovmf.sh $R/stormbootx.efi $R/tcp4probe.efi && \
   scripts/build-boot-agent.sh --iso --binary $R/stormbootx.efi --media shelltest --output $PWD/t/s.iso && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso old "media       : shelltest" && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso ovmf "media       : shelltest" && \
@@ -1243,7 +1244,8 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   NIC=virtio tests/media-ovmf.sh t/fw/boot/stormbootx-usb.img "media       : fw" "fallback    : none" && \
   deploy/build-golden.sh stormbootx-rustnic $PWD/t/rn && tests/usb-layout.sh t/rn/boot/stormbootx-rustnic-usb.img t/rn/media && \
   NIC=virtio tests/media-ovmf.sh t/rn/boot/stormbootx-rustnic-usb.img "media       : rustnic" "; stormnic-virtio.efi drives it" && \
-  NIC=e1000e tests/media-ovmf.sh t/rn/boot/stormbootx-rustnic-usb.img "e1000e@d0bc5ec" "stormnic-e1000e 0.1.0: " "nic 0: driver stormnic-e1000e.efi" && \
+  NIC=e1000e tests/media-ovmf.sh t/rn/boot/stormbootx-rustnic-usb.img "e1000e@d0bc5ec igb@80c9ea5" "stormnic-e1000e 0.1.0: " "nic 0: driver stormnic-e1000e.efi" && \
+  NIC=igb tests/media-ovmf.sh t/rn/boot/stormbootx-rustnic-usb.img "igb@80c9ea5" "stormnic-igb 0.1.0: " "nic 0: driver stormnic-igb.efi" && \
   deploy/build-golden.sh stormbootx-mlx5test $PWD/t/mlx5 && tests/iso-layout.sh t/mlx5/boot/stormbootx-mlx5test.iso && \
   tests/usb-layout.sh t/mlx5/boot/stormbootx-mlx5test-usb.img t/mlx5/media && \
   NIC=virtio tests/media-ovmf.sh t/mlx5/boot/stormbootx-mlx5test.iso "mlx5@66de545 test" "stormnic drivers verbose" "stormnic-mlx5.efi started" "; stormnic-virtio.efi drives it" "prefer    : mlx5: no such NIC on this machine" && \
@@ -1388,10 +1390,12 @@ pinned commit of its own repo: `stormnic-ixgbe.efi` (Intel 82599/X540/X552,
 `STORMNIC_IXGBE_REF`), `stormnic-mlx4.efi` (ConnectX-3,
 `STORMNIC_MLX4_REF`) and `stormnic-virtio.efi` (virtio-net, VMs only,
 `STORMNIC_VIRTIO_REF`, #108) and `stormnic-e1000e.efi` (Intel 82574L,
-82579, I217/I218/I219, `STORMNIC_E1000E_REF`, #70), beside a
+82579, I217/I218/I219, `STORMNIC_E1000E_REF`, #70) and `stormnic-igb.efi`
+(Intel 82575/82576/82580, I350/I354, I210/I211, `STORMNIC_IGB_REF`, #69),
+beside a
 `STORMNIC-SOURCE.txt` naming each commit and digest; stormnic-e1000e's
 `src/ids.rs` must list exactly the IDs of `drivers.rs`'s e1000e family, or
-the build fails. `STORMNIC_DRIVERS` (default `ixgbe mlx4 virtio e1000e`) picks
+the build fails. `STORMNIC_DRIVERS` (default `ixgbe mlx4 virtio e1000e igb`) picks
 which; `STORMNIC_DRIVERS=virtio` builds one. `mlx5` (`stormnic-mlx5.efi`,
 ConnectX-4/5/6, `STORMNIC_MLX5_REF`, #131) is built only when named: it has
 never run on a card. It checks each is a PE
@@ -1571,7 +1575,7 @@ prints it under the banner:
 
 ```
 media       : fw
-media       : rustnic ixgbe@4b4813d mlx4@f3d3bc2 virtio@1a04808 e1000e@d0bc5ec
+media       : rustnic ixgbe@4b4813d mlx4@f3d3bc2 virtio@1a04808 e1000e@d0bc5ec igb@80c9ea5
 ```
 
 The fw medium's `BUILD` says `drivers = none`, and a `--drivers` given to
@@ -1664,7 +1668,7 @@ Open issues:
 | #92, #89 | self-update on metal: stormcentral serves `stormbootx-rustnic` serial 1 = v0.14.0, which every newer medium declines as older (#96); the promotion of v0.29.0's rustnic golden (canary server1 first) is the master's, 2026-10-17 (#92); nothing is promoted for `stormbootx` |
 | #93 | install-config sizes on real firmware variable stores |
 | #100, #99 | boot time: one NVMe/TCP command in flight (~46 MiB/s on metal); mlxfec's wait on a parked cap9 lock |
-| #69, #71–#74 | more Rust NIC drivers, paused by the owner at P3 (each behind its repo's first issue); stormnic-e1000e is on the rustnic media since v0.40.0 (#70); stormnic-mlx5 is on the `stormbootx-mlx5test` medium (#131) until its Dell boot passes |
+| #71–#74 | more Rust NIC drivers, paused by the owner at P3 (each behind its repo's first issue); stormnic-e1000e is on the rustnic media since v0.40.0 (#70), stormnic-igb since #69; stormnic-mlx5 is on the `stormbootx-mlx5test` medium (#131) until its Dell boot passes |
 | #84 | arm64 media: built (`stormbootx-arm64`); booting it under AAVMF and registering the golden wait on stormcentral#604 |
 | #138 | the R230's NIC FEC step: v0.25.0's real-time budget is released, the metal boot is not seen |
 | #154 | `stormbootx-stick` writing a signed raw disk image when a stick has no room for a file update |

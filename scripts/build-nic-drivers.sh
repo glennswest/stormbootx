@@ -17,6 +17,9 @@
 #   e1000e -> stormnic-e1000e.efi Intel 82574L, 82579, I217/I218/I219 (#70);
 #                                 binds a NIC nothing else drives, and takes one
 #                                 only with `prefer_media_drivers = e1000e`
+#   igb   -> stormnic-igb.efi     Intel 82575/82576/82580, I350/I354, I210/I211
+#                                 (#69); binds a NIC nothing else drives, and
+#                                 there is no key to take one
 #
 # No iPXE (owner on #81, 2026-10-02: "I dont want the ipxe code. Move to
 # ours."; #91). A machine whose firmware has its own NIC driver boots the
@@ -25,7 +28,7 @@
 #   scripts/build-nic-drivers.sh [OUTDIR]     (default tmp/drivers in the checkout)
 #   scripts/build-boot-agent.sh --iso --drivers tmp/drivers
 #
-# STORMNIC_DRIVERS (default "ixgbe mlx4 virtio e1000e") picks which are built. What ships is
+# STORMNIC_DRIVERS (default "ixgbe mlx4 virtio e1000e igb") picks which are built. What ships is
 # the stormbootx-rustnic medium and the nic-drivers golden
 # (deploy/build-golden.sh).
 #
@@ -120,10 +123,17 @@ STORMNIC_E1000E_REPO="https://github.com/glennswest/stormnic-e1000e.git"
 # media it drives only a NIC nothing else does, unless the media says
 # `prefer_media_drivers = e1000e`; no golden says it.
 STORMNIC_E1000E_REF="d0bc5ecb6280c33cc0600f51b98c7c6c5ae954d8"
-read -r -a STORMNIC_DRIVERS <<< "${STORMNIC_DRIVERS:-ixgbe mlx4 virtio e1000e}"
+STORMNIC_IGB_REPO="https://github.com/glennswest/stormnic-igb.git"
+# 80c9ea5 (v0.1.0, #69, stormnic-igb#1): SNP for 36 igb PF IDs (82575, 82576,
+# 82580, I350, I354, I210, I211). Declines a function another driver holds
+# BY_DRIVER, one console line per NIC. Verified on QEMU's igb (82576,
+# 8086:10c9) under OVMF; never on igb silicon (none in the lab), so it drives
+# only an igb nothing else does: there is no `prefer_media_drivers = igb`.
+STORMNIC_IGB_REF="80c9ea5b341b2b4d59b4bc13f9c3160180c0a65a"
+read -r -a STORMNIC_DRIVERS <<< "${STORMNIC_DRIVERS:-ixgbe mlx4 virtio e1000e igb}"
 for d in "${STORMNIC_DRIVERS[@]}"; do
-    [[ "$d" == ixgbe || "$d" == mlx4 || "$d" == virtio || "$d" == mlx5 || "$d" == e1000e ]] \
-        || die "STORMNIC_DRIVERS: no Rust driver '$d' (ixgbe, mlx4, virtio, mlx5, e1000e)"
+    [[ "$d" == ixgbe || "$d" == mlx4 || "$d" == virtio || "$d" == mlx5 || "$d" == e1000e || "$d" == igb ]] \
+        || die "STORMNIC_DRIVERS: no Rust driver '$d' (ixgbe, mlx4, virtio, mlx5, e1000e, igb)"
 done
 wanted() { local d; for d in "${STORMNIC_DRIVERS[@]}"; do [[ "$d" == "$1" ]] && return 0; done; return 1; }
 OUTDIR="${1:-$(cd "$(dirname "$0")/.." && pwd)/tmp/drivers}"
@@ -196,3 +206,4 @@ build_stormnic stormnic-mlx4 "$STORMNIC_MLX4_REPO" "$STORMNIC_MLX4_REF" mlx4
 build_stormnic stormnic-virtio "$STORMNIC_VIRTIO_REPO" "$STORMNIC_VIRTIO_REF" virtio
 build_stormnic stormnic-mlx5 "$STORMNIC_MLX5_REPO" "$STORMNIC_MLX5_REF" mlx5
 build_stormnic stormnic-e1000e "$STORMNIC_E1000E_REPO" "$STORMNIC_E1000E_REF" e1000e
+build_stormnic stormnic-igb "$STORMNIC_IGB_REPO" "$STORMNIC_IGB_REF" igb

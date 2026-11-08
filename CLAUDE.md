@@ -43,8 +43,8 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   cargo test -p nvme-tcp-initiator && \
   R=${CARGO_TARGET_DIR:-target}/x86_64-unknown-uefi/release && \
   tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi && \
-  STORMNIC_DRIVERS="virtio mlx5 e1000e" scripts/build-nic-drivers.sh $PWD/t/nd && \
-  VIRTIO_EFI=t/nd/stormnic-virtio.efi MLX5_EFI=t/nd/stormnic-mlx5.efi E1000E_EFI=t/nd/stormnic-e1000e.efi tests/net-ovmf.sh $R/stormbootx.efi $R/tcp4probe.efi && \
+  STORMNIC_DRIVERS="virtio mlx5 e1000e igb" scripts/build-nic-drivers.sh $PWD/t/nd && \
+  VIRTIO_EFI=t/nd/stormnic-virtio.efi MLX5_EFI=t/nd/stormnic-mlx5.efi E1000E_EFI=t/nd/stormnic-e1000e.efi IGB_EFI=t/nd/stormnic-igb.efi tests/net-ovmf.sh $R/stormbootx.efi $R/tcp4probe.efi && \
   scripts/build-boot-agent.sh --iso --binary $R/stormbootx.efi --media shelltest --output $PWD/t/s.iso && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso old "media       : shelltest" && \
   LAYOUT=cd-last tests/shell-ovmf.sh t/s.iso ovmf "media       : shelltest" && \
@@ -59,6 +59,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   deploy/build-golden.sh stormbootx-rustnic $PWD/t/rn && tests/usb-layout.sh t/rn/boot/stormbootx-rustnic-usb.img t/rn/media && \
   NIC=virtio tests/media-ovmf.sh t/rn/boot/stormbootx-rustnic-usb.img "media       : rustnic" "; stormnic-virtio.efi drives it" && \
   NIC=e1000e tests/media-ovmf.sh t/rn/boot/stormbootx-rustnic-usb.img "e1000e@d0bc5ec" "stormnic-e1000e 0.1.0: " "nic 0: driver stormnic-e1000e.efi" && \
+  NIC=igb tests/media-ovmf.sh t/rn/boot/stormbootx-rustnic-usb.img "igb@80c9ea5" "stormnic-igb 0.1.0: " "nic 0: driver stormnic-igb.efi" && \
   tests/laptop-ovmf.sh t/fw/boot/stormbootx.iso $R/tcp4probe.efi t/serve/stormboot-serve && \
   deploy/build-golden.sh stormbootx-mlx5test $PWD/t/mlx5 && tests/iso-layout.sh t/mlx5/boot/stormbootx-mlx5test.iso && \
   tests/usb-layout.sh t/mlx5/boot/stormbootx-mlx5test-usb.img t/mlx5/media && \
@@ -2240,16 +2241,14 @@ then.
       bind under OVMF. Left: stormnic-virtio#1's pvetest1/2 boot.
 
 - [ ] **#69 — stormnic-igb, a Rust i350/i210/i211/82576/82580 UEFI driver
-      (P3, owner). Blocked on stormnic-igb#1 (2026-10-08, P3).** The owner (2026-10-07) had the repo created and **paused**, drivers at low priority; its first issue is P3, and this item is moved behind it. History: was waiting on the owner (2026-10-06) for one
-      thing: the master creating `glennswest/stormnic-igb` (as for
-      stormnic-virtio, #75). Verification needs no test machine. dev's QEMU
-      10.1.5 has `-device igb` (82576, `8086:10c9`), and OVMF has no igb
-      driver of its own, so an sc-build OVMF boot is a clean check. (It also
-      has `-device e1000e`, for #70.) IDs: the issue's are right except
-      `1534`/`1535`, which are not in pci.ids; the family adds 82575EB, more
-      82576/82580 variants, I354 and DH8900CC. This repo's side, once it
-      binds: pin it in `build-nic-drivers.sh` and add an OVMF boot on
-      `-device igb`.
+      (P3, owner). In progress: stormnic-igb#1 done, v0.1.0 (80c9ea5).** Pin
+      it in `build-nic-drivers.sh`, default `STORMNIC_DRIVERS`, so on every
+      rustnic medium and the nic-drivers golden, with **no**
+      `prefer_media_drivers` family (it has never run on igb silicon; the
+      driver session's suggestion, as #70). net-ovmf `igb` (`IGB_EFI`, QEMU
+      82576 with no ROM): the driver's line, `nic 0: driver
+      stormnic-igb.efi`, lease, claim, 96 MiB, payload; media-ovmf `NIC=igb`
+      on the rustnic stick (`igb@80c9ea5`). Then release, goldens.
 
 - [x] **#70 — stormnic-e1000e, a Rust 82574L/82579/I217–I219 UEFI driver
       (P3, owner). Released v0.40.0 (bf13e24), closed 2026-11-07.** Pinned

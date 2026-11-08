@@ -76,7 +76,7 @@ Options:
   --drivers DIR    lay DIR's files in \stormboot\drivers; stormbootx loads each
                    *.efi as a NIC driver (#26; scripts/build-nic-drivers.sh)
   --media LABEL    name this media on the console (`media : LABEL`), e.g.
-                   normal, or rustnic ixgbe@4b4813d mlx4@f3d3bc2 virtio@1a04808 e1000e@d0bc5ec (#45, #34)
+                   normal, or rustnic ixgbe@4b4813d mlx4@f3d3bc2 virtio@1a04808 e1000e@d0bc5ec igb@80c9ea5 (#45, #34)
   --dns ADDR       DNS server for the PTR of the machine's own address, when
                    its DHCP reply names none or cannot be read (#26)
   --ntp SERVER     NTP server (host[:port], or off) when the lease names none
