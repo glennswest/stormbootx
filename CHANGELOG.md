@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-07
+- **build:** the rustnic media and the nic-drivers golden carry stormnic-mlx4 f3d3bc2 (v0.2.8, #195): one console line per port (stormnic-mlx4#16), a reproducible image (#13), and a ConnectX-3 whose `GetLocation` fails is driven with `?` as its location (#7).
+
 ## [v0.40.0] — 2026-11-07
 
 ### Added

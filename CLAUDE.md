@@ -661,6 +661,12 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#195 — the rustnic media pin stormnic-mlx4 f3d3bc2 (v0.2.8; the issue
+      asked v0.2.7 e961b52, its comment v0.2.8) (P2). In progress.** Pin in
+      `build-nic-drivers.sh`; sc-build; the rustnic stick under OVMF must say
+      `mlx4@f3d3bc2`, `REPRO_MEDIA` the same bytes. Then release, goldens,
+      `wait-hardware` on an X9 (one `stormnic-mlx4 0.2.8: … port 1: …` line).
+
 - [x] **#192 — the rustnic media pin stormnic-ixgbe 4b4813d (jumbo frames,
       stormnic-ixgbe#33, for #165) (P0). Released v0.39.2 (49395f0).** Pin
       bumped from 728b328 in `build-nic-drivers.sh` (e00ee3c); stormbootx's

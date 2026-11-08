@@ -67,6 +67,12 @@ STORMNIC_IXGBE_REPO="https://github.com/glennswest/stormnic-ixgbe.git"
 # (#2); builds --locked (#47, #48, #51, #63, #65).
 STORMNIC_IXGBE_REF="4b4813dfea457a53b68fdc5a438125ae94c50795"
 STORMNIC_MLX4_REPO="https://github.com/glennswest/stormnic-mlx4.git"
+# f3d3bc2 (v0.2.8, #195): a ConnectX-3 whose PCI I/O GetLocation fails is
+# driven with `?` as its location, the failure printed (stormnic-mlx4#7), and
+# Start prints a failed PCI ID read. v0.2.7 (e961b52): the quiet console's one
+# line per port really is one (the link coming up during the bring-up wait is
+# trace only, stormnic-mlx4#16). v0.2.6: a byte-reproducible image
+# (stormnic-mlx4#13). On top of
 # 04e7d2c (v0.2.5, #104): a quiet console (stormnic-mlx4#16), one line per
 # port (MAC, link up 10G XFI or no link, SNP installed) plus every warning and
 # error, the last 16 trace lines replayed ahead of a failure, and the full
@@ -87,7 +93,7 @@ STORMNIC_MLX4_REPO="https://github.com/glennswest/stormnic-mlx4.git"
 # path (#4): Start keeps the ConnectX-3 (~1.5 s per NIC plus up to 5 s for
 # link), no #3 broadcast self-test (cef8dc5 is the pin that checks #1-#3), and
 # ExitBootServices stops the device's DMA. Builds --locked (#34, #50, #64).
-STORMNIC_MLX4_REF="04e7d2c346a49080d40bc077bef320cc4a1d3be2"
+STORMNIC_MLX4_REF="f3d3bc23b8007739efcd6ab3f232cce652e24303"
 STORMNIC_VIRTIO_REPO="https://github.com/glennswest/stormnic-virtio.git"
 # 1a04808 (v0.1.0, #75): virtio-net (virtio 1.x PCI, 1af4:1041 and the
 # transitional 1af4:1000), verified under OVMF and on pve (stormnic-virtio#1).

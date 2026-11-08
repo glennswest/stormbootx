@@ -287,7 +287,7 @@ console; a machine with no screen console gets it anyway.
 
    ```
    "agent": {"name":"stormbootx","version":"0.19.0","commit":"649dd07",
-             "media":"rustnic ixgbe@4b4813d mlx4@04e7d2c virtio@1a04808 e1000e@d0bc5ec",
+             "media":"rustnic ixgbe@4b4813d mlx4@f3d3bc2 virtio@1a04808 e1000e@d0bc5ec",
              "update_serial":5,"update":"serial:5"}
    ```
 
@@ -1571,7 +1571,7 @@ prints it under the banner:
 
 ```
 media       : fw
-media       : rustnic ixgbe@4b4813d mlx4@04e7d2c virtio@1a04808 e1000e@d0bc5ec
+media       : rustnic ixgbe@4b4813d mlx4@f3d3bc2 virtio@1a04808 e1000e@d0bc5ec
 ```
 
 The fw medium's `BUILD` says `drivers = none`, and a `--drivers` given to
