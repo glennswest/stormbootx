@@ -661,6 +661,16 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#197 — RAID controllers to IT/HBA before boot (P0, the master for
+      the owner, 2026-11-08). Waiting on the owner.** Found: Dell's UEFI HII
+      is the setup menu, which refuses the switch; a firmware switch means our
+      own MegaRAID Fusion driver. "Set good" is mfiutil's
+      `MFI_DCMD_PD_STATE_SET` 0x02030100; the personality DCMD is in no open
+      source (Linux has only the capability bits); QEMU `megasas-gen2`
+      (1000:005d) can't test either write. Asked on #197: (1) report-only
+      here, with stormdrive#132's perccli doing the switch (recommended),
+      (2) our own driver switches it, (3) 1 now, 2 later. No code yet.
+
 - [ ] **#195 — the rustnic media pin stormnic-mlx4 f3d3bc2 (v0.2.8; the issue
       asked v0.2.7 e961b52, its comment v0.2.8) (P2). In progress.** Pin in
       `build-nic-drivers.sh`; sc-build; the rustnic stick under OVMF must say
