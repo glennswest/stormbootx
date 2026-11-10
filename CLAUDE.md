@@ -738,15 +738,16 @@ then.
       here, with stormdrive#132's perccli doing the switch (recommended),
       (2) our own driver switches it, (3) 1 now, 2 later. No code yet.
 
-- [ ] **#195 — the rustnic media pin stormnic-mlx4 f3d3bc2 (v0.2.8; the issue
-      asked v0.2.7 e961b52, its comment v0.2.8) (P2). In progress.** Pin in
-      `build-nic-drivers.sh`; sc-build; the rustnic stick under OVMF must say
-      `mlx4@f3d3bc2`, `REPRO_MEDIA` the same bytes. Then release, goldens,
-      `wait-hardware` on an X9 (one `stormnic-mlx4 0.2.8: … port 1: …` line).
-      **State (2026-11-07):** pinned in cb9417c; its full sc-build (plus the
-      rustnic stick's `mlx4@f3d3bc2` and STORMNIC-SOURCE.txt) was running,
-      log in `tmp/sc195.log`, when P0 #197 took the session. Next: read that
-      result (or rerun the CLAUDE.md command), then release and goldens.
+- [x] **#195 — the rustnic media pin stormnic-mlx4 f3d3bc2 (v0.2.8; the issue
+      asked v0.2.7 e961b52, its comment v0.2.8) (P2). Released v0.41.0,
+      closed 2026-11-10.** Pinned in cb9417c. sc-build of cb9417c (1803 s)
+      and of 2995d2e (1939 s): no warnings, the full suite;
+      `STORMNIC-SOURCE.txt` mlx4 f3d3bc2 `locked`, 106,496 bytes, subsystem
+      11; the rustnic stick `mlx4@f3d3bc2`; `REPRO_MEDIA` the same bytes.
+      The tag `--locked`: the rustnic golden `stormbootx 0.41.0 …
+      mlx4@f3d3bc2`. Goldens requested (cae61d3). **Left for the master:**
+      an X9 on the rustnic golden: one `stormnic-mlx4 0.2.8: … port N: MAC
+      …, link up 10G XFI, SNP installed` line per port, no earlier `link up`.
 
 - [x] **#192 — the rustnic media pin stormnic-ixgbe 4b4813d (jumbo frames,
       stormnic-ixgbe#33, for #165) (P0). Released v0.39.2 (49395f0).** Pin
