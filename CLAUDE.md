@@ -22,7 +22,7 @@ scratch files go in `tmp/`.
 Push first, then `sc-build` from this checkout. It builds the pushed commit
 on a fresh build VM as `stormbuild`. There is no checkout there, and no `ssh root@`.
 The plain `cargo build && cargo test` default does not suit a `no_std` UEFI
-crate, so name the command. This builds the three binaries, runs the twelve
+crate, so name the command. This builds the three binaries, runs the thirteen
 host suites and the initiator crate's tests, boots `espprobe` and stormbootx under OVMF, boots an ISO's
 `startup.nsh` from two EFI Shells, and runs the self-update's boots:
 
@@ -40,6 +40,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   rustc --edition 2021 --test src/connectx.rs -o t/connectx-test && ./t/connectx-test && \
   rustc --edition 2021 --test src/logwire.rs -o t/logwire-test && ./t/logwire-test && \
   rustc --edition 2021 --test src/command.rs -o t/command-test && ./t/command-test && \
+  rustc --edition 2021 --test src/distmedia.rs -o t/distmedia-test && ./t/distmedia-test && \
   cargo test -p nvme-tcp-initiator && \
   R=${CARGO_TARGET_DIR:-target}/x86_64-unknown-uefi/release && \
   tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi && \
@@ -70,6 +71,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   EFI_NAME=BOOTAA64.EFI tests/usb-layout.sh t/arm/boot/stormbootx-arm64-usb.img t/arm/media && \
   deploy/build-golden.sh stormbootx-arm64-disk $PWD/t/armdisk && \
   tests/fecpin-ovmf.sh && \
+  scripts/build-stormdist.sh $PWD/t/sd && tests/dist-ovmf.sh $R/tcp4probe.efi t/sd/stormdist && \
   tests/update-ovmf.sh $R/tcp4probe.efi'
 ```
 
@@ -241,6 +243,21 @@ bridge's bus range from its `Configuration()` table, and the walk from it).
 `src/command.rs` (#167) is the eleventh: the signed command's text and body,
 the verbs, and the API's HTTP request parser; `extern crate alloc` like
 `inventory.rs`. The signature check is `api.rs`'s (ed25519-compact).
+`src/distmedia.rs` (#198) is the twelfth: a stormdist medium's ISO 9660
+directory records, `BOOT.toml`, `RELEASE.toml`'s console fields, the release
+key `DIST_KEYS` and the read-rate line; core + alloc. Its signature check is
+`localinstall.rs`'s.
+
+`tests/dist-ovmf.sh TCP4PROBE STORMDIST` (#198) makes a signed bootable full
+ISO with the real `stormdist make` (`scripts/build-stormdist.sh`, stormdist
+v0.5.0 pinned; the build VM can fetch the private repo and mkfs.iso.rs), whose
+ESP's `BOOTX64.EFI` is tcp4probe beside `RELEASE.MRK`, and boots a stormbootx
+built with `STORMBOOTX_DIST_TEST_KEY` (its own target dir) with no network:
+`cd-local` (a CD, `install_source = local`), `usb-forge` (a USB stick, the
+network gives nothing, nothing local boots), `installed` (a fixed disk that
+boots wins), `tampered` (an ESP byte flipped after signing), `otherkey`,
+`off`. The medium boots on its own after stormbootx returns, so a positive
+boot needs `starting … from the stormdist medium` before tcp4probe's lines.
 
 `tests/api-boots.sh` (#167), sourced at the end of `net-ovmf.sh`, boots
 three times with slirp forwarding the guest's API (9180) to the host: a failed
@@ -307,6 +324,8 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/clock.rs` | the RTC set from NTP before Linux (#77): option 42 / `ntp =` / `pool.ntp.org`, one bounded SNTP exchange, `SetTime` in UTC |
 | `src/sntp.rs` | SNTP request and reply checks, NTP era → Unix, the UTC calendar (core-only, host-tested) |
 | `src/blockio.rs` | publish the namespace as a block device, then chain-load its `BOOTX64.EFI` (the firmware's FAT, then `esp.rs`) |
+| `src/distmedia.rs` | a stormdist release medium (#198): ISO 9660 primary-volume lookup, `BOOT.toml`, `RELEASE.toml`'s version/kind/bytes, `DIST_KEYS` (stormcentral's release key, not the boothelper key), the read-rate line (core + alloc, host-tested) |
+| `src/localinstall.rs` | install from a stormdist medium (#198): find and check it before the network (both signatures, `release_sha256`), read `boot/esp.img` timed and check `esp_sha256`, start its `BOOTX64.EFI` from those bytes under the firmware's filesystem on the medium's ESP; `install_source =` |
 | `src/intent.rs` | the boot intent (`install`/`local`/`auto`) read before the claim; every doubt is `auto` |
 | `src/inventory.rs` | the firmware inventory with the claim (#4, #20, #167 `"v":2`): SMBIOS Type 0/1/2/4/17/38/42, ATA IDENTIFY, NVMe Identify, SCSI INQUIRY and VPD parsers, partition kinds, the JSON and its budget, the console lines (core-only, host-tested) |
 | `src/hardware.rs` | what the inventory is collected from: the stack's NICs, their drivers and MTU, PCI class 01 (connected first), BlockIO disks with `EFI_DISK_INFO`, NVMe pass-thru, `EFI_SCSI_IO` VPD and their GPT/MBR and ESP `\EFI`, the SMBIOS table; once, before anything is attached |

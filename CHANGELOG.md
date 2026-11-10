@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### 2026-11-10
+- **feat:** A stormdist release medium installs offline (#198). stormbootx finds a stormdist full ISO, on a CD or written to a USB stick. It checks `BOOT.sig` and `RELEASE.sig` against stormcentral's release key (`distmedia::DIST_KEYS`) and `RELEASE.toml` against `BOOT.toml`. Then it reads `boot/esp.img` timed, which gives the medium's read rate (MiB/s, USB 2.0 or 3.x, and the release's time at that rate), checks it against `esp_sha256`, and starts the release's own `BOOTX64.EFI` from those bytes. The release's initramfs lays the disk (stormblock#442). `install_source = forge` (the default) uses the medium only when the network boot gave no image and nothing local boots; `local` uses it before the network; `off` never. `src/distmedia.rs` (host-tested), `src/localinstall.rs`.
+- **test:** `tests/dist-ovmf.sh` boots a medium made by the real `stormdist make` (`scripts/build-stormdist.sh`, v0.5.0) as a CD and as a USB stick: before the network, after a failed network boot, an installed disk that wins, a tampered ESP, another key, `off`. `build-golden.sh` refuses `STORMBOOTX_DIST_TEST_KEY` and `STORMBOOTX_UPDATE_TEST_KEY`.
 - **docs:** #198 (a local stormdist ISO/stick install) asked of the owner: chain-load the release's own ESP or lay the disk in firmware; work plan updated.
 <!-- New unreleased changes go here -->
 

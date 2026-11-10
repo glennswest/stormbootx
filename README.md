@@ -1033,6 +1033,7 @@ others.
 | `local_when_bootable` | `false` | `true`: `auto` and every doubt boot a local disk whose ESP carries `BOOTX64.EFI` instead of claiming (#3). Off until intents work on forge |
 | `nvme_depth` | `8` | reads kept in flight on the attached image, 1–8 (#100); `1` is one command at a time, as before #100, for an A/B or a target that mishandles a queue. Read at start-up, with `esp` |
 | `ui` | `panel` | `log`: no boot panel (#144); the screen scrolls the log as before |
+| `install_source` | `forge` | a stormdist release medium attached (#198, *Installing from a stormdist medium*): `forge` installs from it only when the network boot gave no image and nothing local boots; `local` installs from it before the network; `off` never looks |
 | `local_boot` | `stormbootx` | `firmware`: the fall-through returns to whatever started stormbootx instead of starting the local disk's `BOOTX64.EFI` itself (#145) |
 | `esp` | `auto` | who reads the attached ESP (#37): `auto` (firmware, then stormbootx), `firmware`, or `stormbootx` (the bridge and its read-only filesystem, #42); `build-boot-agent.sh --esp` |
 | `rng` | `firmware` | the first entropy source tried (#56): `firmware`, `cpu` (skip `EFI_RNG`) or `jitter` (skip both); `build-boot-agent.sh --rng` |
@@ -1051,6 +1052,60 @@ others.
 
 `\stormboot\local.conf`, when present, takes the same keys and is read first,
 so its values win. It belongs to the medium: a self-update never replaces it.
+
+## Installing from a stormdist medium (#198)
+
+stormdist's full release ISO (stormdist#10) boots on its own: El Torito
+UEFI/BIOS entries and a hybrid GPT, both over `/boot/esp.img`, the release's
+own ESP (stormuefi, its kernel, the stormblock initramfs). Written to a USB
+stick it is the same bytes. stormbootx finds such a medium and starts that
+ESP's bootloader, with no forge and no network; the release's initramfs then
+lays the disk from the medium (stormblock#442). stormbootx lays nothing
+(#166: one layout writer). What it adds over the firmware booting the medium:
+it checks it, it reports the medium's read rate, and it reaches machines whose
+firmware would not boot the medium (a Dell 14G refuses a hybrid ISO from a
+stick, #185; an X9 falls to the EFI Shell, which starts stormbootx, #60).
+
+Before the network, every present whole disk is looked at for an ISO 9660
+volume with `RELEASE.toml` and `BOOT.toml` at its root
+(`src/distmedia.rs`). On one:
+
+1. `BOOT.sig` and `RELEASE.sig` (64-byte Ed25519) must verify against
+   stormcentral's **release key** (`distmedia::DIST_KEYS`, served at
+   `/api/v1/release/keys`; not the self-update's boothelper key) before either
+   file is read, and `RELEASE.toml`'s SHA-256 must be `BOOT.toml`'s
+   `release_sha256`:
+
+   ```
+   dist        : stormdist 12.74.6 (full) on PciRoot(0x0)/…/USB(0x1,0x0) (usb, 512-byte blocks): BOOT.sig and RELEASE.sig verify, RELEASE.toml matches BOOT.toml
+   ```
+2. When it is used, `boot/esp.img` is read whole and timed, which is the
+   medium's read rate (above 40 MiB/s a stick is on a USB 3.x port), with what
+   the release's chunks (`RELEASE.toml`'s `bytes`) would take at that rate:
+
+   ```
+   dist        : read boot/esp.img: 66 MiB in 1.40 s, 47 MiB/s (usb: a USB 3.x rate); the release's 3.2 GiB at this rate: ~70 s
+   ```
+3. Its SHA-256 must be `esp_sha256`. `BOOTX64.EFI` is read out of those
+   checked bytes and loaded from that buffer under the device path of the
+   firmware's own filesystem on the medium's ESP, so that filesystem is its
+   `DeviceHandle`, as on a direct firmware boot. The `timing :` line gives
+   `dist find`, `dist read`, `dist check` and `dist start`.
+
+When (`install_source =`): by default forge first. The medium is used only
+when the network boot gave no image (no NIC, no lease, no engine, no claim)
+**and** no local disk boots, so an installed node with a release stick left
+in boots its own disk. A `local` intent never installs. `install_source =
+local` installs from the medium before the network; `off` never looks. A
+medium that fails a check is named and refused, and the boot goes on as if it
+were not there. A diff or backup ISO (no `BOOT.toml`) is named and not used.
+
+`tests/dist-ovmf.sh` makes a real medium with `stormdist make` (stormdist
+v0.5.0, `scripts/build-stormdist.sh`) signed by a test key compiled into its
+own stormbootx build (`STORMBOOTX_DIST_TEST_KEY`; `build-golden.sh` refuses
+it), and boots it as a CD and as a USB stick: before the network, after a
+failed network boot, an installed disk that wins, a tampered ESP, another
+key, and `off`.
 
 ## Booting from a laptop (#164)
 
