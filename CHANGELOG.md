@@ -8,6 +8,16 @@
 - **docs:** #198 (a local stormdist ISO/stick install) asked of the owner: chain-load the release's own ESP or lay the disk in firmware; work plan updated.
 <!-- New unreleased changes go here -->
 
+## [v0.41.0] — 2026-11-10
+
+### Added
+- A stormdist release medium installs offline (#198). stormbootx finds a stormdist full ISO on a CD or a USB stick and checks both signatures against stormcentral's release key. It reads the ESP timed (the medium's read rate, USB 2.0 or 3.x), checks it against `BOOT.toml`, and starts the release's own bootloader, which installs from the medium (stormblock#442). New `install_source = forge | local | off` key.
+- `tests/dist-ovmf.sh` and `scripts/build-stormdist.sh`: six boots of a medium made by the real `stormdist make` (#198).
+
+### Changed
+- The rustnic media and the nic-drivers golden carry stormnic-igb 80c9ea5 (v0.1.0, #69) and stormnic-mlx4 f3d3bc2 (v0.2.8, #195).
+- `build-golden.sh` refuses `STORMBOOTX_DIST_TEST_KEY` and `STORMBOOTX_UPDATE_TEST_KEY`.
+
 ### 2026-11-07
 - **build:** the rustnic media and the nic-drivers golden carry stormnic-igb 80c9ea5 (v0.1.0, #69): Intel 82575/82576/82580, I350/I354, I210/I211, for an igb nothing else drives (no `prefer_media_drivers` key: it has never run on igb silicon). net-ovmf's `igb` boot (`IGB_EFI`) and `NIC=igb` in media-ovmf.
 - **build:** the rustnic media and the nic-drivers golden carry stormnic-mlx4 f3d3bc2 (v0.2.8, #195): one console line per port (stormnic-mlx4#16), a reproducible image (#13), and a ConnectX-3 whose `GetLocation` fails is driven with `?` as its location (#7).
