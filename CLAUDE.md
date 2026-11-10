@@ -681,9 +681,9 @@ then.
 
 ### Open, no external blocker
 
-- [ ] **#198 — install a release from a local stormdist ISO or stick,
+- [x] **#198 — install a release from a local stormdist ISO or stick,
       offline, with the medium's read rate (P0, the master, 2026-11-10).
-      In progress.** Decided (the master for the owner, 2026-11-10): option
+      Released v0.41.0 (eeac3a2), closed 2026-11-10.** Decided (the master for the owner, 2026-11-10): option
       1, stormbootx finds the medium, checks it, prints its read rate and
       chain-loads the release's own boot; the release's initramfs lays the
       disk (stormblock#442). No layout writer here (#166). Plan:
@@ -719,8 +719,12 @@ then.
       NIC) `64 MiB in 0.43 s, 147 MiB/s (usb: a USB 3.x rate)`, then the
       same start; `installed` booted the local disk; `tampered` refused on
       `esp_sha256`; `otherkey` refused on `BOOT.sig`; `off` looked at
-      nothing. Full suite on 2995d2e running (`tmp/sc198full.log`). Then a
-      release, goldens, and close. **Not run:** a real release ISO (12.74's,
+      nothing. Full suite on 2995d2e: no warnings (1939 s). The tag
+      `--locked`: dist-ovmf, the rustnic and fw goldens booted as
+      `stormbootx 0.41.0`. Goldens requested at cae61d3 (stormbootx,
+      -rustnic, -rustnic-disk, -stick, nic-drivers). The deck's first fit
+      check found 11 of 14 slides overflowing, older than this: #200 (P3).
+      **Not run:** a real release ISO (12.74's,
       stormcentral#876), metal, a BMC virtual CD, a USB 2.0 port, the
       release's initramfs installing (stormblock#442).
 
