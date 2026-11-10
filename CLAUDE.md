@@ -711,6 +711,18 @@ then.
          stormbootx (built with `STORMBOOTX_DIST_TEST_KEY`) with it as a CD
          and as a USB stick: `local`, no network, forge first, a tampered
          ESP and another key refused.
+      **State (2026-11-10): 1–4 done** (29f2478..2995d2e). sc-build of
+      813f3ff (the targeted command): distmedia 9 host tests; `stormdist
+      make` (v0.5.0) wrote a 72 MB release ISO; dist-ovmf's six boots PASS:
+      `cd-local` read the ESP at 1.9 GB/s and started tcp4probe, which listed
+      `RELEASE.MRK` on its DeviceHandle (the medium's ESP); `usb-forge` (no
+      NIC) `64 MiB in 0.43 s, 147 MiB/s (usb: a USB 3.x rate)`, then the
+      same start; `installed` booted the local disk; `tampered` refused on
+      `esp_sha256`; `otherkey` refused on `BOOT.sig`; `off` looked at
+      nothing. Full suite on 2995d2e running (`tmp/sc198full.log`). Then a
+      release, goldens, and close. **Not run:** a real release ISO (12.74's,
+      stormcentral#876), metal, a BMC virtual CD, a USB 2.0 port, the
+      release's initramfs installing (stormblock#442).
 
 - [ ] **#197 — RAID controllers to IT/HBA before boot (P0, the master for
       the owner, 2026-11-08). Waiting on the owner.** Found: Dell's UEFI HII
