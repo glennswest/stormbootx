@@ -2346,14 +2346,18 @@ then.
       one), a PCH part at all.
 
 - [ ] **#71 — stormnic-i40e, a Rust X710/XL710/XXV710/X722 UEFI driver
-      (P3, owner). Blocked on stormnic-i40e#1 (2026-10-08, P3).** The owner (2026-10-07) had the repo created and **paused**, drivers at low priority; its first issue is P3, and this item is moved behind it. History: was waiting on the owner (2026-10-06).** Same
-      pair of questions as #74: the master creates `glennswest/stormnic-i40e`
-      (as for stormnic-virtio, #75), and which machine to verify on. QEMU
-      emulates no i40e part, and no registered test machine has one (the
-      consoles show only ixgbe, mlx4, mlx5 and tg3). The issue's IDs are
-      right in pci.ids; the PF family adds 1580/1581/1585–1588/158a,
-      104e/104f, 101f and 37ce/37cf/37d4. This repo's side, once the driver
-      binds: pin it in `build-nic-drivers.sh`.
+      (P3, owner). Blocked on stormnic-i40e#2 (hardware) since 2026-11-10.**
+      stormnic-i40e#1 closed on simulation only (the master for the owner,
+      2026-11-10, option 1 there): v0.1.0 (6a28cc6), 26 PF IDs, 49 host
+      tests against a simulated X710, x86_64 and aarch64 PE32+ subsystem 11.
+      That decision keeps the untested driver **off the rustnic media and
+      unpinned here** until it has run on a device (stormnic-i40e#2, as
+      stormnic-ixgbe#23). No i40e in the lab and none in QEMU, so nothing
+      here can test it either. This repo's side, once #2 passes: pin it in
+      `build-nic-drivers.sh` (default `STORMNIC_DRIVERS`, its IDs checked
+      against `drivers.rs` as e1000e's are), release, rustnic goldens.
+      History: the repo was created paused (owner, 2026-10-07); the IDs
+      were checked against pci.ids (2026-10-06).
 
 - [ ] **#72 — stormnic-ice, a Rust Intel E810 UEFI driver (P3). Behind
       #71 (2026-10-08).** The owner accepted the master's (b) on 2026-10-06:
