@@ -407,12 +407,12 @@ pub fn rate_line(bytes: u64, us: u64, bus: &str, release_bytes: Option<u64>) -> 
     );
     if let (Some(total), true) = (release_bytes, rate > 0) {
         let secs = total / (rate << 20).max(1);
-        s.push_str(&format!(
-            "; the release's {}.{} GiB at this rate: ~{} s",
-            total >> 30,
-            (total % (1 << 30)) * 10 >> 30,
-            secs
-        ));
+        let size = if total >= 1 << 30 {
+            format!("{}.{} GiB", total >> 30, ((total % (1 << 30)) * 10) >> 30)
+        } else {
+            format!("{} MiB", total.div_ceil(1 << 20))
+        };
+        s.push_str(&format!("; the release's {size} at this rate: ~{secs} s"));
     }
     s
 }
@@ -597,7 +597,8 @@ mod tests {
         let l = rate_line(66 << 20, 1_400_000, "usb", Some(3456106496));
         assert_eq!(l, "66 MiB in 1.40 s, 47 MiB/s (usb: a USB 3.x rate); the release's 3.2 GiB at this rate: ~70 s");
         assert!(rate_line(66 << 20, 2_200_000, "usb", None).ends_with("30 MiB/s (usb: a USB 2.0 rate, or a slow stick)"));
-        assert!(rate_line(66 << 20, 600_000, "scsi", None).ends_with("(scsi)"));
+        assert!(rate_line(66 << 20, 600_000, "cd", None).ends_with("(cd)"));
+        assert!(rate_line(64 << 20, 430_000, "usb", Some(4 << 20)).ends_with("; the release's 4 MiB at this rate: ~0 s"));
     }
 
     #[test]

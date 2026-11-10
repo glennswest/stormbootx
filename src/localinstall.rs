@@ -144,7 +144,13 @@ pub fn find() -> Option<Found> {
             }
         };
         let path = crate::blockio::path_of(h).and_then(crate::hardware::text).unwrap_or_default();
-        let bus = bus_of(&path);
+        // A whole disk of 2048-byte blocks is a CD (an ATAPI or SCSI drive);
+        // a BMC's virtual CD is USB, and its USB rate is what the line is for.
+        let bus = match bus_of(&path) {
+            "usb" => "usb",
+            _ if block == 2048 => "cd",
+            b => b,
+        };
         match check(&mut d, &layout, &keys) {
             Ok((boot, release)) => {
                 let f = Found { disk: h, layout, boot, release, path, bus };

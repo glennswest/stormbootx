@@ -1173,6 +1173,8 @@ fn main() -> Status {
 /// when nothing local boots. A node already installed boots its own disk
 /// with a release stick left in. Returns when nothing was started.
 fn offline(f: &localinstall::Found, why: &str) {
+    // The network boot's own time, apart from the clock and the medium's.
+    profile::mark("network");
     if let Ok(found) = blockio::local_bootloader() {
         uefi::println!("dist        : stormdist {} not installed: the local disk boots ({found})", f.name());
         return;
