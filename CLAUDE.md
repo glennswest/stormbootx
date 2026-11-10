@@ -2260,8 +2260,10 @@ then.
       on the rustnic stick (`igb@80c9ea5`). Then release, goldens.
       **State (2026-11-10):** pinned in d663b71. Its sc-build lost its log
       at media-ovmf (stormcentral restarted mid-job) after net-ovmf `igb`
-      passed; rerunning the full command on 5c48b7f (`tmp/sc69b.log`).
-      Next: v0.41.0 (with #195's mlx4 pin), the tag `--locked`, goldens.
+      passed; rerunning the full command on 4542296 (`tmp/sc69b.log`,
+      still running when P0 #198 took the session, 2026-11-10). Next: read
+      that result (or rerun `tmp/cmd69.txt`), then v0.41.0 (with #195's
+      mlx4 pin), the tag `--locked`, goldens, close #69.
 
 - [x] **#70 — stormnic-e1000e, a Rust 82574L/82579/I217–I219 UEFI driver
       (P3, owner). Released v0.40.0 (bf13e24), closed 2026-11-07.** Pinned
