@@ -2307,23 +2307,19 @@ then.
       the driver. Pinned at 1a04808 with #108 (v0.23.0), which also makes it
       bind under OVMF. Left: stormnic-virtio#1's pvetest1/2 boot.
 
-- [ ] **#69 — stormnic-igb, a Rust i350/i210/i211/82576/82580 UEFI driver
-      (P3, owner). In progress: stormnic-igb#1 done, v0.1.0 (80c9ea5).** Pin
-      it in `build-nic-drivers.sh`, default `STORMNIC_DRIVERS`, so on every
-      rustnic medium and the nic-drivers golden, with **no**
-      `prefer_media_drivers` family (it has never run on igb silicon; the
-      driver session's suggestion, as #70). net-ovmf `igb` (`IGB_EFI`, QEMU
-      82576 with no ROM): the driver's line, `nic 0: driver
-      stormnic-igb.efi`, lease, claim, 96 MiB, payload; media-ovmf `NIC=igb`
-      on the rustnic stick (`igb@80c9ea5`). Then release, goldens.
-      **State (2026-11-10):** pinned in d663b71. Its sc-build lost its log
-      at media-ovmf (stormcentral restarted mid-job) after net-ovmf `igb`
-      passed. **The full command passed on 4542296** (2046 s, no warnings,
-      `tmp/sc69b.log`): net-ovmf `igb` (`nic 0: driver stormnic-igb.efi`,
-      leased, claimed, 96 MiB, payload), the rustnic stick `igb@80c9ea5`
-      and, with `NIC=igb`, `stormnic-igb 0.1.0: …`. Next (paused for P0
-      #198): release (with #195's mlx4 pin), the tag `--locked`, goldens,
-      close #69.
+- [x] **#69 — stormnic-igb, a Rust i350/i210/i211/82576/82580 UEFI driver
+      (P3, owner). Released v0.41.0 (eeac3a2), closed 2026-11-10.** Pinned
+      80c9ea5 (stormnic-igb v0.1.0) in `build-nic-drivers.sh` and the default
+      `STORMNIC_DRIVERS` (d663b71), with **no** `prefer_media_drivers`
+      family (never run on igb silicon; as #70). sc-build of 4542296 (2046 s)
+      and 2995d2e (1939 s): no warnings, the full suite; net-ovmf `igb` (QEMU
+      82576, no ROM): `stormnic-igb 0.1.0: … 8086:10c9 82576 … link up 1000
+      Mb/s …, SNP installed`, `nic 0: driver stormnic-igb.efi`, leased,
+      claimed, 96 MiB, payload; the rustnic stick `igb@80c9ea5`, and with
+      `NIC=igb` its driver bound the NIC; `REPRO_MEDIA` the same bytes. The
+      tag `--locked`: the rustnic golden as `stormbootx 0.41.0`, `nic 0:
+      driver stormnic-igb.efi`. Goldens requested (cae61d3). **Not run:**
+      real igb silicon (none in the lab).
 
 - [x] **#70 — stormnic-e1000e, a Rust 82574L/82579/I217–I219 UEFI driver
       (P3, owner). Released v0.40.0 (bf13e24), closed 2026-11-07.** Pinned
