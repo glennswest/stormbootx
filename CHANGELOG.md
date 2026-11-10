@@ -1,6 +1,9 @@
 # Changelog
 
 ## [Unreleased]
+
+### 2026-11-10
+- **docs:** #198 (a local stormdist ISO/stick install) asked of the owner: chain-load the release's own ESP or lay the disk in firmware; work plan updated.
 <!-- New unreleased changes go here -->
 
 ### 2026-11-07

@@ -662,6 +662,15 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#198 — install a release from a local stormdist ISO or stick,
+      offline, with the medium's read rate (P0, the master, 2026-11-10).
+      Waiting on the owner.** The issue asks stormbootx to lay the system
+      disk in firmware, which reverses #166 (owner, 2026-10-28: an ISO
+      install is the release's own initramfs, stormblock#442). Asked on
+      #198: (1) find the medium, check `BOOT.sig` against the release key,
+      print the read rate, chain-load the release's ESP (recommended);
+      (2) a firmware layout writer; (3) nothing here. No code yet.
+
 - [ ] **#197 — RAID controllers to IT/HBA before boot (P0, the master for
       the owner, 2026-11-08). Waiting on the owner.** Found: Dell's UEFI HII
       is the setup menu, which refuses the switch; a firmware switch means our
