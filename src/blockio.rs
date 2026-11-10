@@ -274,6 +274,23 @@ struct LocalEsp {
     found: String,
 }
 
+/// A whole disk that is never the local disk (#198): the stormdist medium,
+/// which carries an ESP with a bootloader too, and a stick written from one
+/// may say it is fixed.
+struct NotLocal(core::cell::Cell<Option<uefi_raw::Handle>>);
+// Boot services are single-threaded.
+unsafe impl Sync for NotLocal {}
+static NOT_LOCAL: NotLocal = NotLocal(core::cell::Cell::new(None));
+
+/// Never count `h` as a local disk (`localinstall.rs`).
+pub fn not_local(h: Handle) {
+    NOT_LOCAL.0.set(Some(h.as_ptr()));
+}
+
+fn is_not_local(h: Handle) -> bool {
+    NOT_LOCAL.0.get() == Some(h.as_ptr())
+}
+
 fn find_local() -> Result<LocalEsp, String> {
     let handles = boot::locate_handle_buffer(SearchType::ByProtocol(&BlockIO::GUID))
         .map_err(|e| format!("no block devices ({e:?})"))?;
@@ -293,8 +310,8 @@ fn find_local() -> Result<LocalEsp, String> {
             continue;
         }
         // The attached image is not a local disk (the fall-through withdraws
-        // it first; this is the belt to that).
-        if is_published(h.as_ptr()) {
+        // it first; this is the belt to that). Nor is a stormdist medium.
+        if is_published(h.as_ptr()) || is_not_local(h) {
             continue;
         }
         let dp = path_of(h);
@@ -428,7 +445,7 @@ fn local_firmware_boot(disk_path: &DevicePath, number: u32) -> Loaded {
 }
 
 /// `OpenProtocol` with `GET_PROTOCOL`: a look, not a claim.
-fn open_get<P: uefi::proto::ProtocolPointer + ?Sized>(h: Handle) -> Option<boot::ScopedProtocol<P>> {
+pub(crate) fn open_get<P: uefi::proto::ProtocolPointer + ?Sized>(h: Handle) -> Option<boot::ScopedProtocol<P>> {
     unsafe {
         boot::open_protocol::<P>(
             OpenProtocolParams { handle: h, agent: boot::image_handle(), controller: None },
@@ -438,7 +455,7 @@ fn open_get<P: uefi::proto::ProtocolPointer + ?Sized>(h: Handle) -> Option<boot:
     .ok()
 }
 
-fn path_of(h: Handle) -> Option<&'static DevicePath> {
+pub(crate) fn path_of(h: Handle) -> Option<&'static DevicePath> {
     let p = open_get::<DevicePath>(h)?;
     let r: &DevicePath = &p;
     // The path lives as long as the handle does; closing a GetProtocol open
@@ -447,7 +464,7 @@ fn path_of(h: Handle) -> Option<&'static DevicePath> {
 }
 
 /// Whether every node of `a` starts `b`.
-fn is_prefix(a: &DevicePath, b: &DevicePath) -> bool {
+pub(crate) fn is_prefix(a: &DevicePath, b: &DevicePath) -> bool {
     a.node_iter().count() <= b.node_iter().count() && a.node_iter().zip(b.node_iter()).all(|(x, y)| x == y)
 }
 

@@ -217,6 +217,29 @@ pub fn local_when_bootable() -> bool {
     )
 }
 
+/// Where a release is installed from when a stormdist medium is attached
+/// (#198, `install_source =`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum InstallSource {
+    /// The default: forge first; the medium only when the network boot gave
+    /// no image and nothing local boots.
+    Forge,
+    /// The medium before the network.
+    Local,
+    /// Never the medium.
+    Off,
+}
+
+/// `install_source =` in the config file (#198). Read at start-up, like
+/// `esp =`.
+pub fn install_source() -> InstallSource {
+    match conf_text().and_then(|t| field(&t, "install_source")).as_deref() {
+        Some("local") => InstallSource::Local,
+        Some("off") => InstallSource::Off,
+        _ => InstallSource::Forge,
+    }
+}
+
 /// `local_boot = firmware` in the config file: the fall-through returns to
 /// whatever started this image and starts nothing itself, as before #145.
 /// By default (`local_boot = stormbootx`, or nothing) the fall-through starts

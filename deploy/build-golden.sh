@@ -190,6 +190,8 @@ HOLD=120
 # never reaches a write.
 FEC_PIN=rs
 [[ -z "${STORMBOOTX_FEC_TEST:-}" ]] || die "STORMBOOTX_FEC_TEST compiles in a pretend card: no golden (#186)"
+[[ -z "${STORMBOOTX_DIST_TEST_KEY:-}" ]] || die "STORMBOOTX_DIST_TEST_KEY compiles in a test release key: no golden (#198)"
+[[ -z "${STORMBOOTX_UPDATE_TEST_KEY:-}" ]] || die "STORMBOOTX_UPDATE_TEST_KEY compiles in a test update key: no golden (#83)"
 
 # media.files: the self-update manifest's file lines, from the media/ tree.
 # A media golden names no namespace (#36): `fallback = none`, no nqn/nsid.

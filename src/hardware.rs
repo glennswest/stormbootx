@@ -244,7 +244,7 @@ pub fn json() -> String {
     j
 }
 
-fn text(dp: &DevicePath) -> Option<String> {
+pub(crate) fn text(dp: &DevicePath) -> Option<String> {
     dp.to_string16(DisplayOnly(false), AllowShortcuts(false)).ok().map(|s| format!("{s}"))
 }
 

@@ -58,6 +58,7 @@ mod clock;
 mod command;
 mod config;
 mod connectx;
+mod distmedia;
 mod dnsname;
 mod drivers;
 mod entropy;
@@ -67,6 +68,7 @@ mod espfs;
 mod handoff;
 mod hardware;
 mod installconf;
+mod localinstall;
 mod intent;
 mod inventory;
 mod logwire;
@@ -1094,6 +1096,32 @@ fn main() -> Status {
     // The API (#167): its port and command keys, and the hold, from the media.
     api::init();
 
+    // A stormdist release medium (#198): found and checked before the
+    // network, installed from now (`install_source = local`) or when the
+    // network boot gives no image and nothing local boots (the default).
+    let source = config::install_source();
+    let mut dist = match source {
+        config::InstallSource::Off => None,
+        _ => localinstall::find(),
+    };
+    if dist.is_some() {
+        profile::mark("dist find");
+    }
+    if source == config::InstallSource::Local {
+        let file = config::file_of(&["install_source"]);
+        match dist.take() {
+            Some(f) => {
+                uefi::println!("dist        : install_source = local (in {file}): before the network");
+                if let Err(why) = localinstall::install(&f) {
+                    uefi::println!("dist        : not installed: {why}; the network boot goes on");
+                }
+            }
+            None => uefi::println!(
+                "dist        : install_source = local (in {file}), but no checked stormdist medium is attached; the network boot goes on"
+            ),
+        }
+    }
+
     // run() hands off to the image's bootloader and does not return on
     // success; every path back here is a failure to fall through from, a
     // `local` to fall through to, or a hold. A hold that is told to boot
@@ -1113,6 +1141,9 @@ fn main() -> Status {
             }
             Stop::Hold(why) => (why, api::Hold::Forever, 0),
             Stop::Failed(why) => {
+                if let Some(f) = dist.take() {
+                    offline(&f, &why);
+                }
                 let (how, retry, _) = api::policy();
                 (why, how, retry)
             }
@@ -1135,6 +1166,24 @@ fn main() -> Status {
             api::After::FallThrough => return fall_through(&why, local, false),
             api::After::Retry(i) => (pass, ask) = (pass + 1, i),
         }
+    }
+}
+
+/// The network boot gave no image: install from the stormdist medium (#198)
+/// when nothing local boots. A node already installed boots its own disk
+/// with a release stick left in. Returns when nothing was started.
+fn offline(f: &localinstall::Found, why: &str) {
+    if let Ok(found) = blockio::local_bootloader() {
+        uefi::println!("dist        : stormdist {} not installed: the local disk boots ({found})", f.name());
+        return;
+    }
+    withdraw();
+    uefi::println!("dist        : the network boot gave no image ({why}) and nothing local boots: the stormdist medium");
+    // The installed system's clock, while a lease may still be up (#77).
+    clock::sync();
+    profile::mark("clock");
+    if let Err(e) = localinstall::install(f) {
+        uefi::println!("dist        : not installed: {e}");
     }
 }
 
