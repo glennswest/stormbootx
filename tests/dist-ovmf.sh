@@ -196,11 +196,12 @@ boot() {
 
 boot cd-local "$T/release.iso" cd 'install_source = local' "$LISTS" - \
     'dist        : a TEST key is compiled in' \
-    'dist        : stormdist 12.74.0-disttest (full) on ' \
+    ' (cd, 2048-byte blocks): BOOT.sig and RELEASE.sig verify' \
     'BOOT.sig and RELEASE.sig verify, RELEASE.toml matches BOOT.toml' \
     'install_source = local (in \stormboot\local.conf): before the network' \
     'dist        : read boot/esp.img: 64 MiB in ' \
     'boot/esp.img matches BOOT.toml (esp_sha256)' \
+    "the release's 4 MiB at this rate" \
     "$STARTED<<$LISTS" \
     'RELEASE.MRK' \
     'not:no network boot'

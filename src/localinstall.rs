@@ -69,7 +69,7 @@ pub struct Found {
     release: Release,
     /// Its device path as text, for the console.
     path: String,
-    /// `usb`, `cd`, `sata`, … from the device path.
+    /// `usb`, `cd`, `sata`, … from the device path; a whole disk of 2048-byte blocks is a CD.
     bus: &'static str,
 }
 
