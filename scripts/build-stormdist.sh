@@ -22,8 +22,9 @@ die() { say "FAIL: $*"; exit 1; }
 
 mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)
-SRC="$OUT/stormdist-src"
-rm -rf "$SRC"
+# Outside the checkout: under it, cargo would take stormdist for a member of
+# stormbootx's workspace ("believes it's in a workspace when it's not").
+SRC=$(mktemp -d "${TMPDIR:-/tmp}/stormdist-src.XXXXXX")
 git init -q "$SRC"
 git -C "$SRC" fetch -q --depth 1 "$REPO" "$REF" || die "could not fetch $REF from $REPO"
 git -C "$SRC" checkout -q FETCH_HEAD
