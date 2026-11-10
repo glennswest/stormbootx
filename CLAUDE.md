@@ -664,12 +664,34 @@ then.
 
 - [ ] **#198 — install a release from a local stormdist ISO or stick,
       offline, with the medium's read rate (P0, the master, 2026-11-10).
-      Waiting on the owner.** The issue asks stormbootx to lay the system
-      disk in firmware, which reverses #166 (owner, 2026-10-28: an ISO
-      install is the release's own initramfs, stormblock#442). Asked on
-      #198: (1) find the medium, check `BOOT.sig` against the release key,
-      print the read rate, chain-load the release's ESP (recommended);
-      (2) a firmware layout writer; (3) nothing here. No code yet.
+      In progress.** Decided (the master for the owner, 2026-11-10): option
+      1, stormbootx finds the medium, checks it, prints its read rate and
+      chain-loads the release's own boot; the release's initramfs lays the
+      disk (stormblock#442). No layout writer here (#166). Plan:
+      1. `src/distmedia.rs` (core-only, host-tested): ISO 9660 primary
+         volume and directory records (stormdist/mkfs.iso.rs names:
+         `RELEASE.TOML;1`, `BOOT.SIG;1`, `BOOT/ESP.IMG;1`), `BOOT.toml`
+         (`release_sha256`, `esp_sha256`, `bios_sha256`, `mbr_sha256`), the
+         read-rate line. `DIST_KEYS`: stormcentral's release key
+         (`/api/v1/release/keys`, 43d06026…afd8; not the boothelper key).
+      2. `src/localinstall.rs`: every present whole BlockIO (CD at 2048, a
+         stick at 512) with `CD001` at byte 32768; `BOOT.sig` and
+         `RELEASE.sig` against `DIST_KEYS`, `RELEASE.toml`'s digest against
+         `release_sha256`; `boot/esp.img` read whole, timed (MiB/s, the
+         bus), hashed against `esp_sha256`; then `BOOTX64.EFI` loaded from
+         the firmware's FAT on that medium's ESP partition handle (as the
+         firmware would boot it).
+      3. When: `install_source = local` (stormboot.conf) before the
+         network; otherwise forge first, and the medium only when the
+         network boot gave no image **and** nothing local boots (an
+         installed node with a stick left in boots its disk).
+         `timing :` marks for find, verify, read, start.
+      4. Test: `scripts/build-stormdist.sh` builds stormdist at a pinned
+         commit; `tests/dist-ovmf.sh` makes a signed bootable full ISO with
+         `stormdist make` (an ESP whose BOOTX64.EFI is tcp4probe) and boots
+         stormbootx (built with `STORMBOOTX_DIST_TEST_KEY`) with it as a CD
+         and as a USB stick: `local`, no network, forge first, a tampered
+         ESP and another key refused.
 
 - [ ] **#197 — RAID controllers to IT/HBA before boot (P0, the master for
       the owner, 2026-11-08). Waiting on the owner.** Found: Dell's UEFI HII
