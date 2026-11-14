@@ -154,6 +154,20 @@ then.
       (never written: the firmware's default)`, then `written rs` and one
       warm reset. 25G gets RS from the standard, never from link timing:
       `pin_action` still takes no link.
+      **2026-11-14, 380ffae on forge1 (02:34Z):** the default read answers
+      "resource not available" too: this card (15b3:1015) has no FEC NV
+      TLVs at all, and the pin said `left as is`. The master for the owner:
+      a 25G port is pinned RS at boot whatever the card stores; with no NV
+      route, set PPLM `fec_override_admin` through the access register,
+      read it back, say RS per port or fail loudly. In progress: a card
+      with no NV TLVs is read through PPLM (0x5023, local ports 1 and 2;
+      admin per speed, active as Linux's bitmask, raw dwords printed) and a
+      wanted value is set there live, the port bounced with PAOS (0x5006)
+      when it is up, the admin read back: no reset, no record. `Port.live`
+      marks such a port; the pin writes them first and leaves them out of
+      the reset decision. `fec_test_card = live` and a `live` boot in
+      fecpin-ovmf. Pass: forge1's console shows both 84:00.x `rs` on the
+      port register, nic 6 link UP, .203 leased.
 - [x] **#198 — install a release from a local stormdist ISO or stick,
       offline, with the medium's read rate (P0, the master, 2026-11-10).
       Released v0.41.0 (eeac3a2), closed 2026-11-10.** Decided (the master for the owner, 2026-11-10): option
