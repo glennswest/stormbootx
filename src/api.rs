@@ -10,6 +10,7 @@
 //! |---|---|
 //! | `GET /api/v1/status` | what it is doing, its names, the last command and its result |
 //! | `GET /api/v1/inventory` | the firmware inventory (`inventory.rs`, `"v":2`), drives first |
+//! | `GET /api/v1/fec` | each ConnectX port's running, next-boot and wanted FEC, the pin's record (#203) |
 //! | `GET /api/v1/log` | the console lines so far (`netlog.rs` keeps them) |
 //! | `POST /api/v1/command` | a signed command (`command.rs`): 202 when taken |
 //!
@@ -45,7 +46,7 @@ use uefi::runtime::{ResetType, VariableAttributes, VariableVendor};
 use uefi::{cstr16, Status};
 
 use crate::command::{self, Signed, Verb};
-use crate::{config, handoff, hardware, manifest, net, netlog, registry, ui};
+use crate::{config, fecpin, handoff, hardware, manifest, net, netlog, registry, ui};
 
 /// The port when the media names none.
 pub const DEFAULT_PORT: u16 = 9180;
@@ -200,6 +201,10 @@ pub fn answer(method: &str, path: &str, body: &[u8], peer: [u8; 4]) -> Vec<u8> {
             Some(j) => command::response(200, "application/json", j.as_bytes()),
             None => command::error(503, "the inventory is collected at the claim, or when holding"),
         },
+        ("GET", "/api/v1/fec") => match fecpin::cached_json() {
+            Some(j) => command::response(200, "application/json", j.as_bytes()),
+            None => command::error(503, "the FEC is read at the boot's NIC step"),
+        },
         ("GET", "/api/v1/log") => {
             command::response(200, "text/plain; charset=utf-8", netlog::history().as_bytes())
         }
@@ -222,7 +227,7 @@ pub fn answer(method: &str, path: &str, body: &[u8], peer: [u8; 4]) -> Vec<u8> {
                 }
             }
         }
-        (_, "/api/v1/status" | "/api/v1/inventory" | "/api/v1/log" | "/api/v1/command") => {
+        (_, "/api/v1/status" | "/api/v1/inventory" | "/api/v1/fec" | "/api/v1/log" | "/api/v1/command") => {
             command::error(405, "method not allowed")
         }
         _ => command::error(404, "not found"),
@@ -472,6 +477,23 @@ fn execute(c: Signed, v: Verb, from: Source) -> Next {
             done(&c, &v, from, "claiming the maintenance image (boothost/maint)");
             Next::Maint
         }
+        Verb::Fec(port, value) => {
+            match fecpin::command_write(port, value) {
+                Ok(what) => done(&c, &v, from, &what),
+                Err(e) => done(&c, &v, from, &format!("refused: {e}")),
+            }
+            Next::Go
+        }
+        Verb::FecReset => match fecpin::command_reset(c.id) {
+            Ok(()) => {
+                done(&c, &v, from, "warm-resetting so the cards load their next-boot FEC");
+                reset(ResetType::WARM)
+            }
+            Err(e) => {
+                done(&c, &v, from, &format!("refused: {e}"));
+                Next::Go
+            }
+        },
     }
 }
 

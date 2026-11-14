@@ -76,6 +76,12 @@ pub enum Verb {
     Format(String),
     /// Boot the maintenance image (baremetalservices).
     Maint,
+    /// Write a ConnectX port's next-boot FEC (#203): the port (`all`, a PCI
+    /// function `0000:84:00.1` or `84:00.1`, or a MAC, lower-cased) and the
+    /// value (`rs`, `fc`, `none`, `default`). Nothing is reset.
+    Fec(String, String),
+    /// A warm reset, so the cards load their next-boot FEC (#203).
+    FecReset,
 }
 
 impl Verb {
@@ -91,6 +97,8 @@ impl Verb {
             Verb::Inventory => "inventory",
             Verb::Format(_) => "format",
             Verb::Maint => "maint",
+            Verb::Fec(..) => "fec",
+            Verb::FecReset => "fec-reset",
         }
     }
 }
@@ -149,6 +157,23 @@ pub fn verb(command: &str, args: &str) -> Result<Verb, String> {
         "hold" => none(Verb::Hold),
         "inventory" => none(Verb::Inventory),
         "maint" => none(Verb::Maint),
+        "fec-reset" => none(Verb::FecReset),
+        "fec" => {
+            let mut w = args.split_whitespace();
+            let (Some(port), Some(value), None) = (w.next(), w.next(), w.next()) else {
+                return Err(format!("fec takes `<all|BDF|MAC> <rs|fc|none|default>`, not {args:?}"));
+            };
+            let port = port.to_ascii_lowercase();
+            if port != "all" && !fec_port(&port) {
+                return Err(format!("fec: {port:?} is not all, a PCI function (0000:84:00.1) or a MAC"));
+            }
+            match value.to_ascii_lowercase().as_str() {
+                v @ ("rs" | "fc" | "none" | "default") => Ok(Verb::Fec(port, String::from(v))),
+                // `off` is ambiguous: in `fec_pin` it means "leave the card alone".
+                "off" => Err("fec: say `none` for no FEC (`off` reads as `leave it` in fec_pin)".into()),
+                v => Err(format!("fec: {v:?} is not rs, fc, none or default")),
+            }
+        }
         "boot-next" => {
             let ok = args.len() == 4 && args.bytes().all(|c| c.is_ascii_hexdigit());
             match u16::from_str_radix(args, 16) {
@@ -170,6 +195,24 @@ pub fn verb(command: &str, args: &str) -> Result<Verb, String> {
         }
         other => Err(format!("unknown command {other:?}")),
     }
+}
+
+/// A port as `fec` names it: `[seg:]bus:dev.fn` in hex, or a MAC.
+fn fec_port(p: &str) -> bool {
+    let hex = |t: &str, n: usize| t.len() == n && t.bytes().all(|c| c.is_ascii_hexdigit());
+    let mac = p.split(':').count() == 6 && p.split(':').all(|t| hex(t, 2));
+    let bdf = |t: &str| match t.rsplit_once('.') {
+        Some((head, f)) if f.len() == 1 && (b'0'..=b'7').contains(&f.as_bytes()[0]) => {
+            let parts: Vec<&str> = head.split(':').collect();
+            match parts.as_slice() {
+                [b, d] => hex(b, 2) && hex(d, 2),
+                [s, b, d] => hex(s, 4) && hex(b, 2) && hex(d, 2),
+                _ => false,
+            }
+        }
+        _ => false,
+    };
+    mac || bdf(p)
 }
 
 /// Whether a command whose signature verified is this machine's, now: its
@@ -408,6 +451,27 @@ mod tests {
         );
         let s = parse_body(&rec).unwrap();
         assert_eq!((s.host.as_str(), s.id, s.command.as_str()), ("server8", 1_792_000_000_123, "reboot"));
+    }
+
+    #[test]
+    fn the_fec_verbs() {
+        let fec = |p: &str, v: &str| Ok(Verb::Fec(p.into(), v.into()));
+        assert_eq!(verb("fec", "all rs"), fec("all", "rs"));
+        assert_eq!(verb("fec", "ALL RS"), fec("all", "rs"));
+        assert_eq!(verb("fec", "0000:84:00.1 fc"), fec("0000:84:00.1", "fc"));
+        assert_eq!(verb("fec", "84:00.0 default"), fec("84:00.0", "default"));
+        assert_eq!(verb("fec", "E8:EB:D3:94:A2:80 none"), fec("e8:eb:d3:94:a2:80", "none"));
+        assert!(verb("fec", "all off").unwrap_err().contains("none"));
+        assert!(verb("fec", "all autoneg").is_err());
+        assert!(verb("fec", "all").is_err());
+        assert!(verb("fec", "all rs now").is_err());
+        assert!(verb("fec", "84:00.9 rs").is_err());
+        assert!(verb("fec", "eth0 rs").is_err());
+        assert!(verb("fec", "e8:eb:d3:94:a2 rs").is_err());
+        assert_eq!(verb("fec-reset", ""), Ok(Verb::FecReset));
+        assert!(verb("fec-reset", "now").is_err());
+        assert_eq!(Verb::Fec("all".into(), "rs".into()).name(), "fec");
+        assert_eq!(Verb::FecReset.name(), "fec-reset");
     }
 
     #[test]

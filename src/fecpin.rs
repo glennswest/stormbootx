@@ -293,6 +293,116 @@ pub fn at_boot(read: &Summary) {
     uefi::runtime::reset(kind, uefi::Status::SUCCESS, None);
 }
 
+// ------------------------------------------------------------------ the API
+
+struct Cached(core::cell::UnsafeCell<Option<String>>);
+// Boot services are single-threaded.
+unsafe impl Sync for Cached {}
+static FEC_JSON: Cached = Cached(core::cell::UnsafeCell::new(None));
+
+/// `GET /api/v1/fec` (#203), built here at the NIC step and after a `fec`
+/// command, because the API answers from inside a poll and must not read the
+/// card or the media there.
+pub fn cached_json() -> Option<String> {
+    unsafe { (*FEC_JSON.0.get()).clone() }
+}
+
+/// Keep what `read` found, each port with its wanted value and where that
+/// came from. The card's values only: no link state is in it.
+pub fn remember(read: &Summary) {
+    use crate::command::escape;
+    let text = config::conf_text().unwrap_or_default().to_ascii_lowercase();
+    let stated = config::stated_fec_pin();
+    let q = |s: &str| format!("\"{}\"", escape(s));
+    let ports: Vec<String> = read
+        .ports
+        .iter()
+        .map(|p| {
+            let want = match want_of(&text, stated.as_deref(), p) {
+                PortWant::Want(f, from) => format!("\"wanted\":{{\"value\":{},\"from\":{}}}", q(&f.name()), q(&from)),
+                PortWant::Leave(why) => format!("\"wanted\":null,\"left\":{}", q(&why)),
+                PortWant::Bad(e) => format!("\"wanted\":null,\"left\":{}", q(&e)),
+            };
+            format!(
+                "{{\"bdf\":{},\"loc\":{},\"port\":{},\"mac\":{},\"speed\":{},\"supported\":{},\
+                 \"current\":{},\"next_boot\":{},\"stored\":{},{want}}}",
+                q(&p.bdf),
+                q(&p.loc),
+                p.port.port,
+                p.mac.as_deref().map_or(String::from("null"), q),
+                p.speed.map_or(String::from("null"), |s| q(s.name())),
+                p.port.supported,
+                q(&p.port.current.name()),
+                q(&p.port.next.name()),
+                p.port.stored,
+            )
+        })
+        .collect();
+    let j = format!(
+        "{{\"fec_pin\":{},\"record\":{},\"stuck\":{},\"cards\":{},\"failed\":{},\"test_card\":{TEST_CARD},\"ports\":[{}]}}",
+        stated.as_deref().map_or(String::from("null"), q),
+        record().as_deref().map_or(String::from("null"), q),
+        stuck(),
+        read.cards,
+        read.failed,
+        ports.join(",")
+    );
+    unsafe { *FEC_JSON.0.get() = Some(j) };
+}
+
+/// The signed `fec <all|BDF|MAC> <rs|fc|none|default>` (#203): write the
+/// next-boot value of the ports it names, read the card back, and say what
+/// was written. Nothing is reset: `fec-reset` does that.
+pub fn command_write(port: &str, value: &str) -> Result<String, String> {
+    let f = wanted(value).ok_or_else(|| format!("{value:?} is not rs, fc, none or default"))?;
+    let named = |p: &PortAt| {
+        let short = p.bdf.split_once(':').map_or(p.bdf.as_str(), |(_, rest)| rest);
+        port == "all"
+            || port == p.bdf
+            || port == short
+            || p.mac.as_deref().is_some_and(|m| m.eq_ignore_ascii_case(port))
+    };
+    let before = read();
+    let mut matched = 0;
+    for p in before.ports.iter().filter(|p| named(p)) {
+        matched += 1;
+        if !p.port.supported {
+            return Err(format!("{} port {} has no FEC override; nothing written", p.loc, p.port.port));
+        }
+    }
+    if matched == 0 {
+        remember(&before);
+        return Err(format!("no ConnectX port is {port} ({} port(s) read)", before.ports.len()));
+    }
+    let pick = |p: &PortAt| if named(p) { Some(f) } else { None };
+    let sum = write(&pick);
+    let after = read();
+    remember(&after);
+    if sum.written == 0 {
+        if sum.failed == 0 {
+            return Ok(format!("{port}: the next-boot value is already {}; nothing written", f.name()));
+        }
+        return Err(format!("nothing written ({} port(s) failed)", sum.failed));
+    }
+    let what = sum.wrote.join("; ");
+    uefi::println!("fec         : wrote {what} (next boot; fec-reset loads it)");
+    Ok(format!("wrote {what}; the card loads it at the next reset (fec-reset)"))
+}
+
+/// The signed `fec-reset` (#203): before its warm reset, name it in the pin's
+/// record when the pin is on and has none, so the pin counts it as its warm
+/// reset and the boot still resets at most twice. A record already there is
+/// kept: a command never gives the pin a reset back.
+pub fn command_reset(id: u64) -> Result<(), String> {
+    let text = config::conf_text().unwrap_or_default().to_ascii_lowercase();
+    let on = any_port_key(&text) || !matches!(config::stated_fec_pin().as_deref(), None | Some("off"));
+    if on && record().is_none() {
+        set_record(&format!("warm: fec-reset by command id {id}"))
+            .map_err(|e| format!("the firmware refused StormBootFecPin ({e}); not resetting"))?;
+    }
+    Ok(())
+}
+
 /// A pretend ConnectX for `tests/fecpin-ovmf.sh`, its NV value in a variable so
 /// it outlives the reset. `fec_test_card =` says how it behaves: `holds` (runs
 /// what was written after any reset), `cold` (only after a cold one), `stuck`
@@ -306,7 +416,7 @@ mod test_card {
     fn stored() -> Fec {
         let mut buf = [0u8; 16];
         match uefi::runtime::get_variable(cstr16!("StormBootFecTestCard"), &handoff::VENDOR, &mut buf) {
-            Ok((data, _)) if data == b"rs" => Fec::Rs,
+            Ok((data, _)) => core::str::from_utf8(data).ok().and_then(Fec::parse).unwrap_or(Fec::DeviceDefault),
             _ => Fec::DeviceDefault,
         }
     }
@@ -349,7 +459,8 @@ mod test_card {
                 let attrs = VariableAttributes::NON_VOLATILE
                     | VariableAttributes::BOOTSERVICE_ACCESS
                     | VariableAttributes::RUNTIME_ACCESS;
-                let _ = uefi::runtime::set_variable(cstr16!("StormBootFecTestCard"), &handoff::VENDOR, attrs, b"rs");
+                let name = want.name();
+                let _ = uefi::runtime::set_variable(cstr16!("StormBootFecTestCard"), &handoff::VENDOR, attrs, name.as_bytes());
                 wrote(want)
             }
         }

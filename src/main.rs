@@ -280,6 +280,8 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
         if config::stated_fec().is_none() {
             fecpin::at_boot(&read);
         }
+        // For `GET /api/v1/fec` (#203); after the pin, which may clear its record.
+        fecpin::remember(&read);
     }
 
     //     A recovery stick, and only a recovery stick, may state `fec = MODE`
