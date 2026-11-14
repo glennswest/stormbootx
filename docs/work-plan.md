@@ -127,6 +127,12 @@ then.
       4. Tests: fecpin-ovmf (a card that stays wrong: warm, cold, hold),
          api-boots (`/fec`, `fec all rs`), command.rs host tests.
       Done: forge1's console shows both ports RS and :80 UP with .203.
+      State (2026-11-13): 1, 2, 3 (`GET /api/v1/fec`, `fec`, `fec-reset`)
+      and 4 (fecpin-ovmf's warm/cold/hold boots and its `api` boot,
+      command.rs's `the_fec_verbs`) are in; the targeted sc-build passes.
+      `fec-set` (writing `local.conf`) is not: `fec` + `fec-reset` cover
+      the done line, and the media's `fec_pin` stays the owner's setting.
+      Next: the full sc-build, the image, the forge1 boot (wait-hardware).
 - [ ] **#202 — forge1's FEC pin read 0 ports (P0, the master for the
       owner, 2026-11-13: "fix the fec on port 80 tonight, in stormbootx!").**
       forge1 (R6415, B6B0PY2) logged `fec pin : rs …: 0 port(s) read` with no
