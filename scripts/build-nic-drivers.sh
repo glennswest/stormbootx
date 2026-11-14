@@ -124,7 +124,12 @@ STORMNIC_MLX5_REPO="https://github.com/glennswest/stormnic-mlx5.git"
 # --locked, not yet seen on a card (stormnic-mlx5#1). Not in this script's
 # default set; build-golden.sh's rustnic media name it (#202). FlexBoot holds
 # the card, so it binds only where the media says `prefer_media_drivers = mlx5`.
-STORMNIC_MLX5_REF="66de5456520e40bda00cbbfc0e03e1f7e5fa6b2f"
+# 09b0615 (#212, stormnic-mlx5#8): the stormnic port contract: the IEEE
+# standard FEC for the media/speed set at bind (PPLM read-modify-write; 25G
+# RS), one line per port (driver, PCI address, MAC, media, speed, module, FEC,
+# link), no configuration. The same IDs. Since #202 it takes its NICs from
+# FlexBoot unasked (our drivers only).
+STORMNIC_MLX5_REF="09b0615b498d61bc0d89f614bbd43c1463f2703d"
 STORMNIC_E1000E_REPO="https://github.com/glennswest/stormnic-e1000e.git"
 # d0bc5ec (v0.1.0, #70, stormnic-e1000e#1): SNP for the 82574L and the PCH
 # 82579/I217/I218/I219, 67 device IDs listed from pci.ids 2026.11.06

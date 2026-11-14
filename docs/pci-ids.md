@@ -34,7 +34,7 @@ Linux master's driver tables (fetched 2026-11-14).
 
 | driver (pin) | ours | Linux | Linux has, we don't | we have, Linux doesn't |
 |---|---|---|---|---|
-| stormnic-mlx5 (66de545) | 7 | 14 | 1021 CX-7, 1023 CX-8, 1025 CX-9, 1027 CX-10, 2101 CX-10 NVLink-C2C, a2d2/a2d6/a2dc/a2df BlueField 1–4 (and 1011 Connect-IB, IB only) | — |
+| stormnic-mlx5 (09b0615) | 7 | 14 | 1021 CX-7, 1023 CX-8, 1025 CX-9, 1027 CX-10, 2101 CX-10 NVLink-C2C, a2d2/a2d6/a2dc/a2df BlueField 1–4 (and 1011 Connect-IB, IB only) | — |
 | stormnic-mlx4 (398a1a4) | 2 | 13 + ConnectX/-2 | 1005, 1006, 1008, 1009, 100a–100f, 1010 (MT275xx family members) | — |
 | stormnic-ixgbe (02fcc5d) | 37 | 52 | 82598: 10b6, 10c6, 10c7, 10c8, 10db, 10dd, 10e1, 10ec, 10f1, 10f4, 1508, 150b; E610: 57ae–57b2 | 155c X540 bypass, 155d 82599 bypass |
 | stormnic-igb (6990341) | 36 | 35 | DH89xxCC: 0438, 043a, 043c, 0440 | 10e2, 1509, 1534, 1535, 15f6 |
