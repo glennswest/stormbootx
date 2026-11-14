@@ -314,7 +314,7 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/snpwatch.rs` | which driver is under each SNP (named before the first call), and a `TPL_NOTIFY` timer that names an SNP call that has not returned (#88) |
 | `src/entropy.rs` | randomness for the ISN, DHCP xid and ports: firmware `EFI_RNG`, then RDSEED/RDRAND (RNDR on aarch64), then jitter through SHA-256; never fails |
 | `src/tcp4.rs` | tcp4probe only since #56: a blocking socket over the firmware's TCP4 |
-| `src/drivers.rs` | load NIC drivers from `\stormboot\drivers` on the media (#26), after the platform's own bind; `take_over` gives a `prefer_media_drivers` family (`virtio`, `mlx5`) its NICs (#108, #131); `nic_verbose` sets `StormnicVerbose` before the drivers load (#80) |
+| `src/drivers.rs` | load NIC drivers from `\stormboot\drivers` on the media (#26), after the platform's own bind; `take_over` gives a `prefer_media_drivers` family (`virtio`, `mlx5`) its NICs (#108, #131); `nic_verbose` sets `StormnicVerbose` before the drivers load (#80); `fec_policy` sets `StormnicFec`, the FEC policy a driver applies at bind, and `media_driver_takes` tells `mlxfec` which cards are a driver's (#202) |
 | `src/dhcp4.rs` | tcp4probe only since #56: DHCP through the firmware's `EFI_DHCP4` |
 | `src/nvme.rs` | the NVMe/TCP initiator's UEFI end: `TcpSocket` as its `Transport`, `boot::stall` (#10) |
 | `crates/nvme-tcp-initiator` | the NVMe/TCP initiator itself (#10): `no_std` + `alloc`, no dependencies, generic over a `Transport` and a `Platform`, shared with stormboot4bios; reads up to 8 in flight (#100); host tests against a fake controller (`cargo test -p nvme-tcp-initiator`) |
@@ -344,7 +344,7 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/ui.rs` | the boot panel (#144): its own `ConOut` in the system table; every line to the serial consoles and F2, the steps drawn on the screen consoles; `end` hands the screen back |
 | `src/connectx.rs` | which Mellanox ids have a FEC to read, which are ConnectX-3s with none (#25), the scan's closing line, and `pin_action`, the pin's decision (#186) (core-only, host-tested) |
 | `src/mlxfec.rs` | ConnectX FEC NV read and write: the pin, a `fec =` recovery stick, the shell's `fec` |
-| `src/fecpin.rs` | the FEC pin at boot (#186, #203): `fec_pin = rs`, a warm reset then a cold one then `stuck` (the boot holds), `StormBootFecPin`; the API's `fec`/`fec-reset` and `/api/v1/fec` JSON; a pretend card under `STORMBOOTX_FEC_TEST` for `tests/fecpin-ovmf.sh` |
+| `src/fecpin.rs` | the fallback FEC pin at boot (#186, #203; only for a card no stormnic driver takes, #202): `fec_pin = rs`, a warm reset then a cold one then `stuck` (the boot holds), `StormBootFecPin`; the API's `fec`/`fec-reset` and `/api/v1/fec` JSON; a pretend card under `STORMBOOTX_FEC_TEST` for `tests/fecpin-ovmf.sh` |
 | `src/tcp4probe.rs` | second binary: does this machine's firmware carry TCP4? |
 
 ## Load-bearing facts

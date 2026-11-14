@@ -883,6 +883,13 @@ pub fn apply_each(writing: bool, want: &dyn Fn(&PortAt) -> Option<Fec>) -> Summa
                     continue;
                 }
             };
+            // A card our own driver takes is the driver's (#202; the owner:
+            // "how can you poke the card when someone elses code is
+            // controlling it!"). Nothing here reads or writes it.
+            if let Some(file) = crate::drivers::media_driver_takes(VENDOR_MELLANOX, device) {
+                uefi::println!("  {loc}  {model}: {file} takes it (prefer_media_drivers) and sets its FEC from StormnicFec; not touched here");
+                continue;
+            }
             if done.iter().any(|&(s, b, d)| (s, b, d) == (seg, addr.bus, addr.dev)) {
                 uefi::println!("  {loc}  {model}: the card's ports were read through its first function");
                 continue;

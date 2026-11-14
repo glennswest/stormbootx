@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### 2026-11-14
+- **feat:** The rustnic media carry stormnic-mlx5 (66de545) and take a ConnectX-4/5/6 from FlexBoot: `prefer_media_drivers = virtio,mlx5` on `stormbootx-rustnic` and `stormbootx-rustnic-disk` (#202, stormbootx#73; the owner, 2026-11-14: "stormbootx cannot be reliable without a proper driver"). The label adds `mlx5@<sha>`.
+- **feat:** The FEC policy is handed to the stormnic drivers (#202; the owner: "the port poking is a driver problem, not a stormbootx problem"). Before the drivers load, `StormnicFec` (the stormnic vendor GUID, boot-services only) holds `stormnic-fec v1` and the media's `fec_pin`, `fec_pin.<BDF|MAC>` and `fec_table.<speed>` lines, for each driver to apply to the ports it binds.
+- **change:** The FEC pin is the fallback (#202). A ConnectX that a stormnic driver on the medium takes is named by the FEC step and never read or written through its config window (`… takes it (prefer_media_drivers) and sets its FEC from StormnicFec; not touched here`). The pin's line says `(the fallback pin …)` for the rest. The PPLM route through the access register (212d8ec) was reverted unshipped: it poked a card someone else's driver holds.
+
 ### 2026-11-13
 - **change:** No `auto` in the FEC pin (#203; owner: "no auto - 25gig = rs", then "set the fec standard per card nic optic speed standard. Double auto is a problem"). `fec_pin = rs` is the 25G ports' FEC; a port of another speed takes its speed's standard (10g/40g none, 50g/100g rs, PAM4 rs-544), from PTYS capability, never the link; `fec_table.<speed>` overrides a speed, a port's own key overrides everything. `default` (the card's negotiated value) is no longer a pin or `fec` command value; a recovery stick's `fec = default` remains. `build-boot-agent.sh --fec-pin` takes `rs` or `off`. `tests/fecpin-ovmf.sh`'s `auto` boot is now `table`.
 - **feat:** The FEC over stormbootx's API (#203; owner: "why not do a stormbootx with a api, for you to poke the fec"). `GET /api/v1/fec` lists every ConnectX port with what it runs, its next-boot value and what it wants and why. A signed `fec <all|BDF|MAC> <rs|fc|none|default>` writes the next-boot value, and a signed `fec-reset` warm-resets so the card loads it. It never adds a reset past the pin's warm, cold, hold. `tests/fecpin-ovmf.sh` adds an `api` boot: read, write, reset, then the card runs rs.

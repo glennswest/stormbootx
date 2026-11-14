@@ -171,8 +171,13 @@ console; a machine with no screen console gets it anyway.
      through.
    - The console prints the source, plus the SMBIOS model when there is one,
      and a `mac` line after step 4.
-3. **NIC FEC report and pin** (`src/mlxfec.rs`, `src/fecpin.rs`). It prints
-   every ConnectX port's current and next-boot FEC. With `fec_pin = rs` (every
+3. **NIC FEC report and pin** (`src/mlxfec.rs`, `src/fecpin.rs`). Since #202
+   this is **the fallback**: a ConnectX a stormnic driver of ours takes
+   (`prefer_media_drivers = mlx5` and `stormnic-mlx5.efi` on the medium, every
+   rustnic medium) is the driver's, which sets its FEC at bind from
+   `StormnicFec`; this step names it and does not touch it. For the rest it prints
+   every ConnectX port's current and next-boot FEC, and the pin's line says
+   `(the fallback pin …)`. With `fec_pin = rs` (every
    golden; the owner's choice on #186, 2026-11-04, reversing the read-only boot
    of 2026-09-07), a port whose **NV next-boot value** is not RS is written RS,
    the console says which port, from what and why, and the machine warm-resets
@@ -1041,7 +1046,7 @@ others.
 | `esp` | `auto` | who reads the attached ESP (#37): `auto` (firmware, then stormbootx), `firmware`, or `stormbootx` (the bridge and its read-only filesystem, #42); `build-boot-agent.sh --esp` |
 | `rng` | `firmware` | the first entropy source tried (#56): `firmware`, `cpu` (skip `EFI_RNG`) or `jitter` (skip both); `build-boot-agent.sh --rng` |
 | `nic_verbose` | `false` | `true`: the stormnic drivers print their whole bring-up trace instead of one line per NIC (#80). stormbootx sets the volatile `StormnicVerbose` variable (GUID `ce1479a2-eab9-4176-b0ad-c909ea5b8e0b`, `BOOTSERVICE_ACCESS`, one byte `01`) before it loads `\stormboot\drivers`; gone at the next reset, never in NVRAM. For debugging a machine without a rebuild; no golden sets it. `build-boot-agent.sh --nic-verbose`. From the EFI shell instead: `setvar StormnicVerbose -guid ce1479a2-eab9-4176-b0ad-c909ea5b8e0b -bs =01` |
-| `prefer_media_drivers` | none | media driver families that take their NICs from the firmware's own driver (#108): `virtio` (stormnic-virtio over OVMF's VirtioNetDxe), `mlx5` (stormnic-mlx5 over FlexBoot, #131; the test medium only), `e1000e` (stormnic-e1000e over Intel's UNDI or iPXE, #70; no golden sets it). `virtio` is set on the rustnic media; without it the platform's drivers win. `build-boot-agent.sh --prefer-media-drivers` |
+| `prefer_media_drivers` | none | media driver families that take their NICs from the firmware's own driver (#108): `virtio` (stormnic-virtio over OVMF's VirtioNetDxe), `mlx5` (stormnic-mlx5 over FlexBoot, #131; the rustnic media since #202), `e1000e` (stormnic-e1000e over Intel's UNDI or iPXE, #70; no golden sets it). `virtio,mlx5` is set on the rustnic media; without it the platform's drivers win. `build-boot-agent.sh --prefer-media-drivers` |
 | `media` | none | the media's label, printed under the banner (`media : fw`); written by the golden build, `build-boot-agent.sh --media` |
 | `fec` | none | **recovery sticks only**: write this FEC and warm-reset; the pin stands aside |
 | `fec_pin` | none (nothing pinned) | `rs`: a ConnectX port whose NV next-boot FEC is not RS is written RS, with one warm reset (#186; every golden). `off`: never, and forget the last pin's record. `build-boot-agent.sh --fec-pin`. Since #203 the value is the 25G ports' FEC; a port of another speed takes its speed's standard (10g, 40g: none; 50g, 100g: rs; PAM4: rs-544), its speed read from PTYS capability, never the link. `fc`, `none` also. Never the card's negotiated `default` (owner: "Double auto is a problem"); that stays a recovery stick's `fec = default` |
@@ -1457,8 +1462,8 @@ beside a
 `src/ids.rs` must list exactly the IDs of `drivers.rs`'s e1000e family, or
 the build fails. `STORMNIC_DRIVERS` (default `ixgbe mlx4 virtio e1000e igb`) picks
 which; `STORMNIC_DRIVERS=virtio` builds one. `mlx5` (`stormnic-mlx5.efi`,
-ConnectX-4/5/6, `STORMNIC_MLX5_REF`, #131) is built only when named: it has
-never run on a card. It checks each is a PE
+ConnectX-4/5/6, `STORMNIC_MLX5_REF`, #131) is built only when named; the
+rustnic media name it (#202). It checks each is a PE
 boot-service driver (subsystem 11). There is no iPXE in it, on any medium or
 in any golden (owner on #81: "I dont want the ipxe code. Move to ours."; #91,
 #52). The iPXE `intelx` driver that first got the X9 blades onto the network
@@ -1606,9 +1611,17 @@ fw medium carries no drivers at all.
 
 `prefer_media_drivers = mlx5` (#131) does the same for a ConnectX-4/4 Lx/5/6
 (`15b3:1013/1015/1017/1019/101b/101d/101f`, what stormnic-mlx5 claims) held by
-its firmware's FlexBoot driver. Only `stormbootx-mlx5test` carries that driver
-until stormnic-mlx5#1's boot on the Dell passes, and every other golden refuses
-it. Each take is announced before the disconnect, so a Stop or Start that never
+its firmware's FlexBoot driver. The rustnic media carry that driver and set
+`prefer_media_drivers = virtio,mlx5` (#202; the owner, 2026-11-14: "stormbootx
+cannot be reliable without a proper driver"); `stormbootx-mlx5test` is the same
+medium, verbose and with no `update =`. The nic-drivers golden refuses it.
+Such a card is the driver's: the FEC step names it (`stormnic-mlx5.efi takes it
+(prefer_media_drivers) and sets its FEC from StormnicFec; not touched here`)
+and never opens its config window. The FEC policy reaches the drivers in
+`StormnicFec` (vendor `ce1479a2-…`, boot-services only, set before the drivers
+load): `stormnic-fec v1`, then the media's `fec_pin`, `fec_pin.<BDF|MAC>` and
+`fec_table.<speed>` lines, lower-cased; each driver applies it to the ports it
+binds by `connectx::choose`'s rule (stormnic-mlx5#8). Each take is announced before the disconnect, so a Stop or Start that never
 returns has named itself, and the console says what the firmware's driver left:
 
 ```
@@ -1728,7 +1741,7 @@ Open issues:
 | #92, #89 | self-update on metal: stormcentral serves `stormbootx-rustnic` serial 1 = v0.14.0, which every newer medium declines as older (#96); the promotion of v0.29.0's rustnic golden (canary server1 first) is the master's, 2026-10-17 (#92); nothing is promoted for `stormbootx` |
 | #93 | install-config sizes on real firmware variable stores |
 | #100, #99 | boot time: one NVMe/TCP command in flight (~46 MiB/s on metal); mlxfec's wait on a parked cap9 lock |
-| #71–#74 | more Rust NIC drivers, paused by the owner at P3 (each behind its repo's first issue); stormnic-e1000e is on the rustnic media since v0.40.0 (#70), stormnic-igb since #69; stormnic-mlx5 is on the `stormbootx-mlx5test` medium (#131) until its Dell boot passes |
+| #71–#74 | more Rust NIC drivers, paused by the owner at P3 (each behind its repo's first issue); stormnic-e1000e is on the rustnic media since v0.40.0 (#70), stormnic-igb since #69; stormnic-mlx5 is on the rustnic media since #202 (canary C2NR0Q2, then forge1) |
 | #84 | arm64 media: built (`stormbootx-arm64`); booting it under AAVMF and registering the golden wait on stormcentral#604 |
 | #138 | the R230's NIC FEC step: v0.25.0's real-time budget is released, the metal boot is not seen |
 | #154 | `stormbootx-stick` writing a signed raw disk image when a stick has no room for a file update |

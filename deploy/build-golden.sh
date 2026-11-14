@@ -56,13 +56,16 @@
 #                                 stormnic-e1000e.efi (STORMNIC_E1000E_REF, #70;
 #                                 a NIC nothing else drives),
 #                                 stormnic-igb.efi (STORMNIC_IGB_REF, #69; the
-#                                 same), and no iPXE
+#                                 same), stormnic-mlx5.efi (STORMNIC_MLX5_REF,
+#                                 #202; with prefer_media_drivers = virtio,mlx5
+#                                 it takes a ConnectX-4/5/6 from FlexBoot and
+#                                 sets its FEC from StormnicFec), and no iPXE
 #   media/, media.files           as above (#83)
 #   SHA256SUMS, BUILD
 #
 #   Built here from the pins in scripts/build-nic-drivers.sh, never from a
 #   nic-drivers golden, so the drivers are the commit's. The console says
-#   `media : rustnic ixgbe@<sha> mlx4@<sha> virtio@<sha> e1000e@<sha> igb@<sha>`.
+#   `media : rustnic ixgbe@<sha> mlx4@<sha> virtio@<sha> e1000e@<sha> igb@<sha> mlx5@<sha>`.
 #
 # stormbootx-mlx5test golden (#131): a test medium, for the master's boot of
 # stormnic-mlx5#1 on the Dell, never promoted and never in a release:
@@ -73,8 +76,9 @@
 #                                 nic_verbose, and no update =
 #   media/, media.files, SHA256SUMS, BUILD  as above
 #
-#   stormnic-mlx5 joins the rustnic media only after that boot passes, and
-#   every other golden refuses it until then.
+#   Since #202 the rustnic media carry stormnic-mlx5 too (the master, for the
+#   owner, 2026-11-14): the canary promotion is how it reaches C2NR0Q2 and
+#   forge1. This medium stays for a verbose boot.
 #
 # stormbootx-disk and stormbootx-rustnic-disk goldens (#41, owner on #35;
 # #97): the USB stick of each family, its own golden beside the ISO:
@@ -210,20 +214,20 @@ media_files() {
 
 # The Rust NIC drivers a rustnic medium carries, built from the commit's pins
 # into $WORK/media-drivers, and its `media =` label in RUSTNIC_LABEL.
+# Since #202 every rustnic medium carries stormnic-mlx5 and takes its
+# ConnectX-4/5/6 from FlexBoot (prefer_media_drivers = virtio,mlx5): the
+# owner, 2026-11-14, "stormbootx cannot be reliable without a proper driver".
 rustnic_drivers() {
-    "$ROOT/scripts/build-nic-drivers.sh" "$WORK/drivers"
-    for d in stormnic-ixgbe stormnic-mlx4 stormnic-virtio stormnic-e1000e stormnic-igb; do
+    STORMNIC_DRIVERS="ixgbe mlx4 virtio e1000e igb mlx5" "$ROOT/scripts/build-nic-drivers.sh" "$WORK/drivers"
+    for d in stormnic-ixgbe stormnic-mlx4 stormnic-virtio stormnic-e1000e stormnic-igb stormnic-mlx5; do
         [[ -f "$WORK/drivers/$d.efi" ]] || die "no $d.efi was built"
     done
     ! compgen -G "$WORK/drivers/ipxe-*.efi" >/dev/null || die "an iPXE driver reached the rustnic media"
-    # Not run on a card yet: the test medium only (#131).
-    [[ $GOLDEN == stormbootx-mlx5test || ! -e "$WORK/drivers/stormnic-mlx5.efi" ]] \
-        || die "stormnic-mlx5 reached $GOLDEN; only stormbootx-mlx5test carries it (#131)"
     mkdir -p "$WORK/media-drivers"
     cp "$WORK/drivers/"*.efi "$WORK/drivers/STORMNIC-SOURCE.txt" "$WORK/media-drivers/"
     pin() { sed -n "s/^$1=\"\(.......\).*\"/\1/p" "$ROOT/scripts/build-nic-drivers.sh"; }
-    RUSTNIC_LABEL="rustnic ixgbe@$(pin STORMNIC_IXGBE_REF) mlx4@$(pin STORMNIC_MLX4_REF) virtio@$(pin STORMNIC_VIRTIO_REF) e1000e@$(pin STORMNIC_E1000E_REF) igb@$(pin STORMNIC_IGB_REF)"
-    [[ $GOLDEN != stormbootx-mlx5test ]] || RUSTNIC_LABEL+=" mlx5@$(pin STORMNIC_MLX5_REF) test"
+    RUSTNIC_LABEL="rustnic ixgbe@$(pin STORMNIC_IXGBE_REF) mlx4@$(pin STORMNIC_MLX4_REF) virtio@$(pin STORMNIC_VIRTIO_REF) e1000e@$(pin STORMNIC_E1000E_REF) igb@$(pin STORMNIC_IGB_REF) mlx5@$(pin STORMNIC_MLX5_REF)"
+    [[ $GOLDEN != stormbootx-mlx5test ]] || RUSTNIC_LABEL+=" test"
 }
 
 # The aarch64 std, from rustup when the toolchain lacks it (#84; the build
@@ -259,7 +263,7 @@ nic-drivers)
     cp "$WORK/drivers/"*.efi "$OUT/bin/"
     cp "$WORK/drivers/STORMNIC-SOURCE.txt" "$OUT/"
     ! compgen -G "$OUT/bin/ipxe-*" >/dev/null || die "an iPXE driver reached the nic-drivers golden"
-    [[ ! -e "$OUT/bin/stormnic-mlx5.efi" ]] || die "stormnic-mlx5 reached $GOLDEN; only stormbootx-mlx5test carries it (#131)"
+    [[ ! -e "$OUT/bin/stormnic-mlx5.efi" ]] || die "stormnic-mlx5 reached $GOLDEN; the rustnic media carry it (#202)"
     seal "stormnic = $(cat "$WORK/drivers/STORMNIC-SOURCE.txt")"
     ;;
 stormbootx)
@@ -301,7 +305,7 @@ stormbootx-rustnic)
     # (#70; never taken from the firmware), stormnic-igb likewise for an Intel
     # igb (#69), and no iPXE at all (#91).
     rustnic_drivers
-    agent=(--binary "$OUT/bin/stormbootx.efi" --drivers "$WORK/media-drivers" --prefer-media-drivers virtio
+    agent=(--binary "$OUT/bin/stormbootx.efi" --drivers "$WORK/media-drivers" --prefer-media-drivers virtio,mlx5
            --dns 192.168.31.252 --no-fallback --syslog "$SYSLOG_TARGET" --hold "$HOLD" --fec-pin "$FEC_PIN" --media "$RUSTNIC_LABEL"
            --update "$(update_url stormbootx-rustnic)")
     "$ROOT/scripts/build-boot-agent.sh" --iso "${agent[@]}" --tree "$OUT/media" \
@@ -318,8 +322,7 @@ stormbootx-mlx5test)
     REL="${CARGO_TARGET_DIR:-$ROOT/target}/x86_64-unknown-uefi/release"
     mkdir -p "$OUT/bin" "$OUT/boot"
     cp "$REL/stormbootx.efi" "$OUT/bin/"
-    STORMNIC_DRIVERS="ixgbe mlx4 virtio e1000e igb mlx5" rustnic_drivers
-    [[ -f "$WORK/drivers/stormnic-mlx5.efi" ]] || die "no stormnic-mlx5.efi was built"
+    rustnic_drivers
     # No --update: a test medium never takes a promotion, or is one.
     agent=(--binary "$OUT/bin/stormbootx.efi" --drivers "$WORK/media-drivers" --prefer-media-drivers virtio,mlx5
            --nic-verbose --dns 192.168.31.252 --no-fallback --syslog "$SYSLOG_TARGET" --hold "$HOLD" --fec-pin "$FEC_PIN"
@@ -346,7 +349,7 @@ stormbootx-disk|stormbootx-rustnic-disk)
         note="drivers  = none (the firmware's own, #52)"
     else
         rustnic_drivers
-        disk+=(--drivers "$WORK/media-drivers" --prefer-media-drivers virtio --media "$RUSTNIC_LABEL"
+        disk+=(--drivers "$WORK/media-drivers" --prefer-media-drivers virtio,mlx5 --media "$RUSTNIC_LABEL"
                --update "$(update_url stormbootx-rustnic)")
         note="drivers  = $(cd "$WORK/media-drivers" && ls *.efi | tr '\n' ' ')(built here)
 stormnic = $(cat "$WORK/drivers/STORMNIC-SOURCE.txt")"

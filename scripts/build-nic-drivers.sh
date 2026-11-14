@@ -12,8 +12,8 @@
 #   virtio -> stormnic-virtio.efi virtio-net (VMs: pve, OVMF), bound only
 #                                 with `prefer_media_drivers = virtio` (#108)
 #   mlx5  -> stormnic-mlx5.efi    Mellanox ConnectX-4/5/6, only when asked for:
-#                                 it has never run on a card, so only the
-#                                 stormbootx-mlx5test medium carries it (#131)
+#                                 the rustnic media ask (#202), with
+#                                 `prefer_media_drivers = virtio,mlx5`
 #   e1000e -> stormnic-e1000e.efi Intel 82574L, 82579, I217/I218/I219 (#70);
 #                                 binds a NIC nothing else drives, and takes one
 #                                 only with `prefer_media_drivers = e1000e`
@@ -107,9 +107,9 @@ STORMNIC_VIRTIO_REPO="https://github.com/glennswest/stormnic-virtio.git"
 STORMNIC_VIRTIO_REF="1a04808aea492e508c0c66d4134b06532405e0b8"
 STORMNIC_MLX5_REPO="https://github.com/glennswest/stormnic-mlx5.git"
 # 66de545 (#131, #73): the ConnectX-4/4 Lx/5/6 driver, reproducible and
-# --locked, never yet run on a card (stormnic-mlx5#1). Not in the default set
-# until the Dell's boot passes; FlexBoot holds that card, so it binds only where
-# the media says `prefer_media_drivers = mlx5`.
+# --locked, not yet seen on a card (stormnic-mlx5#1). Not in this script's
+# default set; build-golden.sh's rustnic media name it (#202). FlexBoot holds
+# the card, so it binds only where the media says `prefer_media_drivers = mlx5`.
 STORMNIC_MLX5_REF="66de5456520e40bda00cbbfc0e03e1f7e5fa6b2f"
 STORMNIC_E1000E_REPO="https://github.com/glennswest/stormnic-e1000e.git"
 # d0bc5ec (v0.1.0, #70, stormnic-e1000e#1): SNP for the 82574L and the PCH

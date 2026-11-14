@@ -21,6 +21,13 @@
 //!   again on the next boot, whose lines reach the network (#162): the reset
 //!   comes before any lease.
 //!
+//! - **Only a fallback** (#202; the owner, 2026-11-14: "stormbootx cannot be
+//!   reliable without a proper driver"). A card a stormnic driver of ours
+//!   takes (`prefer_media_drivers`, its file on the media) gets its FEC from
+//!   that driver, at bind, from the policy in `StormnicFec`
+//!   (`drivers::fec_policy_text`); `mlxfec` names it and leaves it alone.
+//!   This pin is for a card no driver of ours takes, and says so.
+//!
 //! The ways back: `fec_pin = off` on the media or in `local.conf`, then a `fec =`
 //! stick or `fec default` at the failure console. A `fec =` stick is an operator
 //! saying something else, so the pin stands aside on it.
@@ -216,6 +223,9 @@ pub fn at_boot(read: &Summary) {
         next_differ.len(),
         run_differ.len()
     );
+    if !read.ports.is_empty() {
+        uefi::println!("  (the fallback pin, through the card's config window: for a ConnectX no stormnic driver of ours takes)");
+    }
     for p in read.ports.iter().filter(|p| !p.port.supported) {
         uefi::println!("  {} port {}: the card has no FEC override here; left as is", p.loc, p.port.port);
     }
