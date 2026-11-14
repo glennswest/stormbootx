@@ -102,7 +102,7 @@ then.
 
 ### Open, no external blocker
 
-- [ ] **#213 — a failed self-update trial explains itself (P1, the master,
+- [x] **#213 — a failed self-update trial explains itself (P1, the master,
       2026-11-14).** C2NR0Q2's serial 8 trial left no line anywhere: no
       lease (no syslog), no console capture, and the claim said only
       `failed:8`. Plan:
@@ -124,6 +124,15 @@ then.
          revert's claim, the agent kept (≤ 16 KiB). logwire host tests.
       6. stormcentral's half (keep it with the family's status, print it in
          `stormbootx status`) filed on stormcentral.
+
+      **Done (2026-11-14):** 290aac2 (code, tests), 442a5fe (docs), v0.42.0
+      (7f93147). The full sc-build passed on 290aac2 (1786 s): update-boots
+      found the failed trial's second start in `last.log`, then `trial.log`,
+      and the revert's claim carried `"update":"failed:8",…,"trial_log"`;
+      every claim's agent was kept (≤ 4.2 KiB). Image requested (build
+      1666a73af1da). stormcentral's half: stormcentral#1405. Not yet seen:
+      a real stick's trial on metal (C2NR0Q2's restored serial 4 predates
+      this, so it reports no log until its stick carries v0.42.0).
 
 - [ ] **#203 — the FEC API, the wanted mode as a setting, and a boot that
       resets until the card runs it (P0, the master for the owner,
