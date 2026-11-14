@@ -1,6 +1,21 @@
 # Changelog
 
 ## [Unreleased]
+<!-- New unreleased changes go here -->
+
+## [v0.42.0] — 2026-11-14
+
+### Added
+- A failed self-update trial explains itself (#213). Each start keeps its console in `\stormboot\last.log` on a writable medium. A revert keeps the failed set's last start as `\stormboot\trial.log`. The claim's `agent` carries `trial_log` (with `failed:<n>`), `last_log` and `log`, within the engine's 16 KiB. New API routes: `GET /api/v1/log/last` and `/api/v1/log/trial`.
+
+### Changed
+- The rustnic media carry the stormnic port contract from every driver: mlx5 09b0615 (#212), ixgbe 02fcc5d (#211), virtio 2dcafd3 (#210), igb 6990341 (#209), e1000e bd67192 (#207) and mlx4 398a1a4 (#208). Each driver sets the IEEE standard FEC itself and prints one line per port.
+
+### Breaking
+- Our drivers only (#202): every stormnic driver on the medium takes the NICs it matches by vendor:device, and `prefer_media_drivers` is ignored.
+- stormbootx sets no FEC (#202, #203). Removed: the FEC pin, `fec =` sticks, `GET /api/v1/fec`, and the `fec`/`fec-reset` commands.
+- The fw goldens (`stormbootx`, `stormbootx-disk`) are retired. They build only with `STORMBOOTX_FW_MEDIA=1`.
+
 
 ### 2026-11-14
 - **feat:** A failed self-update trial explains itself (#213; C2NR0Q2's serial 8 left only `failed:8`). Every start on a writable medium keeps its console in `\stormboot\last.log` (at most 64 KiB, head and tail), rewritten whenever it grew at fixed points from the first: after the trial count, before each media driver starts, after the drivers, after the network is up, and at every log flush. Never after an image is attached (#46) until it is withdrawn, never on a read-only medium or a RAM disk. The start that puts a failed set back keeps the previous start's file as `\stormboot\trial.log`. The claim's `agent` carries `trial_log` (with `failed:<n>` only), `last_log` (the previous start) and `log` (this start so far), cut to stay within the 16 KiB the engine keeps; the logs are dropped before `update` could be. `GET /api/v1/log/last` and `/api/v1/log/trial` serve the two files. `src/lastlog.rs`; `logwire::excerpt`/`json_excerpt` are host-tested. update-boots checks both files and the revert's `trial_log`; the net-ovmf stub checks the agent's size. stormcentral's half is stormcentral#1405.
