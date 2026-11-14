@@ -182,6 +182,10 @@ then.
       (vendor:device, never the subsystem, as Linux); the gaps against
       Linux filed: stormnic-mlx5#9, stormnic-mlx4#32, stormnic-ixgbe#38,
       stormnic-igb#6, stormnic-e1000e#6.
+      **Then (owner): the fw medium goes too, kept behind a flag**
+      (`STORMBOOTX_FW_MEDIA=1`), and "No need to test till we have the
+      driver fixed": no sc-build or image until stormnic-mlx5#8 lands; then
+      bump `STORMNIC_MLX5_REF`, run the full suite, request the rustnic image.
 - [x] **#198 — install a release from a local stormdist ISO or stick,
       offline, with the medium's read rate (P0, the master, 2026-11-10).
       Released v0.41.0 (eeac3a2), closed 2026-11-10.** Decided (the master for the owner, 2026-11-10): option

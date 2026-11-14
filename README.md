@@ -1270,7 +1270,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   SECOND_CD=1 LIMIT=180 tests/shell-ovmf.sh t/s.iso ovmf "returning to what started it" && \
   tests/screen-ovmf.sh t/s.iso && \
   tests/stick.sh && deploy/build-golden.sh stormbootx-stick $PWD/t/stick && \
-  deploy/build-golden.sh stormbootx $PWD/t/fw && \
+  STORMBOOTX_FW_MEDIA=1 deploy/build-golden.sh stormbootx $PWD/t/fw && \
   tests/usb-layout.sh t/fw/boot/stormbootx-usb.img t/fw/media && ! tests/usb-layout.sh t/fw/boot/stormbootx.img && \
   NIC=virtio tests/media-ovmf.sh t/fw/boot/stormbootx-usb.img "media       : fw" "fallback    : none" && \
   deploy/build-golden.sh stormbootx-rustnic $PWD/t/rn && tests/usb-layout.sh t/rn/boot/stormbootx-rustnic-usb.img t/rn/media && \
@@ -1280,7 +1280,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   deploy/build-golden.sh stormbootx-mlx5test $PWD/t/mlx5 && tests/iso-layout.sh t/mlx5/boot/stormbootx-mlx5test.iso && \
   tests/usb-layout.sh t/mlx5/boot/stormbootx-mlx5test-usb.img t/mlx5/media && \
   NIC=virtio tests/media-ovmf.sh t/mlx5/boot/stormbootx-mlx5test.iso "mlx5@66de545 test" "stormnic drivers verbose" "stormnic-mlx5.efi started" "; stormnic-virtio.efi drives it" "ours      : no NIC here for stormnic-mlx5.efi" && \
-  REPRO_MEDIA="stormbootx stormbootx-rustnic stormbootx-disk stormbootx-rustnic-disk stormbootx-mlx5test" tests/repro.sh && \
+  STORMBOOTX_FW_MEDIA=1 REPRO_MEDIA="stormbootx stormbootx-rustnic stormbootx-disk stormbootx-rustnic-disk stormbootx-mlx5test" tests/repro.sh && \
   deploy/build-golden.sh stormbootx-arm64 $PWD/t/arm && \
   EFI_NAME=BOOTAA64.EFI tests/iso-layout.sh t/arm/boot/stormbootx-arm64.iso && \
   EFI_NAME=BOOTAA64.EFI tests/usb-layout.sh t/arm/boot/stormbootx-arm64-usb.img t/arm/media && \
@@ -1469,13 +1469,16 @@ intent needs the token.
 golden). Nothing is kept on the build box. A machine's virtual CD is to be
 served from the golden (minismbd#7, open), not from a copied file.
 `deploy/build-golden.sh <golden> OUT` writes one golden's tree into OUT and
-does nothing else, for stormcentral to run into the volume it mounts:
+does nothing else, for stormcentral to run into the volume it mounts. Our drivers only (#202): the fw goldens
+(`stormbootx`, `stormbootx-disk`, no NIC drivers) are retired and build only
+with `STORMBOOTX_FW_MEDIA=1`; the arm64 goldens carry no driver of ours yet
+(no aarch64 stormnic driver is pinned) and stay as they are:
 
 | golden | tree |
 |---|---|
-| `stormbootx` | `bin/stormbootx.efi`, `bin/tcp4probe.efi`, `boot/stormbootx.iso` (BMC virtual media), `boot/stormbootx.img` (USB), `boot/stormbootx-usb.img` (USB, FAT32, #185), `boot/tcp4probe.iso`, `media/`, `media.files`, `SHA256SUMS`, `BUILD` |
+| `stormbootx` (retired by #202; `STORMBOOTX_FW_MEDIA=1`) | `bin/stormbootx.efi`, `bin/tcp4probe.efi`, `boot/stormbootx.iso` (BMC virtual media), `boot/stormbootx.img` (USB), `boot/stormbootx-usb.img` (USB, FAT32, #185), `boot/tcp4probe.iso`, `media/`, `media.files`, `SHA256SUMS`, `BUILD` |
 | `stormbootx-rustnic` | `bin/stormbootx.efi`, `boot/stormbootx-rustnic.iso` (BMC virtual media), `media/`, `media.files`, `SHA256SUMS`, `BUILD` |
-| `stormbootx-disk` | `boot/stormbootx-disk.img` (USB stick, the `stormbootx` medium), `SHA256SUMS`, `BUILD` |
+| `stormbootx-disk` (retired by #202; `STORMBOOTX_FW_MEDIA=1`) | `boot/stormbootx-disk.img` (USB stick, the `stormbootx` medium), `SHA256SUMS`, `BUILD` |
 | `stormbootx-rustnic-disk` | `boot/stormbootx-rustnic-disk.img` (USB stick, the `stormbootx-rustnic` medium), `SHA256SUMS`, `BUILD` |
 | `stormbootx-mlx5test` | a test medium, never promoted or released (#131): `boot/stormbootx-mlx5test.iso`, the rustnic medium plus `stormnic-mlx5.efi`, `nic_verbose`, no `update =`; `bin/stormbootx.efi`, `media/`, `media.files`, `SHA256SUMS`, `BUILD` |
 | `stormbootx-arm64` | `bin/stormbootx.efi` (aarch64), `boot/stormbootx-arm64.iso` (`\EFI\BOOT\BOOTAA64.EFI`, the fw medium for arm64 hosts), `media/`, `media.files`, `SHA256SUMS`, `BUILD` (#84; registered as a media component). The ISO is also what UEFI HTTP boot serves (#172). |

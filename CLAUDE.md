@@ -54,7 +54,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   SECOND_CD=1 LIMIT=180 tests/shell-ovmf.sh t/s.iso ovmf "returning to what started it" && \
   tests/screen-ovmf.sh t/s.iso && \
   tests/stick.sh && deploy/build-golden.sh stormbootx-stick $PWD/t/stick && \
-  deploy/build-golden.sh stormbootx $PWD/t/fw && scripts/build-stormboot-serve.sh $PWD/t/serve && \
+  STORMBOOTX_FW_MEDIA=1 deploy/build-golden.sh stormbootx $PWD/t/fw && scripts/build-stormboot-serve.sh $PWD/t/serve && \
   tests/usb-layout.sh t/fw/boot/stormbootx-usb.img t/fw/media && ! tests/usb-layout.sh t/fw/boot/stormbootx.img && \
   NIC=virtio tests/media-ovmf.sh t/fw/boot/stormbootx-usb.img "media       : fw" "fallback    : none" && \
   deploy/build-golden.sh stormbootx-rustnic $PWD/t/rn && tests/usb-layout.sh t/rn/boot/stormbootx-rustnic-usb.img t/rn/media && \
@@ -65,7 +65,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   deploy/build-golden.sh stormbootx-mlx5test $PWD/t/mlx5 && tests/iso-layout.sh t/mlx5/boot/stormbootx-mlx5test.iso && \
   tests/usb-layout.sh t/mlx5/boot/stormbootx-mlx5test-usb.img t/mlx5/media && \
   NIC=virtio tests/media-ovmf.sh t/mlx5/boot/stormbootx-mlx5test.iso "mlx5@66de545 test" "stormnic drivers verbose" "stormnic-mlx5.efi started" "; stormnic-virtio.efi drives it" "ours      : no NIC here for stormnic-mlx5.efi" && \
-  REPRO_MEDIA="stormbootx stormbootx-rustnic stormbootx-disk stormbootx-rustnic-disk stormbootx-mlx5test" tests/repro.sh && \
+  STORMBOOTX_FW_MEDIA=1 REPRO_MEDIA="stormbootx stormbootx-rustnic stormbootx-disk stormbootx-rustnic-disk stormbootx-mlx5test" tests/repro.sh && \
   deploy/build-golden.sh stormbootx-arm64 $PWD/t/arm && \
   EFI_NAME=BOOTAA64.EFI tests/iso-layout.sh t/arm/boot/stormbootx-arm64.iso && \
   EFI_NAME=BOOTAA64.EFI tests/usb-layout.sh t/arm/boot/stormbootx-arm64-usb.img t/arm/media && \
@@ -280,7 +280,10 @@ drive, and anything left on the VM is destroyed, so never write outside the job
 (no `/build/images`, no `/build/stormbuild/images`). To look at media in an
 `sc-build`, build it under `t/` and inspect it in the same job. The golden
 request, once stormbootx is a component, is `stormcentral component build
-stormbootx --url http://stormcentral.g8.lo`.
+stormbootx --url http://stormcentral.g8.lo`. The fw goldens (`stormbootx`, `stormbootx-disk`: no NIC drivers, the
+firmware's own) are retired by #202 (the owner, 2026-11-14: "the fw medium
+should go too, our drivers only") and build only with `STORMBOOTX_FW_MEDIA=1`,
+kept for a later need; the test command sets it to keep the code honest.
 
 ## Version locations
 

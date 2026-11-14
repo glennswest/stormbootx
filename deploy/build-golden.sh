@@ -24,7 +24,8 @@
 # bin/stormbootx-stick-arm64 the same for an arm64 node's stick (#172:
 # BOOTAA64.EFI, the stormbootx-arm64 boothelper), with SHA256SUMS and BUILD. The release keys are the medium's.
 #
-# stormbootx golden:
+# stormbootx golden (the fw medium; retired by #202, built only with
+# STORMBOOTX_FW_MEDIA=1):
 #   bin/stormbootx.efi      the agent (\EFI\BOOT\BOOTX64.EFI on the media)
 #   bin/tcp4probe.efi       the per-model diagnostic
 #   boot/stormbootx.iso     El Torito UEFI ISO, for BMC virtual media
@@ -142,6 +143,14 @@ while [[ $# -gt 0 ]]; do
         *) die "unknown argument: $1" ;;
     esac
 done
+
+# The fw medium (no NIC drivers: the firmware's own drive every NIC, #52) is
+# retired (#202; the owner, 2026-11-14: "the fw medium should go too, our
+# drivers only"). It is kept, off, in case it is wanted later:
+# STORMBOOTX_FW_MEDIA=1 builds it as before.
+if [[ $GOLDEN == stormbootx || $GOLDEN == stormbootx-disk ]] && [[ -z "${STORMBOOTX_FW_MEDIA:-}" ]]; then
+    die "$GOLDEN is the fw medium, retired by #202 (our drivers only): build stormbootx-rustnic or stormbootx-rustnic-disk; STORMBOOTX_FW_MEDIA=1 builds it anyway"
+fi
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$OUT"
