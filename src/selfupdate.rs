@@ -149,6 +149,10 @@ pub fn at_start() -> Option<Status> {
             drop(vol);
             uefi::println!("update      : {done} file(s) put back; starting the restored {BOOT_PATH}");
             handoff::set_update(&format!("failed:{serial}"), false);
+            // The failed trial's last start, for the restored binary's claim,
+            // and this start's lines (#213).
+            crate::lastlog::keep_trial(serial);
+            crate::lastlog::save();
             Some(chain_load())
         }
     }
@@ -593,21 +597,21 @@ fn http_get(addr: [u8; 4], port: u16, host: &str, path: &str, limit: usize) -> R
 /// The volume this image was loaded from, open for files. Only one at a
 /// time, and none of `config`'s readers while it is open: both open the file
 /// system exclusively.
-struct Vol {
+pub(crate) struct Vol {
     // Dropped first: the file handle closes before the protocol does.
     root: Directory,
     _fs: ScopedProtocol<SimpleFileSystem>,
 }
 
 impl Vol {
-    fn mount() -> Result<Vol, String> {
+    pub(crate) fn mount() -> Result<Vol, String> {
         let h = config::boot_volume().ok_or("LoadedImage names no boot volume")?;
         let mut fs = config::open_fs(h).ok_or("the boot volume has no file system")?;
         let root = fs.open_volume().map_err(|e| format!("open_volume: {:?}", e.status()))?;
         Ok(Vol { root, _fs: fs })
     }
 
-    fn fs_info(&mut self) -> Result<alloc::boxed::Box<FileSystemInfo>, String> {
+    pub(crate) fn fs_info(&mut self) -> Result<alloc::boxed::Box<FileSystemInfo>, String> {
         self.root
             .get_boxed_info::<FileSystemInfo>()
             .map_err(|e| format!("the medium's file system info: {:?}", e.status()))
@@ -638,7 +642,7 @@ impl Vol {
     }
 
     /// Up to `limit` bytes of a file.
-    fn read(&mut self, path: &str, limit: usize) -> Result<Option<Vec<u8>>, String> {
+    pub(crate) fn read(&mut self, path: &str, limit: usize) -> Result<Option<Vec<u8>>, String> {
         let Some(mut f) = self.open(path, FileMode::Read)? else { return Ok(None) };
         let mut out = Vec::new();
         let mut chunk = vec![0u8; 64 * 1024];
@@ -658,7 +662,7 @@ impl Vol {
     }
 
     /// Replace a file's contents, making its directories first.
-    fn write(&mut self, path: &str, data: &[u8]) -> Result<(), String> {
+    pub(crate) fn write(&mut self, path: &str, data: &[u8]) -> Result<(), String> {
         let mut dir = String::new();
         let parts: Vec<&str> = path.trim_start_matches('\\').split('\\').collect();
         for d in &parts[..parts.len().saturating_sub(1)] {

@@ -97,6 +97,8 @@ struct Log {
     /// `syslog = off` too, and never drained by a send.
     history: VecDeque<String>,
     history_bytes: usize,
+    /// Lines kept since `begin`, for `lastlog::save` to see a change (#213).
+    kept: u64,
 }
 
 static mut LOG: Option<Log> = None;
@@ -166,6 +168,7 @@ pub fn begin() {
         orig,
         history: VecDeque::new(),
         history_bytes: 0,
+        kept: 0,
     };
     // Installed with `syslog = off` too: the API's log is kept either way.
     {
@@ -269,6 +272,7 @@ pub fn capture(s: *const Char16) {
 }
 
 fn keep(l: &mut Log, line: String) {
+    l.kept += 1;
     l.history_bytes += line.len() + 1;
     l.history.push_back(line.clone());
     while l.history.len() > KEEP_LINES || l.history_bytes > KEEP_BYTES {
@@ -307,6 +311,11 @@ pub fn history() -> String {
     out
 }
 
+/// How many lines have been kept since `begin` (#213).
+pub fn kept() -> u64 {
+    log().map(|l| l.kept).unwrap_or(0)
+}
+
 /// The lines waiting, taken out under the raised TPL.
 fn take(l: &mut Log) -> (Vec<(u64, String)>, usize) {
     let old = unsafe { (bs(l.st).raise_tpl)(Tpl::NOTIFY) };
@@ -337,6 +346,8 @@ fn ip_text(a: [u8; 4]) -> String {
 /// Send what is waiting, if a NIC holds a lease. Never waits for one, and
 /// never fails: what cannot be sent now waits for the next call.
 pub fn flush() {
+    // The medium's copy first (#213): it needs no lease.
+    crate::lastlog::save();
     // Nothing is held across a call that prints: a print comes back here
     // through `capture`.
     let (off, said, host, target, resolved) = match log() {

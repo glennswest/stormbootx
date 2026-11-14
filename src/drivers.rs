@@ -221,6 +221,9 @@ pub fn load_from_media() -> Vec<Loaded> {
         .into_iter()
         .map(|name| {
             uefi::println!("    [{:>3} s] starting {name}", elapsed(t0));
+            // On the medium before it runs: a driver that hangs in its
+            // start leaves its name there (#213).
+            crate::lastlog::save();
             let started = match volume_dp {
                 Some(dp) => load_one(dp, &name),
                 None => Err("the boot volume has no device path".into()),
@@ -239,8 +242,10 @@ pub fn load_from_media() -> Vec<Loaded> {
     // one pass reaches the children.
     if out.iter().any(|l| l.result.is_ok()) {
         uefi::println!("    [{:>3} s] connecting every handle (drivers bind their NICs)", elapsed(t0));
+        crate::lastlog::save();
         let _ = crate::net::connect_all();
         uefi::println!("    [{:>3} s] connected", elapsed(t0));
+        crate::lastlog::save();
         take_over(&out, t0);
     }
     out

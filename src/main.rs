@@ -71,6 +71,7 @@ mod installconf;
 mod localinstall;
 mod intent;
 mod inventory;
+mod lastlog;
 mod logwire;
 mod manifest;
 mod net;
@@ -275,6 +276,7 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
     //     firmware's own drivers, and the console says so.
     let loaded = if first { drivers::load_from_media() } else { Vec::new() };
     profile::mark("drivers");
+    lastlog::save();
     if first && loaded.is_empty() {
         uefi::println!("drivers     : none on the media; the firmware's own NIC drivers");
     } else if first {
@@ -303,6 +305,7 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
         );
     }
     uefi::println!("rng         : {}  ({})", up.rng.name(), up.rng.detail());
+    lastlog::save();
 
     // 2a. The machine's MAC: its identity to the engine when the media names
     //     none (#15). Read now because the NICs a platform left unbound only
@@ -839,6 +842,10 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
     api::phase("attaching", &hostnqn);
     ui::step(ui::Step::Image, &format!("attaching nsid {} at {a}.{b}.{c}.{d}", attach.nsid));
 
+    // Nothing on the medium is opened once an image is attached (#46),
+    // until `withdraw` takes it back: the last write of `last.log` was the
+    // claim's flush above.
+    lastlog::seal();
     let mut ns = nvme::attach(
         attach.address,
         attach.port,
@@ -1019,6 +1026,9 @@ fn main() -> Status {
     // Every line from here is kept for the network (#162), the banner too.
     netlog::begin();
     identify();
+    // What the previous start left on the medium, read before anything
+    // writes it (#213).
+    lastlog::begin();
 
     // A medium that updated itself counts its trial starts here, before
     // anything else runs, and one whose new set never attached puts the old
@@ -1027,6 +1037,9 @@ fn main() -> Status {
         netlog::end();
         return status;
     }
+    // From here the medium keeps this start's lines (#213): a trial that
+    // hangs or never reaches the network still says how far it got.
+    lastlog::save();
 
     // The boot panel (#144): from here the screen shows the steps, and every
     // line goes to the serial console (and F2). `ui = log` keeps the scroll.
@@ -1134,8 +1147,11 @@ fn offline(f: &localinstall::Found, why: &str) {
 /// again: its BlockIO lives in this image, and it is not a local disk.
 fn withdraw() {
     match blockio::withdraw() {
-        None => {}
-        Some(Ok(())) => uefi::println!("blockio     : withdrawn (the attached image is not left to the firmware)"),
+        None => lastlog::unseal(),
+        Some(Ok(())) => {
+            uefi::println!("blockio     : withdrawn (the attached image is not left to the firmware)");
+            lastlog::unseal();
+        }
         Some(Err(e)) => {
             // Returning would leave the boot manager a disk whose functions
             // are freed: a crash, not a fall-through. A reset is a boot that

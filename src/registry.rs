@@ -262,11 +262,15 @@ fn hints(mac: Option<&str>, serial: Option<&str>, image: Option<&str>) -> String
 /// booted clean from the release it installed. The engine ignores fields it
 /// does not know; stormblock#177's claim record is where it will be kept.
 ///
-/// `{"name":"stormbootx","version","commit","media","update_serial","update","api_port"}`:
+/// `{"name":"stormbootx","version","commit","media","update_serial","update","api_port","trial_log","last_log","log"}`:
 /// `commit` is the build stamp (absent when unstamped), `media` the medium's
 /// `media =` label, `update_serial` the self-update serial of the files on the
 /// medium (absent when no update wrote them), `update` the `StormBootUpdate`
-/// value at claim time (`serial:5`, `trial:6:1`, `failed:6`).
+/// value at claim time (`serial:5`, `trial:6:1`, `failed:6`). Then the
+/// console (#213, `lastlog.rs`): `trial_log` (the failed trial's last start,
+/// with `failed:<n>` only), `last_log` (the previous start) and `log` (this
+/// start up to the claim), each cut to its share, the whole object at most
+/// `lastlog::AGENT_MAX`.
 fn agent() -> String {
     let mut fields = vec![
         "\"name\":\"stormbootx\"".to_string(),
@@ -282,14 +286,18 @@ fn agent() -> String {
         0 => {}
         n => fields.push(format!("\"update_serial\":{n}")),
     }
-    if let Some(u) = crate::handoff::update_value() {
-        fields.push(format!("\"update\":\"{}\"", json_str(&u)));
+    let update = crate::handoff::update_value();
+    if let Some(u) = &update {
+        fields.push(format!("\"update\":\"{}\"", json_str(u)));
     }
     // Where stormbootx's own API answers on this machine (#167).
     if let Some(p) = crate::api::port() {
         fields.push(format!("\"api_port\":{p}"));
     }
-    format!("{{{}}}", fields.join(","))
+    // The console (#213): the failed trial's last start when this boot
+    // reports `failed:<n>`, the previous start's, and this one's so far.
+    // Cut to stay within what the engine keeps; never at `update`'s cost.
+    crate::lastlog::fit(fields, crate::lastlog::claim_fields(update.as_deref()))
 }
 
 /// Claim the default image for a machine nothing has named (#15).

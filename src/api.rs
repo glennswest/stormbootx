@@ -11,6 +11,8 @@
 //! | `GET /api/v1/status` | what it is doing, its names, the last command and its result |
 //! | `GET /api/v1/inventory` | the firmware inventory (`inventory.rs`, `"v":2`), drives first |
 //! | `GET /api/v1/log` | the console lines so far (`netlog.rs` keeps them) |
+//! | `GET /api/v1/log/last` | the previous start's `\stormboot\last.log` (#213) |
+//! | `GET /api/v1/log/trial` | the failed trial's last start, `\stormboot\trial.log` (#213) |
 //! | `POST /api/v1/command` | a signed command (`command.rs`): 202 when taken |
 //!
 //! Reads are open, as the log already goes to the group in the clear and the
@@ -203,6 +205,15 @@ pub fn answer(method: &str, path: &str, body: &[u8], peer: [u8; 4]) -> Vec<u8> {
         ("GET", "/api/v1/log") => {
             command::response(200, "text/plain; charset=utf-8", netlog::history().as_bytes())
         }
+        // The previous start's console and the failed trial's (#213).
+        ("GET", "/api/v1/log/last") => match crate::lastlog::previous() {
+            Some(t) => command::response(200, "text/plain; charset=utf-8", t.as_bytes()),
+            None => command::error(404, "no last.log from a previous start on this medium"),
+        },
+        ("GET", "/api/v1/log/trial") => match crate::lastlog::trial() {
+            Some(t) => command::response(200, "text/plain; charset=utf-8", t.as_bytes()),
+            None => command::error(404, "no failed trial's log on this medium"),
+        },
         ("POST", "/api/v1/command") => {
             let text = core::str::from_utf8(body).unwrap_or("");
             match accept(s, text, Source::Api(peer)) {
@@ -222,7 +233,11 @@ pub fn answer(method: &str, path: &str, body: &[u8], peer: [u8; 4]) -> Vec<u8> {
                 }
             }
         }
-        (_, "/api/v1/status" | "/api/v1/inventory" | "/api/v1/log" | "/api/v1/command") => {
+        (
+            _,
+            "/api/v1/status" | "/api/v1/inventory" | "/api/v1/log" | "/api/v1/log/last" | "/api/v1/log/trial"
+            | "/api/v1/command",
+        ) => {
             command::error(405, "method not allowed")
         }
         _ => command::error(404, "not found"),

@@ -214,6 +214,16 @@ class H(http.server.BaseHTTPRequestHandler):
                     log.write("inventory NOT kept: %r\n" % type(inv))
             except ValueError as e:
                 log.write("claim body is NOT JSON: %s\n" % e)
+            # The agent likewise (#213: it carries the console now).
+            try:
+                ag = json.loads(body).get("agent")
+                n = len(json.dumps(ag, separators=(",", ":")))
+                if isinstance(ag, dict) and n <= 16384:
+                    log.write("agent kept: %d bytes\n" % n)
+                else:
+                    log.write("agent NOT kept: %d bytes\n" % n)
+            except ValueError:
+                pass
         # The maintenance image (#167, stormblock#497): a claim with
         # `"image":"maint"`, on any claim route. With maint.ok, the host's
         # `maint-<host>` clone (the NVMe stub, intent and image `maint`);
@@ -846,7 +856,10 @@ boot shipped "$host_cpu" "" 404 good "${common[@]}" "rng         : " \
     "not:, clock 1." \
     "  transfer  : 128 KiB per command, 8 in flight  (controller MDTS 5; " \
     "stub:nvme: 2 reads in flight" \
-    "stub:\"media\":\"agent test\",\"api_port\":9180}" \
+    "stub:\"media\":\"agent test\",\"api_port\":9180,\"log\":\"stormbootx " \
+    "last log    : not kept (the boot medium is read-only)" \
+    "stub:agent kept: " \
+    "not-stub:\"last_log\":" \
     "inventory   : 1 NIC(s), " \
     "not:nic fec" \
     " disk(s), no BMC; " \

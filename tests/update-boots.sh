@@ -124,6 +124,14 @@ state_has() {
     }
 }
 
+# log_has PATH LINE: the medium's console log (#213) carries LINE.
+log_has() {
+    on_disk "$1" | tr -d '\r' | grep -qF -- "$2" && say "[disk] $1 has: $2" || {
+        on_disk "$1" | tail -40 | sed "s|^|  $1 : |"
+        die "[disk] $1 lacks: $2"
+    }
+}
+
 # uboot NAME EXPECTED...: boot the medium; stop at the payload or a fall-through.
 uboot() {
     local name=$1; shift
@@ -194,6 +202,8 @@ uboot named "${attached[@]}" \
     "not-stub:GET /api/v1/boothelpers/"
 mdel -i "$IMG@@$OFF" ::/stormboot/local.conf
 same /EFI/BOOT/BOOTX64.EFI "$W/A.efi"
+log_has /stormboot/last.log "update      : update.stormbootx.invalid has no address at DNS server 10.0.2.3"
+log_has /stormboot/last.log "claim       : "
 
 # stormcentral's own promotion, its signature as stormcentral serves it (hex).
 # The binary must believe it (release key, not the test key). It is serial 1
@@ -203,9 +213,14 @@ rm -rf "$W/serve"; mkdir -p "$W/serve"
 cp "$FIX/stormcentral-rustnic-serial1.manifest" "$W/serve/current"
 cp "$FIX/stormcentral-rustnic-serial1.sig" "$W/serve/current.sig"
 uboot real "${attached[@]}" \
+    "last log    : this start's console is kept in \\stormboot\\last.log (the previous start's is " \
+    "stub:\"last_log\":\"stormbootx " \
+    "stub:,\"log\":\"stormbootx " \
+    "stub:agent kept: " \
+    "not-stub:\"trial_log\":" \
     "update      : current (running v$VERSION; serial 1 offers v0.14.0, which is older); not taken" \
     "stub:GET /api/v1/boothelpers/stormbootx-test/current.sig" \
-    "stub:\"commit\":\"update-test\",\"api_port\":9180}" \
+    "stub:\"commit\":\"update-test\",\"api_port\":9180,\"" \
     "not:does not verify" \
     "not:signed manifest refused" \
     "not-stub:GET /api/v1/boothelpers/stormbootx-test/files/"
@@ -239,7 +254,7 @@ uboot update "${attached[@]}" \
     "handed down : StormBootUpdate = good:5  (attributes 0x6)" \
     "stub:GET /api/v1/boothelpers/stormbootx-test/files/EFI/BOOT/BOOTX64.EFI" \
     "stub:\"commit\":\"update-test\"" \
-    "stub:\"update_serial\":5,\"update\":\"trial:5:1\",\"api_port\":9180}"
+    "stub:\"update_serial\":5,\"update\":\"trial:5:1\",\"api_port\":9180,\""
 same /EFI/BOOT/BOOTX64.EFI "$W/rel5/EFI/BOOT/BOOTX64.EFI"
 same /EFI/BOOT/BOOTX64.EFI.prev "$W/A.efi"
 same /stormboot/stormboot.conf "$W/rel5/stormboot/stormboot.conf"
@@ -252,7 +267,7 @@ state_has "min = 5"
 uboot current "${attached[@]}" \
     "update      : current (serial 5, v$TV)" \
     "handed down : StormBootUpdate = serial:5  (attributes 0x6)" \
-    "stub:\"update_serial\":5,\"update\":\"serial:5\",\"api_port\":9180}" \
+    "stub:\"update_serial\":5,\"update\":\"serial:5\",\"api_port\":9180,\"" \
     "not:restarting into it" \
     "not:on trial"
 
@@ -310,14 +325,23 @@ uboot bad2 \
     "no network boot: " \
     "not:passed its trial"
 state_has "trial = 8 2"
+log_has /stormboot/last.log "update      : serial 8 on trial, start 2 of 2; it must reach an attach"
+log_has /stormboot/last.log "no network boot: "
 
 uboot revert "${attached[@]}" \
     "update      : serial 8 started 2 times and never attached; putting serial 6 back" \
     "update      : 4 file(s) put back; starting the restored \\EFI\\BOOT\\BOOTX64.EFI" \
     "update      : serial 8 failed its trial on this medium; staying on serial 6 until a newer one" \
     "handed down : StormBootUpdate = failed:8  (attributes 0x6)" \
-    "stub:\"update_serial\":6,\"update\":\"failed:8\",\"api_port\":9180}" \
+    "stub:\"update_serial\":6,\"update\":\"failed:8\",\"api_port\":9180,\"trial_log\":\"stormbootx " \
+    "last log    : serial 8's last start (" \
+    ") kept in \\stormboot\\trial.log" \
+    "stub:no network boot: " \
+    "stub:agent kept: " \
     "not:passed its trial"
+log_has /stormboot/trial.log "update      : serial 8 on trial, start 2 of 2; it must reach an attach"
+log_has /stormboot/trial.log "no network boot: "
+log_has /stormboot/last.log "update      : serial 8 failed its trial on this medium; staying on serial 6 until a newer one"
 same /EFI/BOOT/BOOTX64.EFI "$W/rel6/EFI/BOOT/BOOTX64.EFI"
 same /stormboot/stormboot.conf "$W/rel6/stormboot/stormboot.conf"
 same /startup.nsh "$W/rel6/startup.nsh"

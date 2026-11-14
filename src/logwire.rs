@@ -22,7 +22,9 @@
 //!   boundary. stormcast cuts at 8192 bytes; this cuts the whole frame to
 //!   [`MAX_FRAME`], because smoltcp here sends no IP fragments.
 //!
-//! Also the two settings that name a unicast target: `syslog =` in
+//! Also a log's excerpt and its JSON text for the medium's `last.log` and
+//! the claim (#213: [`excerpt`], [`json_excerpt`]), and the two settings
+//! that name a unicast target: `syslog =` in
 //! `stormboot.conf` and `syslog:` in `install-config.yaml` ([`target`],
 //! [`yaml_syslog`]).
 //!
@@ -244,6 +246,79 @@ pub fn yaml_value<'a>(text: &'a str, key: &str) -> Option<&'a str> {
     None
 }
 
+/// At most `max` bytes of a log (#213): all of it when it fits, else its
+/// first quarter and its end, each cut at a line, with one line between
+/// saying how many bytes were left out. The start of a boot (the banner,
+/// the drivers, each port's line) and how it ended are what explain it.
+pub fn excerpt(text: &str, max: usize) -> String {
+    if text.len() <= max {
+        return String::from(text);
+    }
+    let room = max.saturating_sub(64);
+    let head_end = floor_char(text, room / 4);
+    let head = match text[..head_end].rfind('\n') {
+        Some(i) => &text[..i + 1],
+        None => "",
+    };
+    let tail_from = ceil_char(text, text.len() - (room - head.len()).min(text.len()));
+    let tail = match text[tail_from..].find('\n') {
+        Some(i) if tail_from > 0 => &text[tail_from + i + 1..],
+        _ => &text[tail_from..],
+    };
+    let cut = text.len() - head.len() - tail.len();
+    format!("{head}[... {cut} bytes not kept ...]\n{tail}")
+}
+
+fn floor_char(s: &str, mut i: usize) -> usize {
+    i = i.min(s.len());
+    while !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+
+fn ceil_char(s: &str, mut i: usize) -> usize {
+    while i < s.len() && !s.is_char_boundary(i) {
+        i += 1;
+    }
+    i
+}
+
+/// A JSON string's contents (no quotes): `"` and `\` escaped, newline and
+/// tab as `\n` and `\t`, every other control character dropped.
+pub fn json_text(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + s.len() / 8);
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\t' => out.push_str("\\t"),
+            c if c.is_control() => {}
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// A log as a JSON string's contents of at most `budget` bytes, escaped:
+/// [`excerpt`]ed until its escaped form fits. Empty when even a short
+/// excerpt does not.
+pub fn json_excerpt(text: &str, budget: usize) -> String {
+    let mut max = budget;
+    loop {
+        let e = json_text(&excerpt(text, max));
+        if e.len() <= budget {
+            return e;
+        }
+        if max < 256 {
+            return String::new();
+        }
+        let shrunk = (max as u64 * budget as u64 / e.len() as u64) as usize;
+        max = shrunk.saturating_sub(16).min(max - 16);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -327,5 +402,56 @@ mod tests {
         assert_eq!(yaml_value(y, "stormbootx_hold"), Some("forever"));
         assert_eq!(yaml_value(y, "stormbootx_hold_retry"), Some("5"));
         assert_eq!(yaml_syslog("syslogd: x\n"), None);
+    }
+
+    #[test]
+    fn a_log_that_fits_is_kept_whole() {
+        assert_eq!(excerpt("a\nb\n", 100), "a\nb\n");
+        assert_eq!(excerpt("", 0), "");
+    }
+
+    #[test]
+    fn a_long_log_keeps_its_start_and_its_end_at_lines() {
+        let mut t = String::new();
+        for i in 0..1000 {
+            t.push_str(&format!("line {i:04} of the boot\n"));
+        }
+        let e = excerpt(&t, 2000);
+        assert!(e.len() <= 2000, "{}", e.len());
+        assert!(e.starts_with("line 0000 of the boot\n"));
+        assert!(e.ends_with("line 0999 of the boot\n"));
+        assert!(e.contains(" bytes not kept ...]\n"));
+        // Whole lines only on both sides of the cut.
+        for l in e.lines() {
+            assert!((l.starts_with("line ") && l.ends_with(" of the boot")) || l.starts_with("[... "), "{l:?}");
+        }
+        let cut: usize = e.split("[... ").nth(1).unwrap().split(' ').next().unwrap().parse().unwrap();
+        let marker = e.lines().find(|l| l.starts_with("[... ")).unwrap().len() + 1;
+        assert_eq!(cut + e.len() - marker, t.len());
+    }
+
+    #[test]
+    fn an_excerpt_never_splits_a_character() {
+        let t = "é".repeat(5000);
+        let e = excerpt(&t, 1000);
+        assert!(e.len() <= 1000);
+        assert!(e.contains("bytes not kept"));
+    }
+
+    #[test]
+    fn json_text_escapes_what_json_must_and_drops_other_controls() {
+        assert_eq!(json_text("a\"b\\c\nd\te\x01f\r"), "a\\\"b\\\\c\\nd\\tef");
+    }
+
+    #[test]
+    fn json_excerpt_fits_its_budget_even_when_escaping_doubles_it() {
+        let t = "\\EFI\\BOOT\\BOOTX64.EFI\n".repeat(2000);
+        for budget in [300, 1000, 4096, 6144] {
+            let e = json_excerpt(&t, budget);
+            assert!(!e.is_empty() && e.len() <= budget, "{budget}: {}", e.len());
+            assert!(e.ends_with("BOOTX64.EFI\\n"));
+        }
+        assert_eq!(json_excerpt("short\n", 100), "short\\n");
+        assert_eq!(json_excerpt(&t, 10), "");
     }
 }
