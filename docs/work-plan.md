@@ -133,6 +133,9 @@ then.
       `fec-set` (writing `local.conf`) is not: `fec` + `fec-reset` cover
       the done line, and the media's `fec_pin` stays the owner's setting.
       Next: the full sc-build, the image, the forge1 boot (wait-hardware).
+      Decision (master, 2026-11-13): 25G → RS by capability, table and
+      per-port key as overrides = `fec_pin = auto`. Goldens move rs → auto
+      after forge1's `/api/v1/fec` shows `"speed":"25g"` on both ports.
 - [ ] **#202 — forge1's FEC pin read 0 ports (P0, the master for the
       owner, 2026-11-13: "fix the fec on port 80 tonight, in stormbootx!").**
       forge1 (R6415, B6B0PY2) logged `fec pin : rs …: 0 port(s) read` with no
