@@ -241,10 +241,13 @@ hold_wait 1
 fec_has '"fec_pin":"off"' '"bdf":"0000:84:00.0"' '"current":"device-default","next_boot":"device-default"' '"test_card":true'
 post "$(signed 1 fec 'all rs')"
 console_wait 'command     : fec (id 1): wrote '
-fec_has '"current":"device-default","next_boot":"rs"'
+# The pretend `holds` card reads what it stores as running at once; that a
+# reset is what loads it is the boots above. Here: written, then a real reset.
+fec_has '"next_boot":"rs"'
 post "$(signed 2 fec-reset)"
 console_wait 'command     : fec-reset (id 2): warm-resetting so the cards load their next-boot FEC'
 hold_wait 2
+(( $(console_count 'a TEST card is compiled in') >= 4 )) || api_fail "no second start after fec-reset"
 fec_has '"current":"rs","next_boot":"rs"'
 n=$(grep -oE '(warm|cold)-resetting' <(tr -d '\r' < "$T/api.log") | tr '\n' ' ' || true)
 [[ -z "$n" ]] || api_fail "the pin reset by itself: $n"
