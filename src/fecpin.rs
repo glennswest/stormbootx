@@ -21,6 +21,13 @@
 //!   again on the next boot, whose lines reach the network (#162): the reset
 //!   comes before any lease.
 //!
+//! - **A live port is set, not reset** (#202). A card with no FEC NV TLV
+//!   (forge1's ConnectX-4 Lx) is read through PPLM, the port's live FEC
+//!   override: a wanted value is set there at once, read back, and said per
+//!   port, `rs on the port register` or `FAILED`. No record and no reset: a
+//!   reset is not what applies it, and the next boot sets it again if it was
+//!   lost. Such a port takes no part in the reset decision.
+//!
 //! The ways back: `fec_pin = off` on the media or in `local.conf`, then a `fec =`
 //! stick or `fec default` at the failure console. A `fec =` stick is an operator
 //! saying something else, so the pin stands aside on it.
@@ -196,7 +203,7 @@ pub fn at_boot(read: &Summary) {
     let verbose = per_port || text.contains("fec_table.");
     let mut wants: Vec<(&PortAt, Fec, String)> = Vec::new();
     let mut left: Vec<(&PortAt, String)> = Vec::new();
-    for p in read.ports.iter().filter(|p| p.port.supported) {
+    for p in read.ports.iter().filter(|p| p.port.supported || p.port.live) {
         match want_of(&text, stated.as_deref(), p) {
             PortWant::Want(f, from) => wants.push((p, f, from)),
             PortWant::Leave(why) => left.push((p, why)),
@@ -208,15 +215,27 @@ pub fn at_boot(read: &Summary) {
         _ => String::from("per port"),
     };
     let tried = stage_of(last.as_deref());
-    let next_differ: Vec<_> = wants.iter().filter(|(p, f, _)| p.port.next != *f).collect();
-    let run_differ: Vec<_> = wants.iter().filter(|(p, f, _)| p.port.current != *f).collect();
+    // Live ports (PPLM, #202) are set below, now, and never reset for.
+    let nv_wants: Vec<_> = wants.iter().filter(|(p, _, _)| !p.port.live).collect();
+    let live_wants: Vec<_> = wants.iter().filter(|(p, _, _)| p.port.live).collect();
+    let next_differ: Vec<_> = nv_wants.iter().filter(|(p, f, _)| p.port.next != *f).collect();
+    let run_differ: Vec<_> = nv_wants.iter().filter(|(p, f, _)| p.port.current != *f).collect();
+    let live_differ = live_wants.iter().filter(|(p, f, _)| p.port.next != *f || p.port.current != *f).count();
     uefi::println!(
-        "fec pin     : {label} ({file}): {} port(s) read, {} with another next-boot value, {} running another",
+        "fec pin     : {label} ({file}): {} port(s) read, {} with another next-boot value, {} running another{}",
         read.ports.len(),
         next_differ.len(),
-        run_differ.len()
+        run_differ.len(),
+        if live_wants.is_empty() {
+            String::new()
+        } else {
+            format!(", {} live (port register), {live_differ} not on the wanted FEC", live_wants.len())
+        }
     );
-    for p in read.ports.iter().filter(|p| !p.port.supported) {
+    if !live_wants.is_empty() {
+        pin_live(&live_wants);
+    }
+    for p in read.ports.iter().filter(|p| !p.port.supported && !p.port.live) {
         uefi::println!("  {} port {}: the card has no FEC override here; left as is", p.loc, p.port.port);
     }
     if verbose {
@@ -233,7 +252,8 @@ pub fn at_boot(read: &Summary) {
         _ => String::from("the wanted FEC"),
     };
 
-    let reset = match connectx::pin_action(read.ports.len(), next_differ.len(), run_differ.len(), read.failed, tried) {
+    let nv_ports = read.ports.iter().filter(|p| !p.port.live).count();
+    let reset = match connectx::pin_action(nv_ports, next_differ.len(), run_differ.len(), read.failed, tried) {
         Pin::Nothing => return,
         Pin::Held => {
             clear_record();
@@ -293,6 +313,41 @@ pub fn at_boot(read: &Summary) {
     uefi::runtime::reset(kind, uefi::Status::SUCCESS, None);
 }
 
+/// Set the live ports' wanted FEC (#202) where the port register has another,
+/// then read the card again and say, per port, what its register holds and
+/// what it runs: `rs on the port register` or `FAILED`. Never a reset.
+fn pin_live(wants: &[&(&PortAt, Fec, String)]) {
+    let pick = |at: &PortAt| {
+        wants
+            .iter()
+            .find(|(p, f, _)| p.bdf == at.bdf && at.port.live && p.port.next != *f)
+            .map(|(_, f, _)| *f)
+    };
+    if wants.iter().any(|(p, f, _)| p.port.next != *f) {
+        let sum = write(&pick);
+        if !sum.wrote.is_empty() {
+            uefi::println!("  set live (no reset): {}", sum.wrote.join("; "));
+        }
+    }
+    let back = read();
+    for (p, f, from) in wants {
+        let now = back.ports.iter().find(|q| q.bdf == p.bdf);
+        let line = match now {
+            Some(q) if q.port.next == *f && q.port.current == *f => {
+                format!("{} on the port register, running {}", f.name(), q.port.current.name())
+            }
+            Some(q) if q.port.next == *f => format!(
+                "{} on the port register, running {} (the link has not trained on it)",
+                f.name(),
+                q.port.current.name()
+            ),
+            Some(q) => format!("FAILED: wanted {}, the port register reads {}", f.name(), q.port.next.name()),
+            None => format!("FAILED: wanted {}, and the port was not read back", f.name()),
+        };
+        uefi::println!("  {} port {} ({}, {from}): {line}", p.loc, p.port.port, p.bdf);
+    }
+}
+
 // ------------------------------------------------------------------ the API
 
 struct Cached(core::cell::UnsafeCell<Option<String>>);
@@ -325,7 +380,7 @@ pub fn remember(read: &Summary) {
             };
             format!(
                 "{{\"bdf\":{},\"loc\":{},\"port\":{},\"mac\":{},\"speed\":{},\"supported\":{},\
-                 \"current\":{},\"next_boot\":{},\"stored\":{},{want}}}",
+                 \"current\":{},\"next_boot\":{},\"stored\":{},\"live\":{},{want}}}",
                 q(&p.bdf),
                 q(&p.loc),
                 p.port.port,
@@ -335,6 +390,7 @@ pub fn remember(read: &Summary) {
                 q(&p.port.current.name()),
                 q(&p.port.next.name()),
                 p.port.stored,
+                p.port.live,
             )
         })
         .collect();
@@ -378,6 +434,11 @@ pub fn command_write(port: &str, value: &str) -> Result<String, String> {
     let sum = write(&pick);
     let after = read();
     remember(&after);
+    if sum.applied > 0 && sum.written == 0 {
+        let what = sum.wrote.join("; ");
+        uefi::println!("fec         : set {what} (live, no reset)");
+        return Ok(format!("set {what}; live on the port register, no reset needed"));
+    }
     if sum.written == 0 {
         if sum.failed == 0 {
             return Ok(format!("{port}: the next-boot value is already {}; nothing written", f.name()));
@@ -408,12 +469,23 @@ pub fn command_reset(id: u64) -> Result<(), String> {
 /// what was written after any reset), `cold` (only after a cold one), `stuck`
 /// (keeps the write, never runs it), `forgets` (a write reads back, and the
 /// next boot's read does not have it), `refuses` (the write fails), `rs`
-/// (already RS).
+/// (already RS), `live` (no NV: a PPLM port, #202, whose write runs at once
+/// and is lost at a reset, as a port register is).
 mod test_card {
     use super::*;
     use crate::mlxfec::Port;
 
+    /// A live card's register is a volatile variable: gone at a reset.
+    static LIVE_REG: Cached = Cached(core::cell::UnsafeCell::new(None));
+
+    fn live() -> bool {
+        mode() == "live"
+    }
+
     fn stored() -> Fec {
+        if live() {
+            return unsafe { (*LIVE_REG.0.get()).as_deref() }.and_then(Fec::parse).unwrap_or(Fec::DeviceDefault);
+        }
         let mut buf = [0u8; 16];
         match uefi::runtime::get_variable(cstr16!("StormBootFecTestCard"), &handoff::VENDOR, &mut buf) {
             Ok((data, _)) => core::str::from_utf8(data).ok().and_then(Fec::parse).unwrap_or(Fec::DeviceDefault),
@@ -438,8 +510,12 @@ mod test_card {
             "cold" if stage_of(record().as_deref()) == Stage::Warm => Fec::DeviceDefault,
             _ => next,
         };
-        let port = Port { port: 1, supported: true, current, next, stored: true };
-        uefi::println!("  84:00.0  test card port 1: current {}, next boot {}", current.name(), next.name());
+        let port = Port { port: 1, supported: true, current, next, stored: true, live: live() };
+        if live() {
+            uefi::println!("  84:00.0  test card port 1: runs {}, port register {} (live)", current.name(), next.name());
+        } else {
+            uefi::println!("  84:00.0  test card port 1: current {}, next boot {}", current.name(), next.name());
+        }
         let at = PortAt {
             loc: String::from("84:00.0"),
             bdf: String::from("0000:84:00.0"),
@@ -455,6 +531,15 @@ mod test_card {
         match mode().as_str() {
             "refuses" => Summary { cards: 1, failed: 1, ..Summary::default() },
             "forgets" => wrote(want),
+            "live" => {
+                unsafe { *LIVE_REG.0.get() = Some(want.name()) };
+                Summary {
+                    cards: 1,
+                    applied: 1,
+                    wrote: alloc::vec![format!("84:00.0 port 1: device-default -> {} (port register)", want.name())],
+                    ..Summary::default()
+                }
+            }
             _ => {
                 let attrs = VariableAttributes::NON_VOLATILE
                     | VariableAttributes::BOOTSERVICE_ACCESS
@@ -468,7 +553,7 @@ mod test_card {
 
     /// The card as `read` builds it, for `write`'s closure, without its lines.
     fn read_quiet() -> PortAt {
-        let port = Port { port: 1, supported: true, current: Fec::DeviceDefault, next: stored(), stored: true };
+        let port = Port { port: 1, supported: true, current: Fec::DeviceDefault, next: stored(), stored: true, live: live() };
         PortAt {
             loc: String::from("84:00.0"),
             bdf: String::from("0000:84:00.0"),

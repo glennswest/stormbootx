@@ -17,6 +17,8 @@
 #   refuses  a write that fails: no reset, the boot goes on
 #   rs       a card already on RS: nothing written, no reset
 #   unset    a medium with no fec_pin: a differing card is read and left alone
+#   live     a card with no FEC NV (forge1, #202): set on the port register,
+#            read back, said per port, no reset and no record
 #   api      GET /api/v1/fec, a signed `fec all rs` and `fec-reset` (#203)
 #
 # The real card's read and write are mlxfec's, and have run only on metal.
@@ -88,7 +90,7 @@ boot() {
     tr -d '\r' < "$log" | sed 's/\x1b\[[0-9;]*[A-Za-z]//g' > "$txt"
 
     local fail=0 want n
-    grep -E 'fec pin|test card|^  (84:00|why|wrote|warm|cold|nothing|a warm|no more|the card runs|`fec_pin)' "$txt" | sed -n '1,24s/^/  | /p' || true
+    grep -E 'fec pin|test card|^  (84:00|why|wrote|set live|warm|cold|nothing|a warm|no more|the card runs|`fec_pin)' "$txt" | sed -n '1,24s/^/  | /p' || true
     n=$(grep -oE '(warm|cold)-resetting' "$txt" | sed 's/-resetting//' | tr '\n' ' ' | sed 's/ $//' || true)
     say "[$name] resets: '${n}' in $((waited + AFTER)) s, $(grep -cF 'a TEST card is compiled in' "$txt" || true) start(s)"
     [[ "$n" == "$resets" ]] || { say "[$name] wanted resets '$resets'"; fail=1; }
@@ -146,6 +148,12 @@ boot rs "$T/rs.fd" $'fec_pin = rs\nfec_test_card = rs' \
 boot unset "$T/unset.fd" 'fec_test_card = holds' \
     'test card port 1: current device-default, next boot device-default' '' \
     'not:fec pin' 'not:wrote'
+
+boot live "$T/live.fd" $'fec_pin = rs\nfec_test_card = live' \
+    '84:00.0 port 1 (0000:84:00.0, fec_pin = rs): rs on the port register, running rs' '' \
+    '1 port(s) read, 0 with another next-boot value, 0 running another, 1 live (port register), 1 not on the wanted FEC' \
+    'set live (no reset): 84:00.0 port 1: device-default -> rs (port register)' \
+    'not:resetting' 'not:FAILED' 'not:pin held'
 
 # #203 (owner: "no auto - 25gig = rs"): fec_pin is the 25G ports' FEC, the
 # test card says 25g, and fec_table.25g overrides it; a port's own key beats
