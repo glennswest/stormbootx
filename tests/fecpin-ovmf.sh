@@ -147,12 +147,12 @@ boot unset "$T/unset.fd" 'fec_test_card = holds' \
     'test card port 1: current device-default, next boot device-default' '' \
     'not:fec pin' 'not:wrote'
 
-# #203: auto takes the port's speed (the test card says 25g) to the standard's
-# rs; a port's own key beats fec_pin, by BDF and, in any case, by MAC.
-boot auto "$T/auto.fd" $'fec_pin = auto\nfec_test_card = holds' \
-    "the last pin held (warm: 84:00.0 port 1: device-default -> rs)" 'warm' \
-    'fec pin     : auto (\stormboot\local.conf): 1 port(s) read, 1 with another next-boot value' \
-    '0000:84:00.0 (25g) wants rs (fec_pin = auto, 25g by the standard: rs)'
+# #203 (owner: "no auto - 25gig = rs"): fec_pin is the 25G ports' FEC, the
+# test card says 25g, and fec_table.25g overrides it; a port's own key beats
+# both, by BDF and, in any case, by MAC.
+boot table "$T/table.fd" $'fec_pin = rs\nfec_table.25g = off\nfec_test_card = holds' \
+    'fec pin     : rs (\stormboot\local.conf): 1 port(s) read, 0 with another next-boot value, 0 running another' '' \
+    '0000:84:00.0 left as is: fec_table.25g = off' 'not:wrote'
 
 boot portoff "$T/portoff.fd" $'fec_pin = rs\nfec_pin.0000:84:00.0 = off\nfec_test_card = holds' \
     'fec pin     : per port (\stormboot\local.conf): 1 port(s) read, 0 with another next-boot value, 0 running another' '' \

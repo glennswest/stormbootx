@@ -101,13 +101,14 @@ fn stage_of(last: Option<&str>) -> Stage {
 }
 
 /// A wanted value as a FEC: `rs` (and `rs-544`, the card's one RS value at
-/// PAM4 speeds), `fc`, `none`, `default`. `off` and `auto` are `choose`'s.
+/// PAM4 speeds), `fc`, `none`. `off` is `choose`'s. Never `default`: the
+/// card's default negotiates, and so would the pin (owner, 2026-11-13:
+/// "Double auto is a problem"); `fec = default` on a recovery stick remains.
 pub(crate) fn wanted(stated: &str) -> Option<Fec> {
     match stated {
         "rs" | "rs-544" | "rs-528" | "cl91" | "cl108" => Some(Fec::Rs),
         "fc" | "cl74" => Some(Fec::Fc),
         "none" => Some(Fec::Off),
-        "default" | "device-default" => Some(Fec::DeviceDefault),
         _ => None,
     }
 }
@@ -146,20 +147,19 @@ pub(crate) fn want_of(text: &str, pin: Option<&str>, p: &PortAt) -> PortWant {
             Why::NotPinned => String::from("no fec_pin names it"),
             Why::Off => String::from("fec_pin = off"),
             Why::PortOff => String::from("its own key says off"),
-            Why::TableOff(s) => format!("fec_pin = auto, fec_table.{} = off", s.name()),
-            Why::NoSpeed => String::from("fec_pin = auto, and the card did not say its speed"),
+            Why::TableOff(s) => format!("fec_table.{} = off", s.name()),
         }),
         Choice::Want(v, src) => {
             let Some(f) = wanted(v) else {
-                return PortWant::Bad(format!("`{v}` for {} is not rs, fc, none, default, auto or off", p.bdf));
+                return PortWant::Bad(format!("`{v}` for {} is not rs, fc, none or off", p.bdf));
             };
             PortWant::Want(
                 f,
                 match src {
                     Source::Port => format!("its own key, {v}"),
                     Source::Pin => format!("fec_pin = {v}"),
-                    Source::Table(s) => format!("fec_pin = auto, fec_table.{} = {v}", s.name()),
-                    Source::Ieee(s) => format!("fec_pin = auto, {} by the standard: {v}", s.name()),
+                    Source::Table(s) => format!("fec_table.{} = {v}", s.name()),
+                    Source::Standard(s) => format!("{} by the standard: {v}", s.name()),
                 },
             )
         }
@@ -184,8 +184,8 @@ pub fn at_boot(read: &Summary) {
                 }
                 return;
             }
-            Some(v) if v != "auto" && wanted(v).is_none() => {
-                uefi::println!("fec pin     : `{v}` in {file} is not rs, fc, none, default, auto or off; nothing pinned");
+            Some(v) if wanted(v).is_none() => {
+                uefi::println!("fec pin     : `{v}` in {file} is not rs, fc, none or off; nothing pinned");
                 return;
             }
             Some(_) => {}
@@ -193,7 +193,7 @@ pub fn at_boot(read: &Summary) {
     }
 
     // Each port's wanted value, from its own key, `fec_pin` and the table.
-    let verbose = per_port || stated.as_deref() == Some("auto");
+    let verbose = per_port || text.contains("fec_table.");
     let mut wants: Vec<(&PortAt, Fec, String)> = Vec::new();
     let mut left: Vec<(&PortAt, String)> = Vec::new();
     for p in read.ports.iter().filter(|p| p.port.supported) {
@@ -354,7 +354,7 @@ pub fn remember(read: &Summary) {
 /// next-boot value of the ports it names, read the card back, and say what
 /// was written. Nothing is reset: `fec-reset` does that.
 pub fn command_write(port: &str, value: &str) -> Result<String, String> {
-    let f = wanted(value).ok_or_else(|| format!("{value:?} is not rs, fc, none or default"))?;
+    let f = wanted(value).ok_or_else(|| format!("{value:?} is not rs, fc or none"))?;
     let named = |p: &PortAt| {
         let short = p.bdf.split_once(':').map_or(p.bdf.as_str(), |(_, rest)| rest);
         port == "all"

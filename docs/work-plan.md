@@ -115,7 +115,7 @@ then.
          and API are up, then the hold, so `fec` commands can fix it. Never
          a loop: the `StormBootFecPin` record carries the stage. No link
          state reaches any of it (`connectx::pin_action`).
-      2. Wanted mode: `fec_pin = rs|fc|off|default|auto`, per port
+      2. Wanted mode: `fec_pin = rs|fc|none|off` (25G ports; other speeds their standard; no `auto`, no `default`), per port
          `fec_pin.<MAC> = …`, and a speed → FEC table `fec_table.<speed> =`
          with IEEE defaults (10G none; 25G rs; 50G/100G rs; 50G-PAM4,
          200G/400G rs-544, which a CX-4 has no NV value for). Per port beats
@@ -133,9 +133,12 @@ then.
       `fec-set` (writing `local.conf`) is not: `fec` + `fec-reset` cover
       the done line, and the media's `fec_pin` stays the owner's setting.
       Next: the full sc-build, the image, the forge1 boot (wait-hardware).
-      Decision (master, 2026-11-13): 25G → RS by capability, table and
-      per-port key as overrides = `fec_pin = auto`. Goldens move rs → auto
-      after forge1's `/api/v1/fec` shows `"speed":"25g"` on both ports.
+      Decision (master, 2026-11-13: 25G → RS by capability), then the
+      owner: "no auto - 25gig = rs" and "set the fec standard per card nic
+      optic speed standard. Double auto is a problem". So no `auto` mode:
+      `fec_pin = rs` (every golden) is the 25G ports' FEC, other speeds
+      their standard's, never the card's negotiated `default`; table and
+      per-port key as overrides.
 - [ ] **#202 — forge1's FEC pin read 0 ports (P0, the master for the
       owner, 2026-11-13: "fix the fec on port 80 tonight, in stormbootx!").**
       forge1 (R6415, B6B0PY2) logged `fec pin : rs …: 0 port(s) read` with no

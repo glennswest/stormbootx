@@ -78,7 +78,8 @@ pub enum Verb {
     Maint,
     /// Write a ConnectX port's next-boot FEC (#203): the port (`all`, a PCI
     /// function `0000:84:00.1` or `84:00.1`, or a MAC, lower-cased) and the
-    /// value (`rs`, `fc`, `none`, `default`). Nothing is reset.
+    /// value (`rs`, `fc`, `none`; never the card's negotiated `default`: "Double
+    /// auto is a problem", owner 2026-11-13). Nothing is reset.
     Fec(String, String),
     /// A warm reset, so the cards load their next-boot FEC (#203).
     FecReset,
@@ -161,17 +162,17 @@ pub fn verb(command: &str, args: &str) -> Result<Verb, String> {
         "fec" => {
             let mut w = args.split_whitespace();
             let (Some(port), Some(value), None) = (w.next(), w.next(), w.next()) else {
-                return Err(format!("fec takes `<all|BDF|MAC> <rs|fc|none|default>`, not {args:?}"));
+                return Err(format!("fec takes `<all|BDF|MAC> <rs|fc|none>`, not {args:?}"));
             };
             let port = port.to_ascii_lowercase();
             if port != "all" && !fec_port(&port) {
                 return Err(format!("fec: {port:?} is not all, a PCI function (0000:84:00.1) or a MAC"));
             }
             match value.to_ascii_lowercase().as_str() {
-                v @ ("rs" | "fc" | "none" | "default") => Ok(Verb::Fec(port, String::from(v))),
+                v @ ("rs" | "fc" | "none") => Ok(Verb::Fec(port, String::from(v))),
                 // `off` is ambiguous: in `fec_pin` it means "leave the card alone".
                 "off" => Err("fec: say `none` for no FEC (`off` reads as `leave it` in fec_pin)".into()),
-                v => Err(format!("fec: {v:?} is not rs, fc, none or default")),
+                v => Err(format!("fec: {v:?} is not rs, fc or none")),
             }
         }
         "boot-next" => {
@@ -459,7 +460,7 @@ mod tests {
         assert_eq!(verb("fec", "all rs"), fec("all", "rs"));
         assert_eq!(verb("fec", "ALL RS"), fec("all", "rs"));
         assert_eq!(verb("fec", "0000:84:00.1 fc"), fec("0000:84:00.1", "fc"));
-        assert_eq!(verb("fec", "84:00.0 default"), fec("84:00.0", "default"));
+        assert!(verb("fec", "84:00.0 default").is_err());
         assert_eq!(verb("fec", "E8:EB:D3:94:A2:80 none"), fec("e8:eb:d3:94:a2:80", "none"));
         assert!(verb("fec", "all off").unwrap_err().contains("none"));
         assert!(verb("fec", "all autoneg").is_err());

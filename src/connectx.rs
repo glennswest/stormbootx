@@ -293,19 +293,6 @@ pub enum Speed {
 }
 
 impl Speed {
-    #[cfg(test)]
-    pub const ALL: [Speed; 9] = [
-        Speed::G10,
-        Speed::G25,
-        Speed::G40,
-        Speed::G50,
-        Speed::G50Pam4,
-        Speed::G100,
-        Speed::G100Pam4,
-        Speed::G200,
-        Speed::G400,
-    ];
-
     pub fn name(self) -> &'static str {
         match self {
             Speed::G10 => "10g",
@@ -320,12 +307,13 @@ impl Speed {
         }
     }
 
-    /// The FEC IEEE 802.3 (and the 25G/50G Ethernet Consortium) gives this
-    /// speed: none at 10G and 40G (BASE-R FEC is optional there), RS(528) at
-    /// 25G, 50G over two lanes and 100G NRZ, RS(544) at the PAM4 speeds. The
-    /// card has one RS value for both, so both are `rs` to the pin; the table's
-    /// `rs-544` is the name the standard uses.
-    pub fn ieee(self) -> &'static str {
+    /// The FEC the standard gives this speed (IEEE 802.3 and the 25G/50G
+    /// Ethernet Consortium): none at 10G and 40G, RS(528) at 25G, 50G over
+    /// two lanes and 100G NRZ, RS(544) at the PAM4 speeds. Never the card's
+    /// negotiated default: the switch does not negotiate either (owner,
+    /// 2026-11-13: "Double auto is a problem"). The card has one RS value, so
+    /// `rs-544` is `rs` to it.
+    pub fn standard(self) -> &'static str {
         match self {
             Speed::G10 | Speed::G40 => "none",
             Speed::G25 | Speed::G50 | Speed::G100 => "rs",
@@ -394,8 +382,8 @@ pub enum Source {
     Pin,
     /// `fec_table.<speed> =`.
     Table(Speed),
-    /// The standard's value for the speed.
-    Ieee(Speed),
+    /// The standard's FEC for a port that is not a 25G one.
+    Standard(Speed),
 }
 
 /// Why a port is left as it is.
@@ -407,10 +395,8 @@ pub enum Why {
     Off,
     /// Its own key says `off`.
     PortOff,
-    /// `auto`, and `fec_table.<speed> = off`.
+    /// `fec_table.<speed> = off`.
     TableOff(Speed),
-    /// `auto`, and the card did not say the port's speed.
-    NoSpeed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -420,10 +406,14 @@ pub enum Choice<'a> {
 }
 
 /// One port's wanted FEC (#203; the owner, 2026-11-13: "nothing is to be
-/// hard-coded"). Its own key (`port`) beats `fec_pin`; `off` leaves it alone;
-/// `auto` asks `fec_table.<speed>` (`table`, already looked up for this
-/// port's speed), then the standard. Values arrive lower-cased; the caller
-/// says whether one it was given is a FEC at all.
+/// hard-coded"; "no auto - 25gig = rs"; "set the fec standard per card nic
+/// optic speed standard. Double auto is a problem"). Its own key (`port`)
+/// beats everything; `off` leaves it alone. Otherwise each port takes its
+/// speed's (`speed`: the highest in its PTYS capability, never the link):
+/// `fec_table.<speed>` (`table`, already looked up for that speed) if the
+/// media names one, else `fec_pin` at 25G, else the standard's. A port whose
+/// speed the card did not say takes `fec_pin`: the media named it. Values
+/// arrive lower-cased; the caller says whether one is a FEC at all.
 pub fn choose<'a>(pin: Option<&'a str>, port: Option<&'a str>, table: Option<&'a str>, speed: Option<Speed>) -> Choice<'a> {
     let (value, source) = match (port, pin) {
         (Some(v), _) => (v, Source::Port),
@@ -431,15 +421,16 @@ pub fn choose<'a>(pin: Option<&'a str>, port: Option<&'a str>, table: Option<&'a
         (None, None) => return Choice::Leave(Why::NotPinned),
     };
     match value {
-        "off" if source == Source::Port => Choice::Leave(Why::PortOff),
-        "off" => Choice::Leave(Why::Off),
-        "auto" => match (speed, table) {
-            (None, _) => Choice::Leave(Why::NoSpeed),
-            (Some(s), Some("off")) => Choice::Leave(Why::TableOff(s)),
-            (Some(s), Some(t)) if t != "auto" => Choice::Want(t, Source::Table(s)),
-            (Some(s), _) => Choice::Want(s.ieee(), Source::Ieee(s)),
-        },
-        v => Choice::Want(v, source),
+        "off" if source == Source::Port => return Choice::Leave(Why::PortOff),
+        "off" => return Choice::Leave(Why::Off),
+        _ if source == Source::Port => return Choice::Want(value, source),
+        _ => {}
+    }
+    match (speed, table) {
+        (Some(s), Some("off")) => Choice::Leave(Why::TableOff(s)),
+        (Some(s), Some(t)) => Choice::Want(t, Source::Table(s)),
+        (Some(Speed::G25), None) | (None, _) => Choice::Want(value, Source::Pin),
+        (Some(s), None) => Choice::Want(s.standard(), Source::Standard(s)),
     }
 }
 
@@ -731,7 +722,6 @@ mod tests {
         // 1G, 10GBASE-KR/CR/SR, 25GBASE-CR/KR/SR: what a ConnectX-4 Lx states.
         let cap = (1 << 1) | (1 << 4) | (1 << 12) | (1 << 13) | (1 << 27) | (1 << 28) | (1 << 29);
         assert_eq!(speed_of(cap, 0), Some(Speed::G25));
-        assert_eq!(Speed::G25.ieee(), "rs");
     }
 
     #[test]
@@ -740,7 +730,6 @@ mod tests {
         assert_eq!(speed_of((1 << 20) | (1 << 27), 0), Some(Speed::G100));
         assert_eq!(speed_of(1 << 27, (1 << 6) | (1 << 12)), Some(Speed::G200));
         assert_eq!(speed_of(0, 1 << 8), Some(Speed::G50Pam4));
-        assert_eq!(Speed::G50Pam4.ieee(), "rs-544");
     }
 
     #[test]
@@ -750,11 +739,13 @@ mod tests {
     }
 
     #[test]
-    fn the_standard_gives_none_at_10_and_40_and_rs_above() {
-        let none: [Speed; 2] = [Speed::G10, Speed::G40];
-        for s in Speed::ALL {
-            assert_eq!(s.ieee() == "none", none.contains(&s), "{}", s.name());
+    fn the_standard_never_negotiates() {
+        use Speed::*;
+        for s in [G10, G25, G40, G50, G50Pam4, G100, G100Pam4, G200, G400] {
+            assert!(["none", "rs", "rs-544"].contains(&s.standard()), "{}", s.name());
         }
+        assert_eq!(G25.standard(), "rs");
+        assert_eq!(G10.standard(), "none");
     }
 
     #[test]
@@ -762,7 +753,7 @@ mod tests {
         assert_eq!(choose(Some("rs"), Some("fc"), None, None), Choice::Want("fc", Source::Port));
         assert_eq!(choose(Some("rs"), Some("off"), None, None), Choice::Leave(Why::PortOff));
         assert_eq!(choose(None, Some("rs"), None, None), Choice::Want("rs", Source::Port));
-        assert_eq!(choose(Some("rs"), None, None, Some(Speed::G10)), Choice::Want("rs", Source::Pin));
+        assert_eq!(choose(Some("rs"), None, None, Some(Speed::G25)), Choice::Want("rs", Source::Pin));
     }
 
     #[test]
@@ -772,14 +763,20 @@ mod tests {
     }
 
     #[test]
-    fn auto_takes_the_table_then_the_standard() {
+    fn fec_pin_is_the_25g_ports_fec() {
         let g25 = Some(Speed::G25);
-        assert_eq!(choose(Some("auto"), None, None, g25), Choice::Want("rs", Source::Ieee(Speed::G25)));
-        assert_eq!(choose(Some("auto"), None, Some("fc"), g25), Choice::Want("fc", Source::Table(Speed::G25)));
-        assert_eq!(choose(Some("auto"), None, Some("auto"), g25), Choice::Want("rs", Source::Ieee(Speed::G25)));
-        assert_eq!(choose(Some("auto"), None, Some("off"), g25), Choice::Leave(Why::TableOff(Speed::G25)));
-        assert_eq!(choose(Some("rs"), Some("auto"), None, Some(Speed::G10)), Choice::Want("none", Source::Ieee(Speed::G10)));
-        // With no speed, auto never guesses.
-        assert_eq!(choose(Some("auto"), None, Some("fc"), None), Choice::Leave(Why::NoSpeed));
+        let g10 = Some(Speed::G10);
+        assert_eq!(choose(Some("rs"), None, None, g25), Choice::Want("rs", Source::Pin));
+        assert_eq!(choose(Some("rs"), None, Some("fc"), g25), Choice::Want("fc", Source::Table(Speed::G25)));
+        assert_eq!(choose(Some("rs"), None, Some("off"), g25), Choice::Leave(Why::TableOff(Speed::G25)));
+        // Another speed: its table entry, else the standard's.
+        assert_eq!(choose(Some("rs"), None, None, g10), Choice::Want("none", Source::Standard(Speed::G10)));
+        assert_eq!(choose(Some("rs"), None, None, Some(Speed::G100)), Choice::Want("rs", Source::Standard(Speed::G100)));
+        assert_eq!(choose(Some("rs"), None, None, Some(Speed::G50Pam4)), Choice::Want("rs-544", Source::Standard(Speed::G50Pam4)));
+        assert_eq!(choose(Some("rs"), None, Some("none"), g10), Choice::Want("none", Source::Table(Speed::G10)));
+        // The card did not say: the media's value.
+        assert_eq!(choose(Some("rs"), None, Some("fc"), None), Choice::Want("rs", Source::Pin));
+        // A port's own key beats the table.
+        assert_eq!(choose(Some("rs"), Some("rs"), Some("off"), g10), Choice::Want("rs", Source::Port));
     }
 }

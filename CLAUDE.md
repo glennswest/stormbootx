@@ -184,7 +184,7 @@ details and Esc back, and no panel text in the serial log. `SCREEN_PNG=1`
 (`STORMBOOTX_FEC_TEST`, in its own target dir; `build-golden.sh` refuses it) and
 boots six times with no `-no-reboot`: a write and one real warm reset, a card that
 forgets the value (one reset, never two), `fec_pin = off` on that machine, a
-refused write, a card already on RS, and no `fec_pin`; then `auto`, per-port keys, and an
+refused write, a card already on RS, and no `fec_pin`; then `fec_table.25g = off`, per-port keys, and an
 `api` boot (#203): `GET /api/v1/fec`, a signed `fec all rs`, `fec-reset`, then rs runs. QEMU has no ConnectX, so
 mlxfec's own read and write are not in it.
 
