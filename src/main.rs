@@ -258,7 +258,7 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
     // 1b. No FEC here (#202; the owner, 2026-11-14: "Stormbootx calls the
     //     driver, the driver resposible for the nic getting up - speed and
     //     fec"). stormbootx chooses which driver binds a NIC
-    //     (`prefer_media_drivers`) and knows nothing else about the card.
+    //     (by PCI ID, `drivers::take_over`) and knows nothing else about the card.
     //     The FEC pin (#186), its API (#203) and `mlxfec`'s NV writes are gone.
     ui::machine(&format!(
         "{}   serial {}",

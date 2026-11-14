@@ -185,19 +185,26 @@ build_stormnic() {
     cp "$efi" "$OUTDIR/$name.efi"
     say "driver  $(du -h "$efi" | cut -f1)  $OUTDIR/$name.efi  (subsystem $sub)"
     printf '%s %s %s%s\n' "$name" "$ref" "$(sha256sum "$efi" | cut -d' ' -f1)" "${lock:+ locked}" >> "$OUTDIR/STORMNIC-SOURCE.txt"
-    [[ $short != e1000e ]] || same_e1000e_ids "$WORK/$name/src/ids.rs"
+    case $short in
+        e1000e) same_ids "$name" "$WORK/$name/src/ids.rs" 'device: 0x[0-9a-fA-F]{4}' E1000E_IDS ;;
+        ixgbe) same_ids "$name" "$WORK/$name/src/ids.rs" 'device: 0x[0-9a-fA-F]{4}' IXGBE_IDS ;;
+        igb) same_ids "$name" "$WORK/$name/src/ids.rs" 'n\(0x[0-9a-fA-F]{4}' IGB_IDS ;;
+        mlx4) same_ids "$name" "$WORK/$name/src/main.rs" '^ *\(0x[0-9a-fA-F]{4}, "|\[\(0x[0-9a-fA-F]{4}, "|\), \(0x[0-9a-fA-F]{4}, "' MLX4_IDS ;;
+        mlx5) same_ids "$name" "$WORK/$name/src/main.rs" '^ *\(0x[0-9a-fA-F]{4}, "' MLX5_TAKE_OVER ;;
+    esac
 }
-# `prefer_media_drivers = e1000e` takes the functions src/drivers.rs lists;
-# the driver binds the ones its src/ids.rs lists. A pin that changes one
-# must change the other (#70).
-same_e1000e_ids() {
-    local theirs ours
-    theirs=$(grep -oE 'device: 0x[0-9a-fA-F]{4}' "$1" | sed 's/.*0x//' | tr A-F a-f | LC_ALL=C sort -u)
-    ours=$(sed -n '/^const E1000E_IDS/,/^\];/p' "$(dirname "$0")/../src/drivers.rs" \
-        | grep -oE '0x8086, 0x[0-9a-fA-F]{4}' | sed 's/.*0x//' | tr A-F a-f | LC_ALL=C sort -u)
-    [[ -n "$theirs" && "$theirs" == "$ours" ]] || die "stormnic-e1000e's src/ids.rs and src/drivers.rs E1000E_IDS differ:
+# stormbootx's take-over (src/drivers.rs, #202) takes the functions its lists
+# name; each driver binds the ones its own list names. A pin that changes one
+# must change the other (#70), so the build fails when they differ.
+# same_ids NAME FILE PATTERN CONST: PATTERN finds each device id in FILE.
+same_ids() {
+    local name=$1 file=$2 pat=$3 const=$4 theirs ours
+    theirs=$(grep -oE "$pat" "$file" | grep -oE '0x[0-9a-fA-F]{4}' | sed 's/0x//' | tr A-F a-f | LC_ALL=C sort -u)
+    ours=$(sed -n "/^const $const/,/^\];/p" "$(dirname "$0")/../src/drivers.rs" \
+        | grep -oE '0x(8086|15b3), 0x[0-9a-fA-F]{4}' | sed 's/.*0x//' | tr A-F a-f | LC_ALL=C sort -u)
+    [[ -n "$theirs" && "$theirs" == "$ours" ]] || die "$name's device ids and src/drivers.rs $const differ:
 $(diff <(printf '%s\n' "$theirs") <(printf '%s\n' "$ours") | grep '^[<>]')"
-    say "  stormnic-e1000e: $(wc -l <<< "$theirs") device IDs, the same as src/drivers.rs"
+    say "  $name: $(wc -l <<< "$theirs") device IDs, the same as src/drivers.rs $const"
 }
 # An OUTDIR from before #91 may still hold iPXE; nothing here may carry it on.
 rm -f "$OUTDIR/STORMNIC-SOURCE.txt" "$OUTDIR/IPXE-SOURCE.txt" "$OUTDIR"/ipxe-*.efi "$OUTDIR"/*.efi.off

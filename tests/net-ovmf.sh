@@ -1105,12 +1105,13 @@ boot localdisk-fail "$host_cpu" "" 404 good \
 # Its fall-through also holds the failed claims (1.8 s here), so only the floor says much.
 fall_through_within localdisk-fail 5000 30000
 
-# #108: stormnic-virtio on the media, with `prefer_media_drivers = virtio`.
-# OVMF's virtio drivers bind the NIC in stormbootx's first pass; the media's
-# driver must take it from them and carry the whole boot (lease, claim, the
+# #108: stormnic-virtio on the media. OVMF's virtio drivers bind the NIC in
+# stormbootx's first pass; the media's driver must take it from them (since
+# #202 unasked: our drivers only) and carry the whole boot (lease, claim, the
 # 96 MiB attach), on a transitional NIC (1af4:1000) and a modern-only one
-# (1af4:1041). Without the key, the firmware keeps it. VIRTIO_EFI names the
-# driver (scripts/build-nic-drivers.sh); without it these boots are skipped.
+# (1af4:1041). An older medium's `prefer_media_drivers` is named and ignored.
+# VIRTIO_EFI names the driver (scripts/build-nic-drivers.sh); without it these
+# boots are skipped.
 if [[ -n "${VIRTIO_EFI:-}" ]]; then
     [[ -s "$VIRTIO_EFI" ]] || die "no stormnic-virtio driver at $VIRTIO_EFI"
     mkdir -p "$W/vdrv" && cp "$VIRTIO_EFI" "$W/vdrv/stormnic-virtio.efi"
@@ -1127,13 +1128,13 @@ if [[ -n "${VIRTIO_EFI:-}" ]]; then
         "not:would not let go"
         "not:stormnic drivers verbose"
     )
-    BOOT_DRIVERS="$W/vdrv" BOOT_PREFER=virtio \
+    BOOT_DRIVERS="$W/vdrv" \
     boot virtio "$host_cpu" "" ok good "${virtio[@]}" " 1af4:1000: " \
         "booting stubhost's image" \
         "stub:\"media_driver\":true" \
         "blockio     : 96 MiB read in all" \
         "is there a TCP/IP stack in this firmware"
-    BOOT_DRIVERS="$W/vdrv" BOOT_PREFER=virtio BOOT_NICDEV=disable-legacy=on,disable-modern=off \
+    BOOT_DRIVERS="$W/vdrv" BOOT_NICDEV=disable-legacy=on,disable-modern=off \
     STOP_AT="engine      : stormblock 19.4.0" BOOT_SETTLE=1 \
     boot virtio-modern "$host_cpu" "" 404 good "${virtio[@]}" " 1af4:1041: "
     # The quiet trace stays out of the boot above; nic_verbose brings it back
@@ -1142,7 +1143,7 @@ if [[ -n "${VIRTIO_EFI:-}" ]]; then
     # `stormnic-virtio 0.1.0: …` (and OVMF's debug port has `…: Supported` of
     # its own).
     grep -qE "stormnic-virtio: .*: Supported" "$W/virtio.txt" && die "[virtio] a quiet boot printed the driver's trace"
-    BOOT_DRIVERS="$W/vdrv" BOOT_PREFER=virtio BOOT_NIC_VERBOSE=1 \
+    BOOT_DRIVERS="$W/vdrv" BOOT_NIC_VERBOSE=1 \
     STOP_AT="engine      : stormblock 19.4.0" BOOT_SETTLE=1 \
     boot virtio-verbose "$host_cpu" "" 404 good \
         "drivers     : stormnic drivers verbose (nic_verbose in " \
@@ -1152,17 +1153,16 @@ if [[ -n "${VIRTIO_EFI:-}" ]]; then
     grep -qE "stormnic-virtio: .*: Supported" "$W/virtio-verbose.txt" \
         && say "[virtio-verbose] found the driver's trace: $(grep -E 'stormnic-virtio: .*: Supported' "$W/virtio-verbose.txt" | head -1)" \
         || die "[virtio-verbose] nic_verbose set, but the driver printed no trace"
-    BOOT_DRIVERS="$W/vdrv" STOP_AT="engine      : stormblock 19.4.0" BOOT_SETTLE=1 \
-    boot virtio-kept "$host_cpu" "" 404 good \
-        "stormnic-virtio.efi started" \
-        "nic 0: driver Virtio Network Driver" \
-        "not:taken from" \
-        "not:SNP installed"
+    BOOT_DRIVERS="$W/vdrv" BOOT_PREFER=virtio STOP_AT="engine      : stormblock 19.4.0" BOOT_SETTLE=1 \
+    boot virtio-oldkey "$host_cpu" "" 404 good \
+        "ours      : prefer_media_drivers is ignored since #202" \
+        "; stormnic-virtio.efi drives it" \
+        "not:nic 0: driver Virtio Network Driver"
 else
     say "note: VIRTIO_EFI not set; the stormnic-virtio boots (#108) are skipped"
 fi
 
-# #131: `prefer_media_drivers = mlx5`. QEMU has no ConnectX, so a boot can't
+# #131: stormnic-mlx5. QEMU has no ConnectX, so a boot can't
 # bind stormnic-mlx5. What it can do: load the real driver, and run the failure
 # the Dell can hit, a take the driver then declines. Under the virtio family's
 # file name it declines a virtio NIC, and the firmware must have it back and
@@ -1173,7 +1173,7 @@ if [[ -n "${MLX5_EFI:-}" && -n "${VIRTIO_EFI:-}" ]]; then
     cp "$VIRTIO_EFI" "$W/mdrv/stormnic-virtio.efi"
     cp "$MLX5_EFI" "$W/mdrv/stormnic-mlx5.efi"
     cp "$MLX5_EFI" "$W/mback/stormnic-virtio.efi"
-    BOOT_DRIVERS="$W/mback" BOOT_PREFER=virtio STOP_AT="engine      : stormblock 19.4.0" BOOT_SETTLE=1 \
+    BOOT_DRIVERS="$W/mback" STOP_AT="engine      : stormblock 19.4.0" BOOT_SETTLE=1 \
     boot mlx5-giveback "$host_cpu" "" 404 good \
         "stormnic-virtio.efi started" \
         ": taking it from " \
@@ -1184,31 +1184,23 @@ if [[ -n "${MLX5_EFI:-}" && -n "${VIRTIO_EFI:-}" ]]; then
         "not:this NIC has no driver"
     # Both families on one medium, as stormbootx-mlx5test: virtio is taken,
     # and mlx5 finds no ConnectX and touches nothing.
-    BOOT_DRIVERS="$W/mdrv" BOOT_PREFER=virtio,mlx5 STOP_AT="engine      : stormblock 19.4.0" BOOT_SETTLE=1 \
+    BOOT_DRIVERS="$W/mdrv" STOP_AT="engine      : stormblock 19.4.0" BOOT_SETTLE=1 \
     boot mlx5-none "$host_cpu" "" 404 good \
         "stormnic-mlx5.efi started" \
-        "prefer    : mlx5: no such NIC on this machine" \
+        "ours      : no NIC here for stormnic-mlx5.efi" \
         "; stormnic-virtio.efi drives it" \
         "nic 0: leased 10.0.2.15/24 gw 10.0.2.2" \
         "not:stormnic-mlx5: "
-    # The key without the driver: nothing is taken.
-    mkdir -p "$W/nomlx5" && cp "$VIRTIO_EFI" "$W/nomlx5/stormnic-virtio.efi"
-    BOOT_DRIVERS="$W/nomlx5" BOOT_PREFER=mlx5 STOP_AT="engine      : stormblock 19.4.0" BOOT_SETTLE=1 \
-    boot mlx5-absent "$host_cpu" "" 404 good \
-        "prefer    : mlx5, but stormnic-mlx5.efi was not started from the media; the firmware keeps its NICs" \
-        "nic 0: driver Virtio Network Driver" \
-        "not:taking it from"
 else
-    say "note: MLX5_EFI not set; the prefer_media_drivers = mlx5 boots (#131) are skipped"
+    say "note: MLX5_EFI not set; the stormnic-mlx5 boots (#131) are skipped"
 fi
 
 # #70: stormnic-e1000e. QEMU's e1000e is an 82574L (8086:10d3), and OVMF has
 # no driver for it. With no option ROM nothing else drives it, so the media's
 # driver binds it in the platform's own pass, with no key, and must carry the
 # whole boot: lease, claim, the 96 MiB attach, the payload. With QEMU's iPXE
-# ROM on it, iPXE's EFI driver holds it first: `prefer_media_drivers = e1000e`
-# takes it from iPXE, and without the key iPXE keeps it. E1000E_EFI names the
-# driver.
+# ROM on it, iPXE's EFI driver holds it first, and the take-over takes it
+# from iPXE (#202: our drivers only). E1000E_EFI names the driver.
 if [[ -n "${E1000E_EFI:-}" ]]; then
     [[ -s "$E1000E_EFI" ]] || die "no stormnic-e1000e driver at $E1000E_EFI"
     mkdir -p "$W/edrv" && cp "$E1000E_EFI" "$W/edrv/stormnic-e1000e.efi"
@@ -1230,20 +1222,12 @@ if [[ -n "${E1000E_EFI:-}" ]]; then
         "stub:\"media_driver\":true" \
         "blockio     : 96 MiB read in all" \
         "is there a TCP/IP stack in this firmware"
-    BOOT_DRIVERS="$W/edrv" BOOT_NIC=e1000e BOOT_NIC_ROM=1 BOOT_PREFER=e1000e \
+    BOOT_DRIVERS="$W/edrv" BOOT_NIC=e1000e BOOT_NIC_ROM=1 \
     STOP_AT="engine      : stormblock 19.4.0" BOOT_SETTLE=1 \
     boot e1000e-take "$host_cpu" "" 404 good "${e1000e[@]}" \
         " 8086:10d3: taking it from " \
         "; stormnic-e1000e.efi drives it" \
         "not:given back to"
-    BOOT_DRIVERS="$W/edrv" BOOT_NIC=e1000e BOOT_NIC_ROM=1 \
-    STOP_AT="engine      : stormblock 19.4.0" BOOT_SETTLE=1 \
-    boot e1000e-kept "$host_cpu" "" 404 good \
-        "stormnic-e1000e.efi started" \
-        "nic 0: driver " \
-        "not:nic 0: driver stormnic-e1000e.efi" \
-        "not:taken from" \
-        "not:SNP installed"
 else
     say "note: E1000E_EFI not set; the stormnic-e1000e boots (#70) are skipped"
 fi

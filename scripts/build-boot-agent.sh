@@ -93,9 +93,9 @@ Options:
                    (`nic_verbose = true`, #80); a debugging medium, never a
                    golden that ships (stormbootx-mlx5test is a test one, #131)
   --prefer-media-drivers FAMILIES
-                   these media drivers take their NICs from the firmware's
-                   driver (#108): comma-separated, `virtio`, `mlx5` (#131)
-                   and `e1000e` (#70)
+                   obsolete since #202 (every stormnic driver takes its NICs):
+                   writes the key, which stormbootx names and ignores; for a
+                   test of an older medium only
   --esp READER     who reads the attached ESP (#37): auto (default),
                    firmware or stormbootx (the bridge and its filesystem, #42;
                    tests/net-ovmf.sh)
@@ -382,17 +382,12 @@ nic_verbose = true
 CONF
 fi
 
-# Media drivers that take their NICs from the firmware's own (#108). Absent on
-# ordinary media: the platform's drivers win. The rustnic golden sets virtio,
-# because every OVMF's VirtioNetDxe holds a VM's NIC first.
+# The obsolete key (#108; ignored since #202, when every stormnic driver takes
+# its NICs). No golden writes it; net-ovmf does, as an older medium would.
 if [[ -n "$PREFER" ]]; then
-    [[ -n "$DRIVERS" ]] || die "--prefer-media-drivers needs --drivers"
-    for f in ${PREFER//,/ }; do
-        [[ "$f" == virtio || "$f" == mlx5 || "$f" == e1000e ]] || die "--prefer-media-drivers: no family '$f' (virtio, mlx5, e1000e)"
-    done
     cat >> "$WORK/stormboot.conf" <<CONF
 
-# These media drivers take their NICs from the firmware's driver.
+# Obsolete since #202: stormbootx ignores it.
 prefer_media_drivers = $PREFER
 CONF
 fi

@@ -64,7 +64,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   tests/laptop-ovmf.sh t/fw/boot/stormbootx.iso $R/tcp4probe.efi t/serve/stormboot-serve && \
   deploy/build-golden.sh stormbootx-mlx5test $PWD/t/mlx5 && tests/iso-layout.sh t/mlx5/boot/stormbootx-mlx5test.iso && \
   tests/usb-layout.sh t/mlx5/boot/stormbootx-mlx5test-usb.img t/mlx5/media && \
-  NIC=virtio tests/media-ovmf.sh t/mlx5/boot/stormbootx-mlx5test.iso "mlx5@66de545 test" "stormnic drivers verbose" "stormnic-mlx5.efi started" "; stormnic-virtio.efi drives it" "prefer    : mlx5: no such NIC on this machine" && \
+  NIC=virtio tests/media-ovmf.sh t/mlx5/boot/stormbootx-mlx5test.iso "mlx5@66de545 test" "stormnic drivers verbose" "stormnic-mlx5.efi started" "; stormnic-virtio.efi drives it" "ours      : no NIC here for stormnic-mlx5.efi" && \
   REPRO_MEDIA="stormbootx stormbootx-rustnic stormbootx-disk stormbootx-rustnic-disk stormbootx-mlx5test" tests/repro.sh && \
   deploy/build-golden.sh stormbootx-arm64 $PWD/t/arm && \
   EFI_NAME=BOOTAA64.EFI tests/iso-layout.sh t/arm/boot/stormbootx-arm64.iso && \
@@ -117,9 +117,10 @@ the RTC to 2031, boot 2's unsynchronised answer must set nothing). It runs twice
 firmware RNG and RDRAND/RDSEED masked (`rng : jitter`). The shipped boot's
 ISO names an `update =`, which must be skipped as read-only (#83). With
 `VIRTIO_EFI` (stormnic-virtio, built in the job) it boots three more times
-(#108): `prefer_media_drivers = virtio` must take a transitional and a
-modern-only virtio-net NIC from OVMF's drivers and carry the claim and the
-attach over stormnic-virtio, and without the key the firmware keeps it.
+(#108): stormnic-virtio must take a transitional and a modern-only
+virtio-net NIC from OVMF's drivers and carry the claim and the attach, and an
+older medium's `prefer_media_drivers` is named and ignored (#202: our drivers
+only, no key).
 Its `httpboot` boot (#172) has no CD: `tests/bootvar.py` writes a
 `Uri(http://…/httpboot.iso)` boot option and BootNext into OVMF's variable
 store, the firmware's HTTP boot downloads the ISO into a RAM disk, and
@@ -303,7 +304,7 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/snpwatch.rs` | which driver is under each SNP (named before the first call), and a `TPL_NOTIFY` timer that names an SNP call that has not returned (#88) |
 | `src/entropy.rs` | randomness for the ISN, DHCP xid and ports: firmware `EFI_RNG`, then RDSEED/RDRAND (RNDR on aarch64), then jitter through SHA-256; never fails |
 | `src/tcp4.rs` | tcp4probe only since #56: a blocking socket over the firmware's TCP4 |
-| `src/drivers.rs` | load NIC drivers from `\stormboot\drivers` on the media (#26), after the platform's own bind; `take_over` gives a `prefer_media_drivers` family (`virtio`, `mlx5`) its NICs (#108, #131); `nic_verbose` sets `StormnicVerbose` before the drivers load (#80) |
+| `src/drivers.rs` | load NIC drivers from `\stormboot\drivers` on the media (#26), after the platform's own bind; `take_over` gives every NIC a stormnic driver on the media matches by vendor:device to that driver, from whatever firmware driver holds it (#108, #131; since #202 every family, unasked), each family's ids checked against its driver's by `build-nic-drivers.sh`; `nic_verbose` sets `StormnicVerbose` before the drivers load (#80) |
 | `src/dhcp4.rs` | tcp4probe only since #56: DHCP through the firmware's `EFI_DHCP4` |
 | `src/nvme.rs` | the NVMe/TCP initiator's UEFI end: `TcpSocket` as its `Transport`, `boot::stall` (#10) |
 | `crates/nvme-tcp-initiator` | the NVMe/TCP initiator itself (#10): `no_std` + `alloc`, no dependencies, generic over a `Transport` and a `Platform`, shared with stormboot4bios; reads up to 8 in flight (#100); host tests against a fake controller (`cargo test -p nvme-tcp-initiator`) |
@@ -402,10 +403,9 @@ These have each cost a debugging session. Do not "simplify" them away.
   TCP4, and no setup switch fixes it. The media carries the driver
   (`\stormboot\drivers` on the rustnic medium: the Rust stormnic drivers;
   iPXE's was the first, and no medium carries it since #91). The platform's own drivers
-  bind first, so a media driver never displaces a native one, with one
-  opt-in exception: `prefer_media_drivers = virtio` (rustnic media only, #108)
-  takes VMs' virtio-net NICs from OVMF's VirtioNetDxe for stormnic-virtio,
-  and gives them back if it does not bind. Judge a disconnect by the
+  bind first, and then every NIC a stormnic driver on the media matches is
+  taken from them for ours (#202; the owner, 2026-11-14: "we only use our
+  drivers going forward"), and given back if ours does not bind. Judge a disconnect by the
   `BY_DRIVER` opens left on PciIo, never its status (pve's OVMF answers
   `NOT_FOUND` when every driver came off).
 - **Never close an event the TCP driver may still signal** (#26, server1,
@@ -509,8 +509,9 @@ These have each cost a debugging session. Do not "simplify" them away.
   binds it** (#202; the owner, 2026-11-14: "Stormbootx calls the driver, the
   driver resposible for the nic getting up - speed and fec"; "the port poking
   is a driver problem"; "how can you poke the card when someone elses code is
-  controlling it!"). The driver is chosen by PCI ID (`drivers.rs`'s families,
-  `prefer_media_drivers`); each stormnic driver reads its media and speed and
+  controlling it!"). The driver is chosen by PCI ID, vendor:device and never
+  the subsystem, as Linux matches (OEM relabels keep the chip's device id;
+  `docs/pci-ids.md`); each stormnic driver reads its media and speed and
   applies the IEEE standard FEC itself, and reports driver, speed, FEC and
   link per port. Nothing is handed down. The FEC pin (#186, #203), `mlxfec`'s
   NV and register writes, `fec =` sticks and the `fec` commands are gone,

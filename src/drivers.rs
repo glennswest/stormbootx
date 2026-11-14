@@ -16,36 +16,20 @@
 //! stormnic drivers (`scripts/build-nic-drivers.sh`); no medium carries iPXE
 //! (#91), and the fw medium carries no drivers (#52).
 //!
-//! **The platform goes first.** Before anything is loaded, one recursive
-//! `ConnectController` pass lets the firmware's own drivers claim every NIC
-//! they will take. A media driver then only finds the NICs nothing else wanted
-//! — it never displaces a native driver on a machine that has one, so the same
-//! media is safe to boot anywhere.
-//!
-//! **Unless the media says otherwise, for one family** (#108). Every OVMF
-//! (Fedora's, pve's) carries VirtioNetDxe, which binds a VM's virtio-net NIC
-//! in that first pass, so stormnic-virtio, which like every stormnic driver
-//! declines a function another driver holds, would never run. With
-//! `prefer_media_drivers = virtio` in `stormboot.conf` (the rustnic media
-//! only), `take_over` disconnects the firmware's driver tree from each
-//! virtio-net function, leaf first, and connects the function naming only the
-//! media's driver. If that driver does not then hold it, the firmware's is
-//! connected again, so a NIC is never left with no driver. Without the key
-//! nothing is taken from anyone; virtio IDs exist only in VMs, so on metal the
-//! key changes nothing.
-//!
-//! `prefer_media_drivers = mlx5` (#131) does the same for a ConnectX-4/5/6,
-//! whose firmware's FlexBoot UEFI driver holds it, for stormnic-mlx5. That one
-//! is metal: a card nothing here has taken yet. So each take is announced before
-//! its disconnect, as a driver's start is, and what the firmware's driver left
-//! on the handle is printed: stormnic-mlx5's `Supported` declines a function
-//! that still carries an SNP.
-//!
-//! `prefer_media_drivers = e1000e` (#70) takes an Intel 82574L, 82579 or
-//! I217/I218/I219 from whatever holds it (Intel's UNDI, a NIC's iPXE ROM) for
-//! stormnic-e1000e. The rustnic media carry that driver without the key: it
-//! drives an e1000e nothing else does, and no golden takes one from the
-//! firmware, since the PCH parts have run only in simulation.
+//! **Our drivers only** (#202; the owner, 2026-11-14: "we only use our
+//! drivers going forward"). The firmware's own drivers bind first, in one
+//! recursive `ConnectController` pass, so the machine has a network if ours
+//! cannot. Then `take_over` gives every NIC a stormnic driver on the media
+//! drives, matched by vendor:device (`FAMILIES`), to that driver: it
+//! disconnects the firmware's driver tree from the function, leaf first, and
+//! connects it naming only ours. If ours does not then hold it, the
+//! firmware's is connected again, so a NIC is never left with no driver. A NIC
+//! no driver of ours drives (the R230's onboard ports) stays the firmware's.
+//! Each take is announced before its disconnect, as a driver's start is, and
+//! what the firmware's driver left on the handle is printed: stormnic-mlx5's
+//! `Supported` declines a function that still carries an SNP (#131). Before
+//! #202 this was opt-in per family, `prefer_media_drivers = virtio,mlx5,e1000e`
+//! (#108, #131, #70); the key is now ignored, and says so.
 //!
 //! Nothing here is fatal. A missing directory is the normal case; a driver
 //! that will not load or start is reported and skipped, and the boot goes on
@@ -78,11 +62,15 @@ pub struct Loaded {
     image: Option<uefi::Handle>,
 }
 
-/// A family of media driver that may take its NICs from the firmware's own
-/// driver, when `prefer_media_drivers` names it (#108): the file on the
-/// media and the PCI IDs of the network functions (class 02) it drives.
+/// A stormnic driver on the media and the PCI IDs of the network functions
+/// (class 02) it drives: vendor:device only, never the subsystem, as Linux
+/// matches (`PCI_VDEVICE`), so an OEM's relabelled card (Dell, HP, Supermicro,
+/// Lenovo: its own subsystem ids, the chip's device id) is the same NIC. Each
+/// list is the driver's own at its pin; `scripts/build-nic-drivers.sh` fails
+/// when they differ. Since #202 every family takes its NICs from whatever
+/// firmware driver holds them (the owner, 2026-11-14: "we only use our
+/// drivers going forward").
 struct Family {
-    name: &'static str,
     file: &'static str,
     ids: &'static [(u16, u16)],
 }
@@ -91,27 +79,64 @@ struct Family {
 /// VirtioNetDxe). Modern virtio 1.x and transitional; the driver declines a
 /// transitional device without the 1.x capabilities, and then the firmware's
 /// is given it back. mlx5: a ConnectX-4/5/6 under FlexBoot (#131). e1000e:
-/// an Intel 82574L or chipset GbE under Intel's UNDI or iPXE (#70).
+/// an Intel 82574L or chipset GbE under Intel's UNDI or iPXE (#70). ixgbe:
+/// Intel 82599/X540/X550/X552 10G (#29). mlx4: ConnectX-3 (#34). igb: Intel
+/// 82575/82576/82580/I350/I354/I210/I211 1G (#69).
 const FAMILIES: &[Family] = &[
     Family {
-        name: "virtio",
         file: "stormnic-virtio.efi",
         ids: &[(0x1af4, 0x1041), (0x1af4, 0x1000)],
     },
     Family {
-        name: "mlx5",
         file: "stormnic-mlx5.efi",
         ids: MLX5_TAKE_OVER,
     },
     Family {
-        name: "e1000e",
         file: "stormnic-e1000e.efi",
         ids: E1000E_IDS,
     },
+    Family {
+        file: "stormnic-ixgbe.efi",
+        ids: IXGBE_IDS,
+    },
+    Family {
+        file: "stormnic-mlx4.efi",
+        ids: MLX4_IDS,
+    },
+    Family {
+        file: "stormnic-igb.efi",
+        ids: IGB_IDS,
+    },
+];
+
+/// What stormnic-ixgbe binds (its `src/ids.rs` at the pin).
+const IXGBE_IDS: &[(u16, u16)] = &[
+    (0x8086, 0x10f7), (0x8086, 0x10f8), (0x8086, 0x10f9), (0x8086, 0x10fb), (0x8086, 0x10fc), (0x8086, 0x1507),
+    (0x8086, 0x1514), (0x8086, 0x1517), (0x8086, 0x151c), (0x8086, 0x1529), (0x8086, 0x152a), (0x8086, 0x154a),
+    (0x8086, 0x154d), (0x8086, 0x154f), (0x8086, 0x1557), (0x8086, 0x1558), (0x8086, 0x155d), (0x8086, 0x1528),
+    (0x8086, 0x1560), (0x8086, 0x155c), (0x8086, 0x1563), (0x8086, 0x15d1), (0x8086, 0x15aa), (0x8086, 0x15ab),
+    (0x8086, 0x15ac), (0x8086, 0x15ad), (0x8086, 0x15ae), (0x8086, 0x15b0), (0x8086, 0x15c2), (0x8086, 0x15c3),
+    (0x8086, 0x15c4), (0x8086, 0x15c6), (0x8086, 0x15c7), (0x8086, 0x15c8), (0x8086, 0x15ce), (0x8086, 0x15e4),
+    (0x8086, 0x15e5),
+];
+
+/// What stormnic-mlx4 binds (its `DEVICES` in `src/main.rs` at the pin).
+const MLX4_IDS: &[(u16, u16)] = &[
+    (0x15b3, 0x1003), (0x15b3, 0x1007),
+];
+
+/// What stormnic-igb binds (its `src/ids.rs` at the pin).
+const IGB_IDS: &[(u16, u16)] = &[
+    (0x8086, 0x10a7), (0x8086, 0x10a9), (0x8086, 0x10d6), (0x8086, 0x10e2), (0x8086, 0x10c9), (0x8086, 0x10e6),
+    (0x8086, 0x10e7), (0x8086, 0x10e8), (0x8086, 0x150a), (0x8086, 0x150d), (0x8086, 0x1518), (0x8086, 0x1526),
+    (0x8086, 0x1509), (0x8086, 0x150e), (0x8086, 0x150f), (0x8086, 0x1510), (0x8086, 0x1511), (0x8086, 0x1516),
+    (0x8086, 0x1527), (0x8086, 0x1521), (0x8086, 0x1522), (0x8086, 0x1523), (0x8086, 0x1524), (0x8086, 0x1f40),
+    (0x8086, 0x1f41), (0x8086, 0x1f45), (0x8086, 0x1533), (0x8086, 0x1534), (0x8086, 0x1535), (0x8086, 0x1536),
+    (0x8086, 0x1537), (0x8086, 0x1538), (0x8086, 0x157b), (0x8086, 0x157c), (0x8086, 0x15f6), (0x8086, 0x1539),
 ];
 
 /// The physical functions stormnic-mlx5 claims (its `DEVICES`, at the pin in
-/// `scripts/build-nic-drivers.sh`), which `prefer_media_drivers = mlx5` takes
+/// `scripts/build-nic-drivers.sh`), which `take_over` takes
 /// from the firmware's driver (#131). ConnectX-7 (1021) is not here: the
 /// driver does not claim it, and a take it would decline only disturbs a
 /// working NIC.
@@ -245,27 +270,24 @@ fn nic_verbose() {
     }
 }
 
-/// Give the NICs of each family `prefer_media_drivers` names to the media's
-/// driver, taking them from the firmware's (#108; see the module comment).
-/// One console line per function.
+/// Give every NIC a stormnic driver on the media drives to that driver,
+/// taking it from whichever firmware driver holds it (#108, #131; since #202
+/// every family, unasked: "we only use our drivers going forward"). One
+/// console line per function; a driver that does not bind gives the NIC back.
 fn take_over(loaded: &[Loaded], t0: Option<u32>) {
-    let prefer = crate::config::stated_prefer_media_drivers();
-    for want in &prefer {
-        let Some(family) = FAMILIES.iter().find(|f| f.name == want.as_str()) else {
-            uefi::println!("    prefer    : no media driver family `{want}` (virtio, mlx5, e1000e); ignored");
-            continue;
-        };
+    if crate::config::conf_text().is_some_and(|t| crate::config::field(&t, "prefer_media_drivers").is_some()) {
+        uefi::println!("    ours      : prefer_media_drivers is ignored since #202: every stormnic driver on the media takes its NICs");
+    }
+    let mut absent: Vec<&str> = Vec::new();
+    for family in FAMILIES {
         let image = loaded
             .iter()
             .find(|l| l.name.eq_ignore_ascii_case(family.file))
             .and_then(|l| l.image);
-        let Some(image) = image else {
-            uefi::println!("    prefer    : {want}, but {} was not started from the media; the firmware keeps its NICs", family.file);
-            continue;
-        };
+        let Some(image) = image else { continue };
         let functions = network_functions(family.ids);
         if functions.is_empty() {
-            uefi::println!("    prefer    : {want}: no such NIC on this machine");
+            absent.push(family.file);
         }
         for (pci, at, device) in functions {
             let theirs = holders(pci, image.as_ptr());
@@ -277,6 +299,9 @@ fn take_over(loaded: &[Loaded], t0: Option<u32>) {
             let line = take_one(pci, image.as_ptr(), family.file);
             uefi::println!("    [{:>3} s] {at} {:04x}:{:04x}: {line}", elapsed(t0), device.0, device.1);
         }
+    }
+    if !absent.is_empty() {
+        uefi::println!("    ours      : no NIC here for {}", absent.join(", "));
     }
 }
 
