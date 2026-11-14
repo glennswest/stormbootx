@@ -249,7 +249,7 @@ console_wait 'command     : fec-reset (id 2): warm-resetting so the cards load t
 hold_wait 2
 (( $(console_count 'a TEST card is compiled in') >= 4 )) || api_fail "no second start after fec-reset"
 fec_has '"current":"rs","next_boot":"rs"'
-n=$(grep -oE '(warm|cold)-resetting' <(tr -d '\r' < "$T/api.log") | tr '\n' ' ' || true)
+n=$(grep -oE '(warm|cold)-resetting \(' <(tr -d '\r' < "$T/api.log") | tr '\n' ' ' || true)
 [[ -z "$n" ]] || api_fail "the pin reset by itself: $n"
 kill "$qemu" 2>/dev/null || true
 wait "$qemu" 2>/dev/null || true
