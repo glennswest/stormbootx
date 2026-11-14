@@ -184,7 +184,8 @@ details and Esc back, and no panel text in the serial log. `SCREEN_PNG=1`
 (`STORMBOOTX_FEC_TEST`, in its own target dir; `build-golden.sh` refuses it) and
 boots six times with no `-no-reboot`: a write and one real warm reset, a card that
 forgets the value (one reset, never two), `fec_pin = off` on that machine, a
-refused write, a card already on RS, and no `fec_pin`. QEMU has no ConnectX, so
+refused write, a card already on RS, and no `fec_pin`; then `auto`, per-port keys, and an
+`api` boot (#203): `GET /api/v1/fec`, a signed `fec all rs`, `fec-reset`, then rs runs. QEMU has no ConnectX, so
 mlxfec's own read and write are not in it.
 
 `tests/iso-layout.sh ISO …` checks an ISO is isohybrid with a FAT12 ESP,
@@ -305,8 +306,8 @@ stormbootx --url http://stormcentral.g8.lo`.
 | File | Job |
 |---|---|
 | `src/main.rs` | `run()`: the boot, step by step; the hold and the boot again (#167); the fall-through |
-| `src/api.rs` | stormbootx's own API (#167): `/api/v1/status`, `/inventory`, `/log`, `POST /api/v1/command`; Ed25519 over `RELEASE_KEYS` and `command_key =`, the `StormBootCommandId` floor (NV); the engine's record (stormblock#494); the commands done at the boot's fixed points; the hold (`hold =`, `hold_retry =`) |
-| `src/command.rs` | the signed command's text, body and verbs, and the API's HTTP parsing (core + alloc, host-tested) |
+| `src/api.rs` | stormbootx's own API (#167): `/api/v1/status`, `/inventory`, `/log`, `/fec` (#203), `POST /api/v1/command`; Ed25519 over `RELEASE_KEYS` and `command_key =`, the `StormBootCommandId` floor (NV); the engine's record (stormblock#494); the commands done at the boot's fixed points; the hold (`hold =`, `hold_retry =`) |
+| `src/command.rs` | the signed command's text, body and verbs (`fec`, `fec-reset`, #203), and the API's HTTP parsing (core + alloc, host-tested) |
 | `src/smbios.rs` | the serials (Type 1 → 2 → 3, placeholders and shared chassis serials rejected), before any network exists; the MAC as the floor |
 | `src/net.rs` | the TCP/IP stack (#56): smoltcp on every NIC's SNP (opened exclusively), DHCP, `TcpSocket`, the TSC clock; its own ARP for the next hops (#168); the API's listening sockets, served from every poll (#167); `release` gives the NICs back on the fall-through |
 | `src/profile.rs` | the `timing :` line (#168): a mark at the end of each step, durations on the TSC |
@@ -343,7 +344,7 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/ui.rs` | the boot panel (#144): its own `ConOut` in the system table; every line to the serial consoles and F2, the steps drawn on the screen consoles; `end` hands the screen back |
 | `src/connectx.rs` | which Mellanox ids have a FEC to read, which are ConnectX-3s with none (#25), the scan's closing line, and `pin_action`, the pin's decision (#186) (core-only, host-tested) |
 | `src/mlxfec.rs` | ConnectX FEC NV read and write: the pin, a `fec =` recovery stick, the shell's `fec` |
-| `src/fecpin.rs` | the FEC pin at boot (#186, #203): `fec_pin = rs`, a warm reset then a cold one then `stuck` (the boot holds), `StormBootFecPin`; a pretend card under `STORMBOOTX_FEC_TEST` for `tests/fecpin-ovmf.sh` |
+| `src/fecpin.rs` | the FEC pin at boot (#186, #203): `fec_pin = rs`, a warm reset then a cold one then `stuck` (the boot holds), `StormBootFecPin`; the API's `fec`/`fec-reset` and `/api/v1/fec` JSON; a pretend card under `STORMBOOTX_FEC_TEST` for `tests/fecpin-ovmf.sh` |
 | `src/tcp4probe.rs` | second binary: does this machine's firmware carry TCP4? |
 
 ## Load-bearing facts

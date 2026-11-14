@@ -885,6 +885,7 @@ bootloader starts (`api = <port>|off` in `stormboot.conf`; the claim's
 | `GET /api/v1/status` | `phase` (`booting`, `attaching`, `holding`, `falling through`, `handed off`), `detail` (the failure when holding), the machine's `names` and `addresses`, `command_id` (the floor), the `pending` and `last` command with its result |
 | `GET /api/v1/inventory` | the firmware inventory (`"v":2`, as in the claim): drives first, NICs, controllers, SMBIOS, CPU, memory |
 | `GET /api/v1/log` | every console line so far, the banner first (kept even with `syslog = off`) |
+| `GET /api/v1/fec` | the ConnectX FEC (#203), as read at the NIC step and after each `fec`: `fec_pin`, the pin's `record` and `stuck`, and per port its `bdf`, `mac`, `speed` (PTYS capability), `current`, `next_boot`, `stored` and `wanted` (`{value, from}`, or `null` with why it is `left`). No link state. 503 before the NIC step |
 | `POST /api/v1/command` | a signed command: `202 {"accepted":<id>,…}`, else 400/403/409 with `{"error":…}` |
 
 Reads are open (the log already goes to the stormcast group, and the
@@ -922,6 +923,8 @@ runs: each command is done once, on one machine. Use Unix milliseconds for
 | `inventory` | collect it again |
 | `format <serial> [fast]` | zero the first and last MiB of the one drive with that serial (its MBR, GPT and backup GPT), never the boot medium, a read-only drive or a published one; `full`/`secure` are the maintenance image's (baremetalservices) |
 | `maint` | claim the maintenance image and boot it: the usual claim with `"image":"maint"` (stormblock#497), down the same names, answering this host's own `maint-<host>` clone of `boothost/maint`'s volume. Never the media's fallback; a reply without `"image":"maint"` (an engine before #497, `stormboot-serve`) is not attached; no `boothost/maint` (a 404) or either of those is a failed boot, so it holds. Before the chain-load it boots again for the maintenance image |
+| `fec <all\|BDF\|MAC> <rs\|fc\|none\|default>` | write that next-boot FEC to the port(s) (#203): `all`, a function (`0000:84:00.1` or `84:00.1`) or a MAC; `off` is refused (say `none`). Already that value: nothing written. It runs from the next reset |
+| `fec-reset` | a warm reset, so the cards load their next-boot FEC. Under a `fec_pin`, an earlier pin's record is kept, so a command never adds a third reset: the pin's warm → cold → hold still counts |
 
 A command is taken at fixed points: before the intent is read (the API's,
 else the engine's host record `GET …/boothost/<name>/command`,

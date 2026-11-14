@@ -17,6 +17,7 @@
 #   refuses  a write that fails: no reset, the boot goes on
 #   rs       a card already on RS: nothing written, no reset
 #   unset    a medium with no fec_pin: a differing card is read and left alone
+#   api      GET /api/v1/fec, a signed `fec all rs` and `fec-reset` (#203)
 #
 # The real card's read and write are mlxfec's, and have run only on metal.
 #
@@ -160,5 +161,95 @@ boot portoff "$T/portoff.fd" $'fec_pin = rs\nfec_pin.0000:84:00.0 = off\nfec_tes
 boot bymac "$T/bymac.fd" $'fec_pin = off\nfec_pin.52:54:00:FE:C0:01 = rs\nfec_test_card = holds' \
     "the last pin held (warm: 84:00.0 port 1: device-default -> rs)" 'warm' \
     '0000:84:00.0 (25g) wants rs (its own key, rs)'
+
+# #203: the API. A NIC (slirp), no engine (port 9 refuses), `fec_pin = off` so
+# the boot writes nothing itself, and a hold with a test command key: the FEC
+# read by GET /api/v1/fec, a signed `fec all rs` writes the next-boot value, a
+# signed `fec-reset` warm-resets, and the card then runs rs. Nothing else resets.
+command -v openssl >/dev/null || die "[api] openssl is not installed"
+command -v curl >/dev/null || die "[api] curl is not installed"
+openssl genpkey -algorithm ed25519 -out "$T/cmd.pem" 2>/dev/null
+CMD_PUB=$(openssl pkey -in "$T/cmd.pem" -pubout -outform DER | tail -c 32 | od -An -tx1 | tr -d ' \n')
+[[ ${#CMD_PUB} -eq 64 ]] || die "[api] no Ed25519 public key"
+APIP=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
+ME=mac-525400123456
+
+signed() {
+    local id=$1 cmd=$2 args=${3:-} issued=2026-11-13T22:00:00Z
+    printf 'stormbootx-command v1\n%s\n%s\n%s\n%s\n%s\n' "$ME" "$id" "$cmd" "$args" "$issued" > "$T/cmd.txt"
+    openssl pkeyutl -sign -inkey "$T/cmd.pem" -rawin -in "$T/cmd.txt" -out "$T/cmd.sig"
+    printf '{"host":"%s","id":%s,"command":"%s","args":"%s","issued":"%s","by":"fecpin-test","sig":"%s"}' \
+        "$ME" "$id" "$cmd" "$args" "$issued" "$(od -An -tx1 "$T/cmd.sig" | tr -d ' \n')"
+}
+api_fail() {
+    say "[api] $*; serial console, last 60 lines:"
+    tr -d '\r' < "$T/api.log" | sed 's/\x1b\[[0-9;?]*[A-Za-z]//g' | grep -v '^\s*$' | tail -60 | sed 's/^/  | /'
+    die "[api]"
+}
+console_count() { tr -d '\r' < "$T/api.log" | grep -cF -- "$1" || true; }
+# hold_wait N: until the console has said it is holding N times.
+hold_wait() {
+    local t=0
+    until (( $(console_count 'hold        : holding until a command; the API at http://10.0.2.15:9180') >= $1 )); do
+        (( t < LIMIT )) || api_fail "hold $1 never came"
+        sleep 1; t=$((t + 1))
+    done
+}
+console_wait() {
+    local t=0
+    until tr -d '\r' < "$T/api.log" | grep -qF -- "$1"; do
+        (( t < 60 )) || api_fail "the console never said: $1"
+        sleep 1; t=$((t + 1))
+    done
+    say "[api] console: $1"
+}
+post() {
+    local code
+    code=$(curl -s -m 30 -o "$T/resp" -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
+        --data-binary "$1" "http://127.0.0.1:$APIP/api/v1/command" || true)
+    [[ $code == 202 ]] || api_fail "POST $(cut -c1-60 <<<"$1"): HTTP $code $(cat "$T/resp" 2>/dev/null)"
+    say "[api] HTTP $code: $(cut -c1-120 "$T/resp")"
+}
+fec_has() {
+    local j
+    j=$(curl -s -m 10 "http://127.0.0.1:$APIP/api/v1/fec")
+    for want in "$@"; do
+        [[ $j == *"$want"* ]] || api_fail "GET /api/v1/fec lacks $want: $j"
+    done
+    say "[api] GET /api/v1/fec: ${j:0:220}"
+}
+
+"$ROOT/scripts/build-boot-agent.sh" --binary "$T/target/x86_64-unknown-uefi/release/stormbootx.efi" \
+    --engine 10.0.2.2 --api-port 9 --ntp 10.0.2.2:9 --hold forever --command-key "$CMD_PUB" \
+    --no-fallback --media fecapi --size 64 --output "$T/api.img" >/dev/null
+printf 'fec_pin = off\nfec_test_card = holds\n' > "$T/local.conf"
+mcopy -o -i "$T/api.img@@1M" "$T/local.conf" ::/stormboot/local.conf
+cp "$OVMF_VARS" "$T/api.fd"
+: > "$T/api.log"
+say "[api] booting with a NIC, the API at 127.0.0.1:$APIP"
+qemu-system-x86_64 -machine q35,accel="$accel" -m 1024 \
+    -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
+    -drive if=pflash,format=raw,file="$T/api.fd" \
+    -fw_cfg name=opt/org.tianocore/IPv4Support,string=no \
+    -fw_cfg name=opt/org.tianocore/IPv6Support,string=no \
+    -netdev user,id=n0,hostfwd=tcp:127.0.0.1:$APIP-:9180 -device virtio-net-pci,netdev=n0,romfile= \
+    -drive if=none,id=stick,format=raw,file="$T/api.img" \
+    -device virtio-scsi-pci,id=scsi -device scsi-hd,drive=stick,bus=scsi.0,removable=on,bootindex=1 \
+    -display none -serial file:"$T/api.log" &
+qemu=$!
+hold_wait 1
+fec_has '"fec_pin":"off"' '"bdf":"0000:84:00.0"' '"current":"device-default","next_boot":"device-default"' '"test_card":true'
+post "$(signed 1 fec 'all rs')"
+console_wait 'command     : fec (id 1): wrote '
+fec_has '"current":"device-default","next_boot":"rs"'
+post "$(signed 2 fec-reset)"
+console_wait 'command     : fec-reset (id 2): warm-resetting so the cards load their next-boot FEC'
+hold_wait 2
+fec_has '"current":"rs","next_boot":"rs"'
+n=$(grep -oE '(warm|cold)-resetting' <(tr -d '\r' < "$T/api.log") | tr '\n' ' ' || true)
+[[ -z "$n" ]] || api_fail "the pin reset by itself: $n"
+kill "$qemu" 2>/dev/null || true
+wait "$qemu" 2>/dev/null || true
+qemu=""
 
 say PASS
