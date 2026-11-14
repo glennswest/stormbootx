@@ -139,16 +139,19 @@ then.
       `fec_pin = rs` (every golden) is the 25G ports' FEC, other speeds
       their standard's, never the card's negotiated `default`; table and
       per-port key as overrides.
-- [ ] **#207, #209, #210, #211 — pin e1000e bd67192, igb 6990341, virtio
-      2dcafd3, ixgbe 02fcc5d (the port contract line).** Pinned with #208;
-      net-ovmf's expectations follow the new lines. Next: one sc-build for all
-      five pins, then one image.
-- [ ] **#208 — pin stormnic-mlx4 v0.3.0 (398a1a4; the issue's full hash
+- [x] **#207, #209, #210, #211 — pin e1000e bd67192, igb 6990341, virtio
+      2dcafd3, ixgbe 02fcc5d (the port contract line).** sc-build 25abfde
+      passed (all six drivers with same_ids, the rustnic golden and stick,
+      virtio/e1000e/igb boots showing each new line, net-ovmf whole,
+      REPRO_MEDIA). Golden golden-stormbootx-rustnic-3a9c7bf19e9aba2d. #207,
+      #209, #210 closed (no stormcentral item); #211 shipped (proof: the
+      media label); #194 superseded by #211. ixgbe's line waits for an X9
+      blade.
+- [x] **#208 — pin stormnic-mlx4 v0.3.0 (398a1a4; the issue's full hash
       398a1a4bd8b5… is a typo, v0.3.0 is 398a1a4f10ad…): the per-port
-      contract line.** Pinned; next the focused sc-build (nic drivers with
-      the `same_ids` check, the rustnic goldens, a virtio boot of the rustnic
-      stick, REPRO_MEDIA of the rustnic media), then the image. QEMU has no
-      ConnectX-3: the line itself is seen on an X9 blade.
+      contract line.** sc-build 652a2ac and 25abfde passed; shipped in
+      golden-stormbootx-rustnic-3a9c7bf19e9aba2d (proof: the media label).
+      QEMU has no ConnectX-3: the line itself is seen on an X9 blade.
 - [ ] **#202 — forge1's FEC pin read 0 ports (P0, the master for the
       owner, 2026-11-13: "fix the fec on port 80 tonight, in stormbootx!").**
       forge1 (R6415, B6B0PY2) logged `fec pin : rs …: 0 port(s) read` with no
