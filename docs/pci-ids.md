@@ -43,7 +43,8 @@ Linux master's driver tables (fetched 2026-11-14).
 
 Each gap is the driver's to decide: some of those parts need other code (the
 82598 is not an 82599, and the older e1000e MACs differ). Each is filed on
-its driver's repo. When a driver widens its list, its pin bump here carries
+its driver's repo: stormnic-mlx5#9, stormnic-mlx4#32, stormnic-ixgbe#38,
+stormnic-igb#6, stormnic-e1000e#6. When a driver widens its list, its pin bump here carries
 the same ids into `FAMILIES`, or the build fails.
 
 How it was checked: the five Linux tables were parsed for `PCI_VDEVICE(…)`,

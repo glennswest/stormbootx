@@ -174,6 +174,14 @@ then.
       speed, FEC, link). Next: the full sc-build, the golden request, the
       master's canary to C2NR0Q2, then forge1; #202 waits on
       stormnic-mlx5#8 for the FEC itself.
+      **Then (owner): "we only use our drivers going forward"** (fc4101d):
+      every stormnic driver on the medium takes the NICs it matches by
+      vendor:device, no `prefer_media_drivers` (ignored, named); ixgbe, mlx4,
+      igb are families too; `build-nic-drivers.sh` checks each family's ids
+      against its pin. PCI-ID research for OEM relabels in `docs/pci-ids.md`
+      (vendor:device, never the subsystem, as Linux); the gaps against
+      Linux filed: stormnic-mlx5#9, stormnic-mlx4#32, stormnic-ixgbe#38,
+      stormnic-igb#6, stormnic-e1000e#6.
 - [x] **#198 — install a release from a local stormdist ISO or stick,
       offline, with the medium's read rate (P0, the master, 2026-11-10).
       Released v0.41.0 (eeac3a2), closed 2026-11-10.** Decided (the master for the owner, 2026-11-10): option
