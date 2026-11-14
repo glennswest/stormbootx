@@ -134,7 +134,12 @@ STORMNIC_MLX5_REPO="https://github.com/glennswest/stormnic-mlx5.git"
 # runs other` on a port with link, C2NR0Q2/forge1), and a FEC FAILED line
 # carries the raw PPLM values. The same IDs. The receive path
 # (stormnic-mlx5#1) is not in it.
-STORMNIC_MLX5_REF="32ddb3f65df4410a935e8be89e300fe944136afc"
+# 9d86045 (#216, stormnic-mlx5#12): `Receive` and `WaitForPacket` drain the
+# EQ and CQs themselves; before, only `GetStatus` did, which stormbootx calls
+# just before a transmit, so each DHCP OFFER reached smoltcp after the next
+# DISCOVER's new xid and no lease was taken (C2NR0Q2, forge1). Contains
+# 32ddb3f. The same IDs.
+STORMNIC_MLX5_REF="9d86045bcdfd7c3eeb2f5073996e04824909b852"
 STORMNIC_E1000E_REPO="https://github.com/glennswest/stormnic-e1000e.git"
 # d0bc5ec (v0.1.0, #70, stormnic-e1000e#1): SNP for the 82574L and the PCH
 # 82579/I217/I218/I219, 67 device IDs listed from pci.ids 2026.11.06
