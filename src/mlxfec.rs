@@ -128,7 +128,6 @@ const REG_MFRL: u16 = 0x9028;
 /// NV header (tools_open_layouts.h:236-286): three dwords before the data.
 const NV_HDR_DWORDS: usize = 3;
 const NV_DATA_MAX: usize = 256;
-const WRITER_ID_MLXCONFIG: u32 = 0x9;
 
 /// The per-port TLVs that carry the FEC override (mlxconfig_host.db).
 const TLV_CLASS_PHYSICAL_PORT: u32 = 1;

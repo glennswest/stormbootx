@@ -53,3 +53,8 @@ opt-level = "z"
 lto = true
 panic = "abort"
 strip = true
+
+# Zero build warnings (stormcentral#193): one fails the build. #202 shipped
+# with an unused constant because nothing did.
+[lints.rust]
+warnings = "deny"
