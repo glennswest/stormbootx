@@ -108,7 +108,8 @@ serial 5 `current`; serial 6 refused as another machine's canary, then taken
 as this one's, retiring a driver; serial 7 refused for room; serial 8 (a
 dead NVMe port in its conf) fails two trial starts and the third puts serial
 6 back; a fresh FAT32 medium (#185) takes serial 5 and passes its trial. mtools
-checks the disk after each boot.
+checks the disk after each boot, and `last.log`/`trial.log` on it (#213): the
+failed trial's last start is kept and goes with the restored binary's claim.
 
 `tests/net-ovmf.sh` (#56) boots stormbootx under OVMF with no firmware
 network stack, against a stub engine, a stub NVMe/TCP target (4096-byte
@@ -234,7 +235,8 @@ claim, its SMBIOS parse (BMC, CPU, memory) and its JSON under the engine's
 `src/command.rs` (#167) is the eleventh: the signed command's text and body,
 the verbs, and the API's HTTP request parser; `extern crate alloc` like
 `inventory.rs`. The signature check is `api.rs`'s (ed25519-compact).
-`src/distmedia.rs` (#198) is the twelfth: a stormdist medium's ISO 9660
+`src/logwire.rs` also cuts a log for `last.log` and the claim
+(`excerpt`, `json_excerpt`, #213). `src/distmedia.rs` (#198) is the twelfth: a stormdist medium's ISO 9660
 directory records, `BOOT.toml`, `RELEASE.toml`'s console fields, the release
 key `DIST_KEYS` and the read-rate line; core + alloc. Its signature check is
 `localinstall.rs`'s.
@@ -312,6 +314,7 @@ kept for a later need; the test command sets it to keep the code honest.
 | `src/nvme.rs` | the NVMe/TCP initiator's UEFI end: `TcpSocket` as its `Transport`, `boot::stall` (#10) |
 | `crates/nvme-tcp-initiator` | the NVMe/TCP initiator itself (#10): `no_std` + `alloc`, no dependencies, generic over a `Transport` and a `Platform`, shared with stormboot4bios; reads up to 8 in flight (#100); host tests against a fake controller (`cargo test -p nvme-tcp-initiator`) |
 | `src/handoff.rs` | `StormBootTag`/`StormBootHostNqn`, volatile EFI variables naming the machine to Linux's initramfs (#76, stormblock#249); `StormBootEngine` (#183); `StormBootClock` (#77); `StormBootUpdate` (#83); `StormBootInstallConfig` + chunks (#79) |
+| `src/lastlog.rs` | each start's console on the medium (#213): `\stormboot\last.log` at fixed points before the attach (sealed after it, #46), the failed trial's as `trial.log`, and the claim's `trial_log`/`last_log`/`log` within the agent's 15 KiB |
 | `src/selfupdate.rs` | the boot medium updates itself (#83): trial count and revert at start; fetch, Ed25519 check, `*.new`/`*.prev` swap and restart after `net::up`; `mark_good` after the attach; `StormBootMinSerial` (NV) |
 | `src/manifest.rs` | the self-update's signed manifest, `RELEASE_KEYS` (stormcentral's, #86), `\stormboot\state`, trial and serial decisions, HTTP framing, `update =` (core-only, host-tested) |
 | `src/installconf.rs` | `install-config.yaml` (#79): the media slot, the chunk variables' names and the `v1:<len>:<N>:<sha256>` header (core-only, host-tested) |

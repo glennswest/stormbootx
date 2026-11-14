@@ -54,6 +54,7 @@ as a NIC driver (#26; absent on ordinary media). It writes to these:
 | the hardware clock (RTC), through UEFI `SetTime` | a boot whose NTP server answers while the RTC is more than a second off (#77); UTC, time zone and daylight left as the firmware had them |
 | **volatile** EFI variables, `StormBootTag`, `StormBootHostNqn`, `StormBootClock`, `StormBootUpdate` and `StormBootInstallConfig` (+ its chunks) | every boot that names the machine, attaches an image, asks NTP, has a self-update state or finds an `install-config.yaml` on the media (#76, #77, #83, #79); gone at the next reset |
 | its own boot medium: `\EFI\BOOT\BOOTX64.EFI`, `\startup.nsh`, `\stormboot\stormboot.conf`, `\stormboot\drivers\*` (with `*.new`/`*.prev` copies), `\stormboot\state`, and `\stormboot\local.conf` only to keep a `name =` | a writable medium (USB stick, local ESP) with `update =`, when a newer signed release verifies, and the starts of its trial (#83, *Self-update*) |
+| its own boot medium: `\stormboot\last.log` (this start's console, at most 64 KiB) and `\stormboot\trial.log` (a failed trial's last start) | every start on a writable medium, before the attach and after the fall-through (#213, *The start's log*); never on a read-only medium or a RAM disk |
 | one **non-volatile** EFI variable, `StormBootMinSerial` | when a self-updated medium passes its trial (#83): the highest release serial this machine has run, so an older signed release can't be replayed onto it |
 
 Every line it prints is also **sent** over the network once a NIC holds a
@@ -267,7 +268,8 @@ console; a machine with no screen console gets it anyway.
    ```
    "agent": {"name":"stormbootx","version":"0.19.0","commit":"649dd07",
              "media":"rustnic ixgbe@02fcc5d mlx4@398a1a4 virtio@2dcafd3 e1000e@bd67192 igb@6990341",
-             "update_serial":5,"update":"serial:5"}
+             "update_serial":5,"update":"serial:5","api_port":9180,
+             "last_log":"stormbootx 0.42.0 …","log":"stormbootx 0.42.0 …"}
    ```
 
    `commit` is the build stamp (absent on an unstamped build), `media` the
@@ -275,7 +277,13 @@ console; a machine with no screen console gets it anyway.
    files on the medium (absent when no update wrote them), and `update` the
    `StormBootUpdate` value at claim time (`serial:<n>`, `trial:<n>:<start>`,
    `failed:<n>`; absent when unset). The engine keeps it on the host's
-   last-claim record (stormblock#177).
+   last-claim record (stormblock#177). Then the console (#213, *The start's
+   log*): `trial_log`, the failed trial's last start, only with
+   `failed:<n>`; `last_log`, the previous start's `last.log`; `log`, this
+   start up to the claim. Each is the log's head and tail (6, 3 and 4 KiB
+   escaped) with a `[... N bytes not kept ...]` line between, and the whole
+   `agent` stays within 15 KiB (the engine drops one over 16 KiB): the logs
+   go first, never `update`.
 
    Every claim also carries the **firmware inventory** (#4, #167,
    `src/inventory.rs` and `src/hardware.rs`): everything the firmware can say
@@ -661,6 +669,29 @@ stormcentral#279.
   their size free (the `*.prev` copies about to be replaced count); a
   medium without room says so and is left alone. The 4 MiB ESP of
   `build-boot-agent.sh` holds a set of binary and drivers three times over.
+- **A failed trial says why** (#213): the start that puts a set back keeps
+  the previous start's `last.log`, the failed set's last, as
+  `\stormboot\trial.log` (`last log : serial 8's last start (212 line(s))
+  kept in \stormboot\trial.log`), and the restored binary's claim carries it
+  as `trial_log` beside `update: failed:<n>`. A restored binary from before
+  #213 sends none.
+
+### The start's log
+
+A trial that never reaches the network leaves nothing anywhere else: no
+lease means no syslog, and only installs get a BMC console capture (#213,
+C2NR0Q2's serial 8). So every start on a writable medium keeps its own
+console on it, in `\stormboot\last.log` (`src/lastlog.rs`): all of
+`netlog`'s lines so far, cut to 64 KiB (the first quarter and the end).
+It is rewritten at fixed points, from the first, whenever the log grew:
+after the trial count, before each media driver starts (a driver that hangs
+leaves its name), after the drivers bind, after the network is up, and at
+every log flush (the name, the claim, the hold, the fall-through). Not once
+an image is attached (#46) until it is withdrawn, and never on a read-only
+medium (`last log : not kept (the boot medium is read-only)`) or a RAM
+disk. The previous start's file is read first, and goes with the claim as
+`last_log`; `GET /api/v1/log/last` and `/api/v1/log/trial` serve both
+files. On a node, the stick's FAT holds both files to read.
 
 `tests/update-ovmf.sh` boots a writable GPT medium on a USB stick
 (`qemu-xhci` + `usb-storage`) under OVMF ten times against a stub
@@ -673,7 +704,8 @@ too, taken, retiring the driver it no longer carries to `.prev`; serial 7,
 larger than the ESP, is refused for room; serial 8, whose `stormboot.conf`
 names a dead NVMe port, fails both trial starts, and the third start puts
 serial 6 back, which then refuses 8. The disk is checked with mtools after
-each boot.
+each boot, `last.log` and `trial.log` too (#213): the failed trial's second
+start is in `trial.log` and in the restored binary's claim as `trial_log`.
 
 ### Why chain-load
 
@@ -864,6 +896,8 @@ bootloader starts (`api = <port>|off` in `stormboot.conf`; the claim's
 | `GET /api/v1/status` | `phase` (`booting`, `attaching`, `holding`, `falling through`, `handed off`), `detail` (the failure when holding), the machine's `names` and `addresses`, `command_id` (the floor), the `pending` and `last` command with its result |
 | `GET /api/v1/inventory` | the firmware inventory (`"v":2`, as in the claim): drives first, NICs, controllers, SMBIOS, CPU, memory |
 | `GET /api/v1/log` | every console line so far, the banner first (kept even with `syslog = off`) |
+| `GET /api/v1/log/last` | the previous start's `\stormboot\last.log` (#213); 404 when the medium has none |
+| `GET /api/v1/log/trial` | the failed trial's last start, `\stormboot\trial.log` (#213); 404 when none |
 | `POST /api/v1/command` | a signed command: `202 {"accepted":<id>,…}`, else 400/403/409 with `{"error":…}` |
 
 Reads are open (the log already goes to the stormcast group, and the
