@@ -149,9 +149,6 @@ pub fn verb(command: &str, args: &str) -> Result<Verb, String> {
         "hold" => none(Verb::Hold),
         "inventory" => none(Verb::Inventory),
         "maint" => none(Verb::Maint),
-        // The FEC is the NIC driver's (#202; the owner, 2026-11-14: "the fec
-        // setting is the driver problem"): no command sets it from outside.
-        "fec" | "fec-reset" => Err(format!("{command}: the FEC is the NIC driver's; stormbootx sets none (#202)")),
         "boot-next" => {
             let ok = args.len() == 4 && args.bytes().all(|c| c.is_ascii_hexdigit());
             match u16::from_str_radix(args, 16) {
@@ -416,8 +413,9 @@ mod tests {
 
     #[test]
     fn no_fec_verbs() {
-        assert!(verb("fec", "all rs").unwrap_err().contains("driver"));
-        assert!(verb("fec-reset", "").unwrap_err().contains("driver"));
+        // #203 withdrawn (owner: "with the new approach, there is no api for fec").
+        assert!(verb("fec", "all rs").unwrap_err().contains("unknown command"));
+        assert!(verb("fec-reset", "").unwrap_err().contains("unknown command"));
     }
 
     #[test]

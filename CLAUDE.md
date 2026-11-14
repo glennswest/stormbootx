@@ -300,7 +300,7 @@ kept for a later need; the test command sets it to keep the code honest.
 |---|---|
 | `src/main.rs` | `run()`: the boot, step by step; the hold and the boot again (#167); the fall-through |
 | `src/api.rs` | stormbootx's own API (#167): `/api/v1/status`, `/inventory`, `/log`, `POST /api/v1/command`; Ed25519 over `RELEASE_KEYS` and `command_key =`, the `StormBootCommandId` floor (NV); the engine's record (stormblock#494); the commands done at the boot's fixed points; the hold (`hold =`, `hold_retry =`) |
-| `src/command.rs` | the signed command's text, body and verbs (`fec` and `fec-reset` refused since #202: the FEC is the driver's), and the API's HTTP parsing (core + alloc, host-tested) |
+| `src/command.rs` | the signed command's text, body and verbs (no `fec` verbs since #202/#203: the FEC is the driver's), and the API's HTTP parsing (core + alloc, host-tested) |
 | `src/smbios.rs` | the serials (Type 1 → 2 → 3, placeholders and shared chassis serials rejected), before any network exists; the MAC as the floor |
 | `src/net.rs` | the TCP/IP stack (#56): smoltcp on every NIC's SNP (opened exclusively), DHCP, `TcpSocket`, the TSC clock; its own ARP for the next hops (#168); the API's listening sockets, served from every poll (#167); `release` gives the NICs back on the fall-through |
 | `src/profile.rs` | the `timing :` line (#168): a mark at the end of each step, durations on the TSC |
