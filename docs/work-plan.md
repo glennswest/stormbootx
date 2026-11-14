@@ -199,11 +199,11 @@ then.
       (`STORMBOOTX_FW_MEDIA=1`), and "No need to test till we have the
       driver fixed": no sc-build or image until stormnic-mlx5#8 lands; then
       bump `STORMNIC_MLX5_REF`, run the full suite, request the rustnic image.
-- [ ] **#212 — pin stormnic-mlx5 09b0615 (stormnic-mlx5#8: the standard
+- [x] **#212 — pin stormnic-mlx5 09b0615 (stormnic-mlx5#8: the standard
       FEC at bind, PPLM, one line per port).** The same device IDs as 66de545.
-      Pinned; the mlx5test media check expects `mlx5@09b0615 test`. Next: the
-      full sc-build, `component build stormbootx-rustnic --no-wait`, name the
-      image on #202 and #212; the master boots pvetest1, C2NR0Q2, forge1.
+      Full sc-build of 114d109 passed (`found: mlx5@09b0615 test`, repro);
+      image build b0adfd41e197 requested; shipped with proof `console:
+      mlx5@09b0615`. The master boots pvetest1, C2NR0Q2, forge1.
 - [x] **#198 — install a release from a local stormdist ISO or stick,
       offline, with the medium's read rate (P0, the master, 2026-11-10).
       Released v0.41.0 (eeac3a2), closed 2026-11-10.** Decided (the master for the owner, 2026-11-10): option
