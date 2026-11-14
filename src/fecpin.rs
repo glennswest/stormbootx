@@ -186,7 +186,7 @@ mod test_card {
     pub fn read() -> Summary {
         uefi::println!("  a TEST card is compiled in (STORMBOOTX_FEC_TEST)");
         let value = if mode() == "rs" { Fec::Rs } else { stored() };
-        let port = Port { port: 1, supported: true, current: value, next: value };
+        let port = Port { port: 1, supported: true, current: value, next: value, stored: true };
         uefi::println!("  84:00.0  test card port 1: current {}, next boot {}", value.name(), value.name());
         Summary { cards: 1, ports: alloc::vec![PortAt { loc: String::from("84:00.0"), port }], ..Summary::default() }
     }

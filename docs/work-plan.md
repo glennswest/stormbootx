@@ -102,6 +102,21 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#202 — forge1's FEC pin read 0 ports (P0, the master for the
+      owner, 2026-11-13: "fix the fec on port 80 tonight, in stormbootx!").**
+      forge1 (R6415, B6B0PY2) logged `fec pin : rs …: 0 port(s) read` with no
+      port line and no error. Cause: its ConnectX-4 Lx has never had a FEC
+      TLV written, and MNVDA answers "resource not available" (status 8) for
+      a TLV not stored in NV. mlxfec took that as "no such port" and broke
+      out of the loop silently. The R230's card read only because the
+      2026-09-07 self-heal had written it. Fix: `nv_get` re-reads with the NV
+      header's `default_` bit (bit 23, as mlxconfig does). `set_port` starts
+      from the default. A first port missing even as a default is an error
+      line, never 0 ports. Next: sc-build, then v0.41.1, the goldens, and
+      `wait-hardware` forge1 for the line `port 1: current …, next boot …
+      (never written: the firmware's default)`, then `written rs` and one
+      warm reset. 25G gets RS from the standard, never from link timing:
+      `pin_action` still takes no link.
 - [x] **#198 — install a release from a local stormdist ISO or stick,
       offline, with the medium's read rate (P0, the master, 2026-11-10).
       Released v0.41.0 (eeac3a2), closed 2026-11-10.** Decided (the master for the owner, 2026-11-10): option

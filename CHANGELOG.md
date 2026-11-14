@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### 2026-11-13
+- **fix:** The FEC pin reads a ConnectX that was never configured (#202, forge1). A TLV never stored in NV makes MNVDA answer "resource not available". mlxfec read that as "no such port" and stopped silently at `fec pin : rs …: 0 port(s) read`. It now re-reads with the header's `default_` bit, as mlxconfig does, so the port's firmware default stands in for it. The port line says `(never written: the firmware's default)`, and `rs` is written from that default. A card whose first port has no FEC TLV at all, even as a default, now prints an error instead of reading 0 ports. `connectx::nv_hdr`/`nv_fallback` are host-tested.
+- **docs:** The work plan moved from CLAUDE.md to `docs/work-plan.md`.
 - **docs:** Refreshed the docs against the code since 2026-11-06 (v0.40.0 → v0.41.0: `install_source`, stormnic-igb/mlx4 pins, `deploy/check-slides.sh`). README, CLAUDE.md and the deck already match `src/config.rs` and the build scripts; no drift found, no new issues.
 
 ### 2026-11-10

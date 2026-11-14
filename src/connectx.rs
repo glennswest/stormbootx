@@ -208,9 +208,68 @@ pub fn parked(tries: u32, moved: u32, held: u32) -> bool {
     tries >= PARKED_TRIES && moved == 0 && held != 0 && held != 0xffff_ffff
 }
 
+/// Which value an MNVDA read asks for (#202): the one stored for the next card
+/// reset, the one loaded at the last reset, or the firmware's default.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum NvQuery {
+    Next,
+    Current,
+    Default,
+}
+
+/// MNVDA's register status for "no such TLV stored" (reg_access, status 8).
+pub const REG_RESOURCE_NOT_AVAILABLE: u32 = 8;
+
+/// The NV header's first dword (tools_open_nv_hdr_fifth_gen,
+/// tools_open_layouts.h): length [8:0], writer_id [20:16] (mlxconfig's 0x9),
+/// read_current [22], default_ [23], over_en [25] as mlxconfig sets it.
+///
+/// A TLV nobody has ever written is not in NV, and a plain read of it answers
+/// "resource not available" (#202: forge1's ConnectX-4 Lx, never configured,
+/// read as 0 ports). mlxconfig then reads the same TLV with `default_` set:
+/// the value the card runs on. `mlxfec` does the same; only when the default
+/// is absent too is the port not there.
+pub fn nv_hdr(len: u32, q: NvQuery) -> u32 {
+    let mut d = (len & 0x1ff) | (0x9 << 16) | (1 << 25);
+    match q {
+        NvQuery::Next => {}
+        NvQuery::Current => d |= 1 << 22,
+        NvQuery::Default => d |= 1 << 23,
+    }
+    d
+}
+
+/// The reads one value takes, in order (#202): what is stored, then the
+/// default when nothing is.
+pub fn nv_fallback(q: NvQuery) -> &'static [NvQuery] {
+    match q {
+        NvQuery::Next => &[NvQuery::Next, NvQuery::Default],
+        NvQuery::Current => &[NvQuery::Current, NvQuery::Default],
+        NvQuery::Default => &[NvQuery::Default],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nv_header_bits_are_mlxconfigs() {
+        // 256 bytes, writer mlxconfig, over_en: the read the R230 always made.
+        assert_eq!(nv_hdr(256, NvQuery::Next), 0x0209_0100);
+        assert_eq!(nv_hdr(256, NvQuery::Current), 0x0249_0100);
+        assert_eq!(nv_hdr(256, NvQuery::Default), 0x0289_0100);
+        assert_eq!(nv_hdr(8, NvQuery::Next) & 0x1ff, 8);
+    }
+
+    #[test]
+    fn a_never_written_tlv_reads_its_default() {
+        // forge1 (#202): nothing stored must not read as no port.
+        assert_eq!(nv_fallback(NvQuery::Next), &[NvQuery::Next, NvQuery::Default]);
+        assert_eq!(nv_fallback(NvQuery::Current), &[NvQuery::Current, NvQuery::Default]);
+        assert_eq!(nv_fallback(NvQuery::Default), &[NvQuery::Default]);
+        assert_eq!(REG_RESOURCE_NOT_AVAILABLE, 8);
+    }
 
     /// One root of the R6415 (#186): buses 80..=bf, as forge1's Linux lists them.
     /// A root complex at 80:00.0, a bridge at 80:03.1 to bus 84, and the two

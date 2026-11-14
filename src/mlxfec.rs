@@ -47,6 +47,10 @@
 //!   MNVDA / NV header tools_layouts/tools_open_layouts.h:236-286, 394-401
 //!   FEC TLV           mlxconfig/mlxconfig_dbs/mlxconfig_host.db (nv_link_phy_conf)
 //!   MFRL              reg_access/reg_access_hca_layouts.h:2388-2447
+//!
+//! A TLV never written to NV answers "resource not available"; it is then
+//! read again with the header's `default_` bit, as mlxconfig does (#202: a
+//! never-configured card otherwise read as having no ports).
 
 use alloc::format;
 use alloc::string::String;
@@ -60,7 +64,7 @@ use uefi::proto::pci::PciIoAddress;
 use uefi::proto::pci::root_bridge::PciRootBridgeIo;
 use uefi_raw::protocol::pci::root_bridge::PciRootBridgeIoProtocol;
 
-use crate::connectx;
+use crate::connectx::{self, NvQuery};
 use crate::entropy;
 
 const VENDOR_MELLANOX: u16 = 0x15b3;
@@ -212,6 +216,9 @@ pub struct Port {
     pub current: Fec,
     /// The value it will load at the next one.
     pub next: Fec,
+    /// Whether `next` is stored in NV, or is the firmware's default because
+    /// nothing has ever been written (#202).
+    pub stored: bool,
 }
 
 /// One port read, and where.
@@ -611,19 +618,17 @@ impl Dev<'_> {
         Ok(())
     }
 
-    /// Read one NV TLV. `None` when the card says the TLV does not exist.
-    fn nv_get(&mut self, tlv_type: u32, current: bool) -> Result<Option<Vec<u32>>, String> {
+    /// Read one NV TLV as asked. `None` when the card answers "resource not
+    /// available": nothing of that kind is there.
+    fn nv_get_one(&mut self, tlv_type: u32, q: NvQuery) -> Result<Option<Vec<u32>>, String> {
         let mut reg = vec![0u32; NV_HDR_DWORDS + NV_DATA_MAX / 4];
-        reg[0] = NV_DATA_MAX as u32
-            | (WRITER_ID_MLXCONFIG << 16)
-            | ((current as u32) << 22)
-            | (1 << 25); // over_en, as mlxconfig sets it
+        reg[0] = connectx::nv_hdr(NV_DATA_MAX as u32, q);
         reg[1] = tlv_type;
         let reg_size = NV_DATA_MAX + NV_HDR_DWORDS * 4;
         let reg_len = reg.len();
         match self.access_reg(REG_MNVDA, METHOD_GET, &mut reg, reg_size, NV_HDR_DWORDS, reg_len) {
             Ok(()) => {}
-            Err(e) if e.contains("resource not available") => return Ok(None),
+            Err(e) if e.contains(reg_status(connectx::REG_RESOURCE_NOT_AVAILABLE)) => return Ok(None),
             Err(e) => return Err(e),
         }
         let len = (reg[0] & 0x1ff) as usize;
@@ -631,11 +636,23 @@ impl Dev<'_> {
         Ok(Some(reg))
     }
 
+    /// Read one NV TLV, falling back to the firmware's default when nothing is
+    /// stored (#202), as mlxconfig does. The flag says whether the value came
+    /// from NV (`true`) or is the default. `None` only when neither exists.
+    fn nv_get(&mut self, tlv_type: u32, q: NvQuery) -> Result<Option<(Vec<u32>, bool)>, String> {
+        for &each in connectx::nv_fallback(q) {
+            if let Some(r) = self.nv_get_one(tlv_type, each)? {
+                return Ok(Some((r, each != NvQuery::Default)));
+            }
+        }
+        Ok(None)
+    }
+
     /// Write one NV TLV's data as its next-boot value.
     fn nv_set(&mut self, tlv_type: u32, data: &[u32]) -> Result<(), String> {
         let len = data.len() * 4;
         let mut reg = vec![0u32; NV_HDR_DWORDS + data.len()];
-        reg[0] = len as u32 | (WRITER_ID_MLXCONFIG << 16) | (1 << 25);
+        reg[0] = connectx::nv_hdr(len as u32, NvQuery::Next);
         reg[1] = tlv_type;
         reg[NV_HDR_DWORDS..].copy_from_slice(data);
         let reg_size = len + NV_HDR_DWORDS * 4;
@@ -655,17 +672,24 @@ impl Dev<'_> {
         (TLV_CLASS_PHYSICAL_PORT << 24) | ((port as u32) << 16) | idx
     }
 
-    /// Query one port; `None` when the card has no such port.
+    /// Query one port; `None` when the card has no such port: neither its
+    /// capability nor its conf TLV exists, stored or as a default (#202).
     fn port(&mut self, port: u8) -> Result<Option<Port>, String> {
-        let Some(cap) = self.nv_get(Self::port_tlv(port, TLV_LINK_PHY_CAP), false)? else {
+        let cap = self.nv_get(Self::port_tlv(port, TLV_LINK_PHY_CAP), NvQuery::Next)?;
+        let next = self.nv_get(Self::port_tlv(port, TLV_LINK_PHY_CONF), NvQuery::Next)?;
+        if cap.is_none() && next.is_none() {
             return Ok(None);
+        }
+        let current = self.nv_get(Self::port_tlv(port, TLV_LINK_PHY_CONF), NvQuery::Current)?;
+        // A card that answers the conf but not the capability is one mlxconfig
+        // sets FEC on all the same; only a stated "not supported" stops it.
+        let supported = match &cap {
+            Some((r, _)) => r.get(NV_HDR_DWORDS).is_none_or(|d| d >> 31 == 1),
+            None => true,
         };
-        let supported = cap.get(NV_HDR_DWORDS).is_some_and(|d| d >> 31 == 1);
-        let next = self.nv_get(Self::port_tlv(port, TLV_LINK_PHY_CONF), false)?;
-        let current = self.nv_get(Self::port_tlv(port, TLV_LINK_PHY_CONF), true)?;
-        let fec = |t: &Option<Vec<u32>>| {
+        let fec = |t: &Option<(Vec<u32>, bool)>| {
             t.as_ref()
-                .and_then(|r| r.get(NV_HDR_DWORDS))
+                .and_then(|(r, _)| r.get(NV_HDR_DWORDS))
                 .map(|d| Fec::from_bits(d >> FEC_SHIFT))
                 .unwrap_or(Fec::DeviceDefault)
         };
@@ -674,6 +698,7 @@ impl Dev<'_> {
             supported,
             current: fec(&current),
             next: fec(&next),
+            stored: next.as_ref().is_some_and(|(_, s)| *s),
         }))
     }
 
@@ -682,9 +707,10 @@ impl Dev<'_> {
     fn set_port(&mut self, port: u8, want: Fec) -> Result<Fec, String> {
         let t = Self::port_tlv(port, TLV_LINK_PHY_CONF);
         // Firmware wants the whole TLV: read, patch, write — as mlxconfig does.
-        let cur = self.nv_get(t, false)?;
+        // Nothing stored (#202): start from the firmware's default.
+        let cur = self.nv_get(t, NvQuery::Next)?;
         let mut data: Vec<u32> = match cur {
-            Some(r) if r.len() > NV_HDR_DWORDS => r[NV_HDR_DWORDS..].to_vec(),
+            Some((r, _)) if r.len() > NV_HDR_DWORDS => r[NV_HDR_DWORDS..].to_vec(),
             _ => vec![0u32; 2],
         };
         if data.len() < 2 {
@@ -692,7 +718,8 @@ impl Dev<'_> {
         }
         data[0] = (data[0] & !FEC_MASK) | (want.bits() << FEC_SHIFT);
         self.nv_set(t, &data)?;
-        let back = self.nv_get(t, false)?;
+        // Read back what is stored, never a default standing in for it.
+        let back = self.nv_get_one(t, NvQuery::Next)?;
         Ok(back
             .and_then(|r| r.get(NV_HDR_DWORDS).copied())
             .map(|d| Fec::from_bits(d >> FEC_SHIFT))
@@ -936,13 +963,22 @@ fn card_fec(
 
     let mut port_no = 1u8;
     while port_no <= 2 {
-        let Some(p) = dev.port(port_no)? else { break };
+        let Some(p) = dev.port(port_no)? else {
+            // Never a silent 0 (#202): a card with no first port is a fault.
+            if port_no == 1 {
+                return Err(String::from(
+                    "port 1's FEC TLVs are not on this card (MNVDA: resource not available, stored or default)",
+                ));
+            }
+            break;
+        };
         sum.ports.push(PortAt { loc: String::from(loc), port: p.clone() });
         let mut line = format!(
-            "  {loc}  {model} port {}: current {}, next boot {}",
+            "  {loc}  {model} port {}: current {}, next boot {}{}",
             p.port,
             p.current.name(),
-            p.next.name()
+            p.next.name(),
+            if p.stored { "" } else { " (never written: the firmware's default)" }
         );
         match want {
             None => {}
