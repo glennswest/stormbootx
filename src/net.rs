@@ -142,24 +142,6 @@ pub fn machine_mac() -> Option<([u8; 6], usize)> {
     best.map(|m| (m, handles.len()))
 }
 
-/// (`seg:bus:dev.fn`, MAC) of every SNP on a PCI function (#203), so the FEC
-/// step can name a ConnectX port by the MAC a setting or the API knows it by.
-/// Only what the firmware's own NIC drivers have bound by then: the FEC step
-/// runs before the media's drivers load.
-pub fn macs_by_pci() -> Vec<(String, String)> {
-    let mut out = Vec::new();
-    for h in snp_handles() {
-        let Some(m) = mode_of(h) else { continue };
-        if m.hw_address_size != 6 {
-            continue;
-        }
-        let Some(pci) = crate::hardware::pci_of(h) else { continue };
-        let Some((at, _, _)) = crate::drivers::pci_info(pci) else { continue };
-        out.push((at, mac_text(&m.permanent_address.0)));
-    }
-    out
-}
-
 fn mode_of(handle: uefi_raw::Handle) -> Option<&'static NetworkMode> {
     let snp = handle_protocol(handle, &SNP)? as *const SimpleNetworkProtocol;
     let mode = unsafe { (*snp).mode };

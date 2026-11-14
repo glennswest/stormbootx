@@ -44,8 +44,6 @@ PIN="no"
 NOFALLBACK=""
 PROBE="no"
 ISO="no"
-FEC=""
-FEC_PIN=""
 DRIVERS=""
 DNS=""
 NTP=""
@@ -69,8 +67,6 @@ Options:
   --pin            write only the portal, with no claim knobs
   --api-port N     engine API port on the portal host (default 9090)
   --probe          boot tcp4probe instead of the agent (a diagnostic stick)
-  --fec MODE       recovery stick: write this FEC to the ConnectX, then reset
-  --fec-pin rs|off  pin ConnectX ports' FEC at boot (rs: 25G ports RS, others their speed's standard, #203)
                    when one differs (#186); every golden says rs
                    (default|rs|fc|off|autoneg). Absent from a normal stick.
   --drivers DIR    lay DIR's files in \stormboot\drivers; stormbootx loads each
@@ -129,8 +125,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --pin)    PIN="yes"; shift ;;
         --probe)  PROBE="yes"; shift ;;
-        --fec)    FEC="$2"; shift 2 ;;
-        --fec-pin) FEC_PIN="$2"; shift 2 ;;
+        --fec|--fec-pin) die "$1: removed (#202): the FEC is the NIC driver's, stormbootx sets none" ;;
         --iso)    ISO="yes"; shift ;;
         --drivers) DRIVERS="$2"; shift 2 ;;
         --dns)    DNS="$2"; shift 2 ;;
@@ -286,31 +281,6 @@ nqn      = $NQN
 nsid     = $NSID
 api_port = $API_PORT
 claim    = yes
-CONF
-fi
-
-# A recovery stick, and nothing else. Stated by the operator on this one piece
-# of media; the boot path never decides this for itself (see main.rs step 2b).
-if [[ -n "$FEC" ]]; then
-    cat >> "$WORK/stormboot.conf" <<CONF
-
-# RECOVERY STICK: write this FEC to every ConnectX port, then warm-reset once.
-# Remove this line (or use a normal stick) as soon as the card is back.
-fec      = $FEC
-CONF
-fi
-
-# The FEC pin at boot (#186): the card's NV value against RS, no link state.
-if [[ -n "$FEC_PIN" ]]; then
-    [[ "$FEC_PIN" =~ ^(rs|off)$ ]] || die "--fec-pin: rs or off"
-    cat >> "$WORK/stormboot.conf" <<CONF
-
-# rs: a 25G ConnectX port not running RS is written RS, a port of another
-# speed its standard's FEC (10g/40g none, 50g/100g rs), from the card's
-# capability, never the link; then reset (warm, then cold, then a hold;
-# #186, #203). Never the card's negotiated default.
-# off: never, and forget the last pin's record.
-fec_pin  = $FEC_PIN
 CONF
 fi
 

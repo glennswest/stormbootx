@@ -101,13 +101,28 @@ const FAMILIES: &[Family] = &[
     Family {
         name: "mlx5",
         file: "stormnic-mlx5.efi",
-        ids: crate::connectx::MLX5_TAKE_OVER,
+        ids: MLX5_TAKE_OVER,
     },
     Family {
         name: "e1000e",
         file: "stormnic-e1000e.efi",
         ids: E1000E_IDS,
     },
+];
+
+/// The physical functions stormnic-mlx5 claims (its `DEVICES`, at the pin in
+/// `scripts/build-nic-drivers.sh`), which `prefer_media_drivers = mlx5` takes
+/// from the firmware's driver (#131). ConnectX-7 (1021) is not here: the
+/// driver does not claim it, and a take it would decline only disturbs a
+/// working NIC.
+const MLX5_TAKE_OVER: &[(u16, u16)] = &[
+    (0x15b3, 0x1013),
+    (0x15b3, 0x1015),
+    (0x15b3, 0x1017),
+    (0x15b3, 0x1019),
+    (0x15b3, 0x101b),
+    (0x15b3, 0x101d),
+    (0x15b3, 0x101f),
 ];
 
 /// What stormnic-e1000e binds (its `src/ids.rs` at the pinned commit, from
@@ -168,10 +183,8 @@ pub fn load_from_media() -> Vec<Loaded> {
     uefi::println!("drivers     : {} on the media in {DRIVERS_DIR}", names.len());
 
     // The stormnic drivers read `StormnicVerbose` once, at their entry point,
-    // so it is set before any of them is loaded (#80, #102). The FEC policy
-    // likewise (#202): a driver sets its own ports' FEC at bind.
+    // so it is set before any of them is loaded (#80, #102).
     nic_verbose();
-    fec_policy();
 
     // The platform's own drivers first (see the module comment).
     uefi::println!("    binding the platform's own drivers first");
@@ -230,57 +243,6 @@ fn nic_verbose() {
         Ok(()) => uefi::println!("drivers     : stormnic drivers verbose (nic_verbose in {}; StormnicVerbose set until reset)", crate::config::file_of(&["nic_verbose"])),
         Err(e) => uefi::println!("drivers     : nic_verbose asked for, but StormnicVerbose was refused ({:?}); the drivers stay quiet", e.status()),
     }
-}
-
-/// The FEC policy handed to the stormnic drivers (#202; the owner,
-/// 2026-11-14: "the port poking is a driver problem, not a stormbootx
-/// problem"). `StormnicFec`, vendor `STORMNIC_VENDOR`, `BOOTSERVICE_ACCESS`
-/// only (gone at reset), ASCII: a first line `stormnic-fec v1`, then each of
-/// the media's `fec_pin`, `fec_pin.<BDF|MAC>` and `fec_table.<speed>` lines
-/// as `key = value`, lower-cased, in the media's order (`local.conf` first).
-/// A driver applies it to each port it has bound, the same rule as
-/// `connectx::choose`: the port's own key, else `fec_table.<its speed>`, else
-/// `fec_pin` at 25G, else its speed's standard (10g/40g none, 25g/50g/100g
-/// rs, PAM4 rs-544); `off` leaves the port as it is. Not set when the media
-/// names no FEC key at all.
-pub fn fec_policy_text() -> Option<String> {
-    let text = crate::config::conf_text()?;
-    let mut out = String::from("stormnic-fec v1\n");
-    let mut any = false;
-    for line in text.lines() {
-        let Some((k, v)) = line.split_once('=') else { continue };
-        let (k, v) = (k.trim().to_ascii_lowercase(), v.trim().to_ascii_lowercase());
-        if k == "fec_pin" || k.starts_with("fec_pin.") || k.starts_with("fec_table.") {
-            out.push_str(&format!("{k} = {v}\n"));
-            any = true;
-        }
-    }
-    any.then_some(out)
-}
-
-fn fec_policy() {
-    let Some(text) = fec_policy_text() else { return };
-    let name = uefi::cstr16!("StormnicFec");
-    let vendor = VariableVendor(STORMNIC_VENDOR);
-    let lines = text.lines().count() - 1;
-    match uefi::runtime::set_variable(name, &vendor, VariableAttributes::BOOTSERVICE_ACCESS, text.as_bytes()) {
-        Ok(()) => uefi::println!("drivers     : FEC policy for the stormnic drivers: StormnicFec, {lines} line(s), until reset"),
-        Err(e) => uefi::println!("drivers     : StormnicFec refused ({:?}); the stormnic drivers get no FEC policy", e.status()),
-    }
-}
-
-/// Whether a media driver will take this PCI device from the firmware's
-/// (#202): its family is named by `prefer_media_drivers` and its file is on
-/// the media. Then no code of ours touches the card before the driver does.
-pub fn media_driver_takes(vendor: u16, device: u16) -> Option<&'static str> {
-    let prefer = crate::config::stated_prefer_media_drivers();
-    let family = FAMILIES
-        .iter()
-        .find(|f| prefer.iter().any(|p| p == f.name) && f.ids.contains(&(vendor, device)))?;
-    crate::config::list_dir(DRIVERS_DIR)
-        .iter()
-        .any(|n| n.eq_ignore_ascii_case(family.file))
-        .then_some(family.file)
 }
 
 /// Give the NICs of each family `prefer_media_drivers` names to the media's

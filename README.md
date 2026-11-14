@@ -51,8 +51,6 @@ as a NIC driver (#26; absent on ordinary media). It writes to these:
 | What | When |
 |---|---|
 | the attached clone on the engine | the booted OS writes to its disk, and the BlockIO handle is read-write |
-| the ConnectX NV FEC setting | with `fec_pin = rs` (every golden, #186) when a port's next-boot value is not RS; with `fec =` on a recovery stick; or `fec MODE` typed at the failure console; followed by a warm reset |
-| `StormBootFecPin`, a non-volatile variable | set when the FEC pin writes, kept until a read shows RS or the media says `fec_pin = off` (#186) |
 | the hardware clock (RTC), through UEFI `SetTime` | a boot whose NTP server answers while the RTC is more than a second off (#77); UTC, time zone and daylight left as the firmware had them |
 | **volatile** EFI variables, `StormBootTag`, `StormBootHostNqn`, `StormBootClock`, `StormBootUpdate` and `StormBootInstallConfig` (+ its chunks) | every boot that names the machine, attaches an image, asks NTP, has a self-update state or finds an `install-config.yaml` on the media (#76, #77, #83, #79); gone at the next reset |
 | its own boot medium: `\EFI\BOOT\BOOTX64.EFI`, `\startup.nsh`, `\stormboot\stormboot.conf`, `\stormboot\drivers\*` (with `*.new`/`*.prev` copies), `\stormboot\state`, and `\stormboot\local.conf` only to keep a `name =` | a writable medium (USB stick, local ESP) with `update =`, when a newer signed release verifies, and the starts of its trial (#83, *Self-update*) |
@@ -171,39 +169,15 @@ console; a machine with no screen console gets it anyway.
      through.
    - The console prints the source, plus the SMBIOS model when there is one,
      and a `mac` line after step 4.
-3. **NIC FEC report and pin** (`src/mlxfec.rs`, `src/fecpin.rs`). Since #202
-   this is **the fallback**: a ConnectX a stormnic driver of ours takes
-   (`prefer_media_drivers = mlx5` and `stormnic-mlx5.efi` on the medium, every
-   rustnic medium) is the driver's, which sets its FEC at bind from
-   `StormnicFec`; this step names it and does not touch it. For the rest it prints
-   every ConnectX port's current and next-boot FEC, and the pin's line says
-   `(the fallback pin …)`. With `fec_pin = rs` (every
-   golden; the owner's choice on #186, 2026-11-04, reversing the read-only boot
-   of 2026-09-07), a port whose **NV next-boot value** is not RS is written RS,
-   the console says which port, from what and why, and the machine warm-resets
-   once. No link state is read for this: a single link sample is what cost the
-   R230 its ports on 2026-09-07. `StormBootFecPin` (NV) is set before the write,
-   so a card that loses the value or a write that hangs costs one reset:
-   the next boot prints `the last boot's pin did not hold`, writes nothing and
-   goes on. `the last boot's pin held` clears it. The way back is `fec_pin = off`
-   on the media or in `local.conf` (it also forgets the record), then `fec default`
-   or a `fec =` stick; without `off`, the next boot pins again. A warm reset uses
-   up one of a self-update trial's starts. If `fec =` is set in the conf, the pin
-   stands aside; that value is written, with one warm reset, and the next boot
-   finds nothing to change. A ConnectX-3 or -3 Pro (the X9 blades', 10/40G) has no FEC setting
-   and says `ConnectX-3 (15b3:1003): no FEC to report`. "no ConnectX on the
-   bus" means no Mellanox function at all (#25, `src/connectx.rs`), and a
-   `root bridge buses 80-bf: N function(s)` line per bridge says what was
-   looked at: each walk starts at its bridge's first bus, from `Configuration()`
-   (#186; an EPYC's bridges start at 00, 40, 80 and c0). The
-   step never holds the boot (#138): it has 15 s of real time (60 s for a
-   `fec =` write), every wait in it checks that, and a card still being read
-   when it runs out says `gave up after N s: the FEC step's 15.0 s budget is
-   spent — left as is`; any function not yet read is named and skipped. A
-   function that takes over 1 s says `took N s, M s of it waiting for the
-   cap9 semaphore`, and the cap9 line says whether the held value sat still
-   (`parked … for N s`) or moved (`held for N s, its value changing K
-   times`).
+3. **No FEC step** (#202; the owner, 2026-11-14: "Stormbootx calls the
+   driver, the driver resposible for the nic getting up - speed and fec").
+   stormbootx knows nothing about a card but which driver binds it, chosen by
+   PCI ID (step 4, `prefer_media_drivers`). Each stormnic driver reads its
+   media and speed, applies the IEEE standard FEC itself (25G/50G/100G NRZ
+   RS, 10G/40G none, PAM4 RS-544) and reports driver, speed, FEC and link per
+   port. Nothing is handed down to it. The FEC pin (#186, #203), `fec =`
+   recovery sticks, the console's and the API's `fec` and `/api/v1/fec` are
+   gone; `StormBootFecPin` left in NVRAM by an older stormbootx is ignored.
 4. **NIC drivers from the media, then the network** (`drivers::load_from_media`,
    `net::up`, #56). Any `*.efi` in `\stormboot\drivers` is started first (see
    *The network path*). Then every `EFI_SIMPLE_NETWORK` handle is opened and
@@ -740,12 +714,12 @@ with the time each step took, from the banner (net-ovmf's shipped boot,
 OVMF under KVM):
 
 ```
-timing      : nic fec 84 ms, drivers 0 ms, nics 5.15 s, lease+engine 57 ms, name 39 ms, intent 25 ms, claim 1.77 s, clock 20 ms, attach 86 ms; 7.24 s in all
+timing      : drivers 0 ms, nics 5.15 s, lease+engine 57 ms, name 39 ms, intent 25 ms, claim 1.77 s, clock 20 ms, attach 86 ms; 7.24 s in all
 ```
 
 The same boot with the ARP requests taken out read `name 1.03 s`.
 
-`nic fec` is `mlxfec`'s ConnectX FEC read, and `drivers` is loading the
+
 media's NIC drivers and connecting every handle (a driver's `Start` runs in
 it). `nics` is opening the SNPs. `lease+engine` waits for DHCP and reads the
 engine's version, and `claim` covers the claim and its inventory. A boot
@@ -890,7 +864,6 @@ bootloader starts (`api = <port>|off` in `stormboot.conf`; the claim's
 | `GET /api/v1/status` | `phase` (`booting`, `attaching`, `holding`, `falling through`, `handed off`), `detail` (the failure when holding), the machine's `names` and `addresses`, `command_id` (the floor), the `pending` and `last` command with its result |
 | `GET /api/v1/inventory` | the firmware inventory (`"v":2`, as in the claim): drives first, NICs, controllers, SMBIOS, CPU, memory |
 | `GET /api/v1/log` | every console line so far, the banner first (kept even with `syslog = off`) |
-| `GET /api/v1/fec` | the ConnectX FEC (#203), as read at the NIC step and after each `fec`: `fec_pin`, the pin's `record` and `stuck`, and per port its `bdf`, `mac`, `speed` (PTYS capability), `current`, `next_boot`, `stored` and `wanted` (`{value, from}`, or `null` with why it is `left`). No link state. 503 before the NIC step |
 | `POST /api/v1/command` | a signed command: `202 {"accepted":<id>,…}`, else 400/403/409 with `{"error":…}` |
 
 Reads are open (the log already goes to the stormcast group, and the
@@ -928,8 +901,6 @@ runs: each command is done once, on one machine. Use Unix milliseconds for
 | `inventory` | collect it again |
 | `format <serial> [fast]` | zero the first and last MiB of the one drive with that serial (its MBR, GPT and backup GPT), never the boot medium, a read-only drive or a published one; `full`/`secure` are the maintenance image's (baremetalservices) |
 | `maint` | claim the maintenance image and boot it: the usual claim with `"image":"maint"` (stormblock#497), down the same names, answering this host's own `maint-<host>` clone of `boothost/maint`'s volume. Never the media's fallback; a reply without `"image":"maint"` (an engine before #497, `stormboot-serve`) is not attached; no `boothost/maint` (a 404) or either of those is a failed boot, so it holds. Before the chain-load it boots again for the maintenance image |
-| `fec <all\|BDF\|MAC> <rs\|fc\|none\|default>` | write that next-boot FEC to the port(s) (#203): `all`, a function (`0000:84:00.1` or `84:00.1`) or a MAC; `off` is refused (say `none`). Already that value: nothing written. It runs from the next reset |
-| `fec-reset` | a warm reset, so the cards load their next-boot FEC. Under a `fec_pin`, an earlier pin's record is kept, so a command never adds a third reset: the pin's warm → cold → hold still counts |
 
 A command is taken at fixed points: before the intent is read (the API's,
 else the engine's host record `GET …/boothost/<name>/command`,
@@ -1012,7 +983,6 @@ The console (`src/shell.rs`):
 | `dhcp [secs]` | bring the stack up if it is not, and wait up to `secs` (default 10) for every NIC's lease |
 | `connect IP PORT` | open a TCP connection the way the attach does (8 s) |
 | `pci [all]` | devices on the bus, with or without a driver |
-| `fec [MODE]` | read the ConnectX FEC; with MODE (`default`/`rs`/`fc`/`off`/`autoneg`), write it |
 | `reset` | warm reset, so firmware re-reads NV config |
 | `boot` | leave the console and continue the fall-through |
 | `help` | the list above |
@@ -1048,10 +1018,6 @@ others.
 | `nic_verbose` | `false` | `true`: the stormnic drivers print their whole bring-up trace instead of one line per NIC (#80). stormbootx sets the volatile `StormnicVerbose` variable (GUID `ce1479a2-eab9-4176-b0ad-c909ea5b8e0b`, `BOOTSERVICE_ACCESS`, one byte `01`) before it loads `\stormboot\drivers`; gone at the next reset, never in NVRAM. For debugging a machine without a rebuild; no golden sets it. `build-boot-agent.sh --nic-verbose`. From the EFI shell instead: `setvar StormnicVerbose -guid ce1479a2-eab9-4176-b0ad-c909ea5b8e0b -bs =01` |
 | `prefer_media_drivers` | none | media driver families that take their NICs from the firmware's own driver (#108): `virtio` (stormnic-virtio over OVMF's VirtioNetDxe), `mlx5` (stormnic-mlx5 over FlexBoot, #131; the rustnic media since #202), `e1000e` (stormnic-e1000e over Intel's UNDI or iPXE, #70; no golden sets it). `virtio,mlx5` is set on the rustnic media; without it the platform's drivers win. `build-boot-agent.sh --prefer-media-drivers` |
 | `media` | none | the media's label, printed under the banner (`media : fw`); written by the golden build, `build-boot-agent.sh --media` |
-| `fec` | none | **recovery sticks only**: write this FEC and warm-reset; the pin stands aside |
-| `fec_pin` | none (nothing pinned) | `rs`: a ConnectX port whose NV next-boot FEC is not RS is written RS, with one warm reset (#186; every golden). `off`: never, and forget the last pin's record. `build-boot-agent.sh --fec-pin`. Since #203 the value is the 25G ports' FEC; a port of another speed takes its speed's standard (10g, 40g: none; 50g, 100g: rs; PAM4: rs-544), its speed read from PTYS capability, never the link. `fc`, `none` also. Never the card's negotiated `default` (owner: "Double auto is a problem"); that stays a recovery stick's `fec = default` |
-| `fec_pin.<BDF\|MAC>` | none | One port's own value, over `fec_pin` (#203): `fec_pin.0000:84:00.1 = rs`, `fec_pin.84:00.1`, or `fec_pin.e8:eb:d3:94:a2:80` (any case). `off` leaves that port alone |
-| `fec_table.<speed>` | `fec_pin` at 25g, else the standard | Under a `fec_pin`, the value for every port of that speed (`10g 25g 40g 50g 50g-pam4 100g 100g-pam4 200g 400g`); `off` leaves them alone (#203) |
 | `update` | none (no self-update) | `http://host[:port]/path` of this medium's release on stormcentral, or `off` to pin the medium (#83, *Self-update*); written by the golden build, `build-boot-agent.sh --update` |
 | `api` | `9180` | the port stormbootx's own API answers on (#167), or `off` |
 | `command_key` | none | an Ed25519 public key (64 hex digits) whose signed commands are taken, beside stormcentral's (#167); the laptop app writes its own into `local.conf`; `build-boot-agent.sh --command-key` |
@@ -1288,7 +1254,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   rustc --edition 2021 --test src/manifest.rs -o t/manifest-test && ./t/manifest-test && \
   rustc --edition 2021 --test src/installconf.rs -o t/installconf-test && ./t/installconf-test && \
   rustc --edition 2021 --test src/inventory.rs -o t/inventory-test && ./t/inventory-test && \
-  rustc --edition 2021 --test src/connectx.rs -o t/connectx-test && ./t/connectx-test && \
+  rustc --edition 2021 --test src/pcibus.rs -o t/pcibus-test && ./t/pcibus-test && \
   rustc --edition 2021 --test src/logwire.rs -o t/logwire-test && ./t/logwire-test && \
   rustc --edition 2021 --test src/command.rs -o t/command-test && ./t/command-test && \
   cargo test -p nvme-tcp-initiator && \
@@ -1362,7 +1328,7 @@ The binary has no host target, so a plain `cargo test` does not apply;
 `cargo test -p nvme-tcp-initiator` runs the one host-built crate (#10).
 `src/sha256.rs`,
 `src/intent.rs`, `src/universal.rs`, `src/dnsname.rs`, `src/esp.rs`,
-`src/sntp.rs`, `src/manifest.rs`, `src/installconf.rs`, `src/inventory.rs` and `src/connectx.rs` are the exceptions: each uses only
+`src/sntp.rs`, `src/manifest.rs`, `src/installconf.rs`, `src/inventory.rs` and `src/pcibus.rs` are the exceptions: each uses only
 `core` and names no `crate::` item, so each compiles as its own crate with
 `rustc --test`. `esp.rs`'s tests build their images with `mkfs.fat` and
 mtools, which must be on the `PATH`.
@@ -1443,7 +1409,6 @@ drive and is deleted with it. Nothing is kept.
 ./scripts/build-boot-agent.sh --pin --portal 192.168.31.202 \
     --nqn nqn.2026-09.lo.g16:stormcos --nsid 2   # one fixed namespace, no claim
 ./scripts/build-boot-agent.sh --probe            # boots tcp4probe instead
-./scripts/build-boot-agent.sh --fec default      # FEC recovery stick
 
 # NIC drivers for firmware without them (#26): the Rust stormnic drivers
 ./scripts/build-nic-drivers.sh tmp/drivers
@@ -1615,13 +1580,7 @@ its firmware's FlexBoot driver. The rustnic media carry that driver and set
 `prefer_media_drivers = virtio,mlx5` (#202; the owner, 2026-11-14: "stormbootx
 cannot be reliable without a proper driver"); `stormbootx-mlx5test` is the same
 medium, verbose and with no `update =`. The nic-drivers golden refuses it.
-Such a card is the driver's: the FEC step names it (`stormnic-mlx5.efi takes it
-(prefer_media_drivers) and sets its FEC from StormnicFec; not touched here`)
-and never opens its config window. The FEC policy reaches the drivers in
-`StormnicFec` (vendor `ce1479a2-…`, boot-services only, set before the drivers
-load): `stormnic-fec v1`, then the media's `fec_pin`, `fec_pin.<BDF|MAC>` and
-`fec_table.<speed>` lines, lower-cased; each driver applies it to the ports it
-binds by `connectx::choose`'s rule (stormnic-mlx5#8). Each take is announced before the disconnect, so a Stop or Start that never
+The driver brings the card up, speed and FEC, by its own rule (stormnic-mlx5#8). Each take is announced before the disconnect, so a Stop or Start that never
 returns has named itself, and the console says what the firmware's driver left:
 
 ```
@@ -1683,7 +1642,8 @@ HTTP with no credential to a node registry that is moving to TLS with auth
   `selfupdate.rs`.
 - The FEC self-heal (automatic write on "all ports down") was switched off in
   0.3.6. It was triggered by a single link sample. The reasoning is in
-  `main.rs` step 2b. `fec_pin` (#186) is a different write: it reads no link.
+  its commit. The FEC pin that followed (#186, #203) was removed by #202:
+  FEC is the NIC driver's.
 
 ## Status
 
@@ -1740,7 +1700,7 @@ Open issues:
 |---|---|
 | #92, #89 | self-update on metal: stormcentral serves `stormbootx-rustnic` serial 1 = v0.14.0, which every newer medium declines as older (#96); the promotion of v0.29.0's rustnic golden (canary server1 first) is the master's, 2026-10-17 (#92); nothing is promoted for `stormbootx` |
 | #93 | install-config sizes on real firmware variable stores |
-| #100, #99 | boot time: one NVMe/TCP command in flight (~46 MiB/s on metal); mlxfec's wait on a parked cap9 lock |
+| #100, #99 | boot time: one NVMe/TCP command in flight (~46 MiB/s on metal); #99 (mlxfec's cap9 wait) is moot since #202 removed mlxfec |
 | #71–#74 | more Rust NIC drivers, paused by the owner at P3 (each behind its repo's first issue); stormnic-e1000e is on the rustnic media since v0.40.0 (#70), stormnic-igb since #69; stormnic-mlx5 is on the rustnic media since #202 (canary C2NR0Q2, then forge1) |
 | #84 | arm64 media: built (`stormbootx-arm64`); booting it under AAVMF and registering the golden wait on stormcentral#604 |
 | #138 | the R230's NIC FEC step: v0.25.0's real-time budget is released, the metal boot is not seen |

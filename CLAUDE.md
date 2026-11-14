@@ -37,7 +37,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   rustc --edition 2021 --test src/manifest.rs -o t/manifest-test && ./t/manifest-test && \
   rustc --edition 2021 --test src/installconf.rs -o t/installconf-test && ./t/installconf-test && \
   rustc --edition 2021 --test src/inventory.rs -o t/inventory-test && ./t/inventory-test && \
-  rustc --edition 2021 --test src/connectx.rs -o t/connectx-test && ./t/connectx-test && \
+  rustc --edition 2021 --test src/pcibus.rs -o t/pcibus-test && ./t/pcibus-test && \
   rustc --edition 2021 --test src/logwire.rs -o t/logwire-test && ./t/logwire-test && \
   rustc --edition 2021 --test src/command.rs -o t/command-test && ./t/command-test && \
   rustc --edition 2021 --test src/distmedia.rs -o t/distmedia-test && ./t/distmedia-test && \
@@ -56,7 +56,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   tests/stick.sh && deploy/build-golden.sh stormbootx-stick $PWD/t/stick && \
   deploy/build-golden.sh stormbootx $PWD/t/fw && scripts/build-stormboot-serve.sh $PWD/t/serve && \
   tests/usb-layout.sh t/fw/boot/stormbootx-usb.img t/fw/media && ! tests/usb-layout.sh t/fw/boot/stormbootx.img && \
-  NIC=virtio tests/media-ovmf.sh t/fw/boot/stormbootx-usb.img "media       : fw" "fallback    : none" "fec pin     : rs (\\stormboot\\stormboot.conf): 0 port(s) read" && \
+  NIC=virtio tests/media-ovmf.sh t/fw/boot/stormbootx-usb.img "media       : fw" "fallback    : none" && \
   deploy/build-golden.sh stormbootx-rustnic $PWD/t/rn && tests/usb-layout.sh t/rn/boot/stormbootx-rustnic-usb.img t/rn/media && \
   NIC=virtio tests/media-ovmf.sh t/rn/boot/stormbootx-rustnic-usb.img "media       : rustnic" "; stormnic-virtio.efi drives it" && \
   NIC=e1000e tests/media-ovmf.sh t/rn/boot/stormbootx-rustnic-usb.img "e1000e@d0bc5ec" "stormnic-e1000e 0.1.0: " "nic 0: driver stormnic-e1000e.efi" && \
@@ -70,7 +70,6 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   EFI_NAME=BOOTAA64.EFI tests/iso-layout.sh t/arm/boot/stormbootx-arm64.iso && \
   EFI_NAME=BOOTAA64.EFI tests/usb-layout.sh t/arm/boot/stormbootx-arm64-usb.img t/arm/media && \
   deploy/build-golden.sh stormbootx-arm64-disk $PWD/t/armdisk && \
-  tests/fecpin-ovmf.sh && \
   scripts/build-stormdist.sh $PWD/t/sd && tests/dist-ovmf.sh $R/tcp4probe.efi t/sd/stormdist && \
   tests/update-ovmf.sh $R/tcp4probe.efi'
 ```
@@ -180,14 +179,6 @@ network and checks the panel through QEMU monitor screendumps
 details and Esc back, and no panel text in the serial log. `SCREEN_PNG=1`
 (it and net-ovmf's `shipped` boot) prints each dump as a base64 PNG line.
 
-`tests/fecpin-ovmf.sh` (#186) builds stormbootx with a pretend card
-(`STORMBOOTX_FEC_TEST`, in its own target dir; `build-golden.sh` refuses it) and
-boots six times with no `-no-reboot`: a write and one real warm reset, a card that
-forgets the value (one reset, never two), `fec_pin = off` on that machine, a
-refused write, a card already on RS, and no `fec_pin`; then `fec_table.25g = off`, per-port keys, and an
-`api` boot (#203): `GET /api/v1/fec`, a signed `fec all rs`, `fec-reset`, then rs runs. QEMU has no ConnectX, so
-mlxfec's own read and write are not in it.
-
 `tests/iso-layout.sh ISO …` checks an ISO is isohybrid with a FAT12 ESP,
 the layout Aptio 4 boots (#55). `tests/usb-layout.sh IMG [TREE]` (#185) checks
 a golden's `-usb.img` is a GPT with one real FAT32 ESP, the layout the R6415
@@ -237,10 +228,8 @@ includes it and `sha256.rs` by `#[path]` to read the hand-down back.
 `src/inventory.rs` (#4) is the ninth: the firmware inventory sent with the
 claim, its SMBIOS parse (BMC, CPU, memory) and its JSON under the engine's
 16 KiB; it alone carries `extern crate alloc` (it builds strings).
-`src/connectx.rs` (#25) is the tenth: which Mellanox ids `mlxfec` reads
-FEC from, which are ConnectX-3s with none, when "no ConnectX" is true, and
-which ids `prefer_media_drivers = mlx5` takes (#131), and where to look (#186: a root
-bridge's bus range from its `Configuration()` table, and the walk from it).
+`src/pcibus.rs` (#186) is the tenth: a PCI root bridge's bus range from its
+`Configuration()` table, where the failure console's `pci` starts its walk.
 `src/command.rs` (#167) is the eleventh: the signed command's text and body,
 the verbs, and the API's HTTP request parser; `extern crate alloc` like
 `inventory.rs`. The signature check is `api.rs`'s (ed25519-compact).
@@ -306,15 +295,15 @@ stormbootx --url http://stormcentral.g8.lo`.
 | File | Job |
 |---|---|
 | `src/main.rs` | `run()`: the boot, step by step; the hold and the boot again (#167); the fall-through |
-| `src/api.rs` | stormbootx's own API (#167): `/api/v1/status`, `/inventory`, `/log`, `/fec` (#203), `POST /api/v1/command`; Ed25519 over `RELEASE_KEYS` and `command_key =`, the `StormBootCommandId` floor (NV); the engine's record (stormblock#494); the commands done at the boot's fixed points; the hold (`hold =`, `hold_retry =`) |
-| `src/command.rs` | the signed command's text, body and verbs (`fec`, `fec-reset`, #203), and the API's HTTP parsing (core + alloc, host-tested) |
+| `src/api.rs` | stormbootx's own API (#167): `/api/v1/status`, `/inventory`, `/log`, `POST /api/v1/command`; Ed25519 over `RELEASE_KEYS` and `command_key =`, the `StormBootCommandId` floor (NV); the engine's record (stormblock#494); the commands done at the boot's fixed points; the hold (`hold =`, `hold_retry =`) |
+| `src/command.rs` | the signed command's text, body and verbs (`fec` and `fec-reset` refused since #202: the FEC is the driver's), and the API's HTTP parsing (core + alloc, host-tested) |
 | `src/smbios.rs` | the serials (Type 1 → 2 → 3, placeholders and shared chassis serials rejected), before any network exists; the MAC as the floor |
 | `src/net.rs` | the TCP/IP stack (#56): smoltcp on every NIC's SNP (opened exclusively), DHCP, `TcpSocket`, the TSC clock; its own ARP for the next hops (#168); the API's listening sockets, served from every poll (#167); `release` gives the NICs back on the fall-through |
 | `src/profile.rs` | the `timing :` line (#168): a mark at the end of each step, durations on the TSC |
 | `src/snpwatch.rs` | which driver is under each SNP (named before the first call), and a `TPL_NOTIFY` timer that names an SNP call that has not returned (#88) |
 | `src/entropy.rs` | randomness for the ISN, DHCP xid and ports: firmware `EFI_RNG`, then RDSEED/RDRAND (RNDR on aarch64), then jitter through SHA-256; never fails |
 | `src/tcp4.rs` | tcp4probe only since #56: a blocking socket over the firmware's TCP4 |
-| `src/drivers.rs` | load NIC drivers from `\stormboot\drivers` on the media (#26), after the platform's own bind; `take_over` gives a `prefer_media_drivers` family (`virtio`, `mlx5`) its NICs (#108, #131); `nic_verbose` sets `StormnicVerbose` before the drivers load (#80); `fec_policy` sets `StormnicFec`, the FEC policy a driver applies at bind, and `media_driver_takes` tells `mlxfec` which cards are a driver's (#202) |
+| `src/drivers.rs` | load NIC drivers from `\stormboot\drivers` on the media (#26), after the platform's own bind; `take_over` gives a `prefer_media_drivers` family (`virtio`, `mlx5`) its NICs (#108, #131); `nic_verbose` sets `StormnicVerbose` before the drivers load (#80) |
 | `src/dhcp4.rs` | tcp4probe only since #56: DHCP through the firmware's `EFI_DHCP4` |
 | `src/nvme.rs` | the NVMe/TCP initiator's UEFI end: `TcpSocket` as its `Transport`, `boot::stall` (#10) |
 | `crates/nvme-tcp-initiator` | the NVMe/TCP initiator itself (#10): `no_std` + `alloc`, no dependencies, generic over a `Transport` and a `Platform`, shared with stormboot4bios; reads up to 8 in flight (#100); host tests against a fake controller (`cargo test -p nvme-tcp-initiator`) |
@@ -342,9 +331,7 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/shell.rs` | timed, never-forced failure console before the fall-through |
 | `crates/stormbootx-stick` | the node's stick updater (#151): static musl Linux; `src/manifest.rs` and `src/sha256.rs` by path; find (sysfs, refusals), verify, decide, apply as `selfupdate.rs`; built for x86_64 and, since #172, aarch64 (`bin/stormbootx-stick-arm64`, `BOOTAA64.EFI`, family `stormbootx-arm64`); `tests/stick.sh` |
 | `src/ui.rs` | the boot panel (#144): its own `ConOut` in the system table; every line to the serial consoles and F2, the steps drawn on the screen consoles; `end` hands the screen back |
-| `src/connectx.rs` | which Mellanox ids have a FEC to read, which are ConnectX-3s with none (#25), the scan's closing line, and `pin_action`, the pin's decision (#186) (core-only, host-tested) |
-| `src/mlxfec.rs` | ConnectX FEC NV read and write: the pin, a `fec =` recovery stick, the shell's `fec` |
-| `src/fecpin.rs` | the fallback FEC pin at boot (#186, #203; only for a card no stormnic driver takes, #202): `fec_pin = rs`, a warm reset then a cold one then `stuck` (the boot holds), `StormBootFecPin`; the API's `fec`/`fec-reset` and `/api/v1/fec` JSON; a pretend card under `STORMBOOTX_FEC_TEST` for `tests/fecpin-ovmf.sh` |
+| `src/pcibus.rs` | a PCI root bridge's bus range, for the console's `pci` (#186) (core-only, host-tested) |
 | `src/tcp4probe.rs` | second binary: does this machine's firmware carry TCP4? |
 
 ## Load-bearing facts
@@ -518,17 +505,18 @@ These have each cost a debugging session. Do not "simplify" them away.
   in the **`dswfecfix`** repo, running on the switch under cron; do not
   re-implement the recovery here, and do not read a dark 25G link on this
   fabric as evidence about stormbootx until that log has been checked.
-- **The boot writes the NIC's persistent config only under `fec_pin = rs`, the
-  owner's decision (#186, 2026-11-04, reversing 2026-09-07's rule), and only on
-  the card's own NV value.** The argument it overrode still stands: a wrong
-  fabric is fixed on the fabric, and a boot-time NV write is invisible,
-  per-machine, survives reinstall, and can only be undone from the thing it just
-  broke the network on. So the pin never reads a link (`connectx::pin_action`
-  takes no link state), resets at most twice (#203: warm, then cold, then
-  a hold; `StormBootFecPin` names the stage and is set before the write and
-  each reset), and says what it wrote on the console and on the next boot.
-  A port is right when it **runs** the wanted FEC, not when it is up (owner,
-  2026-11-13). Don't add a link input or drop the record.
+- **stormbootx sets no FEC, and knows nothing about a card but which driver
+  binds it** (#202; the owner, 2026-11-14: "Stormbootx calls the driver, the
+  driver resposible for the nic getting up - speed and fec"; "the port poking
+  is a driver problem"; "how can you poke the card when someone elses code is
+  controlling it!"). The driver is chosen by PCI ID (`drivers.rs`'s families,
+  `prefer_media_drivers`); each stormnic driver reads its media and speed and
+  applies the IEEE standard FEC itself, and reports driver, speed, FEC and
+  link per port. Nothing is handed down. The FEC pin (#186, #203), `mlxfec`'s
+  NV and register writes, `fec =` sticks and the `fec` commands are gone,
+  and must not come back: a register poke under someone else's driver is a
+  loss of control, and a boot-time NV write is invisible, per-machine and
+  survives reinstall.
 
 - **The self-update believes the signature and nothing else** (#83). The
   manifest is fetched over plain HTTP from a name DHCP's DNS resolves, so
@@ -586,7 +574,7 @@ The work plan is docs/work-plan.md (not loaded by default: grep -n "^### " docs/
 
 ## Status
 
-v0.41.0 (#198: a stormdist release medium installs offline, `install_source =`; the rustnic media carry stormnic-igb 80c9ea5, #69, and stormnic-mlx4 f3d3bc2, #195). v0.40.0 (#70: the rustnic media carry stormnic-e1000e d0bc5ec; `prefer_media_drivers = e1000e`). v0.39.2 (#192: the rustnic media carry stormnic-ixgbe 4b4813d, jumbo frames). v0.39.1 (#189: a clean `local` with a disk that boots does not wait at `press c`). v0.39.0 (#186: `fec_pin = rs` on every golden, the FEC pin at boot). v0.38.1 (#186: the ConnectX scan starts at each root bridge's first bus). v0.38.0 (#185: `boot/<golden>-usb.img`, the GPT + FAT32 stick a Dell 14G boots). v0.37.0 (#131: `prefer_media_drivers = mlx5`, the `stormbootx-mlx5test` medium). v0.36.0 (#183: the engine's boot port, falling back to `api_port`; `StormBootEngine`). v0.35.1 (#180: `startup.nsh` starts one medium only; the last screen line names the build). v0.35.0 (#172: UEFI HTTP boot of the ISO, the arm64 USB stick and stick updater). v0.34.0 (#167: `maint` claims and boots the maintenance image, stormblock#497). v0.33.1 (#167: the intent's host is a name; laptop-ovmf boots the real command record). v0.33.0 (#167 phase 1: stormbootx's own API on port 9180, Ed25519-signed commands, the hold on a failed boot; goldens `hold = 120`). v0.32.0 (#167's inventory v2, #168's ARP priming and timing line, #99's parked cap9 in 50 ms). v0.29.0 (#151: stormbootx-stick; released, frozen until 2026-10-17, then the master promotes it). v0.28.2 was #130 (reproducible media); v0.28.0 was #144 (the boot panel); v0.27.0 was #148 (the self-update resolves its host); v0.26.0 was #145 (the fall-through starts the local disk itself); v0.25.0 was #128: #4, #10, #17, #25, #36, #42, #53, #67 and #138. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
+v0.41.0 (#198: a stormdist release medium installs offline, `install_source =`; the rustnic media carry stormnic-igb 80c9ea5, #69, and stormnic-mlx4 f3d3bc2, #195). v0.40.0 (#70: the rustnic media carry stormnic-e1000e d0bc5ec; `prefer_media_drivers = e1000e`). v0.39.2 (#192: the rustnic media carry stormnic-ixgbe 4b4813d, jumbo frames). v0.39.1 (#189: a clean `local` with a disk that boots does not wait at `press c`). v0.39.0 (#186: `fec_pin = rs` on every golden, the FEC pin at boot; removed by #202). v0.38.1 (#186: the ConnectX scan starts at each root bridge's first bus). v0.38.0 (#185: `boot/<golden>-usb.img`, the GPT + FAT32 stick a Dell 14G boots). v0.37.0 (#131: `prefer_media_drivers = mlx5`, the `stormbootx-mlx5test` medium). v0.36.0 (#183: the engine's boot port, falling back to `api_port`; `StormBootEngine`). v0.35.1 (#180: `startup.nsh` starts one medium only; the last screen line names the build). v0.35.0 (#172: UEFI HTTP boot of the ISO, the arm64 USB stick and stick updater). v0.34.0 (#167: `maint` claims and boots the maintenance image, stormblock#497). v0.33.1 (#167: the intent's host is a name; laptop-ovmf boots the real command record). v0.33.0 (#167 phase 1: stormbootx's own API on port 9180, Ed25519-signed commands, the hold on a failed boot; goldens `hold = 120`). v0.32.0 (#167's inventory v2, #168's ARP priming and timing line, #99's parked cap9 in 50 ms). v0.29.0 (#151: stormbootx-stick; released, frozen until 2026-10-17, then the master promotes it). v0.28.2 was #130 (reproducible media); v0.28.0 was #144 (the boot panel); v0.27.0 was #148 (the self-update resolves its host); v0.26.0 was #145 (the fall-through starts the local disk itself); v0.25.0 was #128: #4, #10, #17, #25, #36, #42, #53, #67 and #138. **First complete NVMe/TCP attach on real hardware: 2026-09-05**
 (and the same day, the full chain: chain-load into stormuefi and a running
 stormcos kernel), on a
 Dell PowerEdge R230 (service tag C2NR0Q2) booting the agent over iDRAC virtual

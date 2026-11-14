@@ -162,16 +162,18 @@ then.
       read it back, say RS per port or fail loudly. Built (212d8ec), then
       **stopped by the owner the same night** ("the port poking is a driver
       problem, not a stormbootx problem"; "stormbootx cannot be reliable
-      without a proper driver") and reverted unshipped (b326daa). **Now
-      (fdaa0c4):** the rustnic media carry stormnic-mlx5 with
-      `prefer_media_drivers = virtio,mlx5`; `StormnicFec` hands the media's
-      FEC keys to the drivers; `mlxfec` leaves alone a card a media driver
-      takes; the pin is the labelled fallback. The driver's half is
-      stormnic-mlx5#8 (set the FEC at bind, print it per function). Next:
-      the full sc-build, the golden request, then the master's canary
-      promotion to C2NR0Q2 (morning of 2026-11-14), then forge1. Pass:
-      `taking it from … for stormnic-mlx5.efi`, bind, link, and the
-      driver's FEC line per function on the console.
+      without a proper driver") and reverted unshipped (b326daa). Then
+      (owner, the same night): no FEC configuration at all; "Stormbootx
+      calls the driver, the driver resposible for the nic getting up -
+      speed and fec". **Done:** the rustnic media carry stormnic-mlx5 with
+      `prefer_media_drivers = virtio,mlx5` (fdaa0c4); the FEC step, pin,
+      `fec =`, the `fec` commands and `/api/v1/fec`, mlxfec, fecpin,
+      connectx and fecpin-ovmf are removed, and `StormnicFec` with them
+      (nothing is handed down). The driver's half is stormnic-mlx5#8: the
+      standard FEC for its media/speed at bind, one line per port (driver,
+      speed, FEC, link). Next: the full sc-build, the golden request, the
+      master's canary to C2NR0Q2, then forge1; #202 waits on
+      stormnic-mlx5#8 for the FEC itself.
 - [x] **#198 — install a release from a local stormdist ISO or stick,
       offline, with the medium's read rate (P0, the master, 2026-11-10).
       Released v0.41.0 (eeac3a2), closed 2026-11-10.** Decided (the master for the owner, 2026-11-10): option

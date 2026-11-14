@@ -113,7 +113,6 @@ pub fn run() {
             "dhcp" => dhcp(&args),
             "connect" | "tcp" => connect(&args),
             "pci" => pci(&args),
-            "fec" => fec(&args),
             "reset" | "reboot" => {
                 uefi::println!("warm-resetting.");
                 uefi::runtime::reset(uefi::runtime::ResetType::WARM, uefi::Status::SUCCESS, None);
@@ -133,39 +132,8 @@ fn help() {
     uefi::println!("  dhcp [secs]       wait up to secs (default 10) for every interface's lease");
     uefi::println!("  connect IP PORT   open a TCP connection, the way the attach does");
     uefi::println!("  pci [all]         devices on the bus, driver or no driver");
-    uefi::println!("  fec [MODE]        read the ConnectX FEC; with MODE, write it");
-    uefi::println!("                    MODE: default | rs | fc | off | autoneg");
-    uefi::println!("  reset             warm-reset, so firmware re-reads NV config");
+    uefi::println!("  reset             warm-reset the machine");
     uefi::println!("  boot              stop reading and continue the boot");
-}
-
-/// Read, and on request write, the ConnectX NV FEC override.
-///
-/// Driven by a person typing it. The boot path's own write is `fec_pin` (#186),
-/// which reads no link. An earlier one read a one-shot link sample: it took a
-/// healthy card as all-down and pinned RS on both ports, after which they lit
-/// but never linked against a switch on `fec CL108-RS` — see `main.rs` step 2b.
-///
-/// `fec default` is the way back: value 0, what the card shipped with and what
-/// carried these links for 16 h 51 m before anything wrote to them. On a medium
-/// with `fec_pin = rs` the next boot writes rs again: say `fec_pin = off` too.
-fn fec(args: &[&str]) {
-    let Some(mode) = args.first() else {
-        crate::mlxfec::apply(None);
-        uefi::println!("  read-only. `fec default` restores the card's own setting.");
-        return;
-    };
-    let Some(want) = crate::mlxfec::Fec::parse(mode) else {
-        uefi::println!("  `{mode}` is not a FEC mode — default | rs | fc | off | autoneg");
-        return;
-    };
-    uefi::println!("  writing FEC {} to every ConnectX port", want.name());
-    let sum = crate::mlxfec::apply(Some(want));
-    if sum.reset_needed() {
-        uefi::println!("  written. `reset` the machine for firmware to re-read NV config.");
-    } else {
-        uefi::println!("  nothing to write — every port already reads {}.", want.name());
-    }
 }
 
 /// Every NIC the firmware has a driver for — **not** only those carrying TCP4.
@@ -262,7 +230,7 @@ fn pci(args: &[&str]) {
         // first bus (#186: not always 0) and add whatever sits behind each
         // bridge. A blind 0..=255 sweep is 65k config reads through firmware,
         // and most of them address nothing.
-        let mut buses: Vec<u8> = alloc::vec![crate::mlxfec::first_bus(&bridge)];
+        let mut buses: Vec<u8> = alloc::vec![first_bus(&bridge)];
         let mut seen: Vec<u8> = Vec::new();
         while let Some(bus) = buses.pop() {
             if seen.contains(&bus) {
@@ -361,4 +329,22 @@ fn connect(args: &[&str]) {
         Ok(_) => uefi::println!("  OPEN — the path works and the port is listening"),
         Err(e) => uefi::println!("  FAILED — {e}"),
     }
+}
+
+/// Where a walk of this root bridge starts (#186): its first bus, from its
+/// `Configuration()` table, else 0. Not the uefi crate's `configuration()`:
+/// its parser panics on a tag it doesn't know.
+fn first_bus(br: &uefi::proto::pci::root_bridge::PciRootBridgeIo) -> u8 {
+    use uefi_raw::protocol::pci::root_bridge::PciRootBridgeIoProtocol;
+    let raw = core::ptr::from_ref(br).cast::<PciRootBridgeIoProtocol>();
+    let mut table: *const core::ffi::c_void = core::ptr::null();
+    // SAFETY: `PciRootBridgeIo` is `repr(transparent)` over the raw protocol,
+    // and the firmware owns the table it hands back.
+    let status = unsafe { ((*raw).configuration)(raw, &mut table) };
+    if status != uefi_raw::Status::SUCCESS || table.is_null() {
+        return 0;
+    }
+    let table = table.cast::<u8>();
+    // SAFETY: `bus_range` stops at the table's end tag.
+    crate::pcibus::bus_range(|i| unsafe { table.add(i).read_unaligned() }).map_or(0, |r| r.0)
 }

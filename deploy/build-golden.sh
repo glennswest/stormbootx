@@ -59,7 +59,7 @@
 #                                 same), stormnic-mlx5.efi (STORMNIC_MLX5_REF,
 #                                 #202; with prefer_media_drivers = virtio,mlx5
 #                                 it takes a ConnectX-4/5/6 from FlexBoot and
-#                                 sets its FEC from StormnicFec), and no iPXE
+#                                 brings it up, speed and FEC), and no iPXE
 #   media/, media.files           as above (#83)
 #   SHA256SUMS, BUILD
 #
@@ -189,11 +189,6 @@ SYSLOG_TARGET="stormcentral.g8.lo:5514"
 # disk (#167): two minutes for stormcentral or the laptop app to send a
 # command; nothing local that boots holds until one.
 HOLD=120
-# The owner's FEC pin (#186): every golden, so a card that differs is pinned
-# wherever it boots. The stick and the ISO alike; a machine with no ConnectX
-# never reaches a write.
-FEC_PIN=rs
-[[ -z "${STORMBOOTX_FEC_TEST:-}" ]] || die "STORMBOOTX_FEC_TEST compiles in a pretend card: no golden (#186)"
 [[ -z "${STORMBOOTX_DIST_TEST_KEY:-}" ]] || die "STORMBOOTX_DIST_TEST_KEY compiles in a test release key: no golden (#198)"
 [[ -z "${STORMBOOTX_UPDATE_TEST_KEY:-}" ]] || die "STORMBOOTX_UPDATE_TEST_KEY compiles in a test update key: no golden (#83)"
 
@@ -280,7 +275,7 @@ stormbootx)
     # defaults. Which image a machine boots is its boothost on the engine,
     # never the media, so one golden boots every machine, and it names no
     # fallback namespace either (#36): no claim, no attach.
-    agent=(--binary "$OUT/bin/stormbootx.efi" --dns 192.168.31.252 --no-fallback --syslog "$SYSLOG_TARGET" --hold "$HOLD" --fec-pin "$FEC_PIN" --media fw
+    agent=(--binary "$OUT/bin/stormbootx.efi" --dns 192.168.31.252 --no-fallback --syslog "$SYSLOG_TARGET" --hold "$HOLD" --media fw
            --update "$(update_url stormbootx)")
     "$ROOT/scripts/build-boot-agent.sh" --iso "${agent[@]}" --output "$OUT/boot/stormbootx.iso"
     "$ROOT/scripts/build-boot-agent.sh" "${agent[@]}" --tree "$OUT/media" --output "$OUT/boot/stormbootx.img"
@@ -306,7 +301,7 @@ stormbootx-rustnic)
     # igb (#69), and no iPXE at all (#91).
     rustnic_drivers
     agent=(--binary "$OUT/bin/stormbootx.efi" --drivers "$WORK/media-drivers" --prefer-media-drivers virtio,mlx5
-           --dns 192.168.31.252 --no-fallback --syslog "$SYSLOG_TARGET" --hold "$HOLD" --fec-pin "$FEC_PIN" --media "$RUSTNIC_LABEL"
+           --dns 192.168.31.252 --no-fallback --syslog "$SYSLOG_TARGET" --hold "$HOLD" --media "$RUSTNIC_LABEL"
            --update "$(update_url stormbootx-rustnic)")
     "$ROOT/scripts/build-boot-agent.sh" --iso "${agent[@]}" --tree "$OUT/media" \
         --output "$OUT/boot/stormbootx-rustnic.iso"
@@ -325,7 +320,7 @@ stormbootx-mlx5test)
     rustnic_drivers
     # No --update: a test medium never takes a promotion, or is one.
     agent=(--binary "$OUT/bin/stormbootx.efi" --drivers "$WORK/media-drivers" --prefer-media-drivers virtio,mlx5
-           --nic-verbose --dns 192.168.31.252 --no-fallback --syslog "$SYSLOG_TARGET" --hold "$HOLD" --fec-pin "$FEC_PIN"
+           --nic-verbose --dns 192.168.31.252 --no-fallback --syslog "$SYSLOG_TARGET" --hold "$HOLD"
            --media "$RUSTNIC_LABEL")
     "$ROOT/scripts/build-boot-agent.sh" --iso "${agent[@]}" --tree "$OUT/media" --output "$OUT/boot/$GOLDEN.iso"
     usb_image "${agent[@]}"
@@ -343,7 +338,7 @@ stormbootx-disk|stormbootx-rustnic-disk)
     cp "$REL/stormbootx.efi" "$WORK/stormbootx.efi"
     mkdir -p "$OUT/boot"
     # The same medium as the family's ISO, on a writable stick.
-    disk=(--binary "$WORK/stormbootx.efi" --dns 192.168.31.252 --no-fallback --syslog "$SYSLOG_TARGET" --hold "$HOLD" --fec-pin "$FEC_PIN" --size 64)
+    disk=(--binary "$WORK/stormbootx.efi" --dns 192.168.31.252 --no-fallback --syslog "$SYSLOG_TARGET" --hold "$HOLD" --size 64)
     if [[ $GOLDEN == stormbootx-disk ]]; then
         disk+=(--media fw --update "$(update_url stormbootx)")
         note="drivers  = none (the firmware's own, #52)"
@@ -368,7 +363,7 @@ stormbootx-arm64)
     mkdir -p "$OUT/bin" "$OUT/boot"
     cp "$REL/stormbootx.efi" "$OUT/bin/"
     agent=(--arch arm64 --binary "$OUT/bin/stormbootx.efi" --dns 192.168.31.252 --no-fallback
-           --syslog "$SYSLOG_TARGET" --hold "$HOLD" --fec-pin "$FEC_PIN" --media "fw arm64" --update "$(update_url stormbootx-arm64)")
+           --syslog "$SYSLOG_TARGET" --hold "$HOLD" --media "fw arm64" --update "$(update_url stormbootx-arm64)")
     "$ROOT/scripts/build-boot-agent.sh" --iso "${agent[@]}" --tree "$OUT/media" \
         --output "$OUT/boot/stormbootx-arm64.iso"
     usb_image "${agent[@]}"
@@ -389,7 +384,7 @@ stormbootx-arm64-disk)
     mkdir -p "$OUT/boot"
     # The arm64 medium on a writable stick: the same files as its ISO.
     "$ROOT/scripts/build-boot-agent.sh" --arch arm64 --binary "$WORK/stormbootx.efi" \
-        --dns 192.168.31.252 --no-fallback --syslog "$SYSLOG_TARGET" --hold "$HOLD" --fec-pin "$FEC_PIN" --size 64 \
+        --dns 192.168.31.252 --no-fallback --syslog "$SYSLOG_TARGET" --hold "$HOLD" --size 64 \
         --media "fw arm64" --update "$(update_url stormbootx-arm64)" \
         --output "$OUT/boot/$GOLDEN.img"
     only_the_image

@@ -57,7 +57,7 @@ mod blockio;
 mod clock;
 mod command;
 mod config;
-mod connectx;
+mod pcibus;
 mod distmedia;
 mod dnsname;
 mod drivers;
@@ -73,8 +73,6 @@ mod intent;
 mod inventory;
 mod logwire;
 mod manifest;
-mod fecpin;
-mod mlxfec;
 mod net;
 mod netlog;
 mod nvme;
@@ -172,7 +170,7 @@ fn after_command(next: api::Next) -> Result<api::Claim, Stop> {
 }
 
 /// One boot from the media to the chain-load. `pass` counts the boots a hold
-/// started again (#167): the media's NIC drivers, the FEC read, the
+/// started again (#167): the media's NIC drivers, the
 /// self-update and the install-config hand-down run on the first only.
 /// `ask` is what a command said to claim: this machine's image whatever the
 /// intent says, or the maintenance image.
@@ -257,46 +255,17 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
         uefi::println!("model       : {model}");
     }
 
-    // 1b. Read and report the NIC's 25G FEC, before the network is used, and
-    //     pin it when the media says `fec_pin = rs` (#186, the owner's choice,
-    //     2026-11-04; `fecpin.rs`): a warm reset, then a cold one, then a hold
-    //     at 2d (#203). Only the card's own values decide that: see
-    //     step 2b for what a link sample did. On 2026-09-06 the flaky-SR-link
-    //     problem turned out to be switch-side — the fabric (Dell S5148F) was
-    //     pinned to `fec off`, and the ConnectX's device-default already
-    //     *negotiates* cl108-rs, so setting the switch to `CL108-RS` matched both
-    //     ends. Nothing here is fatal; an unrecognised card is named and skipped.
+    // 1b. No FEC here (#202; the owner, 2026-11-14: "Stormbootx calls the
+    //     driver, the driver resposible for the nic getting up - speed and
+    //     fec"). stormbootx chooses which driver binds a NIC
+    //     (`prefer_media_drivers`) and knows nothing else about the card.
+    //     The FEC pin (#186), its API (#203) and `mlxfec`'s NV writes are gone.
     ui::machine(&format!(
         "{}   serial {}",
         smbios::model().unwrap_or_else(|| String::from("unknown machine")),
         stated.as_deref().or(serial.as_deref()).unwrap_or("none")
     ));
     ui::step(ui::Step::Nic, "NIC drivers and links");
-    if first {
-        uefi::println!("nic fec     :");
-        let read = fecpin::read();
-        profile::mark("nic fec");
-        // A `fec =` stick is an operator saying something else.
-        if config::stated_fec().is_none() {
-            fecpin::at_boot(&read);
-        }
-        // For `GET /api/v1/fec` (#203); after the pin, which may clear its record.
-        fecpin::remember(&read);
-    }
-
-    //     A recovery stick, and only a recovery stick, may state `fec = MODE`
-    //     in stormboot.conf. That is an operator saying so on one piece of
-    //     media, not this code inferring it from link state — the distinction
-    //     that matters, and the one step 2b is about. Write once, warm-reset
-    //     once, and the next boot of the same stick finds nothing to do.
-    if let Some(want) = config::stated_fec().filter(|_| first) {
-        uefi::println!("              media states fec = {} — writing it", want.name());
-        if mlxfec::apply(Some(want)).reset_needed() {
-            uefi::println!("              FEC written; warm-resetting to apply");
-            uefi::runtime::reset(uefi::runtime::ResetType::WARM, Status::SUCCESS, None);
-        }
-        uefi::println!("              already {} — nothing written", want.name());
-    }
 
     // 1c. NIC drivers the media carries (#26). A platform can have the whole
     //     upper stack and no UEFI driver for its own NICs (the Supermicro X9
@@ -375,16 +344,6 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
         selfupdate::check(mac_colon.as_deref());
     }
 
-    // 2d. A card the FEC pin could not get running the wanted value after a
-    //     warm and a cold reset (#203): no network boot on the wrong FEC, and
-    //     no third reset. Hold with the API up (every pass: the pin runs on the
-    //     first only); with no lease the loop falls through to the local disk.
-    if fecpin::stuck() {
-        return Err(Stop::Hold(String::from(
-            "the NIC's FEC is not what fec_pin wants after a warm and a cold reset",
-        )));
-    }
-
     // What an older engine is asked for, and what the host NQN falls back to:
     // the stated tag, else the SMBIOS serial, else the MAC (#7's floor).
     let tag = match (&stated, &serial) {
@@ -397,37 +356,6 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
                  State one with `tag = <id>` in \\stormboot\\stormboot.conf",
             )?,
     };
-
-    // 2b. The FEC self-heal used to run here, and is switched off (2026-09-07).
-    //
-    //     It fired when every 25G ConnectX port read link-down, pinned the
-    //     card's NV FEC override to RS and warm-reset once. The trigger is
-    //     wrong, and the machine it was written for is what proved it: on
-    //     2026-09-07 the R230's two 25G ports (dsw1 1/1/5 and 1/1/7) dropped
-    //     together at 16:22 UTC and never came back — after 16 h 51 m of
-    //     continuous link on a fabric already correctly set to `fec CL108-RS`.
-    //     The card stayed powered, one port lasing without PCS lock and the
-    //     other dark, which is a card-configuration state and not a fabric one.
-    //
-    //     The trigger reads link exactly once, through `snp.media_present`, with
-    //     no settle wait — the same trap `ensure_available` already documents
-    //     and already retries around, because a 25G RS link takes seconds to
-    //     come up after a reset and *time was the answer*. So a healthy card,
-    //     sampled early enough in UEFI, reads all-down; the write then happens
-    //     for no reason and the warm reset re-enters UEFI early enough to do it
-    //     again. It self-limits — the write is skipped once the FEC is already
-    //     RS — which is why this cost one bad write rather than a boot loop.
-    //
-    //     There is nothing for it to fix in the first place: the ConnectX-4 Lx
-    //     device-default *negotiates* cl108-rs, so a correct fabric matches it
-    //     with no card-side change at all. The failure this was built for was
-    //     switch-side (`fec off` on all 48 SFP28 ports) and was fixed on the
-    //     switch. A boot-time NV write to the NIC is a large hammer for a
-    //     problem the card does not have.
-    //
-    //     `mlxfec` keeps the write path — it works, it is hard-won, and #7's
-    //     history is in it. The owner brought a write back on #186 (step 1b):
-    //     the card's own NV value decides it, and no link sample ever may.
 
     // 3. What should I boot?
     // The DNS name the network gives this machine (#23): full name, the host
