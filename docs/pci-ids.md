@@ -36,10 +36,10 @@ Linux master's driver tables (fetched 2026-11-14).
 |---|---|---|---|---|
 | stormnic-mlx5 (66de545) | 7 | 14 | 1021 CX-7, 1023 CX-8, 1025 CX-9, 1027 CX-10, 2101 CX-10 NVLink-C2C, a2d2/a2d6/a2dc/a2df BlueField 1–4 (and 1011 Connect-IB, IB only) | — |
 | stormnic-mlx4 (398a1a4) | 2 | 13 + ConnectX/-2 | 1005, 1006, 1008, 1009, 100a–100f, 1010 (MT275xx family members) | — |
-| stormnic-ixgbe (4b4813d) | 37 | 52 | 82598: 10b6, 10c6, 10c7, 10c8, 10db, 10dd, 10e1, 10ec, 10f1, 10f4, 1508, 150b; E610: 57ae–57b2 | 155c X540 bypass, 155d 82599 bypass |
-| stormnic-igb (80c9ea5) | 36 | 35 | DH89xxCC: 0438, 043a, 043c, 0440 | 10e2, 1509, 1534, 1535, 15f6 |
-| stormnic-e1000e (d0bc5ec) | 67 | 113 | 46 older parts: 8257x (105e–10a5, 10b9–10bf, 10d5, 10d9, 10da, 10ea…), ICH8–10 LAN (1049–104d, 10bd, 10c0–10cd, 10de, 10df, 10e5, 10ef, 10f0, 10f5, 1501, 150c, 1525, 294c) | 57b5, 57b6 |
-| stormnic-virtio (1a04808) | 1041, 1000 | 1041, 1000 (virtio_net) | — | — |
+| stormnic-ixgbe (02fcc5d) | 37 | 52 | 82598: 10b6, 10c6, 10c7, 10c8, 10db, 10dd, 10e1, 10ec, 10f1, 10f4, 1508, 150b; E610: 57ae–57b2 | 155c X540 bypass, 155d 82599 bypass |
+| stormnic-igb (6990341) | 36 | 35 | DH89xxCC: 0438, 043a, 043c, 0440 | 10e2, 1509, 1534, 1535, 15f6 |
+| stormnic-e1000e (bd67192) | 67 | 113 | 46 older parts: 8257x (105e–10a5, 10b9–10bf, 10d5, 10d9, 10da, 10ea…), ICH8–10 LAN (1049–104d, 10bd, 10c0–10cd, 10de, 10df, 10e5, 10ef, 10f0, 10f5, 1501, 150c, 1525, 294c) | 57b5, 57b6 |
+| stormnic-virtio (2dcafd3) | 1041, 1000 | 1041, 1000 (virtio_net) | — | — |
 
 Each gap is the driver's to decide: some of those parts need other code (the
 82598 is not an 82599, and the older e1000e MACs differ). Each is filed on

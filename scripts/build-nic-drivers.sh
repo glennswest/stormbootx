@@ -68,7 +68,11 @@ STORMNIC_IXGBE_REPO="https://github.com/glennswest/stormnic-ixgbe.git"
 # On top of 0dd4267's SNP on a child handle (#4), 2afd319's rings (#3),
 # 9476135's PHY and link code (#13, 25 device IDs) and 884cf18's bring-up
 # (#2); builds --locked (#47, #48, #51, #63, #65).
-STORMNIC_IXGBE_REF="4b4813dfea457a53b68fdc5a438125ae94c50795"
+# 02fcc5d (#211, stormnic-ixgbe#35; supersedes #194, it carries 232790c): the
+# stormnic port contract (#202): one line per port, driver, PCI address, MAC,
+# media, speed, the IEEE standard FEC (none at 10G) and link; a port with no
+# link is a `link DOWN: error: …` line. DEVICES unchanged. On top of:
+STORMNIC_IXGBE_REF="02fcc5da9f26dd8a3802d0767456e7231dda239f"
 STORMNIC_MLX4_REPO="https://github.com/glennswest/stormnic-mlx4.git"
 # f3d3bc2 (v0.2.8, #195): a ConnectX-3 whose PCI I/O GetLocation fails is
 # driven with `?` as its location, the failure printed (stormnic-mlx4#7), and
@@ -110,7 +114,11 @@ STORMNIC_VIRTIO_REPO="https://github.com/glennswest/stormnic-virtio.git"
 # force it off, and like the others declines a function already held. Every
 # OVMF's VirtioNetDxe holds the NIC before the media drivers load, so it binds
 # only where the media says `prefer_media_drivers = virtio` (#108).
-STORMNIC_VIRTIO_REF="1a04808aea492e508c0c66d4134b06532405e0b8"
+# 2dcafd3 (v0.2.0, #210, stormnic-virtio#5): the stormnic port contract: one
+# line per port, `media virtual`, speed from VIRTIO_NET_F_SPEED_DUPLEX or
+# `unknown`, `FEC none`, link; the same IDs and take-over. Since #202 it takes
+# its NICs from OVMF's VirtioNetDxe unasked (our drivers only).
+STORMNIC_VIRTIO_REF="2dcafd359bff3c8af921a0c98d7025ae77ee73ef"
 STORMNIC_MLX5_REPO="https://github.com/glennswest/stormnic-mlx5.git"
 # 66de545 (#131, #73): the ConnectX-4/4 Lx/5/6 driver, reproducible and
 # --locked, not yet seen on a card (stormnic-mlx5#1). Not in this script's
@@ -128,14 +136,21 @@ STORMNIC_E1000E_REPO="https://github.com/glennswest/stormnic-e1000e.git"
 # Intel's UNDI (or iPXE's ROM) holds these NICs on most machines, so on the
 # media it drives only a NIC nothing else does, unless the media says
 # `prefer_media_drivers = e1000e`; no golden says it.
-STORMNIC_E1000E_REF="d0bc5ecb6280c33cc0600f51b98c7c6c5ae954d8"
+# bd67192 (v0.2.0 50829cb plus a README line, #207, stormnic-e1000e#5): the
+# stormnic port contract: one line per port with media, speed, `FEC none`
+# and link; a port with no link is a `link DOWN: error: …` line. The same 67
+# IDs. Since #202 it takes its NICs from UNDI or iPXE unasked.
+STORMNIC_E1000E_REF="bd67192b722d5e5adfb621d51879d7b3d05cace4"
 STORMNIC_IGB_REPO="https://github.com/glennswest/stormnic-igb.git"
 # 80c9ea5 (v0.1.0, #69, stormnic-igb#1): SNP for 36 igb PF IDs (82575, 82576,
 # 82580, I350, I354, I210, I211). Declines a function another driver holds
 # BY_DRIVER, one console line per NIC. Verified on QEMU's igb (82576,
 # 8086:10c9) under OVMF; never on igb silicon (none in the lab), so it drives
 # only an igb nothing else does: there is no `prefer_media_drivers = igb`.
-STORMNIC_IGB_REF="80c9ea5b341b2b4d59b4bc13f9c3160180c0a65a"
+# 6990341 (v0.2.0, #209, stormnic-igb#5): the stormnic port contract: one line
+# per port, `… port 0: MAC …, media copper, speed 1000 Mb/s full duplex, FEC
+# none, link UP`; no link is a `link DOWN: error: …` line. The same 36 IDs.
+STORMNIC_IGB_REF="699034193728829e3e6d6c4be29b94793e960ea8"
 read -r -a STORMNIC_DRIVERS <<< "${STORMNIC_DRIVERS:-ixgbe mlx4 virtio e1000e igb}"
 for d in "${STORMNIC_DRIVERS[@]}"; do
     [[ "$d" == ixgbe || "$d" == mlx4 || "$d" == virtio || "$d" == mlx5 || "$d" == e1000e || "$d" == igb ]] \

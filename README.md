@@ -266,7 +266,7 @@ console; a machine with no screen console gets it anyway.
 
    ```
    "agent": {"name":"stormbootx","version":"0.19.0","commit":"649dd07",
-             "media":"rustnic ixgbe@4b4813d mlx4@398a1a4 virtio@1a04808 e1000e@d0bc5ec igb@80c9ea5",
+             "media":"rustnic ixgbe@02fcc5d mlx4@398a1a4 virtio@2dcafd3 e1000e@bd67192 igb@6990341",
              "update_serial":5,"update":"serial:5"}
    ```
 
@@ -1275,8 +1275,8 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   NIC=virtio tests/media-ovmf.sh t/fw/boot/stormbootx-usb.img "media       : fw" "fallback    : none" && \
   deploy/build-golden.sh stormbootx-rustnic $PWD/t/rn && tests/usb-layout.sh t/rn/boot/stormbootx-rustnic-usb.img t/rn/media && \
   NIC=virtio tests/media-ovmf.sh t/rn/boot/stormbootx-rustnic-usb.img "media       : rustnic" "; stormnic-virtio.efi drives it" && \
-  NIC=e1000e tests/media-ovmf.sh t/rn/boot/stormbootx-rustnic-usb.img "e1000e@d0bc5ec igb@80c9ea5" "stormnic-e1000e 0.1.0: " "nic 0: driver stormnic-e1000e.efi" && \
-  NIC=igb tests/media-ovmf.sh t/rn/boot/stormbootx-rustnic-usb.img "igb@80c9ea5" "stormnic-igb 0.1.0: " "nic 0: driver stormnic-igb.efi" && \
+  NIC=e1000e tests/media-ovmf.sh t/rn/boot/stormbootx-rustnic-usb.img "e1000e@bd67192 igb@6990341" "stormnic-e1000e 0.2.0: " "nic 0: driver stormnic-e1000e.efi" && \
+  NIC=igb tests/media-ovmf.sh t/rn/boot/stormbootx-rustnic-usb.img "igb@6990341" "stormnic-igb 0.2.0: " "nic 0: driver stormnic-igb.efi" && \
   deploy/build-golden.sh stormbootx-mlx5test $PWD/t/mlx5 && tests/iso-layout.sh t/mlx5/boot/stormbootx-mlx5test.iso && \
   tests/usb-layout.sh t/mlx5/boot/stormbootx-mlx5test-usb.img t/mlx5/media && \
   NIC=virtio tests/media-ovmf.sh t/mlx5/boot/stormbootx-mlx5test.iso "mlx5@66de545 test" "stormnic drivers verbose" "stormnic-mlx5.efi started" "; stormnic-virtio.efi drives it" "ours      : no NIC here for stormnic-mlx5.efi" && \
@@ -1612,7 +1612,7 @@ prints it under the banner:
 
 ```
 media       : fw
-media       : rustnic ixgbe@4b4813d mlx4@398a1a4 virtio@1a04808 e1000e@d0bc5ec igb@80c9ea5
+media       : rustnic ixgbe@02fcc5d mlx4@398a1a4 virtio@2dcafd3 e1000e@bd67192 igb@6990341
 ```
 
 The fw medium's `BUILD` says `drivers = none`, and a `--drivers` given to

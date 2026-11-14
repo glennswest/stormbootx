@@ -1120,8 +1120,8 @@ if [[ -n "${VIRTIO_EFI:-}" ]]; then
         "stormnic-virtio.efi started"
         ": taken from "
         "; stormnic-virtio.efi drives it"
-        "stormnic-virtio 0.1.0: "
-        ", SNP installed"
+        "stormnic-virtio 0.2.0: "
+        ", FEC none, link UP"
         "not:nic 0: driver Virtio Network Driver"
         "nic 0: leased 10.0.2.15/24 gw 10.0.2.2"
         "not:given back to"
@@ -1140,7 +1140,7 @@ if [[ -n "${VIRTIO_EFI:-}" ]]; then
     # The quiet trace stays out of the boot above; nic_verbose brings it back
     # (#80): StormnicVerbose is set before the driver loads.
     # The driver's trace lines start `stormnic-virtio: `; its one quiet line is
-    # `stormnic-virtio 0.1.0: …` (and OVMF's debug port has `…: Supported` of
+    # `stormnic-virtio 0.2.0: …` (and OVMF's debug port has `…: Supported` of
     # its own).
     grep -qE "stormnic-virtio: .*: Supported" "$W/virtio.txt" && die "[virtio] a quiet boot printed the driver's trace"
     BOOT_DRIVERS="$W/vdrv" BOOT_NIC_VERBOSE=1 \
@@ -1149,7 +1149,7 @@ if [[ -n "${VIRTIO_EFI:-}" ]]; then
         "drivers     : stormnic drivers verbose (nic_verbose in " \
         "StormnicVerbose set until reset)" \
         "; stormnic-virtio.efi drives it" \
-        "stormnic-virtio 0.1.0: "
+        "stormnic-virtio 0.2.0: "
     grep -qE "stormnic-virtio: .*: Supported" "$W/virtio-verbose.txt" \
         && say "[virtio-verbose] found the driver's trace: $(grep -E 'stormnic-virtio: .*: Supported' "$W/virtio-verbose.txt" | head -1)" \
         || die "[virtio-verbose] nic_verbose set, but the driver printed no trace"
@@ -1207,9 +1207,9 @@ if [[ -n "${E1000E_EFI:-}" ]]; then
     e1000e=(
         "starting stormnic-e1000e.efi"
         "stormnic-e1000e.efi started"
-        "stormnic-e1000e 0.1.0: "
+        "stormnic-e1000e 0.2.0: "
         " 8086:10d3 82574L Gigabit Network Connection: MAC "
-        ", SNP installed"
+        ", FEC none, link UP"
         "nic 0: driver stormnic-e1000e.efi"
         "nic 0: leased 10.0.2.15/24 gw 10.0.2.2"
         "not:would not let go"
@@ -1243,9 +1243,9 @@ if [[ -n "${IGB_EFI:-}" ]]; then
     boot igb "$host_cpu" "" ok good \
         "starting stormnic-igb.efi" \
         "stormnic-igb.efi started" \
-        "stormnic-igb 0.1.0: " \
+        "stormnic-igb 0.2.0: " \
         " 8086:10c9 82576" \
-        ", SNP installed" \
+        ", FEC none, link UP" \
         "nic 0: driver stormnic-igb.efi" \
         "nic 0: leased 10.0.2.15/24 gw 10.0.2.2" \
         "not:taken from" \

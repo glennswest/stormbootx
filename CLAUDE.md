@@ -59,8 +59,8 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   NIC=virtio tests/media-ovmf.sh t/fw/boot/stormbootx-usb.img "media       : fw" "fallback    : none" && \
   deploy/build-golden.sh stormbootx-rustnic $PWD/t/rn && tests/usb-layout.sh t/rn/boot/stormbootx-rustnic-usb.img t/rn/media && \
   NIC=virtio tests/media-ovmf.sh t/rn/boot/stormbootx-rustnic-usb.img "media       : rustnic" "; stormnic-virtio.efi drives it" && \
-  NIC=e1000e tests/media-ovmf.sh t/rn/boot/stormbootx-rustnic-usb.img "e1000e@d0bc5ec" "stormnic-e1000e 0.1.0: " "nic 0: driver stormnic-e1000e.efi" && \
-  NIC=igb tests/media-ovmf.sh t/rn/boot/stormbootx-rustnic-usb.img "igb@80c9ea5" "stormnic-igb 0.1.0: " "nic 0: driver stormnic-igb.efi" && \
+  NIC=e1000e tests/media-ovmf.sh t/rn/boot/stormbootx-rustnic-usb.img "e1000e@bd67192" "stormnic-e1000e 0.2.0: " "nic 0: driver stormnic-e1000e.efi" && \
+  NIC=igb tests/media-ovmf.sh t/rn/boot/stormbootx-rustnic-usb.img "igb@6990341" "stormnic-igb 0.2.0: " "nic 0: driver stormnic-igb.efi" && \
   tests/laptop-ovmf.sh t/fw/boot/stormbootx.iso $R/tcp4probe.efi t/serve/stormboot-serve && \
   deploy/build-golden.sh stormbootx-mlx5test $PWD/t/mlx5 && tests/iso-layout.sh t/mlx5/boot/stormbootx-mlx5test.iso && \
   tests/usb-layout.sh t/mlx5/boot/stormbootx-mlx5test-usb.img t/mlx5/media && \

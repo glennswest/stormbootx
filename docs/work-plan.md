@@ -139,6 +139,10 @@ then.
       `fec_pin = rs` (every golden) is the 25G ports' FEC, other speeds
       their standard's, never the card's negotiated `default`; table and
       per-port key as overrides.
+- [ ] **#207, #209, #210, #211 — pin e1000e bd67192, igb 6990341, virtio
+      2dcafd3, ixgbe 02fcc5d (the port contract line).** Pinned with #208;
+      net-ovmf's expectations follow the new lines. Next: one sc-build for all
+      five pins, then one image.
 - [ ] **#208 — pin stormnic-mlx4 v0.3.0 (398a1a4; the issue's full hash
       398a1a4bd8b5… is a typo, v0.3.0 is 398a1a4f10ad…): the per-port
       contract line.** Pinned; next the focused sc-build (nic drivers with
