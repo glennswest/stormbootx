@@ -233,9 +233,10 @@ then.
       bump `STORMNIC_MLX5_REF`, run the full suite, request the rustnic image.
 - [ ] **#216 — pin stormnic-mlx5 9d86045 (P0; stormnic-mlx5#12: Receive
       drains the CQ, the DHCP lease over the mlx5 SNP).** Contains 32ddb3f;
-      only `src/snp.rs` changed, same IDs. Pinned; mlx5test check expects
-      `mlx5@9d86045 test`. Next: full sc-build, image, shipped. Metal proof
-      (a `leased` on a stormnic-mlx5 port, C2NR0Q2/forge1) is the master's boot.
+      only `src/snp.rs` changed, same IDs. Full sc-build of 38469be passed
+      (7 IDs, `mlx5@9d86045 test`, repro); image build 962fc0358b7d
+      requested. Waiting on the master's hardware boot of C2NR0Q2 for the
+      proof: `leased` on a stormnic-mlx5 port (QEMU has no ConnectX).
 - [x] **#215 — pin stormnic-mlx5 32ddb3f (`fec_mode_active` bitmask
       decode; raw PPLM on FEC FAILED).** Same 7 IDs as `MLX5_TAKE_OVER`.
       Full sc-build of 4c6be65 passed (label `mlx5@32ddb3f`, mlx5test boot,
