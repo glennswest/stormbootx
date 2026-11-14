@@ -102,6 +102,29 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#213 — a failed self-update trial explains itself (P1, the master,
+      2026-11-14).** C2NR0Q2's serial 8 trial left no line anywhere: no
+      lease (no syslog), no console capture, and the claim said only
+      `failed:8`. Plan:
+      1. `src/lastlog.rs`: every start writes its console (netlog's
+         history, `logwire::excerpt` to 64 KiB) to `\stormboot\last.log`
+         at fixed points before the attach: after `at_start`, after each
+         media driver starts, after the drivers, after `net::up`, at every
+         `netlog::flush`, before a revert's chain-load. Never after the
+         attach (#46) until `withdraw`; never on a read-only medium or a
+         RAM disk. The previous start's file is read first.
+      2. The revert keeps the failed trial's last start as
+         `\stormboot\trial.log`.
+      3. The claim's `agent` carries `trial_log` (on `failed:<n>`, 6 KiB),
+         `last_log` (3 KiB) and `log` (this start so far, 4 KiB), escaped
+         and cut to fit stormblock's 16 KiB `agent`; a too-large agent
+         drops the logs, never `update`.
+      4. `GET /api/v1/log/last` and `/api/v1/log/trial`.
+      5. update-boots: last.log/trial.log on the disk, `trial_log` in the
+         revert's claim, the agent kept (≤ 16 KiB). logwire host tests.
+      6. stormcentral's half (keep it with the family's status, print it in
+         `stormbootx status`) filed on stormcentral.
+
 - [ ] **#203 — the FEC API, the wanted mode as a setting, and a boot that
       resets until the card runs it (P0, the master for the owner,
       2026-11-13).** Owner: "a 25G port's FEC is fixed by the standard, not
