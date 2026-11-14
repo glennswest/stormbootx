@@ -231,6 +231,11 @@ then.
       (`STORMBOOTX_FW_MEDIA=1`), and "No need to test till we have the
       driver fixed": no sc-build or image until stormnic-mlx5#8 lands; then
       bump `STORMNIC_MLX5_REF`, run the full suite, request the rustnic image.
+- [ ] **#218 — pin stormnic-mlx5 d11b572 (P1; stormnic-mlx5#13: link-down
+      diagnosis lines under a port with no link).** Contains 9d86045; same
+      IDs. Pinned; mlx5test check expects `mlx5@d11b572 test`. Next: full
+      sc-build, image, shipped. Metal proof (forge1's 84:00.0 shows
+      `port 1: PDDR troubleshooting:` and `port 1: PTYS:`) is the master's boot.
 - [ ] **#216 — pin stormnic-mlx5 9d86045 (P0; stormnic-mlx5#12: Receive
       drains the CQ, the DHCP lease over the mlx5 SNP).** Contains 32ddb3f;
       only `src/snp.rs` changed, same IDs. Full sc-build of 38469be passed

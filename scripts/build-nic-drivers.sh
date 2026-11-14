@@ -139,7 +139,12 @@ STORMNIC_MLX5_REPO="https://github.com/glennswest/stormnic-mlx5.git"
 # just before a transmit, so each DHCP OFFER reached smoltcp after the next
 # DISCOVER's new xid and no lease was taken (C2NR0Q2, forge1). Contains
 # 32ddb3f. The same IDs.
-STORMNIC_MLX5_REF="9d86045bcdfd7c3eeb2f5073996e04824909b852"
+# d11b572 (#218, stormnic-mlx5#13): under a port with no link once bring-up
+# is done, the card's own account of why, one indented line per register
+# group (PDDR troubleshooting/operation/last link-down/module monitors and
+# latched flags, PTYS, PAOS, PPLM raw, PMLP), all read-only ACCESS_REG
+# queries. A linked port stays one line. Contains 9d86045. The same IDs.
+STORMNIC_MLX5_REF="d11b572f6bd5dede303a2b8894fad28af0f89205"
 STORMNIC_E1000E_REPO="https://github.com/glennswest/stormnic-e1000e.git"
 # d0bc5ec (v0.1.0, #70, stormnic-e1000e#1): SNP for the 82574L and the PCH
 # 82579/I217/I218/I219, 67 device IDs listed from pci.ids 2026.11.06
