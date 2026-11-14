@@ -159,15 +159,19 @@ then.
       TLVs at all, and the pin said `left as is`. The master for the owner:
       a 25G port is pinned RS at boot whatever the card stores; with no NV
       route, set PPLM `fec_override_admin` through the access register,
-      read it back, say RS per port or fail loudly. In progress: a card
-      with no NV TLVs is read through PPLM (0x5023, local ports 1 and 2;
-      admin per speed, active as Linux's bitmask, raw dwords printed) and a
-      wanted value is set there live, the port bounced with PAOS (0x5006)
-      when it is up, the admin read back: no reset, no record. `Port.live`
-      marks such a port; the pin writes them first and leaves them out of
-      the reset decision. `fec_test_card = live` and a `live` boot in
-      fecpin-ovmf. Pass: forge1's console shows both 84:00.x `rs` on the
-      port register, nic 6 link UP, .203 leased.
+      read it back, say RS per port or fail loudly. Built (212d8ec), then
+      **stopped by the owner the same night** ("the port poking is a driver
+      problem, not a stormbootx problem"; "stormbootx cannot be reliable
+      without a proper driver") and reverted unshipped (b326daa). **Now
+      (fdaa0c4):** the rustnic media carry stormnic-mlx5 with
+      `prefer_media_drivers = virtio,mlx5`; `StormnicFec` hands the media's
+      FEC keys to the drivers; `mlxfec` leaves alone a card a media driver
+      takes; the pin is the labelled fallback. The driver's half is
+      stormnic-mlx5#8 (set the FEC at bind, print it per function). Next:
+      the full sc-build, the golden request, then the master's canary
+      promotion to C2NR0Q2 (morning of 2026-11-14), then forge1. Pass:
+      `taking it from … for stormnic-mlx5.efi`, bind, link, and the
+      driver's FEC line per function on the console.
 - [x] **#198 — install a release from a local stormdist ISO or stick,
       offline, with the medium's read rate (P0, the master, 2026-11-10).
       Released v0.41.0 (eeac3a2), closed 2026-11-10.** Decided (the master for the owner, 2026-11-10): option
