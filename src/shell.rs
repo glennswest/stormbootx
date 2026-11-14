@@ -163,8 +163,6 @@ fn fec(args: &[&str]) {
     let sum = crate::mlxfec::apply(Some(want));
     if sum.reset_needed() {
         uefi::println!("  written. `reset` the machine for firmware to re-read NV config.");
-    } else if sum.applied > 0 {
-        uefi::println!("  set live on the port register (#202); no reset needed.");
     } else {
         uefi::println!("  nothing to write — every port already reads {}.", want.name());
     }

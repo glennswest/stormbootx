@@ -280,8 +280,6 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
         if config::stated_fec().is_none() {
             fecpin::at_boot(&read);
         }
-        // A live port (#202) may have been set just now: read what it holds.
-        let read = if read.ports.iter().any(|p| p.port.live) { fecpin::read() } else { read };
         // For `GET /api/v1/fec` (#203); after the pin, which may clear its record.
         fecpin::remember(&read);
     }
@@ -293,16 +291,11 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
     //     once, and the next boot of the same stick finds nothing to do.
     if let Some(want) = config::stated_fec().filter(|_| first) {
         uefi::println!("              media states fec = {} — writing it", want.name());
-        let sum = mlxfec::apply(Some(want));
-        if sum.reset_needed() {
+        if mlxfec::apply(Some(want)).reset_needed() {
             uefi::println!("              FEC written; warm-resetting to apply");
             uefi::runtime::reset(uefi::runtime::ResetType::WARM, Status::SUCCESS, None);
         }
-        if sum.applied > 0 {
-            uefi::println!("              set {} live on the port register (no reset)", want.name());
-        } else {
-            uefi::println!("              already {} — nothing written", want.name());
-        }
+        uefi::println!("              already {} — nothing written", want.name());
     }
 
     // 1c. NIC drivers the media carries (#26). A platform can have the whole

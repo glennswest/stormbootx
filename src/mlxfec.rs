@@ -51,14 +51,6 @@
 //! A TLV never written to NV answers "resource not available"; it is then
 //! read again with the header's `default_` bit, as mlxconfig does (#202: a
 //! never-configured card otherwise read as having no ports).
-//!
-//! A card with no FEC TLV at all, stored or default (#202, forge1's
-//! ConnectX-4 Lx, 2026-11-14), is read and set through PPLM instead, the
-//! port's live FEC override that Linux's `ethtool --set-fec` writes
-//! (`connectx::REG_PPLM`). Such a port is `live`: a write there takes effect
-//! when the link next trains (the port is bounced with PAOS when it is up), it
-//! is read back at once, and no reset is asked for, because a reset is not
-//! what applies it.
 
 use alloc::format;
 use alloc::string::String;
@@ -132,10 +124,6 @@ const METHOD_SET: u32 = 2;
 
 const REG_MNVDA: u16 = 0x9024;
 const REG_MFRL: u16 = 0x9028;
-/// How long a live write waits for the port to run its new FEC, for the
-/// console only: what decides is the admin value read back.
-const LIVE_WAIT_MS: u64 = 5_000;
-
 /// PTYS: a port's protocol capabilities (#203), 0x40 bytes; dword0
 /// `local_port[23:16] | proto_mask[2:0]` (4 = Ethernet), dword2 the extended
 /// capability, dword3 the legacy one (the PRM; Linux's `mlx5_ifc ptys_reg`).
@@ -173,9 +161,6 @@ pub enum Fec {
     Fc,
     /// 4 — let auto-negotiation choose.
     AutoNeg,
-    /// PPLM's `fec_mode_active` is 0: the port runs nothing (its link is not
-    /// up). Only ever read, never written.
-    Inactive,
     Unknown(u8),
 }
 
@@ -198,7 +183,6 @@ impl Fec {
             Fec::Rs => 2,
             Fec::Fc => 3,
             Fec::AutoNeg => 4,
-            Fec::Inactive => 7,
             Fec::Unknown(n) => n as u32 & 0x7,
         }
     }
@@ -210,7 +194,6 @@ impl Fec {
             Fec::Rs => String::from("rs"),
             Fec::Fc => String::from("fc"),
             Fec::AutoNeg => String::from("autoneg"),
-            Fec::Inactive => String::from("nothing (link not up)"),
             Fec::Unknown(n) => format!("unknown({n})"),
         }
     }
@@ -241,9 +224,6 @@ pub struct Port {
     /// Whether `next` is stored in NV, or is the firmware's default because
     /// nothing has ever been written (#202).
     pub stored: bool,
-    /// Read through PPLM, not NV (#202): `current` is what the port runs now
-    /// and `next` its live admin value, which a write changes without a reset.
-    pub live: bool,
 }
 
 /// One port read, and where.
@@ -280,9 +260,6 @@ pub struct Summary {
     pub pending: usize,
     /// Ports that could not be queried or written, with the reason.
     pub failed: usize,
-    /// Live ports (PPLM) whose admin value was set this boot and read back as
-    /// intended. Never a reason to reset.
-    pub applied: usize,
 }
 
 impl Summary {
@@ -713,92 +690,6 @@ impl Dev<'_> {
         connectx::speed_of(reg[3], reg[2])
     }
 
-    // --- PPLM, the live FEC (#202) -------------------------------------------
-
-    /// One local port's PPLM. `Ok(None)` when the card says the port is not
-    /// there (a single-port card's port 2).
-    fn pplm_get(&mut self, port: u8) -> Result<Option<[u32; connectx::PPLM_DWORDS]>, String> {
-        let mut reg = [0u32; connectx::PPLM_DWORDS];
-        reg[0] = (port as u32) << 16;
-        let n = reg.len();
-        match self.access_reg(connectx::REG_PPLM, METHOD_GET, &mut reg, n * 4, n, n) {
-            Ok(()) => Ok(Some(reg)),
-            Err(e) if port > 1 && (e.contains(reg_status(7)) || e.contains(reg_status(8))) => Ok(None),
-            Err(e) => Err(format!("PPLM: {e}")),
-        }
-    }
-
-    /// A port as PPLM has it, with the raw dwords for its console line.
-    fn port_live(&mut self, port: u8, speed: Option<connectx::Speed>) -> Result<Option<(Port, String)>, String> {
-        let Some(reg) = self.pplm_get(port)? else { return Ok(None) };
-        let (active, cap, admin) = (reg[connectx::PPLM_ACTIVE], reg[connectx::PPLM_CAP], reg[connectx::PPLM_ADMIN]);
-        let shift = connectx::pplm_shift(speed);
-        let current = match connectx::pplm_active_nv(active) {
-            Some(n) => Fec::from_bits(n),
-            None if active & 0x00ff_ffff == 0 => Fec::Inactive,
-            None => Fec::Unknown(0xff),
-        };
-        let next = shift
-            .and_then(|sh| connectx::pplm_admin_nv(admin, sh))
-            .map_or(Fec::Unknown(0xff), Fec::from_bits);
-        let supported = shift.is_some_and(|sh| (cap >> sh) & 0xf != 0);
-        let raw = format!("PPLM active {:#x}, cap {cap:#010x}, admin {admin:#010x}", active & 0x00ff_ffff);
-        Ok(Some((Port { port, supported, current, next, stored: true, live: true }, raw)))
-    }
-
-    /// PAOS: bounce a port that is administratively up, so its link trains
-    /// again on the new PPLM admin value, as Linux's `mlx5_toggle_port_link`.
-    /// A port that is down is left down: whoever brings it up trains it anew.
-    fn bounce(&mut self, port: u8) -> Result<bool, String> {
-        let mut reg = [0u32; connectx::PAOS_DWORDS];
-        reg[0] = (port as u32) << 16;
-        let n = reg.len();
-        self.access_reg(connectx::REG_PAOS, METHOD_GET, &mut reg, n * 4, n, n)
-            .map_err(|e| format!("PAOS: {e}"))?;
-        if connectx::paos_admin(reg[0]) != connectx::PAOS_UP {
-            return Ok(false);
-        }
-        for status in [connectx::PAOS_DOWN, connectx::PAOS_UP] {
-            let mut set = [0u32; connectx::PAOS_DWORDS];
-            set[..2].copy_from_slice(&connectx::paos_set(port, status));
-            self.access_reg(connectx::REG_PAOS, METHOD_SET, &mut set, n * 4, n, n)
-                .map_err(|e| format!("PAOS: {e}"))?;
-            boot::stall(Duration::from_millis(100));
-        }
-        Ok(true)
-    }
-
-    /// Set a live port's admin FEC for its speed, every other field as read,
-    /// bounce it, read it back. Returns the admin read back, what it runs
-    /// after up to `LIVE_WAIT_MS`, and a note on the bounce.
-    fn set_port_live(&mut self, port: u8, speed: Option<connectx::Speed>, want: Fec) -> Result<(Fec, Fec, String), String> {
-        let shift = connectx::pplm_shift(speed)
-            .ok_or_else(|| format!("PPLM has no field this code writes for {}", speed.map_or("?", |s| s.name())))?;
-        let mut reg = self.pplm_get(port)?.ok_or_else(|| String::from("PPLM: no such port"))?;
-        let (cap, admin) = (reg[connectx::PPLM_CAP], reg[connectx::PPLM_ADMIN]);
-        let new = connectx::pplm_set_admin(admin, cap, shift, want.bits())
-            .ok_or_else(|| format!("PPLM does not offer {} here (cap {cap:#010x})", want.name()))?;
-        reg[0] = (port as u32) << 16;
-        reg[connectx::PPLM_ADMIN] = new;
-        let n = reg.len();
-        self.access_reg(connectx::REG_PPLM, METHOD_SET, &mut reg, n * 4, n, n)
-            .map_err(|e| format!("PPLM write: {e}"))?;
-        let note = match self.bounce(port) {
-            Ok(true) => String::from("port bounced"),
-            Ok(false) => String::from("port administratively down, not bounced"),
-            Err(e) => format!("not bounced ({e}); the next link training applies it"),
-        };
-        let t = entropy::ticks();
-        loop {
-            let (p, _) = self.port_live(port, speed)?.ok_or_else(|| String::from("PPLM: the port went away"))?;
-            if p.next != want || p.current == want || self.clock.ms_since(t) > LIVE_WAIT_MS {
-                return Ok((p.next, p.current, note));
-            }
-            self.in_time()?;
-            boot::stall(Duration::from_millis(250));
-        }
-    }
-
     // --- the FEC TLVs -------------------------------------------------------
 
     fn port_tlv(port: u8, idx: u32) -> u32 {
@@ -832,7 +723,6 @@ impl Dev<'_> {
             current: fec(&current),
             next: fec(&next),
             stored: next.as_ref().is_some_and(|(_, s)| *s),
-            live: false,
         }))
     }
 
@@ -1114,90 +1004,41 @@ fn card_fec(dev: &mut Dev, card: &Card, want: &dyn Fn(&PortAt) -> Option<Fec>, s
     }
     dev.probe = probe;
 
-    // NV first; a card with no FEC TLV at all, stored or default, is read
-    // and set through PPLM (#202, forge1): never "left as is" for want of NV.
-    let mut first = dev.port(1)?;
-    let live = first.is_none();
-    if live {
-        uefi::println!("  {loc}  {model}: no FEC TLV in NV (stored or default); the ports' live FEC (PPLM) instead");
-    }
-    for port_no in 1u8..=2 {
-        let speed = dev.speed(port_no);
-        let (p, raw) = if live {
-            match dev.port_live(port_no, speed) {
-                Ok(Some((p, raw))) => (p, Some(raw)),
-                Ok(None) => break,
-                Err(e) if port_no == 1 => {
-                    return Err(format!("no FEC TLV in NV, and the port register failed too: {e}"));
-                }
-                Err(e) => {
-                    sum.failed += 1;
-                    uefi::println!("  {loc}  {model} port {port_no}: {e} — FAILED, its FEC is not known");
-                    break;
-                }
+    let mut port_no = 1u8;
+    while port_no <= 2 {
+        let Some(p) = dev.port(port_no)? else {
+            // Never a silent 0 (#202): a card with no first port is a fault.
+            if port_no == 1 {
+                return Err(String::from(
+                    "port 1's FEC TLVs are not on this card (MNVDA: resource not available, stored or default)",
+                ));
             }
-        } else {
-            match if port_no == 1 { first.take() } else { dev.port(port_no)? } {
-                Some(p) => (p, None),
-                None => break,
-            }
+            break;
         };
         let bdf = format!("{:04x}:{:02x}:{:02x}.{}", card.seg, addr.bus, addr.dev, p.port - 1);
         let mac = card.macs.iter().find(|(at, _)| *at == bdf).map(|(_, m)| m.clone());
-        let at = PortAt { loc: String::from(loc), bdf, mac, speed, port: p.clone() };
+        let at = PortAt { loc: String::from(loc), bdf, mac, speed: dev.speed(p.port), port: p.clone() };
         let mut line = format!(
-            "  {loc}  {model} port {} ({}{}{}): {} {}, {} {}{}",
+            "  {loc}  {model} port {} ({}{}{}): current {}, next boot {}{}",
             p.port,
             at.bdf,
             at.mac.as_deref().map(|m| format!(", {m}")).unwrap_or_default(),
             at.speed.map(|s| format!(", {}", s.name())).unwrap_or_default(),
-            if live { "runs" } else { "current" },
             p.current.name(),
-            if live { "port register" } else { "next boot" },
             p.next.name(),
-            match (&raw, p.stored) {
-                (Some(r), _) => format!(" ({r})"),
-                (None, false) => String::from(" (never written: the firmware's default)"),
-                (None, true) => String::new(),
-            }
+            if p.stored { "" } else { " (never written: the firmware's default)" }
         );
         let wanted = want(&at);
         sum.ports.push(at);
         match wanted {
             None => {}
-            Some(_) if !p.supported => {
-                if live {
-                    sum.failed += 1;
-                    line.push_str(" — FAILED: the port register offers no FEC override at this speed");
-                } else {
-                    line.push_str(" — FEC override not supported on this port");
-                }
-            }
+            Some(_) if !p.supported => line.push_str(" — FEC override not supported on this port"),
             Some(w) if p.next == w => {
                 if p.current != w {
-                    if live {
-                        line.push_str(&format!(" — {} on the port register, not running it yet", w.name()));
-                    } else {
-                        sum.pending += 1;
-                        line.push_str(" — set earlier, waiting for a card reset to apply");
-                    }
+                    sum.pending += 1;
+                    line.push_str(" — set earlier, waiting for a card reset to apply");
                 }
             }
-            Some(w) if live => match dev.set_port_live(p.port, speed, w) {
-                Ok((back, runs, note)) if back == w => {
-                    sum.applied += 1;
-                    sum.wrote.push(format!("{loc} port {}: {} -> {} (port register)", p.port, p.next.name(), w.name()));
-                    line.push_str(&format!(" — set {} on the port register, read back {}, {note}; runs {}", w.name(), back.name(), runs.name()));
-                }
-                Ok((back, _, _)) => {
-                    sum.failed += 1;
-                    line.push_str(&format!(" — FAILED: set {} on the port register but read back {}", w.name(), back.name()));
-                }
-                Err(e) => {
-                    sum.failed += 1;
-                    line.push_str(&format!(" — FAILED: {e}"));
-                }
-            },
             Some(w) => match dev.set_port(p.port, w) {
                 Ok(back) if back == w => {
                     sum.written += 1;
@@ -1215,6 +1056,7 @@ fn card_fec(dev: &mut Dev, card: &Card, want: &dyn Fn(&PortAt) -> Option<Fec>, s
             },
         }
         uefi::println!("{line}");
+        port_no += 1;
     }
 
     if sum.written > 0 {
