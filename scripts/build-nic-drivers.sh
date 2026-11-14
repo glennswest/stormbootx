@@ -129,7 +129,12 @@ STORMNIC_MLX5_REPO="https://github.com/glennswest/stormnic-mlx5.git"
 # RS), one line per port (driver, PCI address, MAC, media, speed, module, FEC,
 # link), no configuration. The same IDs. Since #202 it takes its NICs from
 # FlexBoot unasked (our drivers only).
-STORMNIC_MLX5_REF="09b0615b498d61bc0d89f614bbd43c1463f2703d"
+# 32ddb3f (#215, stormnic-mlx5#8): `fec_mode_active` decoded as the adb's
+# bitmask (09b0615 read it as an enum and printed `FEC FAILED: … but the link
+# runs other` on a port with link, C2NR0Q2/forge1), and a FEC FAILED line
+# carries the raw PPLM values. The same IDs. The receive path
+# (stormnic-mlx5#1) is not in it.
+STORMNIC_MLX5_REF="32ddb3f65df4410a935e8be89e300fe944136afc"
 STORMNIC_E1000E_REPO="https://github.com/glennswest/stormnic-e1000e.git"
 # d0bc5ec (v0.1.0, #70, stormnic-e1000e#1): SNP for the 82574L and the PCH
 # 82579/I217/I218/I219, 67 device IDs listed from pci.ids 2026.11.06

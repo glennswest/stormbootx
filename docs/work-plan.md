@@ -231,6 +231,10 @@ then.
       (`STORMBOOTX_FW_MEDIA=1`), and "No need to test till we have the
       driver fixed": no sc-build or image until stormnic-mlx5#8 lands; then
       bump `STORMNIC_MLX5_REF`, run the full suite, request the rustnic image.
+- [ ] **#215 — pin stormnic-mlx5 32ddb3f (`fec_mode_active` bitmask
+      decode; raw PPLM on FEC FAILED).** Same IDs as 09b0615. Pinned; the
+      mlx5test media check expects `mlx5@32ddb3f test`. Next: full sc-build,
+      `component build stormbootx-rustnic --no-wait`, shipped.
 - [x] **#212 — pin stormnic-mlx5 09b0615 (stormnic-mlx5#8: the standard
       FEC at bind, PPLM, one line per port).** The same device IDs as 66de545.
       Full sc-build of 114d109 passed (`found: mlx5@09b0615 test`, repro);
