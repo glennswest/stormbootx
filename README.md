@@ -52,7 +52,6 @@ as a NIC driver (#26; absent on ordinary media). It writes to these:
 |---|---|
 | the attached clone on the engine | the booted OS writes to its disk, and the BlockIO handle is read-write |
 | the ConnectX NV FEC setting | with `fec_pin = rs` (every golden, #186) when a port's next-boot value is not RS; with `fec =` on a recovery stick; or `fec MODE` typed at the failure console; followed by a warm reset |
-| a ConnectX port's live FEC (PPLM) | on a card with no FEC NV TLVs (#202, forge1's ConnectX-4 Lx), under `fec_pin`, a `fec =` stick or `fec MODE`: set on the port register, the port bounced (PAOS) when it is up, read back; never a reset. Gone at the card's next firmware reset, and set again by the next boot |
 | `StormBootFecPin`, a non-volatile variable | set when the FEC pin writes, kept until a read shows RS or the media says `fec_pin = off` (#186) |
 | the hardware clock (RTC), through UEFI `SetTime` | a boot whose NTP server answers while the RTC is more than a second off (#77); UTC, time zone and daylight left as the firmware had them |
 | **volatile** EFI variables, `StormBootTag`, `StormBootHostNqn`, `StormBootClock`, `StormBootUpdate` and `StormBootInstallConfig` (+ its chunks) | every boot that names the machine, attaches an image, asks NTP, has a self-update state or finds an `install-config.yaml` on the media (#76, #77, #83, #79); gone at the next reset |
@@ -186,15 +185,7 @@ console; a machine with no screen console gets it anyway.
    or a `fec =` stick; without `off`, the next boot pins again. A warm reset uses
    up one of a self-update trial's starts. If `fec =` is set in the conf, the pin
    stands aside; that value is written, with one warm reset, and the next boot
-   finds nothing to change. A card with no FEC TLV in NV at all, stored or as a
-   default (#202: forge1's ConnectX-4 Lx), says `no FEC TLV in NV …; the ports'
-   live FEC (PPLM) instead` and is read through PPLM, the port register Linux's
-   `ethtool --set-fec` writes: each port line says what it `runs` and its `port
-   register` value, with the raw dwords. The pin sets a wanted value there at
-   once, bounces an up port with PAOS, reads the card again and says per port
-   `rs on the port register, running rs` (or `… running nothing (link not up)
-   (the link has not trained on it)`) or `FAILED: …`. No reset and no record
-   for such a port. A ConnectX-3 or -3 Pro (the X9 blades', 10/40G) has no FEC setting
+   finds nothing to change. A ConnectX-3 or -3 Pro (the X9 blades', 10/40G) has no FEC setting
    and says `ConnectX-3 (15b3:1003): no FEC to report`. "no ConnectX on the
    bus" means no Mellanox function at all (#25, `src/connectx.rs`), and a
    `root bridge buses 80-bf: N function(s)` line per bridge says what was
@@ -894,7 +885,7 @@ bootloader starts (`api = <port>|off` in `stormboot.conf`; the claim's
 | `GET /api/v1/status` | `phase` (`booting`, `attaching`, `holding`, `falling through`, `handed off`), `detail` (the failure when holding), the machine's `names` and `addresses`, `command_id` (the floor), the `pending` and `last` command with its result |
 | `GET /api/v1/inventory` | the firmware inventory (`"v":2`, as in the claim): drives first, NICs, controllers, SMBIOS, CPU, memory |
 | `GET /api/v1/log` | every console line so far, the banner first (kept even with `syslog = off`) |
-| `GET /api/v1/fec` | the ConnectX FEC (#203), as read at the NIC step and after each `fec`: `fec_pin`, the pin's `record` and `stuck`, and per port its `bdf`, `mac`, `speed` (PTYS capability), `current`, `next_boot`, `stored`, `live` (#202: read through PPLM, `next_boot` is then the port register) and `wanted` (`{value, from}`, or `null` with why it is `left`). No link state. 503 before the NIC step |
+| `GET /api/v1/fec` | the ConnectX FEC (#203), as read at the NIC step and after each `fec`: `fec_pin`, the pin's `record` and `stuck`, and per port its `bdf`, `mac`, `speed` (PTYS capability), `current`, `next_boot`, `stored` and `wanted` (`{value, from}`, or `null` with why it is `left`). No link state. 503 before the NIC step |
 | `POST /api/v1/command` | a signed command: `202 {"accepted":<id>,…}`, else 400/403/409 with `{"error":…}` |
 
 Reads are open (the log already goes to the stormcast group, and the
