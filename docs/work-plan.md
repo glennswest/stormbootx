@@ -139,6 +139,12 @@ then.
       `fec_pin = rs` (every golden) is the 25G ports' FEC, other speeds
       their standard's, never the card's negotiated `default`; table and
       per-port key as overrides.
+- [ ] **#208 — pin stormnic-mlx4 v0.3.0 (398a1a4; the issue's full hash
+      398a1a4bd8b5… is a typo, v0.3.0 is 398a1a4f10ad…): the per-port
+      contract line.** Pinned; next the focused sc-build (nic drivers with
+      the `same_ids` check, the rustnic goldens, a virtio boot of the rustnic
+      stick, REPRO_MEDIA of the rustnic media), then the image. QEMU has no
+      ConnectX-3: the line itself is seen on an X9 blade.
 - [ ] **#202 — forge1's FEC pin read 0 ports (P0, the master for the
       owner, 2026-11-13: "fix the fec on port 80 tonight, in stormbootx!").**
       forge1 (R6415, B6B0PY2) logged `fec pin : rs …: 0 port(s) read` with no

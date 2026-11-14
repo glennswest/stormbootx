@@ -96,7 +96,13 @@ STORMNIC_MLX4_REPO="https://github.com/glennswest/stormnic-mlx4.git"
 # path (#4): Start keeps the ConnectX-3 (~1.5 s per NIC plus up to 5 s for
 # link), no #3 broadcast self-test (cef8dc5 is the pin that checks #1-#3), and
 # ExitBootServices stops the device's DMA. Builds --locked (#34, #50, #64).
-STORMNIC_MLX4_REF="f3d3bc23b8007739efcd6ab3f232cce652e24303"
+# 398a1a4 (v0.3.0, #208, stormnic-mlx4#31): the stormnic port contract
+# (#202): the driver brings each port up itself and prints one line per port,
+# driver, PCI address, MAC, media, speed, FEC and link; a port with no link is
+# an `ERROR: … LINK DOWN …` line. ConnectX-3 runs no IEEE FEC at 1G/10G/40G,
+# so the FEC is `none` and nothing is written. Its DEVICES are unchanged
+# (1003, 1007).
+STORMNIC_MLX4_REF="398a1a4f10adfa21c895db62802dc475cc73e089"
 STORMNIC_VIRTIO_REPO="https://github.com/glennswest/stormnic-virtio.git"
 # 1a04808 (v0.1.0, #75): virtio-net (virtio 1.x PCI, 1af4:1041 and the
 # transitional 1af4:1000), verified under OVMF and on pve (stormnic-virtio#1).
