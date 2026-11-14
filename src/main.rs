@@ -259,7 +259,8 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
 
     // 1b. Read and report the NIC's 25G FEC, before the network is used, and
     //     pin it when the media says `fec_pin = rs` (#186, the owner's choice,
-    //     2026-11-04; `fecpin.rs`). Only the card's NV value decides that: see
+    //     2026-11-04; `fecpin.rs`): a warm reset, then a cold one, then a hold
+    //     at 2d (#203). Only the card's own values decide that: see
     //     step 2b for what a link sample did. On 2026-09-06 the flaky-SR-link
     //     problem turned out to be switch-side — the fabric (Dell S5148F) was
     //     pinned to `fec off`, and the ConnectX's device-default already
@@ -370,6 +371,16 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
     //     Read-only media, `update = off` and every failure go on booting.
     if first {
         selfupdate::check(mac_colon.as_deref());
+    }
+
+    // 2d. A card the FEC pin could not get running the wanted value after a
+    //     warm and a cold reset (#203): no network boot on the wrong FEC, and
+    //     no third reset. Hold with the API up (every pass: the pin runs on the
+    //     first only); with no lease the loop falls through to the local disk.
+    if fecpin::stuck() {
+        return Err(Stop::Hold(String::from(
+            "the NIC's FEC is not what fec_pin wants after a warm and a cold reset",
+        )));
     }
 
     // What an older engine is asked for, and what the host NQN falls back to:

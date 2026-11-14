@@ -799,8 +799,14 @@ fn find_vsc(br: &mut PciRootBridgeIo, addr: PciIoAddress) -> Result<u8, String> 
 /// being read gives up with a line saying so, and any not yet read are named
 /// and skipped. The boot goes on either way.
 pub fn apply(want: Option<Fec>) -> Summary {
+    apply_each(want.is_some(), &|_, _| want)
+}
+
+/// `apply` with the value wanted chosen per port (#203): `want(loc, port)`,
+/// `None` leaving that port as it is. `writing` sets the step's budget.
+pub fn apply_each(writing: bool, want: &dyn Fn(&str, u8) -> Option<Fec>) -> Summary {
     let mut sum = Summary::default();
-    let clock = Clock::calibrate(if want.is_some() { BUDGET_WRITE_MS } else { BUDGET_READ_MS });
+    let clock = Clock::calibrate(if writing { BUDGET_WRITE_MS } else { BUDGET_READ_MS });
     // Mellanox functions seen at all: "no ConnectX" only when none (#25).
     let mut seen = 0usize;
     let Ok(handles) = boot::locate_handle_buffer(SearchType::ByProtocol(&PciRootBridgeIo::GUID))
@@ -921,7 +927,7 @@ fn one_card(
     addr: PciIoAddress,
     model: &str,
     loc: &str,
-    want: Option<Fec>,
+    want: &dyn Fn(&str, u8) -> Option<Fec>,
     clock: Clock,
     lock_ms: &mut u64,
     sum: &mut Summary,
@@ -937,7 +943,7 @@ fn card_fec(
     dev: &mut Dev,
     model: &str,
     loc: &str,
-    want: Option<Fec>,
+    want: &dyn Fn(&str, u8) -> Option<Fec>,
     sum: &mut Summary,
 ) -> Result<(), String> {
     let addr = dev.addr;
@@ -980,7 +986,7 @@ fn card_fec(
             p.next.name(),
             if p.stored { "" } else { " (never written: the firmware's default)" }
         );
-        match want {
+        match want(loc, p.port) {
             None => {}
             Some(_) if !p.supported => line.push_str(" — FEC override not supported on this port"),
             Some(w) if p.next == w => {

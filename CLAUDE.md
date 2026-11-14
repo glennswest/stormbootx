@@ -343,7 +343,7 @@ stormbootx --url http://stormcentral.g8.lo`.
 | `src/ui.rs` | the boot panel (#144): its own `ConOut` in the system table; every line to the serial consoles and F2, the steps drawn on the screen consoles; `end` hands the screen back |
 | `src/connectx.rs` | which Mellanox ids have a FEC to read, which are ConnectX-3s with none (#25), the scan's closing line, and `pin_action`, the pin's decision (#186) (core-only, host-tested) |
 | `src/mlxfec.rs` | ConnectX FEC NV read and write: the pin, a `fec =` recovery stick, the shell's `fec` |
-| `src/fecpin.rs` | the FEC pin at boot (#186): `fec_pin = rs`, the one warm reset, `StormBootFecPin`; a pretend card under `STORMBOOTX_FEC_TEST` for `tests/fecpin-ovmf.sh` |
+| `src/fecpin.rs` | the FEC pin at boot (#186, #203): `fec_pin = rs`, a warm reset then a cold one then `stuck` (the boot holds), `StormBootFecPin`; a pretend card under `STORMBOOTX_FEC_TEST` for `tests/fecpin-ovmf.sh` |
 | `src/tcp4probe.rs` | second binary: does this machine's firmware carry TCP4? |
 
 ## Load-bearing facts
@@ -523,9 +523,11 @@ These have each cost a debugging session. Do not "simplify" them away.
   fabric is fixed on the fabric, and a boot-time NV write is invisible,
   per-machine, survives reinstall, and can only be undone from the thing it just
   broke the network on. So the pin never reads a link (`connectx::pin_action`
-  takes no link state), resets at most once per difference
-  (`StormBootFecPin`, set before the write), and says what it wrote on the
-  console and on the next boot. Don't add a link input or drop the record.
+  takes no link state), resets at most twice (#203: warm, then cold, then
+  a hold; `StormBootFecPin` names the stage and is set before the write and
+  each reset), and says what it wrote on the console and on the next boot.
+  A port is right when it **runs** the wanted FEC, not when it is up (owner,
+  2026-11-13). Don't add a link input or drop the record.
 
 - **The self-update believes the signature and nothing else** (#83). The
   manifest is fetched over plain HTTP from a name DHCP's DNS resolves, so

@@ -81,32 +81,60 @@ pub fn closing_line(mellanox_seen: usize) -> Option<&'static str> {
     (mellanox_seen == 0).then_some("no ConnectX on the bus")
 }
 
-/// What the FEC pin does this boot (#186).
+/// How far the pin has gone for the difference it is settling (#203), from
+/// `StormBootFecPin`'s record: nothing yet, one warm reset, one cold reset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Stage {
+    None,
+    Warm,
+    Cold,
+}
+
+/// The reset that makes the card load its NV value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reset {
+    Warm,
+    Cold,
+}
+
+/// What the FEC pin does this boot (#186, #203).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Pin {
     /// Nothing to write, and no record to settle.
     Nothing,
-    /// The last boot's write is what the card now says: forget the record.
+    /// The card runs, and will boot with, the wanted FEC after a pin: forget
+    /// the record.
     Held,
-    /// A port differs and no pin has been tried: write, then one warm reset.
-    Write,
-    /// A port differs after a pin was tried: say so, and never write or reset.
+    /// A port's next-boot value differs: write it, then this reset.
+    Write(Reset),
+    /// Every next-boot value is right but a port still runs another FEC: this
+    /// reset, so the card loads it.
+    Reset(Reset),
+    /// A warm and a cold reset did not get the card running the wanted FEC:
+    /// never write or reset again; the boot does not go on (the owner,
+    /// 2026-11-13: "the fec needs to be right other no point in booting").
     Stuck,
 }
 
 /// The pin's whole decision. Its inputs are what the card's NV said (`ports`
-/// read, `differ` of them with another next-boot value than RS, `failed` reads)
-/// and whether a pin was already tried. **Link state is not an input, by the
-/// owner's terms and on purpose**: one early link sample is what cost the R230
-/// its 25G ports on 2026-09-07. A record is forgotten only on a whole read saying
-/// RS, so a card that went missing or a failed read cannot re-arm the write.
-pub fn pin_action(ports: usize, differ: usize, failed: usize, tried: bool) -> Pin {
-    match (differ > 0, tried) {
-        (true, false) => Pin::Write,
-        (true, true) => Pin::Stuck,
-        (false, true) if ports > 0 && failed == 0 => Pin::Held,
-        (false, _) => Pin::Nothing,
+/// read; `next_differ` of them with another next-boot value than wanted,
+/// `run_differ` running another; `failed` reads) and how far a pin has gone.
+/// **Link state is not an input, by the owner's terms and on purpose**: one
+/// early link sample is what cost the R230 its 25G ports on 2026-09-07, and
+/// a port is right when it runs the wanted FEC, not when it is up. A record is
+/// forgotten only on a whole read saying both are right, so a card that went
+/// missing or a failed read cannot re-arm a reset. Each stage is one reset:
+/// warm, then cold, then stuck; never a loop.
+pub fn pin_action(ports: usize, next_differ: usize, run_differ: usize, failed: usize, tried: Stage) -> Pin {
+    if next_differ == 0 && run_differ == 0 {
+        return if tried != Stage::None && ports > 0 && failed == 0 { Pin::Held } else { Pin::Nothing };
     }
+    let reset = match tried {
+        Stage::None => Reset::Warm,
+        Stage::Warm => Reset::Cold,
+        Stage::Cold => return Pin::Stuck,
+    };
+    if next_differ > 0 { Pin::Write(reset) } else { Pin::Reset(reset) }
 }
 
 const TAG_QWORD: u8 = 0x8a;
@@ -375,43 +403,80 @@ mod tests {
         assert_eq!(range_of(&qword(2, 0x100, 0, 1)), None);
     }
 
-    /// Boots of a machine, with a card whose NV keeps a write or doesn't.
-    /// Returns how many boots wrote, each write being one warm reset.
-    fn resets(keeps_it: bool, boots: usize) -> usize {
-        let (mut next_is_rs, mut tried, mut resets) = (false, false, 0);
-        for _ in 0..boots {
-            match pin_action(1, !next_is_rs as usize, 0, tried) {
-                Pin::Write => {
-                    tried = true;
-                    next_is_rs = keeps_it;
-                    resets += 1;
+    /// Boots of a machine. `keeps` says whether the card's NV keeps a write,
+    /// `loads` after which reset (0 none, 1 warm, 2 cold) the running value
+    /// follows NV. Returns the resets done and whether the last boot was stuck.
+    fn boots(keeps: bool, loads: u8, n: usize) -> (usize, bool) {
+        let (mut next_ok, mut run_ok, mut tried, mut resets, mut stuck) = (false, false, Stage::None, 0, false);
+        for _ in 0..n {
+            stuck = false;
+            let act = pin_action(1, !next_ok as usize, !run_ok as usize, 0, tried);
+            let reset = match act {
+                Pin::Write(r) => {
+                    next_ok = keeps;
+                    Some(r)
                 }
-                Pin::Held => tried = false,
-                Pin::Nothing | Pin::Stuck => {}
+                Pin::Reset(r) => Some(r),
+                Pin::Held => {
+                    tried = Stage::None;
+                    None
+                }
+                Pin::Stuck => {
+                    stuck = true;
+                    None
+                }
+                Pin::Nothing => None,
+            };
+            if let Some(r) = reset {
+                resets += 1;
+                tried = if r == Reset::Warm { Stage::Warm } else { Stage::Cold };
+                let level = if r == Reset::Warm { 1 } else { 2 };
+                if loads != 0 && level >= loads {
+                    run_ok = next_ok;
+                }
             }
         }
-        resets
+        (resets, stuck)
     }
 
     #[test]
-    fn the_pin_resets_once_whether_or_not_the_card_keeps_it() {
-        assert_eq!(resets(true, 10), 1);
-        assert_eq!(resets(false, 10), 1);
+    fn a_card_that_loads_on_a_warm_reset_takes_one() {
+        assert_eq!(boots(true, 1, 10), (1, false));
     }
 
     #[test]
-    fn the_pin_writes_only_a_difference_and_only_once() {
-        assert_eq!(pin_action(2, 0, 0, false), Pin::Nothing);
-        assert_eq!(pin_action(2, 1, 0, false), Pin::Write);
-        assert_eq!(pin_action(2, 1, 0, true), Pin::Stuck);
-        assert_eq!(pin_action(2, 0, 0, true), Pin::Held);
+    fn a_card_that_needs_a_cold_reset_gets_one_after_the_warm() {
+        assert_eq!(boots(true, 2, 10), (2, false));
+    }
+
+    #[test]
+    fn a_card_that_never_runs_it_stops_after_two_resets_and_does_not_boot() {
+        assert_eq!(boots(true, 0, 10), (2, true));
+        assert_eq!(boots(false, 1, 10), (2, true));
+    }
+
+    #[test]
+    fn the_pin_writes_only_a_difference() {
+        assert_eq!(pin_action(2, 0, 0, 0, Stage::None), Pin::Nothing);
+        assert_eq!(pin_action(2, 1, 1, 0, Stage::None), Pin::Write(Reset::Warm));
+        assert_eq!(pin_action(2, 1, 1, 0, Stage::Warm), Pin::Write(Reset::Cold));
+        assert_eq!(pin_action(2, 1, 0, 0, Stage::Cold), Pin::Stuck);
+        assert_eq!(pin_action(2, 0, 0, 0, Stage::Warm), Pin::Held);
+        assert_eq!(pin_action(2, 0, 0, 0, Stage::Cold), Pin::Held);
+    }
+
+    #[test]
+    fn a_right_next_boot_value_the_card_does_not_run_is_a_reset_with_no_write() {
+        assert_eq!(pin_action(2, 0, 1, 0, Stage::None), Pin::Reset(Reset::Warm));
+        assert_eq!(pin_action(2, 0, 1, 0, Stage::Warm), Pin::Reset(Reset::Cold));
+        assert_eq!(pin_action(2, 0, 2, 0, Stage::Cold), Pin::Stuck);
     }
 
     #[test]
     fn a_missing_card_or_a_failed_read_keeps_the_record() {
-        assert_eq!(pin_action(0, 0, 0, true), Pin::Nothing);
-        assert_eq!(pin_action(1, 0, 1, true), Pin::Nothing);
-        assert_eq!(pin_action(0, 0, 1, false), Pin::Nothing);
+        assert_eq!(pin_action(0, 0, 0, 0, Stage::Warm), Pin::Nothing);
+        assert_eq!(pin_action(1, 0, 0, 1, Stage::Cold), Pin::Nothing);
+        assert_eq!(pin_action(0, 0, 0, 1, Stage::None), Pin::Nothing);
     }
 
     #[test]
