@@ -70,7 +70,7 @@ Options:
   --api-port N     engine API port on the portal host (default 9090)
   --probe          boot tcp4probe instead of the agent (a diagnostic stick)
   --fec MODE       recovery stick: write this FEC to the ConnectX, then reset
-  --fec-pin rs|off pin every ConnectX port's NV FEC at boot, with one warm reset
+  --fec-pin rs|auto|off pin ConnectX ports' FEC at boot (auto: by each port's speed, #203)
                    when one differs (#186); every golden says rs
                    (default|rs|fc|off|autoneg). Absent from a normal stick.
   --drivers DIR    lay DIR's files in \stormboot\drivers; stormbootx loads each
@@ -302,11 +302,13 @@ fi
 
 # The FEC pin at boot (#186): the card's NV value against RS, no link state.
 if [[ -n "$FEC_PIN" ]]; then
-    [[ "$FEC_PIN" =~ ^(rs|off)$ ]] || die "--fec-pin: rs or off"
+    [[ "$FEC_PIN" =~ ^(rs|auto|off)$ ]] || die "--fec-pin: rs, auto or off"
     cat >> "$WORK/stormboot.conf" <<CONF
 
-# A ConnectX port whose next-boot FEC is not RS is written RS, then one warm
-# reset. off: never, and forget the last pin's record.
+# rs: a ConnectX port not running RS is written RS, then reset (warm, then
+# cold, then a hold; #186, #203). auto: each port the FEC the standard gives
+# its speed (25g: rs), from the card's capability, never the link (#203).
+# off: never, and forget the last pin's record.
 fec_pin  = $FEC_PIN
 CONF
 fi
