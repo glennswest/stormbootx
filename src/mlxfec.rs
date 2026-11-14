@@ -124,6 +124,12 @@ const METHOD_SET: u32 = 2;
 
 const REG_MNVDA: u16 = 0x9024;
 const REG_MFRL: u16 = 0x9028;
+/// PTYS: a port's protocol capabilities (#203), 0x40 bytes; dword0
+/// `local_port[23:16] | proto_mask[2:0]` (4 = Ethernet), dword2 the extended
+/// capability, dword3 the legacy one (the PRM; Linux's `mlx5_ifc ptys_reg`).
+const REG_PTYS: u16 = 0x5004;
+const PTYS_BYTES: usize = 0x40;
+const PTYS_ETH: u32 = 4;
 
 /// NV header (tools_open_layouts.h:236-286): three dwords before the data.
 const NV_HDR_DWORDS: usize = 3;
@@ -223,8 +229,16 @@ pub struct Port {
 /// One port read, and where.
 #[derive(Clone, Debug)]
 pub struct PortAt {
-    /// `84:00.0`.
+    /// The function the card was read through: `84:00.0`.
     pub loc: String,
+    /// The port's own function, `bus:dev.(port - 1)` (one function per port
+    /// on a ConnectX), with the PCI segment: `0000:84:00.1` (#203).
+    pub bdf: String,
+    /// The port's MAC, from the SNP on its function, when one is bound.
+    pub mac: Option<String>,
+    /// The highest speed the card is capable of on the port (PTYS), never
+    /// what the link runs at.
+    pub speed: Option<connectx::Speed>,
     pub port: Port,
 }
 
@@ -665,6 +679,17 @@ impl Dev<'_> {
         self.access_reg(REG_MFRL, METHOD_SET, &mut reg, 8, 2, 2)
     }
 
+    /// The port's speed class from its PTYS capabilities (#203). An error is
+    /// `None`: the speed only matters to `fec_pin = auto`, which then leaves
+    /// the port alone rather than guess.
+    fn speed(&mut self, port: u8) -> Option<connectx::Speed> {
+        let mut reg = [0u32; PTYS_BYTES / 4];
+        reg[0] = ((port as u32) << 16) | PTYS_ETH;
+        let n = reg.len();
+        self.access_reg(REG_PTYS, METHOD_GET, &mut reg, PTYS_BYTES, n, n).ok()?;
+        connectx::speed_of(reg[3], reg[2])
+    }
+
     // --- the FEC TLVs -------------------------------------------------------
 
     fn port_tlv(port: u8, idx: u32) -> u32 {
@@ -798,13 +823,18 @@ fn find_vsc(br: &mut PciRootBridgeIo, addr: PciIoAddress) -> Result<u8, String> 
 /// being read gives up with a line saying so, and any not yet read are named
 /// and skipped. The boot goes on either way.
 pub fn apply(want: Option<Fec>) -> Summary {
-    apply_each(want.is_some(), &|_, _| want)
+    apply_each(want.is_some(), &|_| want)
 }
 
-/// `apply` with the value wanted chosen per port (#203): `want(loc, port)`,
-/// `None` leaving that port as it is. `writing` sets the step's budget.
-pub fn apply_each(writing: bool, want: &dyn Fn(&str, u8) -> Option<Fec>) -> Summary {
+/// `apply` with the value wanted chosen per port (#203): `want(port)`, `None`
+/// leaving that port as it is. `writing` sets the step's budget.
+///
+/// Every function of a dual-port card answers for both ports, so a card is
+/// read once, through the first of its functions that answers.
+pub fn apply_each(writing: bool, want: &dyn Fn(&PortAt) -> Option<Fec>) -> Summary {
     let mut sum = Summary::default();
+    let macs = crate::net::macs_by_pci();
+    let mut done: Vec<(u16, u8, u8)> = Vec::new();
     let clock = Clock::calibrate(if writing { BUDGET_WRITE_MS } else { BUDGET_READ_MS });
     // Mellanox functions seen at all: "no ConnectX" only when none (#25).
     let mut seen = 0usize;
@@ -835,6 +865,7 @@ pub fn apply_each(writing: bool, want: &dyn Fn(&str, u8) -> Option<Fec>) -> Summ
             Some(r) => (r.0, format!("{:02x}", r.1)),
             None => (0, String::from("?")),
         };
+        let seg = segment_of(&bridge);
         let (functions, mellanox) = scan(&mut bridge, first);
         // What was looked at (#186): "no ConnectX" means nothing without it.
         uefi::println!("  root bridge buses {first:02x}-{last}: {functions} function(s)");
@@ -852,6 +883,10 @@ pub fn apply_each(writing: bool, want: &dyn Fn(&str, u8) -> Option<Fec>) -> Summ
                     continue;
                 }
             };
+            if done.iter().any(|&(s, b, d)| (s, b, d) == (seg, addr.bus, addr.dev)) {
+                uefi::println!("  {loc}  {model}: the card's ports were read through its first function");
+                continue;
+            }
             sum.cards += 1;
             if clock.spent() {
                 sum.failed += 1;
@@ -863,8 +898,9 @@ pub fn apply_each(writing: bool, want: &dyn Fn(&str, u8) -> Option<Fec>) -> Summ
             }
             let t = entropy::ticks();
             let mut lock_ms = 0u64;
-            match one_card(&mut bridge, addr, model, &loc, want, clock, &mut lock_ms, &mut sum) {
-                Ok(()) => {}
+            let card = Card { seg, model, loc: &loc, macs: &macs };
+            match one_card(&mut bridge, addr, &card, want, clock, &mut lock_ms, &mut sum) {
+                Ok(()) => done.push((seg, addr.bus, addr.dev)),
                 Err(e) => {
                     sum.failed += 1;
                     uefi::println!("  {loc}  {model}: {e} — left as is");
@@ -920,31 +956,33 @@ pub fn connectx_devfns() -> Vec<(u8, u8)> {
     out
 }
 
-#[allow(clippy::too_many_arguments)]
+/// What `card_fec` needs to name a card's ports.
+struct Card<'a> {
+    seg: u16,
+    model: &'a str,
+    loc: &'a str,
+    /// (`seg:bus:dev.fn`, MAC) of every SNP on a PCI function.
+    macs: &'a [(String, String)],
+}
+
 fn one_card(
     bridge: &mut PciRootBridgeIo,
     addr: PciIoAddress,
-    model: &str,
-    loc: &str,
-    want: &dyn Fn(&str, u8) -> Option<Fec>,
+    card: &Card,
+    want: &dyn Fn(&PortAt) -> Option<Fec>,
     clock: Clock,
     lock_ms: &mut u64,
     sum: &mut Summary,
 ) -> Result<(), String> {
     let vsec = find_vsc(bridge, addr)?;
     let mut dev = Dev { br: bridge, addr, vsec, probe: 0, clock, lock_ticks: 0, releasing: false };
-    let r = card_fec(&mut dev, model, loc, want, sum);
+    let r = card_fec(&mut dev, card, want, sum);
     *lock_ms = dev.lock_ticks / clock.per_ms;
     r
 }
 
-fn card_fec(
-    dev: &mut Dev,
-    model: &str,
-    loc: &str,
-    want: &dyn Fn(&str, u8) -> Option<Fec>,
-    sum: &mut Summary,
-) -> Result<(), String> {
+fn card_fec(dev: &mut Dev, card: &Card, want: &dyn Fn(&PortAt) -> Option<Fec>, sum: &mut Summary) -> Result<(), String> {
+    let (model, loc) = (card.model, card.loc);
     let addr = dev.addr;
     // Confirm the spaces before anything else touches the card.
     dev.vsc_lock()?;
@@ -977,15 +1015,22 @@ fn card_fec(
             }
             break;
         };
-        sum.ports.push(PortAt { loc: String::from(loc), port: p.clone() });
+        let bdf = format!("{:04x}:{:02x}:{:02x}.{}", card.seg, addr.bus, addr.dev, p.port - 1);
+        let mac = card.macs.iter().find(|(at, _)| *at == bdf).map(|(_, m)| m.clone());
+        let at = PortAt { loc: String::from(loc), bdf, mac, speed: dev.speed(p.port), port: p.clone() };
         let mut line = format!(
-            "  {loc}  {model} port {}: current {}, next boot {}{}",
+            "  {loc}  {model} port {} ({}{}{}): current {}, next boot {}{}",
             p.port,
+            at.bdf,
+            at.mac.as_deref().map(|m| format!(", {m}")).unwrap_or_default(),
+            at.speed.map(|s| format!(", {}", s.name())).unwrap_or_default(),
             p.current.name(),
             p.next.name(),
             if p.stored { "" } else { " (never written: the firmware's default)" }
         );
-        match want(loc, p.port) {
+        let wanted = want(&at);
+        sum.ports.push(at);
+        match wanted {
             None => {}
             Some(_) if !p.supported => line.push_str(" — FEC override not supported on this port"),
             Some(w) if p.next == w => {
@@ -1045,6 +1090,13 @@ fn buses_of(br: &PciRootBridgeIo) -> Option<(u8, u8)> {
     let table = table.cast::<u8>();
     // SAFETY: `bus_range` stops at the table's end tag.
     connectx::bus_range(|i| unsafe { table.add(i).read_unaligned() })
+}
+
+/// The root bridge's PCI segment, for a port's full `seg:bus:dev.fn`.
+fn segment_of(br: &PciRootBridgeIo) -> u16 {
+    let raw = core::ptr::from_ref(br).cast::<PciRootBridgeIoProtocol>();
+    // SAFETY: as in `buses_of`; a plain field of the protocol.
+    unsafe { (*raw).segment_number as u16 }
 }
 
 /// Where a walk of this root bridge starts: its first bus, else 0 when the

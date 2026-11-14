@@ -249,7 +249,7 @@ pub(crate) fn text(dp: &DevicePath) -> Option<String> {
 }
 
 /// The PCI function a handle's device path runs through, if any.
-fn pci_of(h: uefi_raw::Handle) -> Option<uefi_raw::Handle> {
+pub(crate) fn pci_of(h: uefi_raw::Handle) -> Option<uefi_raw::Handle> {
     let bs = unsafe { uefi::table::system_table_raw()?.as_ref().boot_services.as_ref()? };
     let mut dp = crate::net::handle_protocol(h, &DEVICE_PATH)? as *const DevicePathProtocol;
     let mut pci: uefi_raw::Handle = ptr::null_mut();

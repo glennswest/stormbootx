@@ -277,6 +277,172 @@ pub fn nv_fallback(q: NvQuery) -> &'static [NvQuery] {
     }
 }
 
+/// A port's speed class (#203), named as `fec_table.<name>` names it.
+/// Declared slowest first, so the highest of a port's capabilities is `max`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Speed {
+    G10,
+    G25,
+    G40,
+    G50,
+    G50Pam4,
+    G100,
+    G100Pam4,
+    G200,
+    G400,
+}
+
+impl Speed {
+    #[cfg(test)]
+    pub const ALL: [Speed; 9] = [
+        Speed::G10,
+        Speed::G25,
+        Speed::G40,
+        Speed::G50,
+        Speed::G50Pam4,
+        Speed::G100,
+        Speed::G100Pam4,
+        Speed::G200,
+        Speed::G400,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Speed::G10 => "10g",
+            Speed::G25 => "25g",
+            Speed::G40 => "40g",
+            Speed::G50 => "50g",
+            Speed::G50Pam4 => "50g-pam4",
+            Speed::G100 => "100g",
+            Speed::G100Pam4 => "100g-pam4",
+            Speed::G200 => "200g",
+            Speed::G400 => "400g",
+        }
+    }
+
+    /// The FEC IEEE 802.3 (and the 25G/50G Ethernet Consortium) gives this
+    /// speed: none at 10G and 40G (BASE-R FEC is optional there), RS(528) at
+    /// 25G, 50G over two lanes and 100G NRZ, RS(544) at the PAM4 speeds. The
+    /// card has one RS value for both, so both are `rs` to the pin; the table's
+    /// `rs-544` is the name the standard uses.
+    pub fn ieee(self) -> &'static str {
+        match self {
+            Speed::G10 | Speed::G40 => "none",
+            Speed::G25 | Speed::G50 | Speed::G100 => "rs",
+            Speed::G50Pam4 | Speed::G100Pam4 | Speed::G200 | Speed::G400 => "rs-544",
+        }
+    }
+}
+
+/// PTYS `eth_proto_capability` bits (the PRM, Linux's `mlx5e_link_modes`).
+const LEGACY_SPEEDS: &[(u32, Speed)] = &[
+    (2, Speed::G10),  // 10GBASE-CX4
+    (3, Speed::G10),  // 10GBASE-KX4
+    (4, Speed::G10),  // 10GBASE-KR
+    (12, Speed::G10), // 10GBASE-CR
+    (13, Speed::G10), // 10GBASE-SR
+    (14, Speed::G10), // 10GBASE-ER/LR
+    (26, Speed::G10), // 10GBASE-T
+    (6, Speed::G40),  // 40GBASE-CR4
+    (7, Speed::G40),  // 40GBASE-KR4
+    (15, Speed::G40), // 40GBASE-SR4
+    (16, Speed::G40), // 40GBASE-LR4/ER4
+    (27, Speed::G25), // 25GBASE-CR
+    (28, Speed::G25), // 25GBASE-KR
+    (29, Speed::G25), // 25GBASE-SR
+    (18, Speed::G50), // 50GBASE-SR2
+    (30, Speed::G50), // 50GBASE-CR2
+    (31, Speed::G50), // 50GBASE-KR2
+    (20, Speed::G100), // 100GBASE-CR4
+    (21, Speed::G100), // 100GBASE-SR4
+    (22, Speed::G100), // 100GBASE-KR4
+    (23, Speed::G100), // 100GBASE-LR4/ER4
+];
+
+/// PTYS `ext_eth_proto_capability` bits (ConnectX-6 on; `mlx5e_ext_link_mode`).
+const EXT_SPEEDS: &[(u32, Speed)] = &[
+    (4, Speed::G10),       // 10GBASE-XFI/XAUI-1
+    (5, Speed::G40),       // 40GBASE-XLAUI-4
+    (6, Speed::G25),       // 25GAUI-1, 25GBASE-CR/KR
+    (7, Speed::G50),       // 50GAUI-2, 50GBASE-CR2/KR2
+    (8, Speed::G50Pam4),   // 50GAUI-1, 50GBASE-CR/KR
+    (9, Speed::G100),      // CAUI-4, 100GBASE-CR4/KR4
+    (10, Speed::G100Pam4), // 100GAUI-2
+    (11, Speed::G100Pam4), // 100GAUI-1
+    (12, Speed::G200),     // 200GAUI-4
+    (13, Speed::G200),     // 200GAUI-2
+    (14, Speed::G200),     // 200GAUI-1
+    (15, Speed::G400),     // 400GAUI-8
+    (16, Speed::G400),     // 400GAUI-4
+];
+
+/// A port's speed: the highest the card is **capable** of on it (PTYS,
+/// `eth_proto_capability` and its extended form), never what the link runs
+/// at, so no link state reaches the pin (#203). The extended field wins when
+/// the card fills it. `None` below 10G or when nothing is known.
+pub fn speed_of(eth_cap: u32, ext_cap: u32) -> Option<Speed> {
+    let (bits, table) = if ext_cap != 0 { (ext_cap, EXT_SPEEDS) } else { (eth_cap, LEGACY_SPEEDS) };
+    table.iter().filter(|(b, _)| bits & (1 << b) != 0).map(|(_, s)| *s).max()
+}
+
+/// Where a port's wanted FEC came from (#203).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Source {
+    /// `fec_pin.<MAC>` or `fec_pin.<BDF>`.
+    Port,
+    /// `fec_pin =`.
+    Pin,
+    /// `fec_table.<speed> =`.
+    Table(Speed),
+    /// The standard's value for the speed.
+    Ieee(Speed),
+}
+
+/// Why a port is left as it is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Why {
+    /// No `fec_pin` for it at all.
+    NotPinned,
+    /// `fec_pin = off`.
+    Off,
+    /// Its own key says `off`.
+    PortOff,
+    /// `auto`, and `fec_table.<speed> = off`.
+    TableOff(Speed),
+    /// `auto`, and the card did not say the port's speed.
+    NoSpeed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Choice<'a> {
+    Leave(Why),
+    Want(&'a str, Source),
+}
+
+/// One port's wanted FEC (#203; the owner, 2026-11-13: "nothing is to be
+/// hard-coded"). Its own key (`port`) beats `fec_pin`; `off` leaves it alone;
+/// `auto` asks `fec_table.<speed>` (`table`, already looked up for this
+/// port's speed), then the standard. Values arrive lower-cased; the caller
+/// says whether one it was given is a FEC at all.
+pub fn choose<'a>(pin: Option<&'a str>, port: Option<&'a str>, table: Option<&'a str>, speed: Option<Speed>) -> Choice<'a> {
+    let (value, source) = match (port, pin) {
+        (Some(v), _) => (v, Source::Port),
+        (None, Some(v)) => (v, Source::Pin),
+        (None, None) => return Choice::Leave(Why::NotPinned),
+    };
+    match value {
+        "off" if source == Source::Port => Choice::Leave(Why::PortOff),
+        "off" => Choice::Leave(Why::Off),
+        "auto" => match (speed, table) {
+            (None, _) => Choice::Leave(Why::NoSpeed),
+            (Some(s), Some("off")) => Choice::Leave(Why::TableOff(s)),
+            (Some(s), Some(t)) if t != "auto" => Choice::Want(t, Source::Table(s)),
+            (Some(s), _) => Choice::Want(s.ieee(), Source::Ieee(s)),
+        },
+        v => Choice::Want(v, source),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -559,5 +725,61 @@ mod tests {
     fn no_holder_and_a_dead_read_are_never_parked() {
         assert_eq!(tries_until_parked(|_| 0, 2048), None);
         assert_eq!(tries_until_parked(|_| 0xffff_ffff, 2048), None);
+    }
+    #[test]
+    fn forge1s_connectx4_lx_is_a_25g_port() {
+        // 1G, 10GBASE-KR/CR/SR, 25GBASE-CR/KR/SR: what a ConnectX-4 Lx states.
+        let cap = (1 << 1) | (1 << 4) | (1 << 12) | (1 << 13) | (1 << 27) | (1 << 28) | (1 << 29);
+        assert_eq!(speed_of(cap, 0), Some(Speed::G25));
+        assert_eq!(Speed::G25.ieee(), "rs");
+    }
+
+    #[test]
+    fn the_highest_capability_wins_and_the_extended_field_outranks_the_legacy_one() {
+        assert_eq!(speed_of((1 << 13) | (1 << 15), 0), Some(Speed::G40));
+        assert_eq!(speed_of((1 << 20) | (1 << 27), 0), Some(Speed::G100));
+        assert_eq!(speed_of(1 << 27, (1 << 6) | (1 << 12)), Some(Speed::G200));
+        assert_eq!(speed_of(0, 1 << 8), Some(Speed::G50Pam4));
+        assert_eq!(Speed::G50Pam4.ieee(), "rs-544");
+    }
+
+    #[test]
+    fn below_10g_or_nothing_is_no_speed() {
+        assert_eq!(speed_of(0, 0), None);
+        assert_eq!(speed_of((1 << 0) | (1 << 1) | (1 << 25), 0), None);
+    }
+
+    #[test]
+    fn the_standard_gives_none_at_10_and_40_and_rs_above() {
+        let none: [Speed; 2] = [Speed::G10, Speed::G40];
+        for s in Speed::ALL {
+            assert_eq!(s.ieee() == "none", none.contains(&s), "{}", s.name());
+        }
+    }
+
+    #[test]
+    fn a_ports_own_key_beats_fec_pin() {
+        assert_eq!(choose(Some("rs"), Some("fc"), None, None), Choice::Want("fc", Source::Port));
+        assert_eq!(choose(Some("rs"), Some("off"), None, None), Choice::Leave(Why::PortOff));
+        assert_eq!(choose(None, Some("rs"), None, None), Choice::Want("rs", Source::Port));
+        assert_eq!(choose(Some("rs"), None, None, Some(Speed::G10)), Choice::Want("rs", Source::Pin));
+    }
+
+    #[test]
+    fn off_or_nothing_leaves_the_port() {
+        assert_eq!(choose(None, None, Some("fc"), Some(Speed::G25)), Choice::Leave(Why::NotPinned));
+        assert_eq!(choose(Some("off"), None, None, Some(Speed::G25)), Choice::Leave(Why::Off));
+    }
+
+    #[test]
+    fn auto_takes_the_table_then_the_standard() {
+        let g25 = Some(Speed::G25);
+        assert_eq!(choose(Some("auto"), None, None, g25), Choice::Want("rs", Source::Ieee(Speed::G25)));
+        assert_eq!(choose(Some("auto"), None, Some("fc"), g25), Choice::Want("fc", Source::Table(Speed::G25)));
+        assert_eq!(choose(Some("auto"), None, Some("auto"), g25), Choice::Want("rs", Source::Ieee(Speed::G25)));
+        assert_eq!(choose(Some("auto"), None, Some("off"), g25), Choice::Leave(Why::TableOff(Speed::G25)));
+        assert_eq!(choose(Some("rs"), Some("auto"), None, Some(Speed::G10)), Choice::Want("none", Source::Ieee(Speed::G10)));
+        // With no speed, auto never guesses.
+        assert_eq!(choose(Some("auto"), None, Some("fc"), None), Choice::Leave(Why::NoSpeed));
     }
 }
