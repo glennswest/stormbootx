@@ -102,6 +102,31 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#203 — the FEC API, the wanted mode as a setting, and a boot that
+      resets until the card runs it (P0, the master for the owner,
+      2026-11-13).** Owner: "a 25G port's FEC is fixed by the standard, not
+      by timing"; "nothing is to be hard-coded"; and (2026-11-13, to this
+      session) "the boot will foobar if you dont reboot! the fec needs to be
+      right other no point in booting". Plan:
+      1. The pin compares what the card **runs** (`current`), not only NV
+         next-boot. current ≠ wanted: write NV if next differs, record,
+         warm reset. Still wrong after it: one cold reset (recorded stage).
+         Still wrong after that: no boot; `Stop::Failed` once the network
+         and API are up, then the hold, so `fec` commands can fix it. Never
+         a loop: the `StormBootFecPin` record carries the stage. No link
+         state reaches any of it (`connectx::pin_action`).
+      2. Wanted mode: `fec_pin = rs|fc|off|default|auto`, per port
+         `fec_pin.<MAC> = …`, and a speed → FEC table `fec_table.<speed> =`
+         with IEEE defaults (10G none; 25G rs; 50G/100G rs; 50G-PAM4,
+         200G/400G rs-544, which a CX-4 has no NV value for). Per port beats
+         the table. No per-machine or per-card values in code.
+      3. `GET /api/v1/fec` (open, like `/inventory`): scan, ports with bdf,
+         mac, speed, nv_current, nv_next_boot, link (settled), wanted {value,
+         from}, the record. Signed `fec <BDF|MAC|all> <value>`, `fec-reset`,
+         `fec-set <value> [MAC]` (writes `local.conf`).
+      4. Tests: fecpin-ovmf (a card that stays wrong: warm, cold, hold),
+         api-boots (`/fec`, `fec all rs`), command.rs host tests.
+      Done: forge1's console shows both ports RS and :80 UP with .203.
 - [ ] **#202 — forge1's FEC pin read 0 ports (P0, the master for the
       owner, 2026-11-13: "fix the fec on port 80 tonight, in stormbootx!").**
       forge1 (R6415, B6B0PY2) logged `fec pin : rs …: 0 port(s) read` with no
