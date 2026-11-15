@@ -139,6 +139,18 @@ then.
       watchdog the OS takes over, which is a question for the owner on
       #219.
 
+      **2026-11-15, the master:** no freeze. A RAM-only maint boot of serial
+      15 on C2NR0Q2 showed the same screen (`Loaded initrd`, bar at 188 MiB,
+      clock stopped) while the kernel came up and leased both ConnectX ports
+      2.5 min later: the screen is the panel's last frame (nothing redraws
+      it after StartImage), and the maint image sends no syslog. Decision:
+      neither a BMC watchdog (A) nor a stormcentral power-cycle (B). The
+      hard-cut accounting is filed on stormcentral. What stays is item 1 on
+      metal: waiting on the master's hardware boot of forge1 with a captured
+      serial console, which must carry the lines past `binding the platform's
+      own drivers first` (claim, `RESULT`, `handoff : ExitBootServices
+      called …`).
+
 - [x] **#213 — a failed self-update trial explains itself (P1, the master,
       2026-11-14).** C2NR0Q2's serial 8 trial left no line anywhere: no
       lease (no syslog), no console capture, and the claim said only
