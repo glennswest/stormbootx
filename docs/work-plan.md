@@ -102,7 +102,7 @@ then.
 
 ### Open, no external blocker
 
-- [ ] **#201 — retire nic-drivers as a boot helper (P2, 2026-11-15).**
+- [x] **#201 — retire nic-drivers as a boot helper (P2). Done 2026-11-15:** 972defd; sc-build of it passed (the refusal, the rustnic golden, usb-layout, media-ovmf virtio). Registry removal sent to the master; leftovers stormcentral#1426, stormipmi#110, stormd#74. No image: no medium's bytes changed.
       No medium takes it as an input (#52), it holds no iPXE (#91), and the
       owner left it out of the release (stormcos#881: carry the small media,
       fetch baremetalservices, nic-drivers neither). Plan:
