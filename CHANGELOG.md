@@ -3,6 +3,10 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-15
+- **BREAKING:** #201: the `nic-drivers` golden is retired. `deploy/build-golden.sh nic-drivers` refuses, naming #201. Every medium carries its own drivers, built from the pins in `scripts/build-nic-drivers.sh`, which stays. No medium had taken the golden as an input since #52, and the owner left it out of the release (stormcos#881). The registry entry's removal is the master's, and stormcentral, stormipmi and stormd are told about their leftovers.
+- **docs:** README golden table and *NIC drivers*, the presentation, CLAUDE.md and `build-nic-drivers.sh` no longer list a nic-drivers golden.
+
 ### 2026-11-14
 - **feat:** #73: `mlx5` is in `build-nic-drivers.sh`'s default `STORMNIC_DRIVERS`, so the nic-drivers golden carries `stormnic-mlx5.efi` (d11b572). The driver passed on metal on C2NR0Q2 and forge1 (stormnic-mlx5#1). The rustnic media already carried it (#202).
 - **docs:** #202 closed, verified on metal. stormnic-mlx5 sets RS at bind on all four ConnectX-4 Lx ports (C2NR0Q2 02:00.x, forge1 84:00.x). forge1's :80 came up once its cable was on a working switch port, and nic 6 leased .203.

@@ -46,7 +46,8 @@ stormcentral relationships (stormcentral check: the project's group):
 
 As components (`stormcentral component list`), stormbootx ships as
 `stormbootx` and `stormbootx-rustnic` of kind **media** (and the `-disk`
-images, #41), and the NIC drivers as `nic-drivers` of kind **tree**.
+images, #41); each medium carries its own NIC drivers (no `nic-drivers`
+golden since #201).
 stormuefi has no component entry of its own; its ESP golden is
 stormcentral#215.
 
@@ -229,8 +230,8 @@ Read from the volume it booted from. `key = value`, each key independent.
 - **Ships as goldens** (#21, decided 2026-09-28), written by
   `deploy/build-golden.sh`: `stormbootx` (no NIC drivers: the firmware's own, #52),
   `stormbootx-rustnic` (the Rust stormnic-ixgbe, stormnic-mlx4 and
-  stormnic-virtio drivers, #45, #108) and `nic-drivers` (the three Rust
-  drivers; no iPXE anywhere, #91). Every golden names no fallback
+  stormnic-virtio drivers, #45, #108); the drivers ship inside each
+  medium, not as a golden of their own (#201), and no iPXE anywhere (#91). Every golden names no fallback
   namespace (#36). Both media are stormcentral components of kind
   `media`: `stormcentral component build stormbootx` (or
   `stormbootx-rustnic`) builds a drive golden whose bytes are the ISO.

@@ -1559,7 +1559,6 @@ with `STORMBOOTX_FW_MEDIA=1`; the arm64 goldens carry no driver of ours yet
 | `stormbootx-arm64` | `bin/stormbootx.efi` (aarch64), `boot/stormbootx-arm64.iso` (`\EFI\BOOT\BOOTAA64.EFI`, the fw medium for arm64 hosts), `media/`, `media.files`, `SHA256SUMS`, `BUILD` (#84; registered as a media component). The ISO is also what UEFI HTTP boot serves (#172). |
 | `stormbootx-arm64-disk` | `boot/stormbootx-arm64-disk.img` (USB stick, the `stormbootx-arm64` medium: 64 MiB GPT ESP, `BOOTAA64.EFI`), `SHA256SUMS`, `BUILD` (#172; registered as a media component) |
 | `stormbootx-stick` | `bin/stormbootx-stick` (x86_64), `bin/stormbootx-stick-arm64` (aarch64, #172), static musl, `SHA256SUMS`, `BUILD` |
-| `nic-drivers` | `bin/stormnic-ixgbe.efi`, `bin/stormnic-mlx4.efi`, `bin/stormnic-virtio.efi`, `bin/stormnic-e1000e.efi`, `bin/stormnic-igb.efi`, `bin/stormnic-mlx5.efi` (#73), `STORMNIC-SOURCE.txt`, `SHA256SUMS`, `BUILD` (an EFI boothelper; no medium takes it as an input since #52, and it holds no iPXE since #91) |
 
 `media/` is the medium's files as a tree (`EFI/BOOT/BOOTX64.EFI`,
 `stormboot/stormboot.conf`, `stormboot/drivers/*`, `startup.nsh`), and
@@ -1567,6 +1566,12 @@ with `STORMBOOTX_FW_MEDIA=1`; the arm64 goldens carry no driver of ours yet
 signs and serves when it promotes the golden, for media to update themselves
 from (#83, stormcentral#279). Each medium's `stormboot.conf` carries
 `update = http://stormcentral.g8.lo/api/v1/boothelpers/<golden>`.
+
+There is no `nic-drivers` golden since #201: every medium carries its own
+drivers, built from the pins in `scripts/build-nic-drivers.sh`, and
+`build-golden.sh nic-drivers` refuses. It had been an EFI boothelper of the
+drivers alone, which no medium took as an input since #52 and the owner left
+out of the release (stormcos#881).
 
 **arm64 is its own boot helper** (#84, owner 2026-10-09). The agent
 compiles for `aarch64-unknown-uefi`: its one cycle counter is
@@ -1655,8 +1660,7 @@ The same take-over gives a ConnectX-4/4 Lx/5/6 (`15b3:1013/1015/1017/1019/101b/1
 what stormnic-mlx5 claims) held by its firmware's FlexBoot driver to
 stormnic-mlx5, which every rustnic medium carries since #202 (the owner,
 2026-11-14: "stormbootx cannot be reliable without a proper driver");
-`stormbootx-mlx5test` is the same medium, verbose and with no `update =`. The
-nic-drivers golden refuses it. The ixgbe, mlx4, igb and e1000e families take
+`stormbootx-mlx5test` is the same medium, verbose and with no `update =`. The ixgbe, mlx4, igb and e1000e families take
 theirs the same way. Each family's ids are vendor:device only, never the
 subsystem, as Linux matches, and `build-nic-drivers.sh` fails when one
 differs from its driver's list (`docs/pci-ids.md` compares them with the
@@ -1682,7 +1686,7 @@ stormnic-e1000e binds), taken from Intel's UNDI driver or a NIC's iPXE ROM.
 The driver has run only on QEMU's 82574L and the PCH parts in simulation; if
 it does not bind a real part, the firmware's driver gets the NIC back.
 
-The rustnic media builds its own drivers and takes no nic-drivers golden. Each ISO's `stormboot.conf` names the variant, and the console
+The rustnic media builds its own drivers (there is no nic-drivers golden, #201). Each ISO's `stormboot.conf` names the variant, and the console
 prints it under the banner:
 
 ```
@@ -1696,8 +1700,7 @@ The fw medium's `BUILD` says `drivers = none`, and a `--drivers` given to
 its boothost on the engine, so one golden boots every machine. stormbootx is
 a stormcentral component of kind `media`, and so is `stormbootx-rustnic`:
 `stormcentral component build <name>` builds each into a drive golden whose
-bytes are its `boot/<name>.iso`. `nic-drivers` is a component of kind
-`tree`. The two `-disk` goldens are not registered yet (stormcentral#190).
+bytes are its `boot/<name>.iso`. The two `-disk` goldens are not registered yet (stormcentral#190).
 
 ## Firmware requirements
 

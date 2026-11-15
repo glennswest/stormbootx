@@ -7,12 +7,12 @@
 #   deploy/build-golden.sh stormbootx-rustnic-disk OUT
 #   deploy/build-golden.sh stormbootx-arm64   OUT
 #   deploy/build-golden.sh stormbootx-arm64-disk OUT
-#   deploy/build-golden.sh nic-drivers        OUT
 #   deploy/build-golden.sh stormbootx-stick   OUT
 #   deploy/build-golden.sh stormbootx-mlx5test OUT
 #
 # Everything is a golden (owner, 2026-09-28; #21, stormcentral#126): the boot
-# media is a golden, and so are the NIC drivers it carries. This script is the
+# media is a golden. The NIC drivers are not one of their own: every medium
+# builds the drivers it carries (#201). This script is the
 # repo's half of that. It compiles and writes files into OUT, which the caller
 # provides (stormcentral mounts the golden's volume there). It does no platform
 # work (stormcentral#128): no forge, no device, no stormblock tool. It leaves
@@ -60,8 +60,8 @@
 #   media/, media.files           as above (#83)
 #   SHA256SUMS, BUILD
 #
-#   Built here from the pins in scripts/build-nic-drivers.sh, never from a
-#   nic-drivers golden, so the drivers are the commit's. The console says
+#   Built here from the pins in scripts/build-nic-drivers.sh, so the
+#   drivers are the commit's. The console says
 #   `media : rustnic ixgbe@<sha> mlx4@<sha> virtio@<sha> e1000e@<sha> igb@<sha> mlx5@<sha>`.
 #
 # stormbootx-mlx5test golden (#131): a test medium, for the master's boot of
@@ -111,14 +111,10 @@
 #   SHA256SUMS, BUILD Until stormcentral#604 bakes the target into the build template,
 #   the aarch64 std is added with rustup when it is missing.
 #
-# nic-drivers golden (an EFI boothelper; no medium takes it as an input since
-# #52):
-#   bin/stormnic-{ixgbe,mlx4,virtio,e1000e,igb,mlx5}.efi
-#                           the Rust drivers the rustnic medium carries (#29, #34,
-#                           #73: mlx5 since it passed on metal)
-#   STORMNIC-SOURCE.txt     each Rust driver's commit and digest
-#   SHA256SUMS, BUILD
-#   No iPXE, in this golden or any other (owner on #81; #91).
+# nic-drivers: retired (#201). It was an EFI boothelper of the Rust drivers
+# alone; no medium took it as an input since #52, and the owner left it out of
+# the release (stormcos#881). Every medium builds its own drivers from the
+# pins in scripts/build-nic-drivers.sh, which is the script to run for them.
 #
 # boot/<golden>-usb.img (#185, #97), beside every ISO: the Dell R6415 (BIOS
 # 1.12.2) refuses the hybrid ISO written to a stick and over HTTP boot, and
@@ -135,7 +131,7 @@ say() { printf '==> %s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
 GOLDEN="${1:-}"; OUT="${2:-}"
-[[ -n "$GOLDEN" && -n "$OUT" ]] || die "usage: $0 stormbootx|stormbootx-rustnic|stormbootx-disk|stormbootx-rustnic-disk|stormbootx-mlx5test|stormbootx-arm64|stormbootx-arm64-disk|nic-drivers|stormbootx-stick OUT [--drivers DIR]"
+[[ -n "$GOLDEN" && -n "$OUT" ]] || die "usage: $0 stormbootx|stormbootx-rustnic|stormbootx-disk|stormbootx-rustnic-disk|stormbootx-mlx5test|stormbootx-arm64|stormbootx-arm64-disk|stormbootx-stick OUT [--drivers DIR]"
 shift 2
 DRIVERS=""
 while [[ $# -gt 0 ]]; do
@@ -257,15 +253,7 @@ only_the_image() {
 
 case "$GOLDEN" in
 nic-drivers)
-    "$ROOT/scripts/build-nic-drivers.sh" "$WORK/drivers"
-    for d in stormnic-ixgbe stormnic-mlx4 stormnic-virtio stormnic-e1000e stormnic-igb stormnic-mlx5; do
-        [[ -f "$WORK/drivers/$d.efi" ]] || die "no $d.efi was built"
-    done
-    mkdir -p "$OUT/bin"
-    cp "$WORK/drivers/"*.efi "$OUT/bin/"
-    cp "$WORK/drivers/STORMNIC-SOURCE.txt" "$OUT/"
-    ! compgen -G "$OUT/bin/ipxe-*" >/dev/null || die "an iPXE driver reached the nic-drivers golden"
-    seal "stormnic = $(cat "$WORK/drivers/STORMNIC-SOURCE.txt")"
+    die "nic-drivers is retired (#201): every medium carries its own drivers; scripts/build-nic-drivers.sh builds them"
     ;;
 stormbootx)
     say "building stormbootx and tcp4probe for x86_64-unknown-uefi"
@@ -421,6 +409,6 @@ stormbootx-stick)
 keys     = the medium's RELEASE_KEYS (src/manifest.rs)"
     ;;
 *)
-    die "no golden $GOLDEN (stormbootx, stormbootx-rustnic, stormbootx-disk, stormbootx-rustnic-disk, stormbootx-arm64, stormbootx-arm64-disk, nic-drivers or stormbootx-stick)"
+    die "no golden $GOLDEN (stormbootx, stormbootx-rustnic, stormbootx-disk, stormbootx-rustnic-disk, stormbootx-arm64, stormbootx-arm64-disk, stormbootx-mlx5test or stormbootx-stick)"
     ;;
 esac

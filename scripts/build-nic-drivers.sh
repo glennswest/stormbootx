@@ -29,8 +29,8 @@
 #   scripts/build-boot-agent.sh --iso --drivers tmp/drivers
 #
 # STORMNIC_DRIVERS (default "ixgbe mlx4 virtio e1000e igb mlx5") picks which are built. What ships is
-# the stormbootx-rustnic medium and the nic-drivers golden
-# (deploy/build-golden.sh).
+# inside each rustnic medium (deploy/build-golden.sh); there is no
+# nic-drivers golden of the drivers alone (#201).
 #
 # Runs ON the build box (dev.g8.lo); needs git and cargo with the
 # x86_64-unknown-uefi target.

@@ -280,10 +280,12 @@ deliberately, in its own commit, and rebuild.
 default in `tmp/images` in the checkout. Nothing in the agent creates media.
 
 **What ships is a golden, never a file on a build VM** (owner, 2026-09-28, #21).
-`deploy/build-golden.sh stormbootx|stormbootx-rustnic|stormbootx-disk|stormbootx-rustnic-disk|stormbootx-mlx5test|stormbootx-arm64|nic-drivers OUT` writes that golden's tree
+`deploy/build-golden.sh stormbootx|stormbootx-rustnic|stormbootx-disk|stormbootx-rustnic-disk|stormbootx-mlx5test|stormbootx-arm64|stormbootx-arm64-disk|stormbootx-stick OUT` writes that golden's tree
 into OUT and nothing else (README, *How it ships*). Every build gets a fresh
 drive, and anything left on the VM is destroyed, so never write outside the job
-(no `/build/images`, no `/build/stormbuild/images`). To look at media in an
+(no `/build/images`, no `/build/stormbuild/images`). There is no
+`nic-drivers` golden (#201): every medium builds its own drivers with
+`scripts/build-nic-drivers.sh`. To look at media in an
 `sc-build`, build it under `t/` and inspect it in the same job. The golden
 request, once stormbootx is a component, is `stormcentral component build
 stormbootx --url http://stormcentral.g8.lo`. The fw goldens (`stormbootx`, `stormbootx-disk`: no NIC drivers, the
