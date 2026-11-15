@@ -102,6 +102,19 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#201 — retire nic-drivers as a boot helper (P2, 2026-11-15).**
+      No medium takes it as an input (#52), it holds no iPXE (#91), and the
+      owner left it out of the release (stormcos#881: carry the small media,
+      fetch baremetalservices, nic-drivers neither). Plan:
+      1. `deploy/build-golden.sh nic-drivers` refuses, naming #201;
+         `scripts/build-nic-drivers.sh` stays (the rustnic media build it).
+      2. README golden table, presentation, CLAUDE.md, CHANGELOG.
+      3. `stormcentral note` to the master: `component rm nic-drivers`.
+      4. File the leftovers: stormcentral (tier.rs list, the `--drivers`
+         input path), stormipmi (bootfetch's left-out row), stormd
+         (example.toml).
+      5. sc-build: the refusal and the rustnic golden built.
+
 - [ ] **#219 — forge1 freezes at the kernel handoff with stormnic-mlx5
       bound; serial dark from driver binding (P1, the master,
       2026-11-14).** Two screens frozen on `EFI stub: Loaded initrd`, for
