@@ -221,7 +221,7 @@ then.
       contract line.** sc-build 652a2ac and 25abfde passed; shipped in
       golden-stormbootx-rustnic-3a9c7bf19e9aba2d (proof: the media label).
       QEMU has no ConnectX-3: the line itself is seen on an X9 blade.
-- [ ] **#202 — forge1's FEC pin read 0 ports (P0, the master for the
+- [x] **#202 — forge1's FEC pin read 0 ports (P0, the master for the
       owner, 2026-11-13: "fix the fec on port 80 tonight, in stormbootx!").**
       forge1 (R6415, B6B0PY2) logged `fec pin : rs …: 0 port(s) read` with no
       port line and no error. Cause: its ConnectX-4 Lx has never had a FEC
@@ -268,6 +268,15 @@ then.
       (`STORMBOOTX_FW_MEDIA=1`), and "No need to test till we have the
       driver fixed": no sc-build or image until stormnic-mlx5#8 lands; then
       bump `STORMNIC_MLX5_REF`, run the full suite, request the rustnic image.
+      **Closed 2026-11-14, verified on metal.** Serial 12 (`mlx5@32ddb3f`):
+      every ConnectX-4 Lx port with link ran `fec rs (standard for
+      25GBASE-SR, running rs)`, set by stormnic-mlx5 at bind. Serial 14
+      (`mlx5@9d86045`) leased, claimed and attached on C2NR0Q2 and forge1.
+      forge1 02:26Z start (rustnic `mlx5@9d86045`), after the owner moved
+      the cable to a working switch port: 84:00.0 (:80) `25GBASE-SR 25g …
+      fec rs (…, running rs), link up`, 84:00.1 the same, nic 6 leased
+      192.168.31.203. That was the pass the master named. :80 had been dark
+      because of the switch port, not the FEC.
 - [ ] **#218 — pin stormnic-mlx5 d11b572 (P1; stormnic-mlx5#13: link-down
       diagnosis lines under a port with no link).** Contains 9d86045; same
       IDs. Full sc-build of bdd4375 passed (1796 s; media label

@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-14
+- **docs:** #202 closed, verified on metal. stormnic-mlx5 sets RS at bind on all four ConnectX-4 Lx ports (C2NR0Q2 02:00.x, forge1 84:00.x). forge1's :80 came up once its cable was on a working switch port, and nic 6 leased .203.
+
 ## [v0.43.0] — 2026-11-14
 
 ### Added
