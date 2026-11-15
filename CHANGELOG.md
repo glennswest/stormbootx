@@ -3,6 +3,14 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+## [v0.43.0] — 2026-11-14
+
+### Added
+- The handoff's guard (#219). A line on the serial consoles and the panel when the bootloader calls ExitBootServices. A green line along the bottom of the screen once every driver's ExitBootServices handler has returned. The UEFI watchdog (`handoff_watchdog =`, default 300 s) until ExitBootServices.
+
+### Fixed
+- The serial console stays alive past the NIC drivers' binding (#219). The consoles are read again after every connect, after the take-over and at the handoff.
+
 ## [v0.42.0] — 2026-11-14
 
 ### Added
