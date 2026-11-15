@@ -98,6 +98,8 @@ const KEEP: usize = 400;
 struct Ui {
     st: *mut SystemTable,
     splitter: *mut SimpleTextOutputProtocol,
+    out_handle: uefi_raw::Handle,
+    err_handle: uefi_raw::Handle,
     ours: *mut SimpleTextOutputProtocol,
     screens: Vec<*mut SimpleTextOutputProtocol>,
     serials: Vec<*mut SimpleTextOutputProtocol>,
@@ -155,22 +157,13 @@ fn is_screen(h: uefi_raw::Handle) -> bool {
     crate::net::handle_protocol(h, &GraphicsOutputProtocol::GUID).is_some()
 }
 
-/// Take over the screen, if there is one and the media does not say
-/// `ui = log`. Before this, and without a screen, output is as it always was.
-pub fn begin() {
-    if ui().is_some() || !crate::config::panel_wanted() {
-        return;
-    }
-    let Some(st) = uefi::table::system_table_raw() else { return };
-    let st = st.as_ptr();
-    let (splitter, out_handle, err_handle) = unsafe { ((*st).stdout, (*st).stdout_handle, (*st).stderr_handle) };
-    if splitter.is_null() {
-        return;
-    }
-    let Ok(handles) = boot::locate_handle_buffer(SearchType::ByProtocol(&SimpleTextOutputProtocol::GUID))
-    else {
-        return;
-    };
+/// The text consoles behind the splitter: (screens, serials).
+fn consoles(
+    splitter: *mut SimpleTextOutputProtocol,
+    out_handle: uefi_raw::Handle,
+    err_handle: uefi_raw::Handle,
+) -> Option<(Vec<*mut SimpleTextOutputProtocol>, Vec<*mut SimpleTextOutputProtocol>)> {
+    let handles = boot::locate_handle_buffer(SearchType::ByProtocol(&SimpleTextOutputProtocol::GUID)).ok()?;
     let mut screens = Vec::new();
     let mut serials = Vec::new();
     for h in handles.iter() {
@@ -189,6 +182,86 @@ pub fn begin() {
         }
         if is_screen(raw) { screens.push(p) } else { serials.push(p) }
     }
+    Some((screens, serials))
+}
+
+/// Read the consoles again (#219). `begin` runs before any
+/// `ConnectController`, and a connect over every handle can stop a terminal
+/// and start a new one on the same UART (forge1: the serial log ended at
+/// `binding the platform's own drivers first` while the screen went on).
+/// The pointers kept from before would then write nowhere, or into a freed
+/// instance. Called after every connect over all handles, after the NIC
+/// take-over and at the handoff; says so when the set changed.
+pub fn rescan() {
+    let Some(u) = ui() else { return };
+    let Some((screens, serials)) = consoles(u.splitter, u.out_handle, u.err_handle) else { return };
+    if screens == u.screens && serials == u.serials {
+        return;
+    }
+    let was = (u.screens.len(), u.serials.len());
+    // `end` emptied the screens for good; that stays.
+    let ended = u.screens.is_empty();
+    u.serials = serials;
+    let mut gone = false;
+    if !ended {
+        u.screens = screens;
+        if u.screens.is_empty() {
+            gone = true;
+        } else if u.installed {
+            measure(u);
+            draw(u);
+        }
+    }
+    let now = (u.screens.len(), u.serials.len());
+    if gone {
+        // The panel has nowhere to go: `ConOut` back to the splitter.
+        suspend();
+    }
+    uefi::println!(
+        "console     : the consoles changed under a connect: {} screen(s), {} serial (were {}, {}); output follows the new ones",
+        now.0,
+        now.1,
+        was.0,
+        was.1
+    );
+}
+
+/// What the handoff's ExitBootServices breadcrumb writes to (#219), when the
+/// panel holds `ConOut`: the serial consoles, the screens, and the handoff
+/// step's row and the screen's width. `None` without the panel: write to
+/// `ConOut` itself.
+pub fn raw_targets() -> Option<(Vec<*mut SimpleTextOutputProtocol>, Vec<*mut SimpleTextOutputProtocol>, usize, usize)> {
+    let u = ui()?;
+    u.installed.then(|| (u.serials.clone(), u.screens.clone(), STEP_ROW + Step::Handoff as usize, u.cols))
+}
+
+/// The breadcrumb's line in the handoff step, as `draw_step` lays it out.
+pub fn handoff_row_text(detail: &str) -> String {
+    let cols = ui().map(|u| u.cols).unwrap_or(80);
+    let mut s = format!("  [ .. ]  {:<18}{detail}", LABELS[Step::Handoff as usize]);
+    s = s.chars().take(cols.saturating_sub(1)).collect();
+    while s.chars().count() < cols.saturating_sub(1) {
+        s.push(' ');
+    }
+    s
+}
+
+/// The panel's colour for an active step.
+pub const ACTIVE_ATTR: usize = YELLOW;
+
+/// Take over the screen, if there is one and the media does not say
+/// `ui = log`. Before this, and without a screen, output is as it always was.
+pub fn begin() {
+    if ui().is_some() || !crate::config::panel_wanted() {
+        return;
+    }
+    let Some(st) = uefi::table::system_table_raw() else { return };
+    let st = st.as_ptr();
+    let (splitter, out_handle, err_handle) = unsafe { ((*st).stdout, (*st).stdout_handle, (*st).stderr_handle) };
+    if splitter.is_null() {
+        return;
+    }
+    let Some((screens, serials)) = consoles(splitter, out_handle, err_handle) else { return };
     if screens.is_empty() {
         return;
     }
@@ -213,6 +286,8 @@ pub fn begin() {
     let mut u = Ui {
         st,
         splitter,
+        out_handle,
+        err_handle,
         ours,
         screens,
         serials,
@@ -342,7 +417,7 @@ fn now(u: &Ui) -> u64 {
 }
 
 fn measure(u: &mut Ui) {
-    let s = u.screens[0];
+    let Some(&s) = u.screens.first() else { return };
     unsafe {
         let mode = (*s).mode;
         let m = if mode.is_null() { 0 } else { (*mode).mode.max(0) as usize };

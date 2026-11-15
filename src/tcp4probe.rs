@@ -51,6 +51,10 @@ mod installconf;
 #[path = "sha256.rs"]
 #[allow(dead_code)]
 mod sha256;
+// For the test's switch in an SMBIOS OEM string (#219).
+#[path = "smbios.rs"]
+#[allow(dead_code)]
+mod smbios;
 
 use uefi::boot::{self, SearchType};
 use uefi::prelude::*;
@@ -296,6 +300,90 @@ fn boot_fs() {
     }
 }
 
+/// Whether an SMBIOS OEM string (type 11) says `tcp4probe:<what>`: how a
+/// test asks this run for something more (#219; QEMU's `-smbios
+/// type=11,value=tcp4probe:ebs`). No machine carries one.
+fn asked(what: &str) -> bool {
+    let Some(t) = smbios::table_bytes() else { return false };
+    let mut off = 0;
+    while off + 4 <= t.len() {
+        let (ty, len) = (t[off], t[off + 1] as usize);
+        if len < 4 || off + len + 1 >= t.len() {
+            return false;
+        }
+        let start = off + len;
+        let mut p = start;
+        while !(t[p] == 0 && t[p + 1] == 0) {
+            p += 1;
+            if p + 1 >= t.len() {
+                return false;
+            }
+        }
+        if ty == 11 && t[start..p].split(|&b| b == 0).any(|s| s.strip_prefix(b"tcp4probe:") == Some(what.as_bytes())) {
+            return true;
+        }
+        if ty == 127 {
+            return false;
+        }
+        off = p + 2;
+    }
+    false
+}
+
+/// What Linux's EFI stub does last (#219): ExitBootServices, here with the
+/// map in a static buffer (nothing allocated between the map and the call),
+/// retried as the stub retries. Then one line straight to COM1, the port
+/// OVMF's serial console is on, and a spin: nothing of UEFI is left to
+/// return to, and the test reads the screen before it stops the VM.
+#[cfg(target_arch = "x86_64")]
+fn exit_boot_services() -> ! {
+    use uefi_raw::table::boot::MemoryDescriptor;
+    static mut MAP: [u64; 8192] = [0; 8192];
+    let image = boot::image_handle().as_ptr();
+    let st = uefi::table::system_table_raw().expect("a system table");
+    let bs = unsafe { &*st.as_ref().boot_services };
+    let mut done = false;
+    for _ in 0..4 {
+        let (mut size, mut key, mut dsize, mut dver) = (core::mem::size_of::<[u64; 8192]>(), 0usize, 0usize, 0u32);
+        let got = unsafe {
+            (bs.get_memory_map)(&mut size, core::ptr::addr_of_mut!(MAP) as *mut MemoryDescriptor, &mut key, &mut dsize, &mut dver)
+        };
+        if got != Status::SUCCESS {
+            continue;
+        }
+        if unsafe { (bs.exit_boot_services)(image, key) } == Status::SUCCESS {
+            done = true;
+            break;
+        }
+    }
+    com1(if done {
+        "tcp4probe   : past ExitBootServices\r\n"
+    } else {
+        "tcp4probe   : ExitBootServices refused four times\r\n"
+    });
+    loop {
+        core::hint::spin_loop();
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+fn com1(s: &str) {
+    const BASE: u16 = 0x3f8;
+    for b in s.bytes() {
+        unsafe {
+            // Line status bit 5: the transmit holding register is empty.
+            for _ in 0..100_000 {
+                let lsr: u8;
+                core::arch::asm!("in al, dx", out("al") lsr, in("dx") BASE + 5, options(nomem, nostack, preserves_flags));
+                if lsr & 0x20 != 0 {
+                    break;
+                }
+            }
+            core::arch::asm!("out dx, al", in("dx") BASE, in("al") b, options(nomem, nostack, preserves_flags));
+        }
+    }
+}
+
 #[entry]
 fn main() -> Status {
     uefi::helpers::init().unwrap();
@@ -314,6 +402,19 @@ fn main() -> Status {
     uefi::println!("============================================================");
     handed_down();
     boot_fs();
+    // The test's asks (#219): a bootloader that hangs before ExitBootServices
+    // (stormbootx's watchdog must reset the machine), and one that calls it.
+    if asked("hang") {
+        uefi::println!("tcp4probe   : hanging before ExitBootServices (SMBIOS OEM string tcp4probe:hang)");
+        loop {
+            boot::stall(core::time::Duration::from_secs(1));
+        }
+    }
+    #[cfg(target_arch = "x86_64")]
+    if asked("ebs") {
+        uefi::println!("tcp4probe   : calling ExitBootServices (SMBIOS OEM string tcp4probe:ebs)");
+        exit_boot_services();
+    }
     // What the RTC reads, as the next stage will read it (#77: stormbootx may
     // have set it from NTP).
     match uefi::runtime::get_time() {

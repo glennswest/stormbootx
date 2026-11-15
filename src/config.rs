@@ -269,6 +269,19 @@ pub fn stated_rng() -> crate::entropy::Start {
         .unwrap_or(crate::entropy::Start::Firmware)
 }
 
+/// `handoff_watchdog =` (#219): seconds the UEFI watchdog gives the
+/// bootloader started from the attached image to reach ExitBootServices,
+/// which turns it off. `off` (or 0) arms none. Default 300, the five minutes
+/// a firmware boot manager gives any boot option. Anything else unreadable
+/// is the default.
+pub fn handoff_watchdog() -> u64 {
+    match conf_text().and_then(|t| field(&t, "handoff_watchdog")).as_deref() {
+        Some("off" | "no" | "false") => 0,
+        Some(v) => v.trim_end_matches('s').trim().parse().unwrap_or(300),
+        None => 300,
+    }
+}
+
 /// `nic_verbose = true` in the config file (#80, #102): the stormnic drivers
 /// print their whole bring-up trace instead of one line per NIC. Off on
 /// every golden; set on a medium to debug a machine without a rebuild.

@@ -122,7 +122,11 @@ ISO names an `update =`, which must be skipped as read-only (#83). With
 virtio-net NIC from OVMF's drivers and carry the claim and the attach, and an
 older medium's `prefer_media_drivers` is named and ignored (#202: our drivers
 only, no key).
-Its `httpboot` boot (#172) has no CD: `tests/bootvar.py` writes a
+Its `ebs` and `watchdog` boots (#219) tell tcp4probe what to do with an SMBIOS
+OEM string (`-smbios type=11,value=tcp4probe:ebs`): call ExitBootServices
+(stormbootx's line before it, tcp4probe's own on COM1 after it, the screen's
+bottom rows green) or hang before it (`handoff_watchdog = 15` must reset the
+VM). Its `httpboot` boot (#172) has no CD: `tests/bootvar.py` writes a
 `Uri(http://…/httpboot.iso)` boot option and BootNext into OVMF's variable
 store, the firmware's HTTP boot downloads the ISO into a RAM disk, and
 stormbootx must say `media : a RAM disk`, decline the self-update for it,
@@ -313,6 +317,7 @@ kept for a later need; the test command sets it to keep the code honest.
 | `src/dhcp4.rs` | tcp4probe only since #56: DHCP through the firmware's `EFI_DHCP4` |
 | `src/nvme.rs` | the NVMe/TCP initiator's UEFI end: `TcpSocket` as its `Transport`, `boot::stall` (#10) |
 | `crates/nvme-tcp-initiator` | the NVMe/TCP initiator itself (#10): `no_std` + `alloc`, no dependencies, generic over a `Transport` and a `Platform`, shared with stormboot4bios; reads up to 8 in flight (#100); host tests against a fake controller (`cargo test -p nvme-tcp-initiator`) |
+| `src/handoffguard.rs` | the handoff's guard (#219): a one-shot, allocation-free `BEFORE_EXIT_BOOT_SERVICES` line on the serial consoles and the panel, a green framebuffer line after the drivers' ExitBootServices handlers, the UEFI watchdog (`handoff_watchdog =`, 300 s) until ExitBootServices; `disarm` when the bootloader returns |
 | `src/handoff.rs` | `StormBootTag`/`StormBootHostNqn`, volatile EFI variables naming the machine to Linux's initramfs (#76, stormblock#249); `StormBootEngine` (#183); `StormBootClock` (#77); `StormBootUpdate` (#83); `StormBootInstallConfig` + chunks (#79) |
 | `src/lastlog.rs` | each start's console on the medium (#213): `\stormboot\last.log` at fixed points before the attach (sealed after it, #46), the failed trial's as `trial.log`, and the claim's `trial_log`/`last_log`/`log` within the agent's 15 KiB |
 | `src/selfupdate.rs` | the boot medium updates itself (#83): trial count and revert at start; fetch, Ed25519 check, `*.new`/`*.prev` swap and restart after `net::up`; `mark_good` after the attach; `StormBootMinSerial` (NV) |
@@ -337,7 +342,7 @@ kept for a later need; the test command sets it to keep the code honest.
 | `src/config.rs` | the target, read from the media rather than compiled in; `local.conf` read before `stormboot.conf` (#83); `boot_from_ram_disk` (#172: the image's volume has a RAM-disk device-path node, i.e. UEFI HTTP boot of the ISO; `media : a RAM disk (UEFI HTTP boot): the downloaded image, gone at reset`, and `selfupdate` declines it) |
 | `src/shell.rs` | timed, never-forced failure console before the fall-through |
 | `crates/stormbootx-stick` | the node's stick updater (#151): static musl Linux; `src/manifest.rs` and `src/sha256.rs` by path; find (sysfs, refusals), verify, decide, apply as `selfupdate.rs`; built for x86_64 and, since #172, aarch64 (`bin/stormbootx-stick-arm64`, `BOOTAA64.EFI`, family `stormbootx-arm64`); `tests/stick.sh` |
-| `src/ui.rs` | the boot panel (#144): its own `ConOut` in the system table; every line to the serial consoles and F2, the steps drawn on the screen consoles; `end` hands the screen back |
+| `src/ui.rs` | the boot panel (#144): its own `ConOut` in the system table; every line to the serial consoles and F2, the steps drawn on the screen consoles; `rescan` reads the consoles again after a connect (#219); `end` hands the screen back |
 | `src/pcibus.rs` | a PCI root bridge's bus range, for the console's `pci` (#186) (core-only, host-tested) |
 | `src/tcp4probe.rs` | second binary: does this machine's firmware carry TCP4? |
 

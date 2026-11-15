@@ -114,6 +114,45 @@ firmware or the EFI Shell. The layout fits 80x25 and uses the width of a
 larger text mode. `ui = log` in `stormboot.conf` keeps the old scrolling
 console; a machine with no screen console gets it anyway.
 
+The consoles are read again after every connect over all handles, after the
+NIC take-over and at the handoff (#219): a connect can stop a terminal and
+start a new one on the same UART, and the old one's pointer writes nowhere
+(forge1's serial log ended at `binding the platform's own drivers first`).
+A change is said: `console : the consoles changed under a connect: …`.
+
+### The handoff's guard (#219)
+
+As the attached image's bootloader starts, stormbootx says
+`handoff : watchdog 300 s until ExitBootServices; ExitBootServices marked …`
+and arms three things (`src/handoffguard.rs`):
+
+- **A line at ExitBootServices.** When the bootloader (Linux's EFI stub)
+  calls ExitBootServices, a `BEFORE_EXIT_BOOT_SERVICES` handler writes
+  `handoff : ExitBootServices called by the bootloader; the drivers stop
+  their devices, the kernel is next` to the serial consoles, and
+  `ExitBootServices: drivers stopping their devices; kernel next` in the
+  panel's handoff step. Once, and nothing allocated, so the call's map key
+  still holds.
+- **A green line along the bottom of the screen** once every driver's
+  ExitBootServices handler has returned (an `EXIT_BOOT_SERVICES` handler at
+  `TPL_CALLBACK`, after the drivers' `TPL_NOTIFY` ones on EDK2; it only
+  writes to the framebuffer).
+- **The UEFI watchdog**, `handoff_watchdog` seconds (default 300): a
+  bootloader that hangs before ExitBootServices resets the machine.
+  ExitBootServices turns it off; a bootloader that returns to stormbootx
+  turns it off too (and with it whatever the boot manager had armed).
+
+So a frozen screen says where the boot stopped:
+
+| screen | stopped in |
+|---|---|
+| the bootloader's last line (`EFI stub: Loaded initrd …`), no ExitBootServices line | the bootloader, before ExitBootServices (the watchdog resets it) |
+| `ExitBootServices: drivers stopping …`, no green line | a driver's ExitBootServices handler (a NIC driver's quiesce) |
+| the green line | the kernel, after every handler returned |
+
+Nothing after ExitBootServices can be timed by UEFI: a hang there needs a
+BMC watchdog the OS takes over.
+
 ## What it does, step by step
 
 `src/main.rs`, `run()`:
@@ -837,6 +876,7 @@ published BlockIO (about 105–120 MiB/s, KVM) and starts it. Its boots
 | `nolease` | a NIC on a dead hub: one `waiting for a lease` line a second (#88) |
 | `intent` | told `local`: no claim POST, nothing attached (#11); no disk that boots, so the console's 5 s stays (#189) |
 | `localdisk`, `localdisk-key`, `localdisk-fail` | told `local` with a disk that boots: no wait, `fall-through` under 300 ms, its bootloader started; a `c` sent during the boot opens the console; a failed claim on that disk still waits 5 s (#189) |
+| `ebs`, `watchdog` | the handoff's guard (#219), tcp4probe told by an SMBIOS OEM string: `ebs` calls ExitBootServices as Linux's stub does: stormbootx's line before it, tcp4probe's own line on COM1 after it, and the screen's bottom rows green; `watchdog` hangs before it, and `handoff_watchdog = 15` resets the VM |
 | `bridge` | `esp = stormbootx`: the payload starts from stormbootx's own read of the ESP and finds the read-only filesystem as its volume (#42) |
 | `ic64` … `ic256` | install-configs of 64, 128, 192 and 256 KiB, each reassembled by the payload (#93) |
 | `release` | no fallback namespace and the claim 404s: falls through, gives the NIC back, and the firmware's PXE on it boots the payload (#36, #68) |
@@ -1056,6 +1096,7 @@ others.
 | `api` | `9180` | the port stormbootx's own API answers on (#167), or `off` |
 | `command_key` | none | an Ed25519 public key (64 hex digits) whose signed commands are taken, beside stormcentral's (#167); the laptop app writes its own into `local.conf`; `build-boot-agent.sh --command-key` |
 | `hold` | `off` | how long a failed network boot stays up with its API (#167): seconds (`120`, `2m`), `forever` or `off`; nothing local that boots holds until a command. The goldens write `120`; `build-boot-agent.sh --hold`. Else `install-config.yaml`'s `stormbootx_hold:` |
+| `handoff_watchdog` | `300` | seconds the UEFI watchdog gives the attached image's bootloader to reach ExitBootServices (#219); `off` arms none. See *The handoff's guard* |
 | `hold_retry` | `0` | minutes between boots again while holding; 0 never. Else `stormbootx_hold_retry:` |
 | `stamp` | none | parsed, not used |
 | `version`, `commit` | none | **not read by stormbootx**: the stormbootx on this medium, written by every `build-boot-agent.sh` run (#94) so a tool reading the FAT (storminstall, which refuses media older than v0.15.0's install-config slot) needs no EFI binary run. The version is Cargo.toml's and must be in the `.efi` laid down, or the build fails; the commit is the binary's `STORMBOOTX_BUILD` stamp, or `unstamped`. A self-update replaces the file with the release's, so they stay true |

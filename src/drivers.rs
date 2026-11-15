@@ -247,6 +247,8 @@ pub fn load_from_media() -> Vec<Loaded> {
         uefi::println!("    [{:>3} s] connected", elapsed(t0));
         crate::lastlog::save();
         take_over(&out, t0);
+        // The take-over's connects too (#219).
+        crate::ui::rescan();
     }
     out
 }

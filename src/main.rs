@@ -66,6 +66,7 @@ mod esp;
 mod espboot;
 mod espfs;
 mod handoff;
+mod handoffguard;
 mod hardware;
 mod installconf;
 mod localinstall;

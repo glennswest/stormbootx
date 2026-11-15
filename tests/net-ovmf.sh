@@ -636,6 +636,12 @@ BOOT_NIC_ROM=
 BOOT_HTTP=
 # BOOT_KEY (#189): a key sent to the keyboard from stormbootx's start.
 BOOT_KEY=
+# BOOT_SMBIOS (#219): an SMBIOS OEM string for the payload (`tcp4probe:ebs`,
+# `tcp4probe:hang`). BOOT_BAND=1: once the boot stops, read the screen's
+# bottom rows and say whether they are the green line stormbootx paints
+# after the drivers' ExitBootServices handlers.
+BOOT_SMBIOS=
+BOOT_BAND=
 boot() {
     local name=$1 cpu=$2 rng=$3 claim=$4 ntp=$5; shift 5
     # NET_ONLY=<name>: run that boot alone (a rerun of one failure).
@@ -694,6 +700,7 @@ boot() {
         extra+=(-device virtio-rng-pci)
     fi
     [[ $name == shipped ]] && extra+=("${LOCAL_DRIVES[@]}")
+    [[ -n $BOOT_SMBIOS ]] && extra+=(-smbios "type=11,value=$BOOT_SMBIOS")
     [[ -n "$BOOT_DISK" ]] && extra+=(-device virtio-scsi-pci,id=scsi0
         -drive if=none,id=d0,format=raw,file="$BOOT_DISK" -device scsi-hd,drive=d0,bus=scsi0.0,bootindex=2)
     say "[$name] booting under OVMF ($accel, cpu $cpu, rng ${rng:-as shipped}, up to ${LIMIT}s)"
@@ -761,12 +768,27 @@ boot() {
         python3 "$ROOT/tests/screen.py" dump "$W/$name.mon" "$W/$name.ppm" \
             && say "[$name] png $(python3 "$ROOT/tests/screen.py" png "$W/$name.ppm")"
     fi
+    local band=
+    if [[ -n $BOOT_BAND ]] && kill -0 "$qemu" 2>/dev/null; then
+        python3 "$ROOT/tests/screen.py" dump "$W/$name.mon" "$W/$name.ppm" \
+            && band=$(python3 -c 'import sys
+d = open(sys.argv[1], "rb").read()
+parts = d.split(maxsplit=4)
+w, h = int(parts[1]), int(parts[2])
+px = parts[4]
+rows = [px[(y * w) * 3:(y * w + w) * 3] for y in range(h - 8, h)]
+green = sum(1 for r in rows for i in range(0, len(r), 3) if r[i] < 0x40 and r[i + 1] > 0x80 and r[i + 2] < 0x40)
+print("band        : %s (%d of %d pixels in the bottom 8 rows of %dx%d)" % ("green along the bottom" if green >= 0.9 * 8 * w else "not green", green, 8 * w, w, h))' "$W/$name.ppm")
+        say "[$name] $band"
+    fi
     kill -0 "$qemu" 2>/dev/null || how="qemu exited by itself"
     (( t < LIMIT )) || how="ran the whole ${LIMIT}s"
     kill "$qemu" 2>/dev/null || true; wait "$qemu" 2>/dev/null || true
     say "[$name] $how after ${t}s"
     # The firmware's debug port is read too: an exception dump may go there.
     cat "$log" "$W/$name.debug" 2>/dev/null | tr -d '\r' | sed 's/\x1b\[[0-9;]*[A-Za-z]//g' > "$txt"
+    [[ -n $band ]] && printf '%s\n' "$band" >> "$txt"
+    [[ $how == "qemu exited by itself" ]] && printf 'net-ovmf    : qemu exited by itself\n' >> "$txt"
     say "[$name] console:"
     grep -v '^\s*$' "$txt" | sed -n '1,90s/^/  | /p'
     say "[$name] stub log:"
@@ -1033,6 +1055,27 @@ boot bridge "$host_cpu" "" ok good \
     "boot fs     : BOOTX64.EFI is 100663296 bytes; not hashed here" \
     "boot fs     : create refused (WRITE_PROTECTED)" \
     "is there a TCP/IP stack in this firmware"
+
+# #219: the handoff's guard. `ebs`: the payload calls ExitBootServices as
+# Linux's EFI stub does; stormbootx's line must come before it (the
+# BEFORE_EXIT_BOOT_SERVICES group), the payload must get past it, and the
+# screen's bottom must be the green line painted after the drivers' handlers.
+# `watchdog`: a payload that hangs before ExitBootServices; the UEFI watchdog
+# (handoff_watchdog = 15) resets the machine, which ends QEMU (-no-reboot).
+BOOT_SMBIOS=tcp4probe:ebs BOOT_BAND=1 WAIT_FOR="tcp4probe   : past ExitBootServices" BOOT_SETTLE=1 \
+boot ebs "$host_cpu" "" ok good \
+    "handoff     : watchdog 300 s until ExitBootServices; ExitBootServices marked (a console line before, a green line on the " \
+    "tcp4probe   : calling ExitBootServices (SMBIOS OEM string tcp4probe:ebs)" \
+    "handoff     : ExitBootServices called by the bootloader; the drivers stop their devices, the kernel is next" \
+    "tcp4probe   : past ExitBootServices" \
+    "band        : green along the bottom" \
+    "not:ExitBootServices refused four times"
+BOOT_SMBIOS=tcp4probe:hang BOOT_CONF="handoff_watchdog = 15" WAIT_FOR="never printed: the watchdog ends this boot" \
+boot watchdog "$host_cpu" "" ok good \
+    "handoff     : watchdog 15 s until ExitBootServices" \
+    "tcp4probe   : hanging before ExitBootServices (SMBIOS OEM string tcp4probe:hang)" \
+    "net-ovmf    : qemu exited by itself" \
+    "not:handoff     : ExitBootServices called by the bootloader"
 
 # #88: a NIC nothing answers. The boot must say so once a second (link, DHCP
 # out and in, frames in) instead of sitting silent until the engine's 30 s

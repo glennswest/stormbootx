@@ -755,11 +755,13 @@ fn firmware_boot(disk: uefi_raw::Handle) -> Result<Loaded, String> {
         ) {
             Ok(loaded) => {
                 uefi::println!("boot        : starting {} from the attached image", crate::espboot::BOOTLOADER);
+                crate::handoffguard::arm();
                 crate::ui::handoff(&format!("starting {}", crate::espboot::BOOTLOADER));
                 let outcome = match boot::start_image(loaded) {
                     Ok(()) => String::from("the image's bootloader exited"),
                     Err(e) => format!("the image's bootloader returned {e:?}"),
                 };
+                crate::handoffguard::disarm();
                 crate::ui::handed_back(&outcome);
                 return Ok(Loaded::Ran(outcome));
             }
@@ -808,8 +810,10 @@ fn bridge_boot(disk: uefi_raw::Handle) -> Result<(), String> {
         Some(p) => p.to_boxed(),
         None => crate::espboot::partition_path(our_dp, &loader.partition)?,
     };
+    crate::handoffguard::arm();
     crate::ui::handoff(&format!("starting {} (read by stormbootx)", crate::espboot::BOOTLOADER));
     let r = crate::espboot::start(&esp_path, &loader, "the attached image (read by stormbootx)");
+    crate::handoffguard::disarm();
     if let Err(e) = &r {
         crate::ui::handed_back(e);
     }

@@ -110,6 +110,8 @@ pub fn connect_all() {
             connect(h.as_ptr());
         }
     }
+    // A connect over everything can rebuild the consoles (#219).
+    crate::ui::rescan();
 }
 
 fn snp_handles() -> Vec<uefi_raw::Handle> {
