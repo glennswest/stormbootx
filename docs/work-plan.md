@@ -102,6 +102,32 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#219 — forge1 freezes at the kernel handoff with stormnic-mlx5
+      bound; serial dark from driver binding (P1, the master,
+      2026-11-14).** Two screens frozen on `EFI stub: Loaded initrd`, for
+      ~2 h each until a hard cut; the serial log ends at `binding the
+      platform's own drivers first`. Plan:
+      1. Serial past driver binding: `ui::begin` keeps the serial consoles'
+         ConOut pointers from before any `ConnectController`; a connect that
+         rebuilds a terminal leaves them stale (dark, or a freed instance).
+         Re-read the consoles after every `connect_all`, after the take-over
+         and at the handoff, and say when they changed.
+      2. A breadcrumb at ExitBootServices (`src/handoffguard.rs`): an
+         allocation-free, one-shot `BEFORE_EXIT_BOOT_SERVICES` notify writes
+         `handoff : ExitBootServices called …` to the serial consoles and the
+         panel's handoff line; an `EXIT_BOOT_SERVICES` notify at
+         TPL_CALLBACK (after the drivers' TPL_NOTIFY ones) paints a green line
+         along the screen's bottom edge: every handler returned. A frozen
+         screen then says which side of the drivers' quiesce it stopped on.
+      3. A watchdog: the UEFI watchdog armed at the handoff (`handoff_watchdog
+         =`, default 300 s, `off`), off again if the bootloader returns. It
+         covers a hang before ExitBootServices; after it only a BMC watchdog
+         can, which needs the OS to take it over: a question for the owner.
+      4. net-ovmf: tcp4probe told by an SMBIOS OEM string to call
+         ExitBootServices (`ebs`: both breadcrumbs' serial line, then its own
+         line past EBS on COM1) or to hang (`watchdog`: the reset ends QEMU).
+      5. The mlx5 driver's ExitBootServices quiesce filed on stormnic-mlx5.
+
 - [x] **#213 — a failed self-update trial explains itself (P1, the master,
       2026-11-14).** C2NR0Q2's serial 8 trial left no line anywhere: no
       lease (no syslog), no console capture, and the claim said only
