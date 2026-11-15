@@ -282,12 +282,14 @@ then.
       IDs. Full sc-build of bdd4375 passed (1796 s; media label
       `mlx5@d11b572`, mlx5test boot); image requested (build 1e4d1f4e353b). Metal proof (forge1's 84:00.0 shows
       `port 1: PDDR troubleshooting:` and `port 1: PTYS:`) is the master's boot.
-- [ ] **#216 — pin stormnic-mlx5 9d86045 (P0; stormnic-mlx5#12: Receive
+- [x] **#216 — pin stormnic-mlx5 9d86045 (P0; stormnic-mlx5#12: Receive
       drains the CQ, the DHCP lease over the mlx5 SNP).** Contains 32ddb3f;
       only `src/snp.rs` changed, same IDs. Full sc-build of 38469be passed
-      (7 IDs, `mlx5@9d86045 test`, repro); image build 962fc0358b7d
-      requested. Waiting on the master's hardware boot of C2NR0Q2 for the
-      proof: `leased` on a stormnic-mlx5 port (QEMU has no ConnectX).
+      (7 IDs, `mlx5@9d86045 test`, repro); image build 962fc0358b7d.
+      Verified on metal by the master (2026-11-14/15): serial 14 on C2NR0Q2
+      and forge1 leased over stormnic-mlx5, claimed, attached and passed its
+      trial (17 s to attach); serial 15 (v0.43.0, d11b572, which contains
+      it) the same on C2NR0Q2. Closed. Since superseded by #218's pin.
 - [x] **#215 — pin stormnic-mlx5 32ddb3f (`fec_mode_active` bitmask
       decode; raw PPLM on FEC FAILED).** Same 7 IDs as `MLX5_TAKE_OVER`.
       Full sc-build of 4c6be65 passed (label `mlx5@32ddb3f`, mlx5test boot,
