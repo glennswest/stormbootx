@@ -11,9 +11,9 @@
 #   mlx4  -> stormnic-mlx4.efi    Mellanox ConnectX-3
 #   virtio -> stormnic-virtio.efi virtio-net (VMs: pve, OVMF), bound only
 #                                 with `prefer_media_drivers = virtio` (#108)
-#   mlx5  -> stormnic-mlx5.efi    Mellanox ConnectX-4/5/6, only when asked for:
-#                                 the rustnic media ask (#202), with
-#                                 `prefer_media_drivers = virtio,mlx5`
+#   mlx5  -> stormnic-mlx5.efi    Mellanox ConnectX-4/5/6 (#73); in the
+#                                 default set since it passed on metal
+#                                 (stormnic-mlx5#1: C2NR0Q2, forge1)
 #   e1000e -> stormnic-e1000e.efi Intel 82574L, 82579, I217/I218/I219 (#70);
 #                                 binds a NIC nothing else drives, and takes one
 #                                 only with `prefer_media_drivers = e1000e`
@@ -28,7 +28,7 @@
 #   scripts/build-nic-drivers.sh [OUTDIR]     (default tmp/drivers in the checkout)
 #   scripts/build-boot-agent.sh --iso --drivers tmp/drivers
 #
-# STORMNIC_DRIVERS (default "ixgbe mlx4 virtio e1000e igb") picks which are built. What ships is
+# STORMNIC_DRIVERS (default "ixgbe mlx4 virtio e1000e igb mlx5") picks which are built. What ships is
 # the stormbootx-rustnic medium and the nic-drivers golden
 # (deploy/build-golden.sh).
 #
@@ -121,9 +121,12 @@ STORMNIC_VIRTIO_REPO="https://github.com/glennswest/stormnic-virtio.git"
 STORMNIC_VIRTIO_REF="2dcafd359bff3c8af921a0c98d7025ae77ee73ef"
 STORMNIC_MLX5_REPO="https://github.com/glennswest/stormnic-mlx5.git"
 # 66de545 (#131, #73): the ConnectX-4/4 Lx/5/6 driver, reproducible and
-# --locked, not yet seen on a card (stormnic-mlx5#1). Not in this script's
-# default set; build-golden.sh's rustnic media name it (#202). FlexBoot holds
-# the card, so it binds only where the media says `prefer_media_drivers = mlx5`.
+# --locked, not yet seen on a card (stormnic-mlx5#1) and so out of the
+# default set; build-golden.sh's rustnic media named it (#202). In the default
+# set since #73 (2026-11-14): on 9d86045 C2NR0Q2 and forge1 both took their
+# ConnectX-4 Lx from FlexBoot, ran RS on 25GBASE-SR, leased, attached and
+# started the bootloader (stormnic-mlx5#1, closed); d11b572 adds only the
+# link-down diagnosis.
 # 09b0615 (#212, stormnic-mlx5#8): the stormnic port contract: the IEEE
 # standard FEC for the media/speed set at bind (PPLM read-modify-write; 25G
 # RS), one line per port (driver, PCI address, MAC, media, speed, module, FEC,
@@ -171,7 +174,7 @@ STORMNIC_IGB_REPO="https://github.com/glennswest/stormnic-igb.git"
 # per port, `… port 0: MAC …, media copper, speed 1000 Mb/s full duplex, FEC
 # none, link UP`; no link is a `link DOWN: error: …` line. The same 36 IDs.
 STORMNIC_IGB_REF="699034193728829e3e6d6c4be29b94793e960ea8"
-read -r -a STORMNIC_DRIVERS <<< "${STORMNIC_DRIVERS:-ixgbe mlx4 virtio e1000e igb}"
+read -r -a STORMNIC_DRIVERS <<< "${STORMNIC_DRIVERS:-ixgbe mlx4 virtio e1000e igb mlx5}"
 for d in "${STORMNIC_DRIVERS[@]}"; do
     [[ "$d" == ixgbe || "$d" == mlx4 || "$d" == virtio || "$d" == mlx5 || "$d" == e1000e || "$d" == igb ]] \
         || die "STORMNIC_DRIVERS: no Rust driver '$d' (ixgbe, mlx4, virtio, mlx5, e1000e, igb)"

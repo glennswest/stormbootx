@@ -113,8 +113,9 @@
 #
 # nic-drivers golden (an EFI boothelper; no medium takes it as an input since
 # #52):
-#   bin/stormnic-ixgbe.efi, bin/stormnic-mlx4.efi
-#                           the Rust drivers the rustnic medium carries (#29, #34)
+#   bin/stormnic-{ixgbe,mlx4,virtio,e1000e,igb,mlx5}.efi
+#                           the Rust drivers the rustnic medium carries (#29, #34,
+#                           #73: mlx5 since it passed on metal)
 #   STORMNIC-SOURCE.txt     each Rust driver's commit and digest
 #   SHA256SUMS, BUILD
 #   No iPXE, in this golden or any other (owner on #81; #91).
@@ -215,7 +216,9 @@ media_files() {
 # into $WORK/media-drivers, and its `media =` label in RUSTNIC_LABEL.
 # Since #202 every rustnic medium carries stormnic-mlx5, and every stormnic
 # driver takes its NICs from the firmware's (src/drivers.rs): the owner,
-# 2026-11-14, "we only use our drivers going forward".
+# 2026-11-14, "we only use our drivers going forward". Since #73 that is
+# build-nic-drivers.sh's default set; it is named here so the media do not
+# change if the default does.
 rustnic_drivers() {
     STORMNIC_DRIVERS="ixgbe mlx4 virtio e1000e igb mlx5" "$ROOT/scripts/build-nic-drivers.sh" "$WORK/drivers"
     for d in stormnic-ixgbe stormnic-mlx4 stormnic-virtio stormnic-e1000e stormnic-igb stormnic-mlx5; do
@@ -255,14 +258,13 @@ only_the_image() {
 case "$GOLDEN" in
 nic-drivers)
     "$ROOT/scripts/build-nic-drivers.sh" "$WORK/drivers"
-    for d in stormnic-ixgbe stormnic-mlx4 stormnic-virtio stormnic-e1000e stormnic-igb; do
+    for d in stormnic-ixgbe stormnic-mlx4 stormnic-virtio stormnic-e1000e stormnic-igb stormnic-mlx5; do
         [[ -f "$WORK/drivers/$d.efi" ]] || die "no $d.efi was built"
     done
     mkdir -p "$OUT/bin"
     cp "$WORK/drivers/"*.efi "$OUT/bin/"
     cp "$WORK/drivers/STORMNIC-SOURCE.txt" "$OUT/"
     ! compgen -G "$OUT/bin/ipxe-*" >/dev/null || die "an iPXE driver reached the nic-drivers golden"
-    [[ ! -e "$OUT/bin/stormnic-mlx5.efi" ]] || die "stormnic-mlx5 reached $GOLDEN; the rustnic media carry it (#202)"
     seal "stormnic = $(cat "$WORK/drivers/STORMNIC-SOURCE.txt")"
     ;;
 stormbootx)

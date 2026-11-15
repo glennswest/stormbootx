@@ -1983,8 +1983,11 @@ then.
       until it has run on a device, after #71, and not before the fleet's own
       NICs work fully. No E810 in the fleet and no `stormnic-ice` repo yet.
 
-- [ ] **#73 — stormnic-mlx5, a Rust ConnectX-4/4 Lx/5/6/6 Dx/6 Lx UEFI
-      driver (P3, owner). Blocked on stormnic-mlx5#1 (2026-10-08, P3).** The owner (2026-10-07) had the repo created and **paused**, drivers at low priority; its first issue is P3, and this item is moved behind it. History: was waiting on the owner (2026-10-06)
+- [x] **#73 — stormnic-mlx5, a Rust ConnectX-4/4 Lx/5/6/6 Dx/6 Lx UEFI
+      driver. Done 2026-11-14:** stormnic-mlx5#1 passed on metal (C2NR0Q2,
+      forge1, serial 14, 9d86045); `mlx5` added to the default
+      `STORMNIC_DRIVERS`, so the nic-drivers golden carries it (pin d11b572,
+      unchanged). Still open there: stormnic-mlx5#15 (ExitBootServices quiesce bounds, #219). Earlier: **Blocked on stormnic-mlx5#1 (2026-10-08, P3).** The owner (2026-10-07) had the repo created and **paused**, drivers at low priority; its first issue is P3, and this item is moved behind it. History: was waiting on the owner (2026-10-06)
       for the master to create `glennswest/stormnic-mlx5` (as for
       stormnic-virtio, #75). The issue's seven IDs are right in pci.ids;
       ConnectX-7 (1021) and BlueField (a2d2/a2d6/a2dc) share the interface.

@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-11-14
+- **feat:** #73: `mlx5` is in `build-nic-drivers.sh`'s default `STORMNIC_DRIVERS`, so the nic-drivers golden carries `stormnic-mlx5.efi` (d11b572). The driver passed on metal on C2NR0Q2 and forge1 (stormnic-mlx5#1). The rustnic media already carried it (#202).
 - **docs:** #202 closed, verified on metal. stormnic-mlx5 sets RS at bind on all four ConnectX-4 Lx ports (C2NR0Q2 02:00.x, forge1 84:00.x). forge1's :80 came up once its cable was on a working switch port, and nic 6 leased .203.
 
 ## [v0.43.0] — 2026-11-14

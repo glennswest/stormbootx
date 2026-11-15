@@ -1500,10 +1500,10 @@ pinned commit of its own repo: `stormnic-ixgbe.efi` (Intel 82599/X540/X552,
 beside a
 `STORMNIC-SOURCE.txt` naming each commit and digest; stormnic-e1000e's
 `src/ids.rs` must list exactly the IDs of `drivers.rs`'s e1000e family, or
-the build fails. `STORMNIC_DRIVERS` (default `ixgbe mlx4 virtio e1000e igb`) picks
-which; `STORMNIC_DRIVERS=virtio` builds one. `mlx5` (`stormnic-mlx5.efi`,
-ConnectX-4/5/6, `STORMNIC_MLX5_REF`, #131) is built only when named; the
-rustnic media name it (#202). It checks each is a PE
+the build fails. `stormnic-mlx5.efi` (ConnectX-4/5/6, `STORMNIC_MLX5_REF`,
+#131) is in the default set since #73, once it passed on C2NR0Q2 and forge1
+(stormnic-mlx5#1). `STORMNIC_DRIVERS` (default `ixgbe mlx4 virtio e1000e igb
+mlx5`) picks which; `STORMNIC_DRIVERS=virtio` builds one. It checks each is a PE
 boot-service driver (subsystem 11). There is no iPXE in it, on any medium or
 in any golden (owner on #81: "I dont want the ipxe code. Move to ours."; #91,
 #52). The iPXE `intelx` driver that first got the X9 blades onto the network
@@ -1559,7 +1559,7 @@ with `STORMBOOTX_FW_MEDIA=1`; the arm64 goldens carry no driver of ours yet
 | `stormbootx-arm64` | `bin/stormbootx.efi` (aarch64), `boot/stormbootx-arm64.iso` (`\EFI\BOOT\BOOTAA64.EFI`, the fw medium for arm64 hosts), `media/`, `media.files`, `SHA256SUMS`, `BUILD` (#84; registered as a media component). The ISO is also what UEFI HTTP boot serves (#172). |
 | `stormbootx-arm64-disk` | `boot/stormbootx-arm64-disk.img` (USB stick, the `stormbootx-arm64` medium: 64 MiB GPT ESP, `BOOTAA64.EFI`), `SHA256SUMS`, `BUILD` (#172; registered as a media component) |
 | `stormbootx-stick` | `bin/stormbootx-stick` (x86_64), `bin/stormbootx-stick-arm64` (aarch64, #172), static musl, `SHA256SUMS`, `BUILD` |
-| `nic-drivers` | `bin/stormnic-ixgbe.efi`, `bin/stormnic-mlx4.efi`, `bin/stormnic-virtio.efi`, `STORMNIC-SOURCE.txt`, `SHA256SUMS`, `BUILD` (an EFI boothelper; no medium takes it as an input since #52, and it holds no iPXE since #91) |
+| `nic-drivers` | `bin/stormnic-ixgbe.efi`, `bin/stormnic-mlx4.efi`, `bin/stormnic-virtio.efi`, `bin/stormnic-e1000e.efi`, `bin/stormnic-igb.efi`, `bin/stormnic-mlx5.efi` (#73), `STORMNIC-SOURCE.txt`, `SHA256SUMS`, `BUILD` (an EFI boothelper; no medium takes it as an input since #52, and it holds no iPXE since #91) |
 
 `media/` is the medium's files as a tree (`EFI/BOOT/BOOTX64.EFI`,
 `stormboot/stormboot.conf`, `stormboot/drivers/*`, `startup.nsh`), and
@@ -1781,7 +1781,7 @@ Open issues:
 | #92, #89 | self-update on metal: stormcentral serves `stormbootx-rustnic` serial 1 = v0.14.0, which every newer medium declines as older (#96); the promotion of v0.29.0's rustnic golden (canary server1 first) is the master's, 2026-10-17 (#92); nothing is promoted for `stormbootx` |
 | #93 | install-config sizes on real firmware variable stores |
 | #100, #99 | boot time: one NVMe/TCP command in flight (~46 MiB/s on metal); #99 (mlxfec's cap9 wait) is moot since #202 removed mlxfec |
-| #71–#74 | more Rust NIC drivers, paused by the owner at P3 (each behind its repo's first issue); stormnic-e1000e is on the rustnic media since v0.40.0 (#70), stormnic-igb since #69; stormnic-mlx5 is on the rustnic media since #202 (canary C2NR0Q2, then forge1) |
+| #71–#74 | more Rust NIC drivers, paused by the owner at P3 (each behind its repo's first issue); stormnic-e1000e is on the rustnic media since v0.40.0 (#70), stormnic-igb since #69; stormnic-mlx5 is on the rustnic media since #202 and in the default driver set since #73, passed on C2NR0Q2 and forge1 |
 | #84 | arm64 media: built (`stormbootx-arm64`); booting it under AAVMF and registering the golden wait on stormcentral#604 |
 | #138 | the R230's NIC FEC step: v0.25.0's real-time budget is released, the metal boot is not seen |
 | #154 | `stormbootx-stick` writing a signed raw disk image when a stick has no room for a file update |
