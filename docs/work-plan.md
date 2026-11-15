@@ -128,6 +128,17 @@ then.
          line past EBS on COM1) or to hang (`watchdog`: the reset ends QEMU).
       5. The mlx5 driver's ExitBootServices quiesce filed on stormnic-mlx5.
 
+      **Done from here (2026-11-14):** e3dd051 (code, tests, docs), v0.43.0
+      (5521587). The full sc-build passed on e3dd051 (1822 s). net-ovmf
+      `ebs`: the line came before ExitBootServices, tcp4probe got past it,
+      and the bottom 8 rows were green (10240 of 10240 pixels at 1280x800).
+      `watchdog`: `handoff_watchdog = 15` reset the VM 23 s into the boot.
+      Image requested (build d1175bc61aad). stormnic-mlx5#15 filed. Still
+      open: the console rescan is unproven on forge1, because OVMF never
+      rebuilds a terminal. A hang after ExitBootServices needs a BMC
+      watchdog the OS takes over, which is a question for the owner on
+      #219.
+
 - [x] **#213 — a failed self-update trial explains itself (P1, the master,
       2026-11-14).** C2NR0Q2's serial 8 trial left no line anywhere: no
       lease (no syslog), no console capture, and the claim said only
