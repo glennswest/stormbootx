@@ -3,11 +3,17 @@
 
   screen.py dump SOCK OUT.ppm      screendump through the QEMU monitor socket
   screen.py key SOCK KEY           sendkey (f2, esc, ...)
-  screen.py panel PPM              the panel is drawn: a light-grey header bar
-                                   across the top text row
+  screen.py panel PPM              the panel is drawn: the spec's frame (#220,
+                                   stormblock-screen-spec), its header bar
+                                   amber (or red, failed) and the lower
+                                   frame's blocks blue, amber and peach, at
+                                   their places on the 1920x1080 grid
+  screen.py frame PPM              the same, said as the line `handover : …`
+                                   (net-ovmf: the frame left up under the
+                                   bootloader)
   screen.py red PPM                some red on the screen (a failed step)
-  screen.py same PPM PPM           identical below the header row (its clock moves)
-  screen.py differ PPM PPM         different below the header row
+  screen.py same PPM PPM           identical below the header frame (its clock moves)
+  screen.py differ PPM PPM         different below the header frame
   screen.py png PPM                one line: the dump as a base64 PNG, so a
                                    screenshot can leave a build VM in its log
   screen.py hmp SOCK CMD...        a monitor command's output (info registers,
@@ -22,7 +28,22 @@ import sys
 import time
 import zlib
 
-HEADER_PX = 19  # a text row: EDK2's GraphicsConsole cell is 8x19
+# stormblock-screen-spec's palette and frame (stormblock#637, pinned in
+# Cargo.toml): design pixels on a 1920x1080 grid, scaled across and down.
+AMBER = (255, 153, 0)
+RED = (221, 68, 68)
+BLUE = (153, 204, 255)
+PEACH = (255, 204, 153)
+GREY = (170, 160, 150)
+HEADER_H = 348  # the lower frame's top: the header frame and its clock above
+# (design x, y, the colours it may be, what it is)
+FRAME = [
+    (600, 46, (AMBER, RED), "the header bar"),
+    (124, 263, (GREY,), "the header's release block"),
+    (124, 512, (BLUE,), "the lower frame's first block"),
+    (124, 775, (AMBER,), "its second"),
+    (124, 928, (PEACH,), "its third"),
+]
 
 
 def monitor(sock, cmd):
@@ -100,12 +121,21 @@ def main():
             if line.strip() and not line.startswith("(qemu)") and "\x1b" not in line:
                 print(line)
         return 0
-    if cmd == "panel":
+    if cmd in ("panel", "frame"):
         w, h, px = read_ppm(sys.argv[2])
-        grey = sum(1 for r, g, b in pixels(w, px, 2, HEADER_PX - 2) if r == g == b and r >= 0x80)
-        n = w * (HEADER_PX - 4)
-        print(f"header row: {grey} of {n} pixels light grey")
-        return 0 if grey * 2 > n else 1
+        bad = []
+        for dx, dy, want, what in FRAME:
+            x, y = dx * w // 1920, dy * h // 1080
+            # A 5x5 patch, every pixel the colour: fills are exact.
+            got = {tuple(px[(yy * w + xx) * 3:(yy * w + xx) * 3 + 3]) for yy in range(y - 2, y + 3) for xx in range(x - 2, x + 3)}
+            if len(got) != 1 or next(iter(got)) not in want:
+                bad.append(f"{what} at ({x},{y}) is {sorted(got)[:3]}")
+        head = "red" if tuple(px[(46 * h // 1080 * w + 600 * w // 1920) * 3:][:3]) == RED else "amber"
+        if cmd == "frame":
+            print(f"handover    : " + (f"the spec's frame stays up ({head} header, {w}x{h})" if not bad else "no frame: " + "; ".join(bad)))
+        else:
+            print(f"frame on {w}x{h}: " + ("the spec's, header " + head if not bad else "; ".join(bad)))
+        return 0 if not bad else 1
     if cmd == "red":
         w, h, px = read_ppm(sys.argv[2])
         red = sum(1 for r, g, b in pixels(w, px, 0, h) if r >= 0xa0 and g < 0x80 and b < 0x80)
@@ -117,7 +147,7 @@ def main():
         if (wa, ha) != (wb, hb):
             print("the dumps differ in size")
             return 0 if cmd == "differ" else 1
-        cut = wa * HEADER_PX * 3
+        cut = wa * (HEADER_H * ha // 1080) * 3
         diff = sum(1 for x, y in zip(a[cut:], b[cut:]) if x != y)
         print(f"{diff} bytes differ below the header")
         return 0 if (diff == 0) == (cmd == "same") else 1

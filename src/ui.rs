@@ -1,29 +1,45 @@
-//! The boot screen (#144): one panel, redrawn in place, instead of a
-//! scrolling log.
+//! The boot screen (#144, #220): one panel, redrawn in place, instead of a
+//! scrolling log, in the look of the boot screen it hands the display to.
 //!
 //! Owner, 2026-10-14: "can we do a better ui for stormbootx. It looks messy
-//! at times". The screen shows a header (version, machine, time), the boot's
-//! steps with a state and a time each, a progress bar while the image is
-//! read, and, when something goes wrong, the reason and what happens next.
-//! Every log line still goes to the serial console exactly as before (the
-//! consoles stormcentral keeps, and every OVMF test, read it), and to a
-//! second screen behind F2. Nothing is mixed into the panel.
+//! at times"; 2026-11-15 (#220): "I want a enterprise boot screen (As in
+//! trek)": the machine looks like one product from power-on to login. So the
+//! panel is drawn on the screen's pixels with **stormblock-screen-spec**
+//! (stormblock#637), the crate stormblock's boot screen (#618) draws with:
+//! its palette, its typeface (Antonio Bold), its 1920 × 1080 grid and its
+//! frame. Nothing about the look is defined here; a colour or a size that
+//! is not the spec's is a drift.
+//!
+//! The panel: the header frame says the machine's name, its lease, the
+//! machine and this build with the clock, and, large on the right, the step
+//! at work (or `STOPPED`); the lower frame lists the boot's steps with a
+//! state pill, what each did and its time, the image read's bar, and when
+//! something goes wrong the reason and what happens next. Every log line
+//! still goes to the serial console exactly as before (the consoles
+//! stormcentral keeps, and every OVMF test, read it), and to a log view
+//! behind F2. Nothing is mixed into the panel.
 //!
 //! **How.** `begin` puts its own `EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL` in the
 //! system table's `ConOut` (the firmware's ConSplitter, restored by `end`),
 //! so every line printed by anyone (this binary, the media's NIC drivers, the
 //! bootloader it starts) lands in `out_string`: kept for F2 and written to
-//! the serial consoles only. The panel is drawn on the screen consoles
-//! directly. Which is which: a console whose handle carries GOP is a screen
+//! the serial consoles only. A console whose handle carries GOP is a screen
 //! (GraphicsConsole); every other one is serial (a terminal on a UART, a
-//! BMC's redirection). A machine with no screen console, or `ui = log` in
-//! `stormboot.conf`, gets today's output and no panel.
+//! BMC's redirection). Each screen gets a back buffer in RAM at its GOP's
+//! mode; the panel is drawn there (`Xrgb8888`, the Blt buffer's BGRx) and
+//! the changed part is Blt'd to the GOP, so a BLT-only mode works and the
+//! framebuffer is never read. A machine with no screen console, or `ui =
+//! log` in `stormboot.conf`, gets today's output and no panel.
 //!
-//! `end` hands `ConOut` back with a cleared screen before anything is left
-//! to the firmware or an interactive program (the network console, a local
-//! disk's bootloader, a return to the boot manager or the EFI Shell). The
-//! attached image's bootloader runs under the panel: stormuefi prints a few
-//! lines and then the kernel takes the screen.
+//! **The hand-over.** As the attached image's bootloader starts (`handoff`)
+//! the frame is redrawn as the boot screen's first frame
+//! (`Frame::default()`, `BOOT` or `INSTALL`), and left up: stormuefi prints
+//! to `ConOut` (the serial consoles and the handoff row), and stormblock's
+//! screen draws its first frame before it takes the display, in the same
+//! geometry, so there is no flash and no black gap. `end` hands `ConOut`
+//! back with a cleared screen before anything is left to the firmware or an
+//! interactive program (the network console, a local disk's bootloader, a
+//! return to the boot manager or the EFI Shell).
 
 use alloc::collections::VecDeque;
 use alloc::format;
@@ -31,8 +47,14 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::ffi::c_void;
 
+use stormblock_screen_spec::font::{self, size};
+use stormblock_screen_spec::frame::{self, Frame};
+use stormblock_screen_spec::palette::{self, Rgb};
+use stormblock_screen_spec::{Align, Grid, PixelFormat, Surface};
 use uefi::boot::{self, SearchType};
-use uefi_raw::protocol::console::{GraphicsOutputProtocol, InputKey, SimpleTextOutputProtocol};
+use uefi_raw::protocol::console::{
+    GraphicsOutputBltOperation, GraphicsOutputBltPixel, GraphicsOutputProtocol, InputKey, SimpleTextOutputProtocol,
+};
 use uefi_raw::table::boot::BootServices;
 use uefi_raw::table::system::SystemTable;
 use uefi_raw::{Boolean, Char16, Status};
@@ -51,15 +73,18 @@ pub enum Step {
 }
 
 const LABELS: [&str; 8] = [
-    "firmware handoff",
-    "NIC up",
+    "FIRMWARE HANDOFF",
+    "NIC UP",
     "DHCP",
-    "forge reached",
-    "boot intent",
-    "claim",
-    "image loaded",
-    "handoff",
+    "FORGE REACHED",
+    "BOOT INTENT",
+    "CLAIM",
+    "IMAGE LOADED",
+    "HANDOFF",
 ];
+
+/// The big readout while a step is at work.
+const BIG: [&str; 8] = ["FIRMWARE", "NIC", "DHCP", "FORGE", "INTENT", "CLAIM", "IMAGE", "HANDOFF"];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum State {
@@ -77,16 +102,6 @@ struct Line {
     end: u64,
 }
 
-// EFI text attributes: foreground | background << 4.
-const NORMAL: usize = 0x07;
-const BRIGHT: usize = 0x0F;
-const DIM: usize = 0x08;
-const GREEN: usize = 0x0A;
-const YELLOW: usize = 0x0E;
-const RED: usize = 0x0C;
-const CYAN: usize = 0x0B;
-const BAR: usize = 0x70; // black on light grey
-
 const SCAN_F2: u16 = 0x0C;
 const SCAN_ESC: u16 = 0x17;
 
@@ -95,17 +110,164 @@ const DEVICE_PATH: uefi_raw::Guid = uefi_raw::guid!("09576e91-6d3f-11d2-8e39-00a
 /// Log lines kept for F2.
 const KEEP: usize = 400;
 
+// ------------------------------------------------------------ the layout
+//
+// Design pixels on the spec's 1920 × 1080 grid. The frame is the spec's
+// (`grid::frame`); these are the places inside it, as the boot screen uses
+// them (stormblock src/screen/draw.rs): x 260 onwards, right of the frames'
+// bars and clear of their inner corners.
+
+/// (x, y, w, h).
+type Area = (f32, f32, f32, f32);
+
+/// The header frame's content: name, lease, machine, build; the readout.
+const HEAD: Area = (256.0, 70.0, 1638.0, 274.0);
+/// The lower frame's content, between its bar on the left and at the bottom.
+const LOWER: Area = (256.0, 352.0, 1638.0, 664.0);
+/// One step's row.
+const ROW_TOP: f32 = 396.0;
+const ROW_H: f32 = 56.0;
+fn row_area(i: usize) -> Area {
+    (256.0, ROW_TOP + ROW_H * i as f32, 1638.0, ROW_H)
+}
+/// The image read's bar.
+const PROGRESS: Area = (256.0, 852.0, 1638.0, 50.0);
+/// The columns: step, state pill, detail, time (right-aligned).
+const COL_STEP: f32 = 260.0;
+const COL_STATE: f32 = 560.0;
+const PILL_W: f32 = 150.0;
+const COL_DETAIL: f32 = 740.0;
+const COL_RIGHT: f32 = 1880.0;
+/// The lower frame's side blocks while stormbootx has the screen; at the
+/// hand-over they are the boot screen's (`Frame::default()`).
+const BLOCKS: [&str; 3] = ["NETWORK", "STEPS", "IMAGE"];
+const KEYS: &str = "F2  LOG";
+const KEYS_BACK: &str = "F2  ESC  BACK";
+/// The log lines F2 shows, and their spacing.
+const LOG_LINES: usize = 20;
+
+/// One screen: its text console (for the cursor), its GOP, and the panel as
+/// last drawn at the GOP's mode.
+struct Screen {
+    out: *mut SimpleTextOutputProtocol,
+    gop: *mut GraphicsOutputProtocol,
+    w: u32,
+    h: u32,
+    buf: Vec<u32>,
+}
+
+impl Screen {
+    fn open(out: *mut SimpleTextOutputProtocol, handle: uefi_raw::Handle) -> Option<Screen> {
+        let gop = crate::net::handle_protocol(handle, &GraphicsOutputProtocol::GUID)? as *mut GraphicsOutputProtocol;
+        let mut s = Screen { out, gop, w: 0, h: 0, buf: Vec::new() };
+        s.fit().then_some(s)
+    }
+
+    /// The GOP's mode now, and the buffer sized to it; false with no mode a
+    /// panel fits on.
+    fn fit(&mut self) -> bool {
+        let (w, h) = unsafe {
+            let m = (*self.gop).mode;
+            if m.is_null() || (*m).info.is_null() {
+                return false;
+            }
+            ((*(*m).info).horizontal_resolution, (*(*m).info).vertical_resolution)
+        };
+        if w < 320 || h < 200 {
+            return false;
+        }
+        if (w, h) != (self.w, self.h) {
+            self.w = w;
+            self.h = h;
+            self.buf = alloc::vec![0u32; w as usize * h as usize];
+        }
+        true
+    }
+
+    fn grid(&self) -> Grid {
+        Grid::new(self.w, self.h)
+    }
+
+    fn surface(&mut self) -> Surface<'_> {
+        Surface::new(&mut self.buf, self.w, self.h, self.w, PixelFormat::Xrgb8888)
+    }
+
+    /// A design area in display pixels: (x0, y0, x1, y1).
+    fn rect(&self, a: Area) -> (i64, i64, i64, i64) {
+        let g = self.grid();
+        (g.x(a.0).max(0), g.y(a.1).max(0), g.x(a.0 + a.2).min(self.w as i64), g.y(a.1 + a.3).min(self.h as i64))
+    }
+
+    /// Show part of the buffer.
+    fn blit(&mut self, (x0, y0, x1, y1): (i64, i64, i64, i64)) {
+        if x1 <= x0 || y1 <= y0 {
+            return;
+        }
+        unsafe {
+            let _ = ((*self.gop).blt)(
+                self.gop,
+                self.buf.as_mut_ptr() as *mut GraphicsOutputBltPixel,
+                GraphicsOutputBltOperation::BLT_BUFFER_TO_VIDEO,
+                x0 as usize,
+                y0 as usize,
+                x0 as usize,
+                y0 as usize,
+                (x1 - x0) as usize,
+                (y1 - y0) as usize,
+                self.w as usize * 4,
+            );
+        }
+    }
+}
+
+/// A part of the panel pre-drawn for a moment nothing may allocate in
+/// (#219's `BEFORE_EXIT_BOOT_SERVICES`): Blt `px` (`w` × `h`, BGRx) to the
+/// GOP at (`x`, `y`).
+pub struct Mark {
+    pub gop: *mut GraphicsOutputProtocol,
+    pub px: Vec<u32>,
+    pub x: usize,
+    pub y: usize,
+    pub w: usize,
+    pub h: usize,
+}
+
+impl Mark {
+    /// Boot services only: no allocation.
+    ///
+    /// # Safety
+    /// `gop` is still the GOP it was made from.
+    pub unsafe fn show(&self) {
+        unsafe {
+            let _ = ((*self.gop).blt)(
+                self.gop,
+                self.px.as_ptr() as *mut GraphicsOutputBltPixel,
+                GraphicsOutputBltOperation::BLT_BUFFER_TO_VIDEO,
+                0,
+                0,
+                self.x,
+                self.y,
+                self.w,
+                self.h,
+                self.w * 4,
+            );
+        }
+    }
+}
+
 struct Ui {
     st: *mut SystemTable,
     splitter: *mut SimpleTextOutputProtocol,
     out_handle: uefi_raw::Handle,
     err_handle: uefi_raw::Handle,
     ours: *mut SimpleTextOutputProtocol,
-    screens: Vec<*mut SimpleTextOutputProtocol>,
+    /// The screens' text consoles, as found (`rescan` compares them).
+    outs: Vec<*mut SimpleTextOutputProtocol>,
+    screens: Vec<Screen>,
     serials: Vec<*mut SimpleTextOutputProtocol>,
     installed: bool,
-    cols: usize,
-    rows: usize,
+    /// `end` was called: nothing is drawn again.
+    ended: bool,
     steps: [Line; 8],
     title: String,
     machine: String,
@@ -114,6 +276,13 @@ struct Ui {
     problem: Option<(String, bool)>,
     next: Option<String>,
     progress: Option<(u64, u64)>,
+    /// The boot intent is `install`: `STORMCOS  INSTALL`.
+    install: bool,
+    /// The bootloader is running: the frame is the boot screen's first.
+    last: bool,
+    /// What the frame on the screens was drawn for: (failed, details, last,
+    /// install). A change redraws it all.
+    framed: Option<(bool, bool, bool, bool)>,
     log: VecDeque<String>,
     partial: String,
     details: bool,
@@ -139,30 +308,21 @@ fn bs(st: *mut SystemTable) -> &'static BootServices {
     unsafe { &*(*st).boot_services }
 }
 
-fn ucs2(s: &str) -> Vec<u16> {
-    let mut v: Vec<u16> = s
-        .chars()
-        .map(|c| match c as u32 {
-            0x20..=0x7e => c as u16,
-            _ => b'?' as u16,
-        })
-        .collect();
-    v.push(0);
-    v
-}
-
 /// Whether a text console is a screen: GraphicsConsole sits on the GOP
 /// handle. Everything else (terminals, a BMC's redirection) is serial.
 fn is_screen(h: uefi_raw::Handle) -> bool {
     crate::net::handle_protocol(h, &GraphicsOutputProtocol::GUID).is_some()
 }
 
-/// The text consoles behind the splitter: (screens, serials).
+type Consoles = (Vec<(*mut SimpleTextOutputProtocol, uefi_raw::Handle)>, Vec<*mut SimpleTextOutputProtocol>);
+
+/// The text consoles behind the splitter: (screens with their handles,
+/// serials).
 fn consoles(
     splitter: *mut SimpleTextOutputProtocol,
     out_handle: uefi_raw::Handle,
     err_handle: uefi_raw::Handle,
-) -> Option<(Vec<*mut SimpleTextOutputProtocol>, Vec<*mut SimpleTextOutputProtocol>)> {
+) -> Option<Consoles> {
     let handles = boot::locate_handle_buffer(SearchType::ByProtocol(&SimpleTextOutputProtocol::GUID)).ok()?;
     let mut screens = Vec::new();
     let mut serials = Vec::new();
@@ -180,9 +340,14 @@ fn consoles(
         if p == splitter {
             continue;
         }
-        if is_screen(raw) { screens.push(p) } else { serials.push(p) }
+        if is_screen(raw) { screens.push((p, raw)) } else { serials.push(p) }
     }
     Some((screens, serials))
+}
+
+/// The screens of `found` a panel can be drawn on.
+fn open_screens(found: &[(*mut SimpleTextOutputProtocol, uefi_raw::Handle)]) -> Vec<Screen> {
+    found.iter().filter_map(|&(out, h)| Screen::open(out, h)).collect()
 }
 
 /// Read the consoles again (#219). `begin` runs before any
@@ -194,25 +359,31 @@ fn consoles(
 /// take-over and at the handoff; says so when the set changed.
 pub fn rescan() {
     let Some(u) = ui() else { return };
-    let Some((screens, serials)) = consoles(u.splitter, u.out_handle, u.err_handle) else { return };
-    if screens == u.screens && serials == u.serials {
+    let Some((found, serials)) = consoles(u.splitter, u.out_handle, u.err_handle) else { return };
+    let outs: Vec<_> = found.iter().map(|s| s.0).collect();
+    if outs == u.outs && serials == u.serials {
         return;
     }
-    let was = (u.screens.len(), u.serials.len());
-    // `end` emptied the screens for good; that stays.
-    let ended = u.screens.is_empty();
+    let was = (u.outs.len(), u.serials.len());
     u.serials = serials;
     let mut gone = false;
-    if !ended {
-        u.screens = screens;
+    // `end` emptied the screens for good; that stays.
+    if !u.ended {
+        u.outs = outs;
+        u.screens = open_screens(&found);
         if u.screens.is_empty() {
             gone = true;
         } else if u.installed {
-            measure(u);
+            u.framed = None;
+            for sc in &u.screens {
+                unsafe {
+                    let _ = ((*sc.out).enable_cursor)(sc.out, Boolean::FALSE);
+                }
+            }
             draw(u);
         }
     }
-    let now = (u.screens.len(), u.serials.len());
+    let now = (u.outs.len(), u.serials.len());
     if gone {
         // The panel has nowhere to go: `ConOut` back to the splitter.
         suspend();
@@ -227,27 +398,47 @@ pub fn rescan() {
 }
 
 /// What the handoff's ExitBootServices breadcrumb writes to (#219), when the
-/// panel holds `ConOut`: the serial consoles, the screens, and the handoff
-/// step's row and the screen's width. `None` without the panel: write to
-/// `ConOut` itself.
-pub fn raw_targets() -> Option<(Vec<*mut SimpleTextOutputProtocol>, Vec<*mut SimpleTextOutputProtocol>, usize, usize)> {
+/// panel holds `ConOut`: the serial consoles, and the handoff step's row on
+/// each screen drawn now with `detail`, to be Blt'd then. `None` without the
+/// panel: write to `ConOut` itself.
+pub fn raw_targets(detail: &str) -> Option<(Vec<*mut SimpleTextOutputProtocol>, Vec<Mark>)> {
     let u = ui()?;
-    u.installed.then(|| (u.serials.clone(), u.screens.clone(), STEP_ROW + Step::Handoff as usize, u.cols))
-}
-
-/// The breadcrumb's line in the handoff step, as `draw_step` lays it out.
-pub fn handoff_row_text(detail: &str) -> String {
-    let cols = ui().map(|u| u.cols).unwrap_or(80);
-    let mut s = format!("  [ .. ]  {:<18}{detail}", LABELS[Step::Handoff as usize]);
-    s = s.chars().take(cols.saturating_sub(1)).collect();
-    while s.chars().count() < cols.saturating_sub(1) {
-        s.push(' ');
+    if !u.installed {
+        return None;
     }
-    s
+    let serials = u.serials.clone();
+    if u.details || u.ended {
+        return Some((serials, Vec::new()));
+    }
+    let i = Step::Handoff as usize;
+    let saved = (u.steps[i].state, core::mem::replace(&mut u.steps[i].detail, String::from(detail)));
+    u.steps[i].state = State::Active;
+    let mut marks = Vec::new();
+    let mut screens = core::mem::take(&mut u.screens);
+    for sc in screens.iter_mut() {
+        let g = sc.grid();
+        step_row(&mut sc.surface(), &g, u, i);
+        let (x0, y0, x1, y1) = sc.rect(row_area(i));
+        if x1 <= x0 || y1 <= y0 {
+            continue;
+        }
+        let mut px = Vec::with_capacity(((x1 - x0) * (y1 - y0)) as usize);
+        for y in y0..y1 {
+            let at = y as usize * sc.w as usize;
+            px.extend_from_slice(&sc.buf[at + x0 as usize..at + x1 as usize]);
+        }
+        marks.push(Mark { gop: sc.gop, px, x: x0 as usize, y: y0 as usize, w: (x1 - x0) as usize, h: (y1 - y0) as usize });
+    }
+    // The row as it is now, in the buffers (the screens never saw the mark).
+    u.steps[i].state = saved.0;
+    u.steps[i].detail = saved.1;
+    for sc in screens.iter_mut() {
+        let g = sc.grid();
+        step_row(&mut sc.surface(), &g, u, i);
+    }
+    u.screens = screens;
+    Some((serials, marks))
 }
-
-/// The panel's colour for an active step.
-pub const ACTIVE_ATTR: usize = YELLOW;
 
 /// Take over the screen, if there is one and the media does not say
 /// `ui = log`. Before this, and without a screen, output is as it always was.
@@ -261,7 +452,8 @@ pub fn begin() {
     if splitter.is_null() {
         return;
     }
-    let Some((screens, serials)) = consoles(splitter, out_handle, err_handle) else { return };
+    let Some((found, serials)) = consoles(splitter, out_handle, err_handle) else { return };
+    let screens = open_screens(&found);
     if screens.is_empty() {
         return;
     }
@@ -289,11 +481,11 @@ pub fn begin() {
         out_handle,
         err_handle,
         ours,
+        outs: found.iter().map(|s| s.0).collect(),
         screens,
         serials,
         installed: false,
-        cols: 80,
-        rows: 25,
+        ended: false,
         steps: [line(), line(), line(), line(), line(), line(), line(), line()],
         title,
         machine: String::new(),
@@ -302,6 +494,9 @@ pub fn begin() {
         problem: None,
         next: None,
         progress: None,
+        install: false,
+        last: false,
+        framed: None,
         log: VecDeque::new(),
         partial: String::new(),
         details: false,
@@ -339,14 +534,15 @@ fn install() {
     }
     crc(u.st);
     u.installed = true;
-    measure(u);
-    for &s in &u.screens {
+    u.screens.retain_mut(|s| s.fit());
+    for sc in &u.screens {
+        // Before the first frame: GraphicsConsole erases its cursor with a
+        // Blt of its own.
         unsafe {
-            let _ = ((*s).set_attribute)(s, NORMAL);
-            let _ = ((*s).clear_screen)(s);
-            let _ = ((*s).enable_cursor)(s, Boolean::FALSE);
+            let _ = ((*sc.out).enable_cursor)(sc.out, Boolean::FALSE);
         }
     }
+    u.framed = None;
     draw(u);
 }
 
@@ -375,8 +571,9 @@ pub fn suspend() {
     }
     crc(u.st);
     u.installed = false;
+    u.framed = None;
     unsafe {
-        let _ = ((*u.splitter).set_attribute)(u.splitter, NORMAL);
+        let _ = ((*u.splitter).set_attribute)(u.splitter, 0x07);
         let _ = ((*u.splitter).clear_screen)(u.splitter);
         let _ = ((*u.splitter).enable_cursor)(u.splitter, Boolean::TRUE);
     }
@@ -391,7 +588,9 @@ pub fn resume() {
 pub fn end() {
     suspend();
     if let Some(u) = ui() {
+        u.ended = true;
         u.screens.clear();
+        u.outs.clear();
     }
 }
 
@@ -416,46 +615,11 @@ fn now(u: &Ui) -> u64 {
     (crate::entropy::ticks() - u.t0) / u.ticks_per_ms
 }
 
-fn measure(u: &mut Ui) {
-    let Some(&s) = u.screens.first() else { return };
-    unsafe {
-        let mode = (*s).mode;
-        let m = if mode.is_null() { 0 } else { (*mode).mode.max(0) as usize };
-        let (mut c, mut r) = (0usize, 0usize);
-        if ((*s).query_mode)(s, m, &mut c, &mut r) == Status::SUCCESS && c >= 40 && r >= 16 {
-            u.cols = c;
-            u.rows = r;
-        }
-    }
-}
-
-/// `text` at `col,row` in `attr` on every screen, cut or padded to `width`.
-fn put(u: &Ui, col: usize, row: usize, attr: usize, text: &str, width: usize) {
-    if row >= u.rows || col >= u.cols {
-        return;
-    }
-    // The bottom-right cell scrolls the screen on some consoles.
-    let max = if row + 1 == u.rows { u.cols - col - 1 } else { u.cols - col };
-    let width = width.min(max);
-    let mut s: String = text.chars().take(width).collect();
-    while s.chars().count() < width {
-        s.push(' ');
-    }
-    let w = ucs2(&s);
-    for &d in &u.screens {
-        unsafe {
-            let _ = ((*d).set_attribute)(d, attr);
-            let _ = ((*d).set_cursor_position)(d, col, row);
-            let _ = ((*d).output_string)(d, w.as_ptr());
-        }
-    }
-}
-
 fn secs(ms: u64) -> String {
     if ms < 1000 {
-        format!("{ms} ms")
+        format!("{ms} MS")
     } else {
-        format!("{}.{} s", ms / 1000, (ms % 1000) / 100)
+        format!("{}.{} S", ms / 1000, (ms % 1000) / 100)
     }
 }
 
@@ -475,155 +639,272 @@ fn clock_text(u: &Ui) -> String {
     }
 }
 
-const STEP_ROW: usize = 3;
-const PROGRESS_ROW: usize = STEP_ROW + 9;
-const PROBLEM_ROW: usize = PROGRESS_ROW + 2;
+// --------------------------------------------------------------- drawing
+
+fn failed(u: &Ui) -> bool {
+    u.steps.iter().any(|l| l.state == State::Failed)
+}
+
+fn active(u: &Ui) -> Option<usize> {
+    (0..u.steps.len()).rev().find(|&i| u.steps[i].state == State::Active)
+}
+
+/// Draw on every screen with `f`, then show `areas` (all of it when empty).
+fn paint(u: &mut Ui, areas: &[Area], f: impl Fn(&mut Surface, &Grid, &Ui)) {
+    if !u.installed || u.ended || u.screens.is_empty() {
+        return;
+    }
+    let mut screens = core::mem::take(&mut u.screens);
+    for sc in screens.iter_mut() {
+        let g = sc.grid();
+        f(&mut sc.surface(), &g, u);
+        if areas.is_empty() {
+            let all = (0, 0, sc.w as i64, sc.h as i64);
+            sc.blit(all);
+        } else {
+            for &a in areas {
+                let r = sc.rect(a);
+                sc.blit(r);
+            }
+        }
+    }
+    u.screens = screens;
+}
+
+fn clear(s: &mut Surface, g: &Grid, a: Area) {
+    let (x0, y0) = (g.x(a.0), g.y(a.1));
+    s.fill_rect(x0, y0, g.x(a.0 + a.2) - x0, g.y(a.1 + a.3) - y0, palette::BG);
+}
+
+/// Display width between two design columns.
+fn span(g: &Grid, from: f32, to: f32) -> f32 {
+    g.xf(to) - g.xf(from)
+}
 
 fn draw(u: &mut Ui) {
     if u.screens.is_empty() || !u.installed {
         return;
     }
     u.drawn_at = now(u);
-    if u.details {
-        draw_details(u);
-        return;
-    }
-    draw_header(u);
-    put(u, 0, 1, BRIGHT, &format!(" {}", u.machine), u.cols);
-    put(u, 0, 2, NORMAL, "", u.cols);
-    for i in 0..LABELS.len() {
-        draw_step(u, i);
-    }
-    put(u, 0, STEP_ROW + LABELS.len(), NORMAL, "", u.cols);
-    draw_progress(u);
-    put(u, 0, PROGRESS_ROW + 1, NORMAL, "", u.cols);
-    let mut row = PROBLEM_ROW;
-    if let Some((p, failed)) = &u.problem {
-        let attr = if *failed { RED } else { YELLOW };
-        for chunk in wrap(p, u.cols - 4, 3) {
-            put(u, 0, row, attr, &format!("  ! {chunk}"), u.cols);
-            row += 1;
-        }
-    }
-    if let Some(n) = &u.next {
-        put(u, 0, row, BRIGHT, &format!("  > {n}"), u.cols);
-        row += 1;
-    }
-    while row + 1 < u.rows {
-        put(u, 0, row, NORMAL, "", u.cols);
-        row += 1;
-    }
-    draw_footer(u);
-}
-
-fn draw_header(u: &Ui) {
-    let right = clock_text(u);
-    let mut left = format!(" {}", u.title);
-    if let Some(n) = &u.name {
-        left.push_str(&format!("  -  {n}"));
-    }
-    let pad = u.cols.saturating_sub(left.len() + right.len() + 1);
-    put(u, 0, 0, BAR, &format!("{left}{}{right} ", " ".repeat(pad)), u.cols);
-}
-
-fn draw_footer(u: &Ui) {
-    let text = if u.details {
-        " F2 or Esc: back to the boot steps"
+    let key = (failed(u), u.details, u.last, u.install);
+    if u.framed != Some(key) {
+        u.framed = Some(key);
+        paint(u, &[], |s, g, u| {
+            s.clear(palette::BG);
+            draw_frame(s, g, u);
+            header(s, g, u);
+            lower(s, g, u);
+        });
     } else {
-        " F2: every log line  -  the serial console carries the full log"
-    };
-    put(u, 0, u.rows - 1, DIM, text, u.cols);
+        paint(u, &[HEAD, LOWER], |s, g, u| {
+            header(s, g, u);
+            lower(s, g, u);
+        });
+    }
 }
 
-fn draw_step(u: &Ui, i: usize) {
+/// The spec's frame: ours while stormbootx has the screen, the boot
+/// screen's first frame from the handoff on.
+fn draw_frame(s: &mut Surface, g: &Grid, u: &Ui) {
+    let kind = if u.install { "INSTALL" } else { "BOOT" };
+    let title = format!("STORMCOS  {kind}");
+    let release = format!("STORMBOOTX {}", env!("CARGO_PKG_VERSION"));
+    let mut f = Frame { title: &title, kind, release: &release, failed: failed(u), ..Default::default() };
+    if !u.last {
+        f.blocks = BLOCKS;
+        f.keys = if u.details { KEYS_BACK } else { KEYS };
+    }
+    frame::draw(s, g, &f);
+}
+
+/// The header: who and where on the left, the readout on the right.
+fn header(s: &mut Surface, g: &Grid, u: &Ui) {
+    clear(s, g, HEAD);
+    let x = g.xf(COL_STEP);
+    let left = span(g, COL_STEP, 1100.0);
+    let name = u.name.as_deref().map(str::to_uppercase).unwrap_or_else(|| String::from("—"));
+    s.text_fit(x, g.yf(150.0), g.p(size::NAME), palette::PEACH, Align::Left, &name, left);
+    let lease = &u.steps[Step::Dhcp as usize];
+    let addr = if lease.state == State::Done { lease.detail.to_uppercase() } else { String::from("NO ADDRESS YET") };
+    s.text_fit(x, g.yf(202.0), g.p(size::ADDRESS), palette::BLUE, Align::Left, &addr, left);
+    s.text_fit(x, g.yf(250.0), g.p(size::BODY), palette::GREY, Align::Left, &u.machine.to_uppercase(), left);
+    let build = format!("{}  ·  {}", u.title.to_uppercase(), clock_text(u));
+    s.text_fit(x, g.yf(296.0), g.p(size::PILL), palette::LAVENDER, Align::Left, &build, left);
+
+    // The readout: the step at work, else how the boot stands.
+    let right = g.xf(COL_RIGHT);
+    let room = span(g, 1120.0, COL_RIGHT);
+    let t = now(u);
+    let (big, colour, sub, said): (&str, Rgb, String, String) = match active(u) {
+        Some(i) => {
+            let l = &u.steps[i];
+            let sub = match (i == Step::Image as usize, u.progress) {
+                (true, Some((bytes, rate))) => format!("{} MIB  ·  {rate} MIB/S", bytes >> 20),
+                _ => secs(t.saturating_sub(l.start)),
+            };
+            (BIG[i], palette::RUNNING, sub, l.detail.clone())
+        }
+        None if failed(u) => ("STOPPED", palette::FAILED, format!("AFTER {}", secs(t)), u.next.clone().unwrap_or_default()),
+        None if u.problem.is_some() => ("LOCAL", palette::WANTING, format!("AFTER {}", secs(t)), u.next.clone().unwrap_or_default()),
+        None => {
+            let i = (0..u.steps.len()).rev().find(|&i| u.steps[i].state == State::Done).unwrap_or(0);
+            (BIG[i], palette::DONE, format!("IN {}", secs(t)), u.steps[i].detail.clone())
+        }
+    };
+    s.text_fit(right, g.yf(206.0), g.p(size::BIG), colour, Align::Right, big, room);
+    s.text_fit(right, g.yf(262.0), g.p(size::ETA), palette::BLUE, Align::Right, &sub, room);
+    s.text_fit(right, g.yf(304.0), g.p(size::SMALL), palette::GREY, Align::Right, &said.to_uppercase(), room);
+}
+
+fn lower(s: &mut Surface, g: &Grid, u: &Ui) {
+    if u.details {
+        details(s, g, u);
+    } else {
+        steps(s, g, u);
+    }
+}
+
+/// The steps, the read's bar, the problem and what next.
+fn steps(s: &mut Surface, g: &Grid, u: &Ui) {
+    clear(s, g, LOWER);
+    let y = g.yf(384.0);
+    let hp = g.p(size::HEADING);
+    s.text(g.xf(COL_STEP), y, hp, palette::GREY, Align::Left, "STEP");
+    s.text(g.xf(COL_STATE), y, hp, palette::GREY, Align::Left, "STATE");
+    s.text(g.xf(COL_DETAIL), y, hp, palette::GREY, Align::Left, "DETAIL");
+    s.text(g.xf(COL_RIGHT), y, hp, palette::GREY, Align::Right, "TIME");
+    for i in 0..LABELS.len() {
+        step_row(s, g, u, i);
+    }
+    progress_row(s, g, u);
+    problem_rows(s, g, u);
+}
+
+/// One step: its name, a state pill, what it did, its time.
+fn step_row(s: &mut Surface, g: &Grid, u: &Ui, i: usize) {
+    clear(s, g, row_area(i));
     let l = &u.steps[i];
-    let (mark, attr) = match l.state {
-        State::Pending => ("[    ]", DIM),
-        State::Active => ("[ .. ]", YELLOW),
-        State::Done => ("[ OK ]", GREEN),
-        State::Failed => ("[FAIL]", RED),
-        State::Skipped => ("[ -- ]", DIM),
+    let ry = ROW_TOP + ROW_H * i as f32;
+    let base = g.yf(ry + 40.0);
+    let (said, pill, ink, name, detail) = match l.state {
+        State::Pending => ("PENDING", palette::PENDING, palette::GREY, palette::GREY, palette::GREY),
+        State::Active => ("RUNNING", palette::RUNNING, palette::INK, palette::RUNNING, palette::RUNNING),
+        State::Done => ("DONE", palette::DONE, palette::INK, palette::PEACH, palette::BLUE),
+        State::Failed => ("FAILED", palette::FAILED, palette::INK, palette::FAILED, palette::FAILED),
+        State::Skipped => ("SKIPPED", palette::NEUTRAL, palette::INK, palette::GREY, palette::GREY),
     };
-    let text_attr = match l.state {
-        State::Pending | State::Skipped => DIM,
-        State::Active => YELLOW,
-        State::Failed => RED,
-        State::Done => NORMAL,
-    };
+    s.text_fit(g.xf(COL_STEP), base, g.p(size::ROW), name, Align::Left, LABELS[i], span(g, COL_STEP, COL_STATE - 16.0));
+    let (py, ph) = (g.y(ry + 12.0), g.lh(36.0));
+    s.pill(g.x(COL_STATE), py, g.lw(PILL_W), ph, pill);
+    let pp = g.p(size::PILL);
+    s.text(g.xf(COL_STATE + PILL_W / 2.0), py as f32 + (ph as f32 + pp * 0.72) / 2.0, pp, ink, Align::Center, said);
     let time = match l.state {
         State::Active => secs(now(u).saturating_sub(l.start)),
         State::Done | State::Failed if l.end >= l.start && l.start > 0 => secs(l.end - l.start),
         _ => String::new(),
     };
-    let row = STEP_ROW + i;
-    let detail_w = u.cols.saturating_sub(2 + 6 + 2 + 18 + 9);
-    put(u, 0, row, attr, &format!("  {mark}"), 8);
-    put(
-        u,
-        8,
-        row,
-        text_attr,
-        &format!("  {:<18}{:<w$}{:>8} ", LABELS[i], l.detail, time, w = detail_w),
-        u.cols - 8,
+    let tw = s.text(g.xf(COL_RIGHT), base, g.p(size::LABEL), palette::LAVENDER, Align::Right, &time);
+    let room = span(g, COL_DETAIL, COL_RIGHT) - tw - g.p(24.0);
+    s.text_fit(g.xf(COL_DETAIL), base, g.p(size::LABEL), detail, Align::Left, &l.detail.to_uppercase(), room);
+}
+
+/// The image read: how much has moved, and how fast. How much the
+/// bootloader will read is not known here, so the bar shows that reads are
+/// moving: it fills 16 MiB a step and starts again.
+fn progress_row(s: &mut Surface, g: &Grid, u: &Ui) {
+    clear(s, g, PROGRESS);
+    let Some((bytes, rate)) = u.progress else { return };
+    let frac = (((bytes >> 24) % 32) + 1) as f32 / 32.0;
+    s.bar(g.x(COL_STEP), g.y(864.0), g.lw(1000.0), g.lh(26.0), frac, palette::TRACK, palette::BLUE);
+    s.text(
+        g.xf(COL_RIGHT),
+        g.yf(890.0),
+        g.p(size::LABEL),
+        palette::BLUE,
+        Align::Right,
+        &format!("{} MIB READ  ·  {rate} MIB/S", bytes >> 20),
     );
 }
 
-fn draw_progress(u: &Ui) {
-    let Some((bytes, rate)) = u.progress else {
-        put(u, 0, PROGRESS_ROW, NORMAL, "", u.cols);
-        return;
-    };
-    // How much the bootloader will read is not known here, so the bar shows
-    // that reads are moving: a block that travels 16 MiB a cell.
-    let width = 30usize;
-    let pos = ((bytes >> 24) as usize) % width;
-    let bar: String = (0..width).map(|i| if i <= pos { '#' } else { '.' }).collect();
-    put(
-        u,
-        0,
-        PROGRESS_ROW,
-        CYAN,
-        &format!("            [{bar}]  {} MiB read  {rate} MiB/s", bytes >> 20),
-        u.cols,
-    );
-}
-
-fn draw_details(u: &Ui) {
-    put(u, 0, 0, BAR, &format!(" {}  -  every log line (the serial console has them all)", u.title), u.cols);
-    let n = u.rows - 2;
-    let skip = u.log.len().saturating_sub(n);
-    let mut row = 1;
-    for l in u.log.iter().skip(skip) {
-        put(u, 0, row, NORMAL, l, u.cols);
-        row += 1;
-    }
-    while row < u.rows - 1 {
-        put(u, 0, row, NORMAL, "", u.cols);
-        row += 1;
-    }
-    draw_footer(u);
-}
-
-/// `s` in lines of at most `w`, at most `n` of them.
-fn wrap(s: &str, w: usize, n: usize) -> Vec<String> {
+/// `s` in lines that fit `max` at `px`, at most `n` of them.
+fn wrap(s: &str, px: f32, max: f32, n: usize) -> Vec<String> {
     let mut out = Vec::new();
     let mut cur = String::new();
     for word in s.split_whitespace() {
-        if !cur.is_empty() && cur.len() + 1 + word.len() > w {
-            out.push(core::mem::take(&mut cur));
+        let next = if cur.is_empty() { String::from(word) } else { format!("{cur} {word}") };
+        if !cur.is_empty() && font::text_width(&next, px) > max {
+            out.push(core::mem::replace(&mut cur, String::from(word)));
             if out.len() == n {
                 return out;
             }
+        } else {
+            cur = next;
         }
-        if !cur.is_empty() {
-            cur.push(' ');
-        }
-        cur.push_str(word);
     }
     if !cur.is_empty() && out.len() < n {
         out.push(cur);
     }
     out
+}
+
+/// Why the boot is not going on as planned (red when a step failed), and
+/// what happens next.
+fn problem_rows(s: &mut Surface, g: &Grid, u: &Ui) {
+    let px = g.p(size::BODY);
+    let room = span(g, COL_STEP, COL_RIGHT);
+    let mut base = 934.0;
+    if let Some((p, failed)) = &u.problem {
+        let colour = if *failed { palette::FAILED } else { palette::WANTING };
+        for line in wrap(&p.to_uppercase(), px, room, 2) {
+            s.text_fit(g.xf(COL_STEP), g.yf(base), px, colour, Align::Left, &line, room);
+            base += 36.0;
+        }
+    }
+    if let Some(n) = &u.next {
+        s.text_fit(g.xf(COL_STEP), g.yf(1006.0f32.min(base)), px, palette::RUNNING, Align::Left, &n.to_uppercase(), room);
+    }
+}
+
+/// F2: the last log lines, as printed.
+fn details(s: &mut Surface, g: &Grid, u: &Ui) {
+    clear(s, g, LOWER);
+    s.text(g.xf(COL_STEP), g.yf(384.0), g.p(size::HEADING), palette::GREY, Align::Left, "LOG  ·  THE SERIAL CONSOLE CARRIES EVERY LINE");
+    let px = g.p(size::HEADING);
+    let room = span(g, COL_STEP, COL_RIGHT);
+    let skip = u.log.len().saturating_sub(LOG_LINES);
+    for (k, l) in u.log.iter().skip(skip).enumerate() {
+        s.text_fit(g.xf(COL_STEP), g.yf(420.0 + 30.0 * k as f32), px, palette::BLUE, Align::Left, l, room);
+    }
+}
+
+/// Redraw some parts of the panel (the frame stays): `header` and the rows
+/// `rows` (step indexes), unless the frame must change, which redraws it all.
+fn redraw(u: &mut Ui, head: bool, rows: &[usize], progress: bool) {
+    if u.framed != Some((failed(u), u.details, u.last, u.install)) {
+        draw(u);
+        return;
+    }
+    if u.details {
+        return;
+    }
+    let mut areas: Vec<Area> = rows.iter().map(|&i| row_area(i)).collect();
+    if head {
+        areas.push(HEAD);
+    }
+    if progress {
+        areas.push(PROGRESS);
+    }
+    paint(u, &areas, |s, g, u| {
+        if head {
+            header(s, g, u);
+        }
+        for &i in rows {
+            step_row(s, g, u, i);
+        }
+        if progress {
+            progress_row(s, g, u);
+        }
+    });
 }
 
 // ------------------------------------------------------------------ steps
@@ -667,7 +948,7 @@ pub fn done_once(step: Step, detail: &str) {
 pub fn detail(step: Step, detail: &str) {
     let Some(u) = ui() else { return };
     u.steps[step as usize].detail = String::from(detail);
-    draw_step(u, step as usize);
+    redraw(u, true, &[step as usize], false);
 }
 
 /// `step` did not happen, and needn't have.
@@ -699,7 +980,7 @@ pub fn fail(step: Step, reason: &str) {
 pub fn problem(reason: &str) {
     let Some(u) = ui() else { return };
     let t = now(u);
-    let active = (0..u.steps.len()).rev().find(|&i| u.steps[i].state == State::Active);
+    let active = active(u);
     if let Some(i) = active {
         let l = &mut u.steps[i];
         l.state = State::Failed;
@@ -720,17 +1001,25 @@ pub fn next(text: &str) {
     draw(u);
 }
 
-/// The machine, for the header's second line.
+/// The machine, for the header.
 pub fn machine(text: &str) {
     let Some(u) = ui() else { return };
     u.machine = String::from(text);
-    draw(u);
+    redraw(u, true, &[], false);
 }
 
-/// The name the machine booted as, beside the version.
+/// The name the machine booted as, large in the header.
 pub fn name(text: &str) {
     let Some(u) = ui() else { return };
     u.name = Some(String::from(text));
+    redraw(u, true, &[], false);
+}
+
+/// The boot intent is `install`: the frame says `INSTALL`, as the boot
+/// screen's does for an install.
+pub fn installing() {
+    let Some(u) = ui() else { return };
+    u.install = true;
     draw(u);
 }
 
@@ -738,7 +1027,7 @@ pub fn name(text: &str) {
 pub fn synced() {
     let Some(u) = ui() else { return };
     u.synced = true;
-    draw(u);
+    redraw(u, true, &[], false);
 }
 
 /// Wait `secs` with the panel's keys read (F2), or a plain stall without it.
@@ -759,16 +1048,17 @@ pub fn progress(bytes: u64, mib_s: u64) {
         return;
     }
     u.drawn_at = now(u);
-    draw_progress(u);
-    draw_step(u, Step::Image as usize);
-    draw_header(u);
+    redraw(u, true, &[Step::Image as usize], true);
 }
 
-/// A bootloader runs under the panel from here: its keys are its own, and
-/// its lines show in the handoff step.
+/// A bootloader runs under the panel from here: its keys are its own, its
+/// lines show in the handoff step, and the frame is the boot screen's first
+/// (#220), left up for the screen to draw over.
 pub fn handoff(detail: &str) {
     if let Some(u) = ui() {
         u.keys_ours = false;
+        u.details = false;
+        u.last = true;
     }
     step(Step::Handoff, detail);
 }
@@ -777,6 +1067,7 @@ pub fn handoff(detail: &str) {
 pub fn handed_back(reason: &str) {
     if let Some(u) = ui() {
         u.keys_ours = true;
+        u.last = false;
     }
     fail(Step::Handoff, reason);
 }
@@ -877,22 +1168,18 @@ unsafe extern "efiapi" fn out_string(_this: *mut SimpleTextOutputProtocol, s: *c
     unsafe { (bs(u.st).restore_tpl)(old) };
     if lines && old <= uefi_raw::table::boot::Tpl::CALLBACK && u.installed {
         if u.details {
-            draw_details(u);
+            paint(u, &[LOWER], details);
         } else if !u.keys_ours && u.steps[Step::Handoff as usize].state == State::Active {
             // The bootloader's lines, one at a time, in its step.
             if let Some(last) = u.log.iter().rev().find(|l| !l.trim().is_empty()) {
                 u.steps[Step::Handoff as usize].detail = String::from(last.trim());
             }
-            draw_step(u, Step::Handoff as usize);
+            redraw(u, false, &[Step::Handoff as usize], false);
         } else if now(u).saturating_sub(u.drawn_at) >= 500 {
             // The active step's time moves on.
             u.drawn_at = now(u);
-            for i in 0..LABELS.len() {
-                if u.steps[i].state == State::Active {
-                    draw_step(u, i);
-                }
-            }
-            draw_header(u);
+            let rows: Vec<usize> = (0..LABELS.len()).filter(|&i| u.steps[i].state == State::Active).collect();
+            redraw(u, true, &rows, false);
         }
         poll_keys(u);
     }
@@ -930,13 +1217,15 @@ unsafe extern "efiapi" fn hook_set_mode(_this: *mut SimpleTextOutputProtocol, mo
     let Some(u) = ui() else { return Status::UNSUPPORTED };
     let st = unsafe { ((*u.splitter).set_mode)(u.splitter, mode) };
     if st == Status::SUCCESS && !u.screens.is_empty() {
-        measure(u);
-        for &s in &u.screens {
+        // GraphicsConsole may have changed the GOP's mode and cleared it:
+        // the panel again, at the mode it has now.
+        u.screens.retain_mut(|s| s.fit());
+        for sc in &u.screens {
             unsafe {
-                let _ = ((*s).clear_screen)(s);
-                let _ = ((*s).enable_cursor)(s, Boolean::FALSE);
+                let _ = ((*sc.out).enable_cursor)(sc.out, Boolean::FALSE);
             }
         }
+        u.framed = None;
         draw(u);
     }
     st

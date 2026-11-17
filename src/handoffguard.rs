@@ -9,9 +9,10 @@
 //!
 //! - **`BEFORE_EXIT_BOOT_SERVICES`** (an event group; boot services still
 //!   work): one line, `handoff : ExitBootServices called …`, to the serial
-//!   consoles and in the panel's handoff step. Once only, and with nothing
-//!   allocated: a handler here that changes the memory map makes the call
-//!   fail on its map key, and a loader that retries would see it again.
+//!   consoles, and the panel's handoff step Blt'd from a row `arm` drew
+//!   (#220: the panel is pixels). Once only, and with nothing allocated: a
+//!   handler here that changes the memory map makes the call fail on its
+//!   map key, and a loader that retries would see it again.
 //! - **`EXIT_BOOT_SERVICES`** at `TPL_CALLBACK`, which EDK2 runs after the
 //!   `TPL_NOTIFY` handlers the drivers use: no boot services are left, so it
 //!   paints a green line along the bottom of the screen's framebuffer.
@@ -53,12 +54,11 @@ const ROW: &str = "ExitBootServices: drivers stopping their devices; kernel next
 
 struct Guard {
     serials: Vec<*mut SimpleTextOutputProtocol>,
-    screens: Vec<*mut SimpleTextOutputProtocol>,
+    /// The panel's handoff row on each screen, drawn saying `ROW`.
+    marks: Vec<crate::ui::Mark>,
     /// `ConOut` itself when the panel does not hold it.
     conout: *mut SimpleTextOutputProtocol,
-    row: usize,
     line: Vec<u16>,
-    row_text: Vec<u16>,
     /// The framebuffer: base, pixels per scan line, width, height.
     fb: Option<(u64, usize, usize, usize)>,
     before: Event,
@@ -125,17 +125,12 @@ pub fn arm() {
     // The consoles as they are now, not as they were at `ui::begin`.
     crate::ui::rescan();
     let conout = uefi::table::system_table_raw().map(|st| unsafe { st.as_ref().stdout }).unwrap_or(ptr::null_mut());
-    let (serials, screens, row) = match crate::ui::raw_targets() {
-        Some((serials, screens, row, _)) => (serials, screens, row),
-        None => (Vec::new(), Vec::new(), 0),
-    };
+    let (serials, marks) = crate::ui::raw_targets(ROW).unwrap_or_default();
     let mut g = Guard {
         serials,
-        screens,
+        marks,
         conout,
-        row,
         line: ucs2(&alloc::format!("{SAID}\r\n")),
-        row_text: ucs2(&crate::ui::handoff_row_text(ROW)),
         fb: framebuffer(),
         before: ptr::null_mut(),
         at: ptr::null_mut(),
@@ -201,7 +196,7 @@ unsafe extern "efiapi" fn before_ebs(_: Event, _: *mut c_void) {
     }
     let Some(g) = guard() else { return };
     unsafe {
-        if g.serials.is_empty() && g.screens.is_empty() {
+        if g.serials.is_empty() && g.marks.is_empty() {
             if !g.conout.is_null() {
                 let _ = ((*g.conout).output_string)(g.conout, g.line.as_ptr());
             }
@@ -210,10 +205,8 @@ unsafe extern "efiapi" fn before_ebs(_: Event, _: *mut c_void) {
         for &d in &g.serials {
             let _ = ((*d).output_string)(d, g.line.as_ptr());
         }
-        for &d in &g.screens {
-            let _ = ((*d).set_attribute)(d, crate::ui::ACTIVE_ATTR);
-            let _ = ((*d).set_cursor_position)(d, 0, g.row);
-            let _ = ((*d).output_string)(d, g.row_text.as_ptr());
+        for m in &g.marks {
+            m.show();
         }
     }
 }

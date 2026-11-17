@@ -599,6 +599,9 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
                     }
                 };
             ui::done(ui::Step::Intent, &format!("{}  (under {intent_key})", chosen.name()));
+            if chosen == intent::Intent::Install {
+                ui::installing();
+            }
             if intent::decide(chosen, local_bootable) == intent::Action::Local {
                 ui::skip(ui::Step::Claim, "nothing claimed: the intent is local");
                 ui::skip(ui::Step::Image, "");

@@ -768,6 +768,14 @@ boot() {
         python3 "$ROOT/tests/screen.py" dump "$W/$name.mon" "$W/$name.ppm" \
             && say "[$name] png $(python3 "$ROOT/tests/screen.py" png "$W/$name.ppm")"
     fi
+    # #220: the payload runs under the panel's last frame, the boot
+    # screen's first (stormblock-screen-spec), left up for it to draw over.
+    local handover=
+    if [[ $name == shipped ]] && kill -0 "$qemu" 2>/dev/null; then
+        python3 "$ROOT/tests/screen.py" dump "$W/$name.mon" "$W/$name.ppm" \
+            && handover=$(python3 "$ROOT/tests/screen.py" frame "$W/$name.ppm" || true)
+        say "[$name] $handover"
+    fi
     local band=
     if [[ -n $BOOT_BAND ]] && kill -0 "$qemu" 2>/dev/null; then
         python3 "$ROOT/tests/screen.py" dump "$W/$name.mon" "$W/$name.ppm" \
@@ -788,6 +796,7 @@ print("band        : %s (%d of %d pixels in the bottom 8 rows of %dx%d)" % ("gre
     # The firmware's debug port is read too: an exception dump may go there.
     cat "$log" "$W/$name.debug" 2>/dev/null | tr -d '\r' | sed 's/\x1b\[[0-9;]*[A-Za-z]//g' > "$txt"
     [[ -n $band ]] && printf '%s\n' "$band" >> "$txt"
+    [[ -n $handover ]] && printf '%s\n' "$handover" >> "$txt"
     [[ $how == "qemu exited by itself" ]] && printf 'net-ovmf    : qemu exited by itself\n' >> "$txt"
     say "[$name] console:"
     grep -v '^\s*$' "$txt" | sed -n '1,90s/^/  | /p'
@@ -858,6 +867,7 @@ common=(
 host_cpu=max
 [[ $accel == kvm ]] && host_cpu=host
 boot shipped "$host_cpu" "" 404 good "${common[@]}" "rng         : " \
+    "handover    : the spec's frame stays up (" \
     "engine      : no boot port at 10.0.2.2:9089 (" \
     "engine      : reached 10.0.2.2:$PORT (api_port)" \
     "handed down : StormBootEngine = 10.0.2.2:$PORT  (attributes 0x6)" \

@@ -5,10 +5,11 @@
 #   tests/screen-ovmf.sh ISO
 #
 # Checked on the screen (QEMU monitor screendumps, tests/screen.py):
-#   - the panel is drawn: a light-grey header bar across the top text row;
+#   - the panel is drawn in stormblock-screen-spec's frame (#220): the
+#     header bar amber or red, the lower frame's blocks blue, amber, peach;
 #   - the failed step is red;
-#   - F2 swaps in the details screen (the dump changes), Esc brings the
-#     panel back (the dump below the header, where the clock is, is the same).
+#   - F2 swaps in the log (the dump changes), Esc brings the panel back
+#     (the dump below the header frame, where the clock is, is the same).
 # Checked on the serial console: the log is all there (`no network boot:`,
 # `RESULT: nothing to fall through to`) and no panel text is mixed into it.
 #
