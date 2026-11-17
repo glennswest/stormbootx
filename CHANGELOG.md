@@ -3,21 +3,21 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
-### 2026-11-17
-- **feat:** #220: the boot panel takes the boot screen's look (stormblock#618). It is drawn on the screen's pixels with stormblock-screen-spec (stormblock#637, pinned at b74b783): its palette, Antonio Bold, its grid, its frame and shapes. The header gives the name, lease, machine, build and clock, and the step at work in large capitals. The lower frame lists the steps with state pills, the read's bar, the reason and what next; F2's log sits in the same frame. Every screen gets a RAM back buffer, Blt'd to its GOP. Serial output is unchanged, and `ui = log` stays.
-- **feat:** #220: at the handoff the frame is redrawn as the boot screen's first frame (`STORMCOS  BOOT`, or `INSTALL` for an install intent) and left up under the bootloader, so stormblock's screen draws over it with no flash. #219's ExitBootServices row is drawn at `arm` and Blt'd in the handler, with nothing allocated.
-- **test:** `screen.py panel`/`frame` check the spec's frame by its colours at their grid places. net-ovmf's `shipped` boot requires `handover : the spec's frame stays up` while the payload runs.
+## [v0.44.0] — 2026-11-17
 
-### 2026-11-16
-- **docs:** #220 (the panel in the boot screen's look) planned in the work plan, behind stormblock#637: the shared `no_std` screen spec (palette, font, geometry, shapes) the issue requires both to build from.
+### Added
+- The boot panel in the boot screen's look (#220, stormblock#618). It is drawn on the screen's pixels with stormblock-screen-spec (stormblock#637, pinned at b74b783): its palette, Antonio Bold, its 1920×1080 grid, its frame and its shapes. The header frame gives the name, lease, machine, build and clock, and the step at work in large capitals. The lower frame lists the steps with state pills, the read's bar, the reason and what happens next. F2's log sits in the same frame. Serial output is unchanged, and `ui = log` stays.
+- The hand-over has no flash (#220). At the handoff the frame becomes the boot screen's first frame (`STORMCOS  BOOT`, or `INSTALL`) and stays up under the bootloader. #219's ExitBootServices row is drawn at `arm` and Blt'd in the handler, with nothing allocated.
 
-### 2026-11-15
-- **BREAKING:** #201: the `nic-drivers` golden is retired. `deploy/build-golden.sh nic-drivers` refuses, naming #201. Every medium carries its own drivers, built from the pins in `scripts/build-nic-drivers.sh`, which stays. No medium had taken the golden as an input since #52, and the owner left it out of the release (stormcos#881). The registry entry's removal is the master's, and stormcentral, stormipmi and stormd are told about their leftovers.
-- **docs:** README golden table and *NIC drivers*, the presentation, CLAUDE.md and `build-nic-drivers.sh` no longer list a nic-drivers golden.
+### Breaking
+- #201: the `nic-drivers` golden is retired. `deploy/build-golden.sh nic-drivers` refuses, naming #201. Every medium carries its own drivers, built from the pins in `scripts/build-nic-drivers.sh`. No medium had taken the golden as an input since #52, and the owner left it out of the release (stormcos#881).
 
-### 2026-11-14
-- **feat:** #73: `mlx5` is in `build-nic-drivers.sh`'s default `STORMNIC_DRIVERS`, so the nic-drivers golden carries `stormnic-mlx5.efi` (d11b572). The driver passed on metal on C2NR0Q2 and forge1 (stormnic-mlx5#1). The rustnic media already carried it (#202).
-- **docs:** #202 closed, verified on metal. stormnic-mlx5 sets RS at bind on all four ConnectX-4 Lx ports (C2NR0Q2 02:00.x, forge1 84:00.x). forge1's :80 came up once its cable was on a working switch port, and nic 6 leased .203.
+### Changed
+- #73: `mlx5` joined `build-nic-drivers.sh`'s default `STORMNIC_DRIVERS` (d11b572), so every medium built with the default carries `stormnic-mlx5.efi`. It passed on metal on C2NR0Q2 and forge1 (stormnic-mlx5#1).
+
+### Documentation
+- README *The boot screen* and its screenshots, the CLAUDE.md module map. `screen.py panel`/`frame` check the spec's frame by colour at its grid places. net-ovmf's `shipped` boot requires `handover : the spec's frame stays up`.
+- #220 planned behind stormblock#637 (2026-11-16). #202 closed, verified on metal: stormnic-mlx5 sets RS at bind on all four ConnectX-4 Lx ports. #201: README, the presentation, CLAUDE.md and `build-nic-drivers.sh` no longer list a nic-drivers golden.
 
 ## [v0.43.0] — 2026-11-14
 
