@@ -835,6 +835,11 @@ fn wrap(s: &str, px: f32, max: f32, n: usize) -> Vec<String> {
         if !cur.is_empty() && font::text_width(&next, px) > max {
             out.push(core::mem::replace(&mut cur, String::from(word)));
             if out.len() == n {
+                // More follows: the last line says so (`text_fit` cuts it
+                // to fit, ellipsis and all).
+                if let Some(last) = out.last_mut() {
+                    last.push_str(" …");
+                }
                 return out;
             }
         } else {
