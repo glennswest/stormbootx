@@ -3,6 +3,11 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-17
+- **feat:** #220: the boot panel takes the boot screen's look (stormblock#618). It is drawn on the screen's pixels with stormblock-screen-spec (stormblock#637, pinned at b74b783): its palette, Antonio Bold, its grid, its frame and shapes. The header gives the name, lease, machine, build and clock, and the step at work in large capitals. The lower frame lists the steps with state pills, the read's bar, the reason and what next; F2's log sits in the same frame. Every screen gets a RAM back buffer, Blt'd to its GOP. Serial output is unchanged, and `ui = log` stays.
+- **feat:** #220: at the handoff the frame is redrawn as the boot screen's first frame (`STORMCOS  BOOT`, or `INSTALL` for an install intent) and left up under the bootloader, so stormblock's screen draws over it with no flash. #219's ExitBootServices row is drawn at `arm` and Blt'd in the handler, with nothing allocated.
+- **test:** `screen.py panel`/`frame` check the spec's frame by its colours at their grid places. net-ovmf's `shipped` boot requires `handover : the spec's frame stays up` while the payload runs.
+
 ### 2026-11-16
 - **docs:** #220 (the panel in the boot screen's look) planned in the work plan, behind stormblock#637: the shared `no_std` screen spec (palette, font, geometry, shapes) the issue requires both to build from.
 

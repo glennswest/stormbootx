@@ -68,51 +68,75 @@ given back on the fall-through.
 ## The boot screen
 
 On a machine with a screen (GOP: a monitor, a BMC's KVM, pve's console),
-stormbootx clears it when it starts and draws one panel, redrawn in place
-(#144):
+stormbootx draws one panel, redrawn in place (#144), in the look of the boot
+screen it hands the display to (#220, stormblock#618): a starship bridge
+status display in spirit, our own design. The look is not defined here:
+the palette, the typeface (Antonio Bold), the 1920 x 1080 grid, the frame
+and the shapes come from **stormblock-screen-spec** (stormblock#637,
+`crates/screen-spec` in stormblock, pinned by commit in `Cargo.toml`), the
+crate stormblock's screen draws with, so the two never drift.
 
 ```
- stormbootx 0.28.0 (abc1234)  -  server1             2026-10-14 18:41:53 UTC (NTP)
- Supermicro SYS-5037MR-H8TRF   serial ZM142S026113
-
-  [ OK ]  firmware handoff  American Megatrends firmware
-  [ OK ]  NIC up            stormnic-ixgbe.efi ac:1f:6b:8a:a7:9c          11.2 s
-  [ OK ]  DHCP              nic 0 192.168.16.100/20  MTU 1500               0.8 s
-  [ OK ]  forge reached     stormblock 20.0.0 at 192.168.31.202:9090        0.1 s
-  [ OK ]  boot intent       install  (under server1)                        0.0 s
-  [ OK ]  claim             a clone of server1's image, nsid 1              0.4 s
-  [ .. ]  image loaded      48 GiB at 4096-byte blocks, nsid 1              3.1 s
-  [ .. ]  handoff           <the bootloader's latest line>                  2.0 s
-
-            [#########.....................]  312 MiB read  110 MiB/s
-
- F2: every log line  -  the serial console carries the full log
+ ╭──────────────────────────────────────────────────────── STORMCOS  BOOT ═╗
+ │ BOOT    SERVER1                                                 IMAGE    │
+ ├───────  NIC 0 192.168.16.100/20  MTU 1500                 312 MIB · 110  │
+ │STORMBOOTX SUPERMICRO SYS-5037MR-H8TRF   SERIAL ZM142S026113  48 GIB AT … │
+ ╰──────── STORMBOOTX 0.44.0 (ABC1234) · 2026-11-17 18:41:53 UTC (NTP)      │
+ ╭──────── STEP             STATE      DETAIL                         TIME
+ │NETWORK  FIRMWARE HANDOFF (DONE)     AMERICAN MEGATRENDS FIRMWARE
+ │         NIC UP           (DONE)     STORMNIC-IXGBE.EFI AC:1F:6B:…  11.2 S
+ │         DHCP             (DONE)     NIC 0 192.168.16.100/20  MTU…   0.8 S
+ ├──────── FORGE REACHED    (DONE)     STORMBLOCK 20.0.0 AT 192.16…    0.1 S
+ │STEPS    BOOT INTENT      (DONE)     INSTALL  (UNDER SERVER1)        0 MS
+ │         CLAIM            (DONE)     A CLONE OF SERVER1'S IMAGE, …  400 MS
+ ├──────── IMAGE LOADED     (RUNNING)  48 GIB AT 4096-BYTE BLOCKS, …   3.1 S
+ │IMAGE    HANDOFF          (PENDING)
+ │         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━──────     312 MIB READ · 110 MIB/S
+ ╰══════════════════════════════════════════════════════════ F2  LOG ═══╝
 ```
+
+The header frame (amber) carries the machine's name large in peach, its
+lease in pale blue, the machine and serial, this build and the clock, and
+on the right the readout: the step at work in large amber capitals with its
+time (or the image read's MiB and rate), `STOPPED` in red after a failure,
+`LOCAL` when the boot goes to the local disk on purpose. The lower frame
+(lavender) lists the steps, each with a state pill: `DONE` pale blue,
+`RUNNING` amber, `FAILED` red, `SKIPPED` warm grey (a `local` intent claims
+nothing), `PENDING` dark. Both frames turn red when a step failed; the
+reason is under the steps, red, with what happens next (the console offer's
+countdown, the local disk). The bar moves while the attached image's
+bootloader reads; how much it will read is not known here. The layout is
+the spec's grid, stretched to the GOP's mode across and down apart, type
+at the smaller scale, so a 4:3 BMC console is filled.
 
 Under OVMF, from `tests/screen-ovmf.sh` and net-ovmf's `shipped` boot:
 [a network boot](docs/screens/boot-panel-ovmf.png),
 [a fall-through](docs/screens/boot-panel-fallthrough-ovmf.png) and
-[F2's details](docs/screens/boot-panel-details-ovmf.png).
-
-A step is `[    ]` (not yet), `[ .. ]` (under way, yellow), `[ OK ]`
-(green), `[FAIL]` (red) or `[ -- ]` (skipped: a `local` intent claims
-nothing). On a fall-through the reason is under the steps, red when a step
-failed, with what happens next (the console offer's countdown, the local
-disk). The bar moves while the attached image's bootloader reads; how much
-it will read is not known here.
+[F2's log](docs/screens/boot-panel-details-ovmf.png).
 
 Every line the boot prints, and every line the media's NIC drivers and the
 attached image's bootloader print, still goes to the serial console exactly
-as before, and to a second screen behind **F2** (Esc or F2 again goes back).
-Nothing is mixed into the panel. How: stormbootx puts its own
-`EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL` in the system table's `ConOut`, writes
+as before, and to the log behind **F2**, in the lower frame (Esc or F2
+again goes back). Nothing is mixed into the panel. How: stormbootx puts its
+own `EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL` in the system table's `ConOut`, writes
 every line to the consoles that are not a screen (a terminal on a UART, a
 BMC's serial redirection), and draws the panel on the ones that are (their
-handle carries GOP). It hands `ConOut` back, with a cleared screen, before
-the network console, a local disk's bootloader, and any return to the
-firmware or the EFI Shell. The layout fits 80x25 and uses the width of a
-larger text mode. `ui = log` in `stormboot.conf` keeps the old scrolling
-console; a machine with no screen console gets it anyway.
+handle carries GOP): into a back buffer in RAM at the GOP's mode, Blt'd to
+the GOP a changed part at a time, so a BLT-only mode works too and the
+framebuffer is never read. `ui = log` in `stormboot.conf` keeps the old
+scrolling console; a machine with no screen console gets it anyway.
+
+**The hand-over has no flash** (#220). As the attached image's bootloader
+starts, the frame is redrawn as the boot screen's first frame
+(`frame::draw` with the spec's `Frame::default()`, `STORMCOS  BOOT`, or
+`INSTALL` for an install intent) and left up: stormuefi and Linux's EFI stub
+run under it (their lines on the serial console and in the handoff step),
+and stormblock's screen draws its own first frame in the same geometry
+before it takes the display. net-ovmf's `shipped` boot checks that the
+frame is still on the screen while the payload runs (`handover : the spec's
+frame stays up`). stormbootx hands `ConOut` back, with a cleared screen,
+only before the network console, a local disk's bootloader, and any return
+to the firmware or the EFI Shell.
 
 The consoles are read again after every connect over all handles, after the
 NIC take-over and at the handoff (#219): a connect can stop a terminal and
@@ -131,8 +155,8 @@ and arms three things (`src/handoffguard.rs`):
   `handoff : ExitBootServices called by the bootloader; the drivers stop
   their devices, the kernel is next` to the serial consoles, and
   `ExitBootServices: drivers stopping their devices; kernel next` in the
-  panel's handoff step. Once, and nothing allocated, so the call's map key
-  still holds.
+  panel's handoff step (a row drawn when the guard is armed and Blt'd then,
+  #220). Once, and nothing allocated, so the call's map key still holds.
 - **A green line along the bottom of the screen** once every driver's
   ExitBootServices handler has returned (an `EXIT_BOOT_SERVICES` handler at
   `TPL_CALLBACK`, after the drivers' `TPL_NOTIFY` ones on EDK2; it only
