@@ -1965,6 +1965,19 @@ then.
       `end` before a chain-load (keep clearing before the shell/fall-through),
       and check it with `tests/screen-ovmf.sh`'s screendumps (frame colours
       present, no panel text on serial).
+      **In progress (2026-11-17):** stormblock#637 landed (v24.18.0,
+      `crates/screen-spec`, pinned at b74b783). The plan: `ui.rs` renders
+      into a RAM back buffer per screen (`Surface`, `Xrgb8888` = the Blt
+      buffer's BGRx) and Blts the changed region to each screen console's
+      GOP (works on BLT-only modes too); the frame is `frame::draw`, header
+      content in the screen's places (name, lease, machine, build + clock;
+      the big readout is the active step or the outcome), the steps as
+      rows with state pills in the lower frame, the read's bar, the problem
+      and what next; F2's log in the same area; at `handoff` the frame is
+      redrawn as the screen's first frame (`Frame::default()`, `BOOT` or
+      `INSTALL`) and left up. The handoff guard's ExitBootServices row is
+      pre-rendered at `arm` and Blt'd in `before_ebs` (no allocation).
+      `screen.py panel` checks the header bar's frame colour.
 
 - [x] **#75 — stormnic-virtio, a Rust virtio-net UEFI driver (P2, owner).
       Closed 2026-10-07.** The master created the repo; its session wrote
