@@ -1946,38 +1946,33 @@ then.
 
 ### Blocked on other repos
 
-- [ ] **#220 — the boot panel in the boot screen's look (P2, owner
-      2026-11-15), behind stormblock#637.** The panel takes stormblock#618's
-      look (black field, elbow frames and pill bars in amber / lavender /
-      pale blue / peach / warm grey, Antonio Bold capitals, large readouts:
-      drivers, link speed and FEC, lease, claim, attach, timing; no terminal
-      text), drawn on GOP pixels rather than today's text-attribute panel
-      (`ui.rs`); its last frame stays up at StartImage and the screen draws
-      over it in the same geometry; serial unchanged. The issue requires the
-      palette and type from **one shared spec** both build from. On
-      2026-11-16 stormblock v24.15.0 has the screen, but its look is private
-      to `src/screen/draw.rs`/`canvas.rs` (std, ab_glyph), so filed
-      stormblock#637: a `no_std` crate with palette, font + pin, the 1920×1080
-      grid and scale rule, the first frame's geometry and the shapes; and
-      the screen's first frame in the dumb buffer before `SETCRTC` (no
-      flash). Then here: pin that crate, draw the panel with it on every
-      GOP screen console, keep `ui = log` and F2, leave the last frame on
-      `end` before a chain-load (keep clearing before the shell/fall-through),
-      and check it with `tests/screen-ovmf.sh`'s screendumps (frame colours
-      present, no panel text on serial).
-      **In progress (2026-11-17):** stormblock#637 landed (v24.18.0,
-      `crates/screen-spec`, pinned at b74b783). The plan: `ui.rs` renders
-      into a RAM back buffer per screen (`Surface`, `Xrgb8888` = the Blt
-      buffer's BGRx) and Blts the changed region to each screen console's
-      GOP (works on BLT-only modes too); the frame is `frame::draw`, header
-      content in the screen's places (name, lease, machine, build + clock;
-      the big readout is the active step or the outcome), the steps as
-      rows with state pills in the lower frame, the read's bar, the problem
-      and what next; F2's log in the same area; at `handoff` the frame is
-      redrawn as the screen's first frame (`Frame::default()`, `BOOT` or
-      `INSTALL`) and left up. The handoff guard's ExitBootServices row is
-      pre-rendered at `arm` and Blt'd in `before_ebs` (no allocation).
-      `screen.py panel` checks the header bar's frame colour.
+- [x] **#220 — the boot panel in the boot screen's look (P2, owner
+      2026-11-15). Released v0.44.0 (b1ea254), closed 2026-11-17.** Built
+      on stormblock#637 (stormblock v24.18.0, `crates/screen-spec`, pinned
+      at b74b783 in `Cargo.toml`; ab_glyph 0.2.32 in `Cargo.lock`). `ui.rs`
+      draws into a RAM buffer per screen console's GOP (`Xrgb8888`, the Blt
+      buffer's BGRx) and Blts the changed areas: the spec's frame
+      (`frame::draw`), the header in the screen's places (name, lease,
+      machine, build + clock; the big readout: the active step, `STOPPED`
+      or `LOCAL`), the steps with state pills, the read's bar, the problem
+      and what next, F2's log in the lower frame. A frame change (failed,
+      F2, handoff, install) redraws it all; anything else redraws its areas.
+      `handoff` redraws the frame as the screen's first (`Frame::default()`,
+      `BOOT`/`INSTALL` via `ui::installing`) and leaves it up; `handed_back`
+      restores ours. #219's ExitBootServices row is drawn by
+      `ui::raw_targets` at `arm` and Blt'd in `before_ebs` (`Mark::show`).
+      Binary 660 KB (the font 55 KB, ab_glyph).
+      **Verified (sc-build, OVMF 1280x800):** the tag's full suite with
+      `--locked` (b1ea254, first run, no warnings, repro the same bytes);
+      screen-ovmf's frame check (header bar red, blocks blue/amber/peach),
+      F2/Esc; net-ovmf `shipped`: `handover : the spec's frame stays up
+      (amber header, 1280x800)` while tcp4probe runs; `ebs`: the row Blt'd
+      before ExitBootServices and the green band after. Screenshots in
+      `docs/screens/`. 7b037e5's first full run had a host-side abort
+      (`corrupted size vs. prev_size`, laptop-ovmf `[local]`, 3 s in, before
+      stormbootx printed), passed on the rerun. Image build 9a7ae75f5dcc.
+      **Not run:** a real GOP (a BMC's KVM, a monitor) and the screen's
+      hand-over on a node; serial captures cannot show the panel.
 
 - [x] **#75 — stormnic-virtio, a Rust virtio-net UEFI driver (P2, owner).
       Closed 2026-10-07.** The master created the repo; its session wrote
