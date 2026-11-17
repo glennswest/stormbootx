@@ -1946,6 +1946,26 @@ then.
 
 ### Blocked on other repos
 
+- [ ] **#220 — the boot panel in the boot screen's look (P2, owner
+      2026-11-15), behind stormblock#637.** The panel takes stormblock#618's
+      look (black field, elbow frames and pill bars in amber / lavender /
+      pale blue / peach / warm grey, Antonio Bold capitals, large readouts:
+      drivers, link speed and FEC, lease, claim, attach, timing; no terminal
+      text), drawn on GOP pixels rather than today's text-attribute panel
+      (`ui.rs`); its last frame stays up at StartImage and the screen draws
+      over it in the same geometry; serial unchanged. The issue requires the
+      palette and type from **one shared spec** both build from. On
+      2026-11-16 stormblock v24.15.0 has the screen, but its look is private
+      to `src/screen/draw.rs`/`canvas.rs` (std, ab_glyph), so filed
+      stormblock#637: a `no_std` crate with palette, font + pin, the 1920×1080
+      grid and scale rule, the first frame's geometry and the shapes; and
+      the screen's first frame in the dumb buffer before `SETCRTC` (no
+      flash). Then here: pin that crate, draw the panel with it on every
+      GOP screen console, keep `ui = log` and F2, leave the last frame on
+      `end` before a chain-load (keep clearing before the shell/fall-through),
+      and check it with `tests/screen-ovmf.sh`'s screendumps (frame colours
+      present, no panel text on serial).
+
 - [x] **#75 — stormnic-virtio, a Rust virtio-net UEFI driver (P2, owner).
       Closed 2026-10-07.** The master created the repo; its session wrote
       the driver. Pinned at 1a04808 with #108 (v0.23.0), which also makes it

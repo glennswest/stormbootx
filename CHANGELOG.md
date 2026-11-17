@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-16
+- **docs:** #220 (the panel in the boot screen's look) planned in the work plan, behind stormblock#637: the shared `no_std` screen spec (palette, font, geometry, shapes) the issue requires both to build from.
+
 ### 2026-11-15
 - **BREAKING:** #201: the `nic-drivers` golden is retired. `deploy/build-golden.sh nic-drivers` refuses, naming #201. Every medium carries its own drivers, built from the pins in `scripts/build-nic-drivers.sh`, which stays. No medium had taken the golden as an input since #52, and the owner left it out of the release (stormcos#881). The registry entry's removal is the master's, and stormcentral, stormipmi and stormd are told about their leftovers.
 - **docs:** README golden table and *NIC drivers*, the presentation, CLAUDE.md and `build-nic-drivers.sh` no longer list a nic-drivers golden.
