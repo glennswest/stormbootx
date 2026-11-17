@@ -1017,8 +1017,12 @@ boot bootport "$host_cpu" "" ok good \
     "blockio     : 96 MiB read in all" \
     "is there a TCP/IP stack in this firmware" \
     "not:(api_port)"
-grep -qE '^(GET|POST) ' "$W/stub.log" && die "[bootport] api_port was asked too"
-say "[bootport] api_port saw nothing"
+# Only when bootport ran: under NET_ONLY=<another boot> the stub log is that
+# boot's (#221).
+if [[ -z "${NET_ONLY:-}" || "$NET_ONLY" == bootport ]]; then
+    grep -qE '^(GET|POST) ' "$W/stub.log" && die "[bootport] api_port was asked too"
+    say "[bootport] api_port saw nothing"
+fi
 # A listener that never answers is not an engine: api_port, within the budget.
 BOOT_CONF="boot_port = $SILENT_PORT" \
 boot bootport-silent "$host_cpu" "" ok good \

@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-17
+- **fix:** #221: `tests/net-ovmf.sh`'s check that api_port saw nothing in the `bootport` boot runs only when that boot ran. `NET_ONLY=<another boot>` failed on the other boot's stub log.
+
 ## [v0.44.0] — 2026-11-17
 
 ### Added
