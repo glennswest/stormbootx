@@ -2323,6 +2323,15 @@ then.
       under AAVMF against net-ovmf's stubs, then `component add
       stormbootx-arm64 --kind media` and its golden. The attached image's
       `BOOTAA64.EFI` (stormuefi on arm64) is not this repo's.
+      **2026-11-20: stormcentral#604 closed** (template v0.3.5:
+      `aarch64-unknown-uefi`, qemu-system-aarch64 10.2.2, edk2-aarch64).
+      In progress: `ARCH=arm64 tests/net-ovmf.sh` sources
+      `tests/aavmf-boots.sh` after the stubs: the arm64 golden's ISO and
+      `-disk` stick boot to `media : fw arm64` under AAVMF (virt, TCG), and
+      the golden's binary on a test ISO claims from the stub engine,
+      attaches the NVMe/TCP stub (payload: tcp4probe for aarch64 as
+      `BOOTAA64.EFI`) and starts it. Then the line in the sc-build command,
+      close #84 (the component registration is #172's/stormcentral#1120).
 
 - [x] **#17 — the old sbregistry `/v1/clones/claim` path sends no
       credential and speaks plain HTTP (P3). Closed 2026-10-08.** The
