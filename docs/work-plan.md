@@ -2303,8 +2303,8 @@ then.
       the churn #11 and stormblock#119 want gone. Using the GET means the
       marker has to carry the same key (e.g. the initramfs's
       `claimed_from.volume`), which is the contract stormcos#30 has to agree.
-- [ ] **#84 — arm64 boot media (`BOOTAA64.EFI`, storminstall#1) (P3).
-      Built 2026-10-09; the boot waits on stormcentral#604.** Owner's
+- [x] **#84 — arm64 boot media (`BOOTAA64.EFI`, storminstall#1) (P3).
+      Built 2026-10-09; booted under AAVMF and closed 2026-11-20.** Owner's
       decision (2026-10-09, the master's recommendation): a separate
       **`stormbootx-arm64`** boot helper, its own golden, firmware drivers
       only (no arm64 rustnic), `"arch": "arm64"` in its manifest row.
@@ -2325,13 +2325,21 @@ then.
       `BOOTAA64.EFI` (stormuefi on arm64) is not this repo's.
       **2026-11-20: stormcentral#604 closed** (template v0.3.5:
       `aarch64-unknown-uefi`, qemu-system-aarch64 10.2.2, edk2-aarch64).
-      In progress: `ARCH=arm64 tests/net-ovmf.sh` sources
+      Done: `ARCH=arm64 tests/net-ovmf.sh` sources
       `tests/aavmf-boots.sh` after the stubs: the arm64 golden's ISO and
       `-disk` stick boot to `media : fw arm64` under AAVMF (virt, TCG), and
       the golden's binary on a test ISO claims from the stub engine,
       attaches the NVMe/TCP stub (payload: tcp4probe for aarch64 as
-      `BOOTAA64.EFI`) and starts it. Then the line in the sc-build command,
-      close #84 (the component registration is #172's/stormcentral#1120).
+      `BOOTAA64.EFI`) and starts it. 2092806..09c964e (tcp4probe opens
+      its own arch's bootloader; AAVMF's silent build, the DEBUG one's lines
+      split ours on the PL011). Full sc-build of 09c964e (2499 s, exit 0):
+      every x86 boot unchanged, then a64-golden and a64-stick 7 s each to
+      `media : fw arm64`, a64-claim 11 s: lease, engine 19.4.0, default
+      claim `stubhost`, RTC to 2031, attach, `96 MiB read in all` (87 MiB/s
+      under TCG), `starting \EFI\BOOT\BOOTAA64.EFI`, tcp4probe reading
+      StormBootTag/HostNqn/Engine/Clock and `BOOTAA64.EFI is 100663296
+      bytes`. The components are already registered (#172). Real arm64
+      hardware is #172's O6N.
 
 - [x] **#17 — the old sbregistry `/v1/clones/claim` path sends no
       credential and speaks plain HTTP (P3). Closed 2026-10-08.** The
