@@ -1,6 +1,7 @@
 #!/bin/bash
-# Build the USB boot agent: a GPT image whose ESP holds stormbootx as
-# /EFI/BOOT/BOOTX64.EFI (BOOTAA64.EFI with --arch arm64, #84), plus the config
+# Build the USB boot agent: a GPT image whose ESP holds stormbootx-launch as
+# /EFI/BOOT/BOOTX64.EFI (BOOTAA64.EFI with --arch arm64, #84), stormbootx as
+# /stormboot/stormbootx.efi, which the launcher starts (#229), and the config
 # file that tells it where to attach.
 #
 # This is the whole first hop. No PXE, no DHCP boot options, no TFTP, no HTTP:
@@ -58,6 +59,8 @@ NIC_VERBOSE=""
 UPDATE=""
 TREE=""
 ARCH="x86_64"
+LAUNCHER=""
+NO_LAUNCHER=""
 
 usage() {
     sed -n '2,20p' "$0" | sed 's/^# \?//'
@@ -117,6 +120,10 @@ Options:
                    removable-media name it is laid down as (BOOTX64.EFI or
                    BOOTAA64.EFI); a --binary must be built for it
   --binary PATH    prebuilt .efi (default: build it)
+  --launcher PATH  prebuilt stormbootx-launch.efi (#229; default: the one
+                   beside --binary, else build it)
+  --no-launcher    stormbootx itself as the removable-media bootloader, the
+                   layout before #229 (tests/update-boots.sh's migration)
   --output PATH    image path (default tmp/images/stormbootx.img in the checkout)
 USAGE
 }
@@ -150,6 +157,8 @@ while [[ $# -gt 0 ]]; do
         --size)   ESP_MIB="$2"; shift 2 ;;
         --fat)    FAT="$2"; shift 2 ;;
         --binary) BIN="$2"; shift 2 ;;
+        --launcher) LAUNCHER="$2"; shift 2 ;;
+        --no-launcher) NO_LAUNCHER=1; shift ;;
         --arch)   ARCH="$2"; shift 2 ;;
         --output) OUTPUT="$2"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
@@ -209,15 +218,40 @@ export STORMBOOTX_BUILD
     BIN="${CARGO_TARGET_DIR:-$ROOT/target}/$TARGET/release/$WANT.efi"
 fi
 [[ -f "$BIN" ]] || die "no $WANT.efi at $BIN"
+# The launcher (#229): the removable-media bootloader, never rewritten,
+# which starts \stormboot\stormbootx.efi (or what the boot record names).
+# A probe stick boots tcp4probe itself.
+if [[ "$PROBE" == "yes" || -n "$NO_LAUNCHER" ]]; then
+    LAUNCHER=""
+elif [[ -z "$LAUNCHER" ]]; then
+    if [[ -f "$(dirname "$BIN")/stormbootx-launch.efi" ]]; then
+        LAUNCHER="$(dirname "$BIN")/stormbootx-launch.efi"
+    else
+        say "building stormbootx-launch for $TARGET"
+        ( cd "$ROOT" && scripts/cargo-repro.sh build --locked --release --target "$TARGET" --bin stormbootx-launch )
+        LAUNCHER="${CARGO_TARGET_DIR:-$ROOT/target}/$TARGET/release/stormbootx-launch.efi"
+    fi
+fi
+[[ -z "$LAUNCHER" || -f "$LAUNCHER" ]] || die "no stormbootx-launch.efi at $LAUNCHER"
 # The PE machine field (COFF header at e_lfanew + 4): 0x8664 x86_64, 0xaa64
 # arm64. A binary of the other architecture would be laid down under a name
 # this firmware never starts.
-PE_AT=$(od -An -tu4 -j60 -N4 "$BIN" | tr -d ' ')
-MACHINE=$(od -An -tx2 -j$(( PE_AT + 4 )) -N2 "$BIN" | tr -d ' ')
-case "$ARCH:$MACHINE" in
-    x86_64:8664|arm64:aa64) ;;
-    *) die "$BIN is PE machine 0x$MACHINE, not a $ARCH build" ;;
-esac
+for pe in "$BIN" ${LAUNCHER:+"$LAUNCHER"}; do
+    PE_AT=$(od -An -tu4 -j60 -N4 "$pe" | tr -d ' ')
+    MACHINE=$(od -An -tx2 -j$(( PE_AT + 4 )) -N2 "$pe" | tr -d ' ')
+    case "$ARCH:$MACHINE" in
+        x86_64:8664|arm64:aa64) ;;
+        *) die "$pe is PE machine 0x$MACHINE, not a $ARCH build" ;;
+    esac
+done
+# What the firmware starts, and where stormbootx goes.
+if [[ -n "$LAUNCHER" ]]; then
+    BOOT_FILE="$LAUNCHER"
+    PAYLOAD="$BIN"
+else
+    BOOT_FILE="$BIN"
+    PAYLOAD=""
+fi
 if [[ -n "$DRIVERS" ]]; then
     compgen -G "$DRIVERS/*.efi" >/dev/null || die "no *.efi in $DRIVERS (run scripts/build-nic-drivers.sh)"
 fi
@@ -452,7 +486,8 @@ export SOURCE_DATE_EPOCH
 export TZ=UTC
 STAGE="$WORK/stage"
 mkdir -p "$STAGE/EFI/BOOT" "$STAGE/stormboot"
-cp "$BIN" "$STAGE/EFI/BOOT/$EFI_NAME"
+cp "$BOOT_FILE" "$STAGE/EFI/BOOT/$EFI_NAME"
+[[ -z "$PAYLOAD" ]] || cp "$PAYLOAD" "$STAGE/stormboot/stormbootx.efi"
 cp "$WORK/stormboot.conf" "$STAGE/stormboot/stormboot.conf"
 cp "$WORK/startup.nsh" "$STAGE/startup.nsh"
 # NIC drivers for firmware that has none of its own (#26). Loaded from the
@@ -495,6 +530,7 @@ mkfs.fat "${fat[@]}" "$ESP" >/dev/null
 mmd   -i "$ESP" ::/EFI ::/EFI/BOOT ::/stormboot
 mcopy -m -i "$ESP" "$STAGE/EFI/BOOT/$EFI_NAME" "::/EFI/BOOT/$EFI_NAME"
 mcopy -m -i "$ESP" "$STAGE/stormboot/stormboot.conf" ::/stormboot/stormboot.conf
+[[ -z "$PAYLOAD" ]] || mcopy -m -i "$ESP" "$STAGE/stormboot/stormbootx.efi" ::/stormboot/stormbootx.efi
 mcopy -m -i "$ESP" "$STAGE/startup.nsh" ::/startup.nsh
 if [[ -n "$DRIVERS" ]]; then
     mmd -i "$ESP" ::/stormboot/drivers
@@ -508,7 +544,8 @@ touch -d "@$SOURCE_DATE_EPOCH" "$ESP"
 if [[ -n "$TREE" ]]; then
     rm -rf "$TREE"
     mkdir -p "$TREE/EFI/BOOT" "$TREE/stormboot"
-    cp "$BIN" "$TREE/EFI/BOOT/$EFI_NAME"
+    cp "$BOOT_FILE" "$TREE/EFI/BOOT/$EFI_NAME"
+    [[ -z "$PAYLOAD" ]] || cp "$PAYLOAD" "$TREE/stormboot/stormbootx.efi"
     cp "$WORK/stormboot.conf" "$TREE/stormboot/stormboot.conf"
     cp "$WORK/startup.nsh" "$TREE/startup.nsh"
     if [[ -n "$DRIVERS" ]]; then
@@ -553,7 +590,12 @@ EOF
     dd if="$ESP" of="$OUTPUT" bs=1M seek=1 conv=notrunc status=none
 fi
 
-say "binary  $(du -h "$BIN" | cut -f1)  $BIN  (\\EFI\\BOOT\\$EFI_NAME)"
+if [[ -n "$PAYLOAD" ]]; then
+    say "launch  $(du -h "$LAUNCHER" | cut -f1)  $LAUNCHER  (\\EFI\\BOOT\\$EFI_NAME)"
+    say "binary  $(du -h "$BIN" | cut -f1)  $BIN  (\\stormboot\\stormbootx.efi)"
+else
+    say "binary  $(du -h "$BIN" | cut -f1)  $BIN  (\\EFI\\BOOT\\$EFI_NAME)"
+fi
 [[ -z "$MEDIA" ]] || say "media   $MEDIA"
 say "image   $(du -h "$OUTPUT" | cut -f1)  $OUTPUT"
 if [[ -n "$DRIVERS" ]]; then

@@ -26,14 +26,17 @@
 #
 # stormbootx golden (the fw medium; retired by #202, built only with
 # STORMBOOTX_FW_MEDIA=1):
-#   bin/stormbootx.efi      the agent (\EFI\BOOT\BOOTX64.EFI on the media)
+#   bin/stormbootx.efi      the agent (\stormboot\stormbootx.efi on the media)
+#   bin/stormbootx-launch.efi  the medium's \EFI\BOOT\BOOTX64.EFI (#229), which
+#                           starts the agent the boot record names
 #   bin/tcp4probe.efi       the per-model diagnostic
 #   boot/stormbootx.iso     El Torito UEFI ISO, for BMC virtual media
 #   boot/stormbootx.img     GPT disk image, for a USB stick
 #   boot/stormbootx-usb.img GPT + FAT32 stick (#185), what a Dell 14G boots
 #   boot/tcp4probe.iso      a diagnostic ISO that boots tcp4probe
-#   media/                  the medium's files as a tree (#83): EFI/BOOT/BOOTX64.EFI,
-#                           stormboot/stormboot.conf, stormboot/drivers/*, startup.nsh
+#   media/                  the medium's files as a tree (#83): EFI/BOOT/BOOTX64.EFI
+#                           (the launcher), stormboot/stormbootx.efi, stormboot/stormboot.conf,
+#                           stormboot/drivers/*, startup.nsh
 #   media.files             one `<sha256> <size> <path>` line per media/ file: the
 #                           `file` lines of the self-update manifest stormcentral
 #                           signs when it promotes this golden (stormcentral#279)
@@ -260,7 +263,7 @@ stormbootx)
     ( cd "$ROOT" && scripts/cargo-repro.sh build --locked --release --target x86_64-unknown-uefi )
     REL="${CARGO_TARGET_DIR:-$ROOT/target}/x86_64-unknown-uefi/release"
     mkdir -p "$OUT/bin" "$OUT/boot"
-    cp "$REL/stormbootx.efi" "$REL/tcp4probe.efi" "$OUT/bin/"
+    cp "$REL/stormbootx.efi" "$REL/stormbootx-launch.efi" "$REL/tcp4probe.efi" "$OUT/bin/"
 
     # No NIC drivers on this medium (#52): the firmware's own bind every NIC.
     [[ -z "$DRIVERS" ]] || say "ignoring --drivers $DRIVERS: the fw medium carries no NIC drivers (#52)"
@@ -283,10 +286,10 @@ stormbootx)
 stormbootx-rustnic)
     [[ -z "$DRIVERS" ]] || die "$GOLDEN builds its own drivers from the commit's pins; no --drivers"
     say "building stormbootx for x86_64-unknown-uefi"
-    ( cd "$ROOT" && scripts/cargo-repro.sh build --locked --release --target x86_64-unknown-uefi --bin stormbootx )
+    ( cd "$ROOT" && scripts/cargo-repro.sh build --locked --release --target x86_64-unknown-uefi --bin stormbootx --bin stormbootx-launch )
     REL="${CARGO_TARGET_DIR:-$ROOT/target}/x86_64-unknown-uefi/release"
     mkdir -p "$OUT/bin" "$OUT/boot"
-    cp "$REL/stormbootx.efi" "$OUT/bin/"
+    cp "$REL/stormbootx.efi" "$REL/stormbootx-launch.efi" "$OUT/bin/"
 
     # stormnic-ixgbe for the Intel 10G, stormnic-mlx4 for the ConnectX-3
     # (#34), stormnic-virtio for VMs, taking their NICs from OVMF's
@@ -307,10 +310,10 @@ stormnic = $(cat "$WORK/drivers/STORMNIC-SOURCE.txt")"
 stormbootx-mlx5test)
     [[ -z "$DRIVERS" ]] || die "$GOLDEN builds its own drivers from the commit's pins; no --drivers"
     say "building stormbootx for x86_64-unknown-uefi"
-    ( cd "$ROOT" && scripts/cargo-repro.sh build --locked --release --target x86_64-unknown-uefi --bin stormbootx )
+    ( cd "$ROOT" && scripts/cargo-repro.sh build --locked --release --target x86_64-unknown-uefi --bin stormbootx --bin stormbootx-launch )
     REL="${CARGO_TARGET_DIR:-$ROOT/target}/x86_64-unknown-uefi/release"
     mkdir -p "$OUT/bin" "$OUT/boot"
-    cp "$REL/stormbootx.efi" "$OUT/bin/"
+    cp "$REL/stormbootx.efi" "$REL/stormbootx-launch.efi" "$OUT/bin/"
     rustnic_drivers
     # No --update: a test medium never takes a promotion, or is one.
     agent=(--binary "$OUT/bin/stormbootx.efi" --drivers "$WORK/media-drivers"
@@ -327,9 +330,9 @@ stormnic = $(cat "$WORK/drivers/STORMNIC-SOURCE.txt")"
 stormbootx-disk|stormbootx-rustnic-disk)
     [[ -z "$DRIVERS" ]] || die "$GOLDEN takes no --drivers"
     say "building stormbootx for x86_64-unknown-uefi"
-    ( cd "$ROOT" && scripts/cargo-repro.sh build --locked --release --target x86_64-unknown-uefi --bin stormbootx )
+    ( cd "$ROOT" && scripts/cargo-repro.sh build --locked --release --target x86_64-unknown-uefi --bin stormbootx --bin stormbootx-launch )
     REL="${CARGO_TARGET_DIR:-$ROOT/target}/x86_64-unknown-uefi/release"
-    cp "$REL/stormbootx.efi" "$WORK/stormbootx.efi"
+    cp "$REL/stormbootx.efi" "$REL/stormbootx-launch.efi" "$WORK/"
     mkdir -p "$OUT/boot"
     # The same medium as the family's ISO, on a writable stick.
     disk=(--binary "$WORK/stormbootx.efi" --dns 192.168.31.252 --no-fallback --syslog "$SYSLOG_TARGET" --hold "$HOLD" --size 64)
@@ -352,10 +355,10 @@ stormbootx-arm64)
     [[ -z "$DRIVERS" ]] || die "$GOLDEN carries no NIC drivers (the stormnic drivers are x86); no --drivers"
     aarch64_target
     say "building stormbootx for aarch64-unknown-uefi"
-    ( cd "$ROOT" && scripts/cargo-repro.sh build --locked --release --target aarch64-unknown-uefi --bin stormbootx )
+    ( cd "$ROOT" && scripts/cargo-repro.sh build --locked --release --target aarch64-unknown-uefi --bin stormbootx --bin stormbootx-launch )
     REL="${CARGO_TARGET_DIR:-$ROOT/target}/aarch64-unknown-uefi/release"
     mkdir -p "$OUT/bin" "$OUT/boot"
-    cp "$REL/stormbootx.efi" "$OUT/bin/"
+    cp "$REL/stormbootx.efi" "$REL/stormbootx-launch.efi" "$OUT/bin/"
     agent=(--arch arm64 --binary "$OUT/bin/stormbootx.efi" --dns 192.168.31.252 --no-fallback
            --syslog "$SYSLOG_TARGET" --hold "$HOLD" --media "fw arm64" --update "$(update_url stormbootx-arm64)")
     "$ROOT/scripts/build-boot-agent.sh" --iso "${agent[@]}" --tree "$OUT/media" \
@@ -372,9 +375,9 @@ stormbootx-arm64-disk)
     [[ -z "$DRIVERS" ]] || die "$GOLDEN carries no NIC drivers; no --drivers"
     aarch64_target
     say "building stormbootx for aarch64-unknown-uefi"
-    ( cd "$ROOT" && scripts/cargo-repro.sh build --locked --release --target aarch64-unknown-uefi --bin stormbootx )
+    ( cd "$ROOT" && scripts/cargo-repro.sh build --locked --release --target aarch64-unknown-uefi --bin stormbootx --bin stormbootx-launch )
     REL="${CARGO_TARGET_DIR:-$ROOT/target}/aarch64-unknown-uefi/release"
-    cp "$REL/stormbootx.efi" "$WORK/stormbootx.efi"
+    cp "$REL/stormbootx.efi" "$REL/stormbootx-launch.efi" "$WORK/"
     mkdir -p "$OUT/boot"
     # The arm64 medium on a writable stick: the same files as its ISO.
     "$ROOT/scripts/build-boot-agent.sh" --arch arm64 --binary "$WORK/stormbootx.efi" \

@@ -55,6 +55,9 @@ for iso in "$@"; do
     check "ESP has 2048-byte clusters" grep -qE '^ +2048 bytes per cluster' "$W/fsck"
     check "ESP carries \\EFI\\BOOT\\$EFI_NAME" \
         mdir -i "$W/esp.img" "::/EFI/BOOT/$EFI_NAME"
+    # #229: the removable path is the launcher; stormbootx is beside it.
+    check "ESP carries \\stormboot\\stormbootx.efi (the launcher's payload)" \
+        mdir -i "$W/esp.img" "::/stormboot/stormbootx.efi"
     mtype -i "$W/esp.img" ::/stormboot/stormboot.conf 2>/dev/null | tr -d '\r' > "$W/conf" || true
     check "stormboot.conf names version $VERSION" grep -qE "^version += +${VERSION//./\\.}\$" "$W/conf"
     check "stormboot.conf names a commit" grep -qE '^commit += +[^ ]+$' "$W/conf"

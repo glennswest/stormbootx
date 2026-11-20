@@ -54,6 +54,9 @@ extern crate alloc;
 
 mod api;
 mod blockio;
+// Shared with stormbootx-launch and stormbootx-stick (#229); each uses part.
+#[allow(dead_code)]
+mod bootrec;
 mod clock;
 mod command;
 mod config;

@@ -58,6 +58,7 @@ CLUSTERS=$(sed -n 's/^ *\([0-9]*\) data clusters.*/\1/p' "$W/fsck")
 check "a real FAT32: $CLUSTERS clusters, at least 65525" at_least "$CLUSTERS" 65525
 
 check "\\EFI\\BOOT\\$EFI_NAME" mdir -i "$W/esp" "::/EFI/BOOT/$EFI_NAME"
+check "\\stormboot\\stormbootx.efi (#229)" mdir -i "$W/esp" "::/stormboot/stormbootx.efi"
 check "\\startup.nsh" mdir -i "$W/esp" ::/startup.nsh
 check "\\stormboot\\stormboot.conf" mdir -i "$W/esp" ::/stormboot/stormboot.conf
 

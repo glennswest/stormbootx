@@ -301,8 +301,11 @@ pub fn path_ok(p: &str) -> bool {
     match n {
         1 => is(parts[0], "startup.nsh"),
         3 if is(parts[0], "EFI") => is(parts[1], "BOOT"),
+        // The update's own names are never a release's file: the boot
+        // record and the payloads it writes (#229).
         2 | 3 if is(parts[0], "stormboot") => {
-            !(n == 2 && (is(parts[1], "state") || is(parts[1], "local.conf")))
+            !(n == 2 && ["state", "local.conf", "boot.a", "boot.b"].iter().any(|f| is(parts[1], f)))
+                && !(n == 3 && is(parts[1], "payload"))
         }
         _ => false,
     }
@@ -359,6 +362,12 @@ pub struct State<'a> {
     pub prev: u64,
     /// The paths the last update changed; `+` marks one that was new.
     pub files: &'a str,
+    /// The payload the trial runs (#229), written beside the one it
+    /// replaces and named by the boot record; empty when the trial's
+    /// stormbootx was swapped in as the bootloader (no launcher).
+    pub payload: &'a str,
+    /// The payload to name in the boot record again if the trial fails.
+    pub good: &'a str,
 }
 
 impl<'a> State<'a> {
@@ -376,6 +385,8 @@ impl<'a> State<'a> {
                 "failed" => s.failed = v.parse().unwrap_or(0),
                 "prev" => s.prev = v.parse().unwrap_or(0),
                 "files" => s.files = v,
+                "payload" => s.payload = v,
+                "good" => s.good = v,
                 "trial" => {
                     let mut t = v.split_whitespace();
                     s.trial = match (t.next().map(str::parse), t.next().map(str::parse)) {
@@ -406,7 +417,16 @@ impl<'a> State<'a> {
     /// (#229): a journal cleared early is a rollback nothing finishes.
     pub fn rolled_back(&self) -> State<'a> {
         let serial = self.trial.map_or(0, |t| t.0);
-        State { serial: self.prev, failed: self.failed.max(serial), trial: None, prev: 0, files: "", ..*self }
+        State {
+            serial: self.prev,
+            failed: self.failed.max(serial),
+            trial: None,
+            prev: 0,
+            files: "",
+            payload: "",
+            good: "",
+            ..*self
+        }
     }
 
     /// The state when putting the set on trial back did not finish (#229):
@@ -435,6 +455,9 @@ impl<'a> State<'a> {
         }
         if !self.files.is_empty() {
             write!(w, "files = {}\n", self.files).ok()?;
+        }
+        if !self.payload.is_empty() {
+            write!(w, "payload = {}\ngood = {}\n", self.payload, self.good).ok()?;
         }
         Some(w.len)
     }
@@ -471,9 +494,20 @@ pub enum Start {
     Revert { serial: u64, back_to: u64, resumed: bool },
 }
 
-pub fn at_start(s: &State) -> Start {
+/// `running` is the payload this start was loaded from (`LoadedImage`'s
+/// file path, as a medium path), `None` when unknown. A trial whose payload
+/// is not the one running never started (#229): the record was not written
+/// before a power loss, or the launcher passed over it (unreadable, a bad
+/// hash, refused by LoadImage). That is put back at once, like a trial that
+/// had its starts.
+pub fn at_start(s: &State, running: Option<&str>) -> Start {
     match s.trial {
         None => Start::Normal,
+        Some((serial, starts))
+            if !s.payload.is_empty() && !running.is_some_and(|r| r.eq_ignore_ascii_case(s.payload)) =>
+        {
+            Start::Revert { serial, back_to: s.prev, resumed: starts >= ROLLBACK_UNFINISHED }
+        }
         Some((serial, starts)) if starts >= TRIAL_STARTS => {
             Start::Revert { serial, back_to: s.prev, resumed: starts >= ROLLBACK_UNFINISHED }
         }
@@ -770,6 +804,9 @@ mod tests {
             "EFI/BOOT/BOOTX64.EFI.prev",
             "stormboot/state",
             "STORMBOOT/LOCAL.CONF",
+            "stormboot/boot.a",
+            "stormboot/BOOT.B",
+            "stormboot/payload/5.efi",
             "stormboot/a/b/c",
             "stormboot/../EFI/x",
             "stormboot/.hidden",
@@ -801,6 +838,8 @@ mod tests {
             trial: Some((6, 1)),
             prev: 5,
             files: "EFI/BOOT/BOOTX64.EFI +stormboot/drivers/new.efi",
+            payload: "stormboot/payload/6.efi",
+            good: "stormboot/stormbootx.efi",
         };
         let mut buf = [0u8; 512];
         let n = s.render(&mut buf).unwrap();
@@ -816,12 +855,36 @@ mod tests {
     #[test]
     fn a_trial_gets_two_starts() {
         let mut s = State { serial: 6, prev: 5, trial: Some((6, 0)), ..State::default() };
-        assert_eq!(at_start(&s), Start::Trial { serial: 6, start: 1 });
+        assert_eq!(at_start(&s, None), Start::Trial { serial: 6, start: 1 });
         s.trial = Some((6, 1));
-        assert_eq!(at_start(&s), Start::Trial { serial: 6, start: 2 });
+        assert_eq!(at_start(&s, None), Start::Trial { serial: 6, start: 2 });
         s.trial = Some((6, 2));
-        assert_eq!(at_start(&s), Start::Revert { serial: 6, back_to: 5, resumed: false });
-        assert_eq!(at_start(&State::default()), Start::Normal);
+        assert_eq!(at_start(&s, None), Start::Revert { serial: 6, back_to: 5, resumed: false });
+        assert_eq!(at_start(&State::default(), None), Start::Normal);
+    }
+
+    /// #229: a trial payload the launcher did not start is put back on the
+    /// start that notices, whatever its count.
+    #[test]
+    fn a_trial_payload_that_did_not_start_goes_back() {
+        let s = State {
+            serial: 6,
+            prev: 5,
+            trial: Some((6, 0)),
+            payload: "stormboot/payload/6.efi",
+            good: "stormboot/payload/5.efi",
+            ..State::default()
+        };
+        assert_eq!(at_start(&s, Some("stormboot/payload/6.efi")), Start::Trial { serial: 6, start: 1 });
+        assert_eq!(at_start(&s, Some("STORMBOOT/PAYLOAD/6.EFI")), Start::Trial { serial: 6, start: 1 });
+        let back = Start::Revert { serial: 6, back_to: 5, resumed: false };
+        assert_eq!(at_start(&s, Some("stormboot/payload/5.efi")), back);
+        assert_eq!(at_start(&s, None), back);
+        let left = s.rollback_unfinished();
+        assert_eq!(at_start(&left, Some("stormboot/payload/5.efi")), Start::Revert { serial: 6, back_to: 5, resumed: true });
+        // No payload in the trial (the bootloader was swapped): the count.
+        let legacy = State { payload: "", good: "", ..s };
+        assert_eq!(at_start(&legacy, Some("EFI/BOOT/BOOTX64.EFI")), Start::Trial { serial: 6, start: 1 });
     }
 
     /// #229: a rollback clears its journal only when it finished; one that
@@ -829,24 +892,34 @@ mod tests {
     #[test]
     fn an_unfinished_rollback_keeps_its_journal() {
         let files = "stormboot/drivers/old.efi EFI/BOOT/BOOTX64.EFI +stormboot/drivers/new.efi";
-        let s = State { serial: 6, min: 5, failed: 4, prev: 5, trial: Some((6, 2)), files };
+        let s = State {
+            serial: 6,
+            min: 5,
+            failed: 4,
+            prev: 5,
+            trial: Some((6, 2)),
+            files,
+            payload: "stormboot/payload/6.efi",
+            good: "stormboot/stormbootx.efi",
+        };
 
         let done = s.rolled_back();
         assert_eq!(done, State { serial: 5, min: 5, failed: 6, ..State::default() });
-        assert_eq!(at_start(&done), Start::Normal);
+        assert_eq!(at_start(&done, None), Start::Normal);
 
         let left = s.rollback_unfinished();
         assert_eq!(left.trial, Some((6, ROLLBACK_UNFINISHED)));
         assert_eq!((left.serial, left.prev, left.failed, left.min), (6, 5, 6, 5));
         assert_eq!(left.files, files, "every changed path is still known");
-        assert_eq!(at_start(&left), Start::Revert { serial: 6, back_to: 5, resumed: true });
+        assert_eq!((left.payload, left.good), ("stormboot/payload/6.efi", "stormboot/stormbootx.efi"));
+        assert_eq!(at_start(&left, Some("stormboot/payload/6.efi")), Start::Revert { serial: 6, back_to: 5, resumed: true });
 
         // It survives the medium: written, read back, the same.
         let mut buf = [0u8; 512];
         let n = left.render(&mut buf).unwrap();
         let back = State::parse(core::str::from_utf8(&buf[..n]).unwrap());
         assert_eq!(back, left);
-        assert_eq!(at_start(&back), Start::Revert { serial: 6, back_to: 5, resumed: true });
+        assert_eq!(at_start(&back, Some("stormboot/payload/6.efi")), Start::Revert { serial: 6, back_to: 5, resumed: true });
 
         // Failing again changes nothing: the next start still finishes it.
         assert_eq!(left.rollback_unfinished(), left);

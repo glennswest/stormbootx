@@ -46,6 +46,8 @@ use core::sync::atomic::{AtomicU64, Ordering};
 
 use uefi::boot::{self, LoadImageSource, ScopedProtocol};
 use uefi::proto::device_path::build::{self, DevicePathBuilder};
+use uefi::proto::device_path::{DeviceSubType, DeviceType};
+use uefi::proto::loaded_image::LoadedImage;
 use uefi::proto::media::file::{
     Directory, File, FileAttribute, FileInfo, FileMode, FileSystemInfo, FileType, RegularFile,
 };
@@ -55,7 +57,7 @@ use uefi::runtime::VariableAttributes;
 use uefi::{cstr16, CStr16, Handle, Status};
 
 use crate::manifest::{self, Entry, Manifest, Setting, Start, State, Verdict};
-use crate::{clock, config, handoff, net, sha256};
+use crate::{bootrec, clock, config, handoff, net, sha256};
 
 /// The medium's update state.
 pub const STATE_PATH: &str = r"\stormboot\state";
@@ -96,6 +98,88 @@ fn kb(n: u64) -> u64 {
     n.div_ceil(1024)
 }
 
+fn digest(b: &[u8]) -> [u8; 32] {
+    *sha256::digest(b).as_bytes()
+}
+
+/// The most a payload may be (the manifest's own limit for a file).
+const MAX_PAYLOAD: usize = manifest::MAX_FILE as usize;
+
+/// The file this stormbootx was loaded from, as a medium path
+/// (`stormboot/payload/9.efi`; `EFI/BOOT/BOOTX64.EFI` on a medium with no
+/// launcher): `LoadedImage`'s file path (#229). `None` when it names none.
+fn running_path() -> Option<String> {
+    let li = boot::open_protocol_exclusive::<LoadedImage>(boot::image_handle()).ok()?;
+    let mut p = String::new();
+    for n in li.file_path()?.node_iter() {
+        if n.device_type() != DeviceType::MEDIA || n.sub_type() != DeviceSubType::MEDIA_FILE_PATH {
+            continue;
+        }
+        let mut part = String::new();
+        for c in n.data().chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).take_while(|&c| c != 0) {
+            part.push(char::from_u32(u32::from(c))?);
+        }
+        if !p.is_empty() && !p.ends_with('\\') && !part.starts_with('\\') {
+            p.push('\\');
+        }
+        p.push_str(&part);
+    }
+    let m = p.trim_start_matches('\\').replace('\\', "/");
+    (!m.is_empty()).then_some(m)
+}
+
+/// Whether this stormbootx was started by the launcher: loaded from a
+/// payload file, not from the removable-media path itself.
+fn launched(running: &str) -> bool {
+    !running.eq_ignore_ascii_case(manifest::BOOTLOADER)
+}
+
+/// Name `path` (a payload on the medium) in the boot record (#229): the
+/// slot that does not name what boots now, with the next `seq`. The step
+/// that changes what the launcher starts, and the only one.
+fn activate(vol: &mut Vol, path: &str) -> Result<(), String> {
+    let bytes = vol
+        .read(&efi_path(path), MAX_PAYLOAD + 1)?
+        .ok_or_else(|| format!("{} is not there to name in the boot record", efi_path(path)))?;
+    let mut raw: [Option<Vec<u8>>; 2] = [None, None];
+    for (slot, file) in raw.iter_mut().zip(bootrec::SLOTS) {
+        *slot = vol.read(&efi_path(file), bootrec::MAX_RECORD + 1).ok().flatten();
+    }
+    let slots = [
+        raw[0].as_deref().and_then(|b| bootrec::parse(b, digest)),
+        raw[1].as_deref().and_then(|b| bootrec::parse(b, digest)),
+    ];
+    let (slot, seq) = bootrec::next_slot(&slots);
+    let rec = bootrec::Record { seq, payload: path, sha256: digest(&bytes) };
+    let mut buf = [0u8; bootrec::MAX_RECORD];
+    let n = bootrec::render(&rec, digest, &mut buf).ok_or_else(|| format!("{path}: not a name a record may carry"))?;
+    let file = efi_path(bootrec::SLOTS[slot]);
+    vol.write(&file, &buf[..n])?;
+    // Read back: the record the launcher will read, whole.
+    let back = vol.read(&file, bootrec::MAX_RECORD + 1)?.unwrap_or_default();
+    match bootrec::parse(&back, digest) {
+        Some(r) if r == rec => Ok(()),
+        _ => Err(format!("{file} did not read back as written")),
+    }
+}
+
+/// `stormboot/payload/*.efi` and `stormboot/stormbootx.efi` but `keep`: the
+/// payloads an update prunes before it writes the next, so a medium holds
+/// the one running (last known good) and the new one, never more.
+fn stale_payloads(vol: &mut Vol, keep: &str) -> Vec<String> {
+    let dir = efi_path(bootrec::PAYLOAD_DIR);
+    let mut out: Vec<String> = vol
+        .list(&dir)
+        .into_iter()
+        .map(|n| format!("{}/{n}", bootrec::PAYLOAD_DIR))
+        .filter(|p| bootrec::payload_ok(p) && !p.eq_ignore_ascii_case(keep))
+        .collect();
+    if !keep.eq_ignore_ascii_case(bootrec::SHIPPED) && vol.exists(&efi_path(bootrec::SHIPPED)) {
+        out.push(bootrec::SHIPPED.to_string());
+    }
+    out
+}
+
 // ------------------------------------------------------------------- start
 
 /// The first thing a boot does: count a trial's start, or put a set that
@@ -106,7 +190,8 @@ pub fn at_start() -> Option<Status> {
     let text = vol.read_text(STATE_PATH).ok()??;
     let state = State::parse(&text);
     SERIAL.store(state.serial, Ordering::Relaxed);
-    match manifest::at_start(&state) {
+    let running = running_path();
+    match manifest::at_start(&state, running.as_deref()) {
         Start::Normal => {
             if state.serial > 0 {
                 handoff::set_update(&format!("serial:{}", state.serial), true);
@@ -127,7 +212,16 @@ pub fn at_start() -> Option<Status> {
             None
         }
         Start::Revert { serial, back_to, resumed } => {
-            if resumed {
+            let passed_over = !resumed
+                && !state.payload.is_empty()
+                && !running.as_deref().is_some_and(|r| r.eq_ignore_ascii_case(state.payload));
+            if passed_over {
+                uefi::println!(
+                    "update      : serial {serial}'s payload {} did not start (this is {}); putting serial {back_to} back",
+                    efi_path(state.payload),
+                    running.as_deref().map_or_else(|| String::from("an unnamed file"), efi_path)
+                );
+            } else if resumed {
                 uefi::println!(
                     "update      : putting serial {back_to} back in place of serial {serial} did not finish on an earlier start; finishing it"
                 );
@@ -182,6 +276,21 @@ pub fn at_start() -> Option<Status> {
 fn revert(vol: &mut Vol, state: &State) -> (usize, Vec<String>) {
     let mut done = 0;
     let mut errors = Vec::new();
+    // The trial's payload (#229): the boot record names the good one again,
+    // and only then is the failed one deleted. Both are safe to repeat.
+    if !state.payload.is_empty() {
+        let r = activate(vol, state.good).and_then(|()| {
+            if state.payload.eq_ignore_ascii_case(state.good) {
+                Ok(())
+            } else {
+                vol.delete(&efi_path(state.payload))
+            }
+        });
+        match r {
+            Ok(()) => done += 1,
+            Err(e) => errors.push(format!("{}: {e}", state.payload)),
+        }
+    }
     for (path, new) in state.changed() {
         let p = efi_path(path);
         let prev = format!("{p}.prev");
@@ -272,6 +381,8 @@ pub fn mark_good(why: &str) {
         trial: None,
         prev: 0,
         files: "",
+        payload: "",
+        good: "",
         ..state
     };
     let written = vol.write_state(&next);
@@ -357,6 +468,11 @@ fn try_update(mac: Option<&str>) -> Result<(), String> {
     if let Some((serial, _)) = state.trial {
         return Err(format!("serial {serial} is on trial; nothing new until it ends"));
     }
+    // Which file this stormbootx is (#229): a payload the launcher started,
+    // or the bootloader itself on a medium that has no launcher yet.
+    let started = running_path()
+        .ok_or("LoadedImage names no file this stormbootx was loaded from; not checked")?;
+    let launcher = launched(&started);
 
     // A name is looked up at the lease's DNS server, and this runs straight
     // after `net::up`, before anything has waited for DHCP (#148).
@@ -441,11 +557,21 @@ fn try_update(mac: Option<&str>) -> Result<(), String> {
 
     // What differs from the medium, fetched and checked against the signed
     // manifest before anything is written.
+    //
+    // With a launcher (#229), its file is never rewritten, and the release's
+    // stormbootx (`stormboot/stormbootx.efi`) is compared with the payload
+    // that is running, wherever the boot record put it.
     let mut changed: Vec<(&Entry, Vec<u8>, bool)> = Vec::new();
+    let mut launcher_differs = false;
     for e in m.files() {
-        let p = efi_path(e.path);
+        let is_payload = launcher && e.path.eq_ignore_ascii_case(bootrec::SHIPPED);
+        let p = efi_path(if is_payload { started.as_str() } else { e.path });
         let have = vol.read(&p, e.size as usize + 1)?;
         if have.as_deref().is_some_and(|h| h.len() as u64 == e.size && sha256::digest(h).as_bytes() == &e.sha256) {
+            continue;
+        }
+        if launcher && e.path.eq_ignore_ascii_case(manifest::BOOTLOADER) {
+            launcher_differs = true;
             continue;
         }
         let body = get(&format!("files/{}", e.path), e.size as usize)?;
@@ -457,7 +583,13 @@ fn try_update(mac: Option<&str>) -> Result<(), String> {
                 sha256::digest(&body)
             ));
         }
-        changed.push((e, body, have.is_none()));
+        changed.push((e, body, have.is_none() && !is_payload));
+    }
+    if launcher_differs {
+        uefi::println!(
+            "update      : serial {}'s {BOOT_PATH} differs from this medium's launcher, which an update never rewrites; kept",
+            m.serial
+        );
     }
     // A loadable driver the release no longer carries is retired, or the
     // media would go on loading it.
@@ -477,11 +609,19 @@ fn try_update(mac: Option<&str>) -> Result<(), String> {
     // The bootloader is swapped last.
     changed.sort_by_key(|(e, _, _)| e.path.eq_ignore_ascii_case(manifest::BOOTLOADER));
 
+    // A new payload goes beside the running one; every other payload goes
+    // first (#229: last known good and new, never more).
+    let payload = launcher && changed.iter().any(|(e, _, _)| e.path.eq_ignore_ascii_case(bootrec::SHIPPED));
+    let prune = if payload { stale_payloads(&mut vol, &started) } else { Vec::new() };
+
     // Room: every new file is written beside the one it replaces, and the
-    // `.prev` copies about to be dropped come back.
+    // `.prev` copies and payloads about to be dropped come back.
     let mut reclaim = 0u64;
     for p in changed.iter().map(|(e, _, _)| e.path).chain(retired.iter().map(String::as_str)) {
         reclaim += vol.size(&format!("{}.prev", efi_path(p))).unwrap_or(0);
+    }
+    for p in &prune {
+        reclaim += vol.size(&efi_path(p)).unwrap_or(0);
     }
     let need: u64 = changed.iter().map(|(e, _, _)| e.size + 8192).sum::<u64>() + 8192;
     if need > info.free_space() + reclaim {
@@ -493,7 +633,8 @@ fn try_update(mac: Option<&str>) -> Result<(), String> {
         ));
     }
 
-    apply(&mut vol, &m, &state, &changed, &retired)?;
+    let launched_from = if launcher { Some(started.as_str()) } else { None };
+    apply(&mut vol, &m, &state, &changed, &retired, launched_from, &prune)?;
     let bytes: u64 = changed.iter().map(|(e, _, _)| e.size).sum();
     uefi::println!(
         "update      : v{running} -> v{} ({}, serial {}), {} file(s), {} KB{}; restarting into it",
@@ -511,44 +652,86 @@ fn try_update(mac: Option<&str>) -> Result<(), String> {
 
 /// Write the new set beside the old and swap them, recording the trial first
 /// so an interrupted swap is put back by the starts that follow.
+///
+/// `launched_from` is the running payload when a launcher started it
+/// (#229): the release's stormbootx is then written as
+/// `stormboot/payload/<serial>.efi`, `prune` (every other payload) deleted
+/// first, and it takes over by a boot record write, after the trial is
+/// recorded and before the other files are swapped. The launcher is never
+/// touched. With no launcher, every file is swapped, the bootloader last.
 fn apply(
     vol: &mut Vol,
     m: &Manifest,
     state: &State,
     changed: &[(&Entry, Vec<u8>, bool)],
     retired: &[String],
+    launched_from: Option<&str>,
+    prune: &[String],
 ) -> Result<(), String> {
-    for p in changed.iter().map(|(e, _, _)| e.path).chain(retired.iter().map(String::as_str)) {
+    let is_payload = |e: &Entry| launched_from.is_some() && e.path.eq_ignore_ascii_case(bootrec::SHIPPED);
+    let others: Vec<&(&Entry, Vec<u8>, bool)> = changed.iter().filter(|(e, _, _)| !is_payload(e)).collect();
+    let new_payload = changed.iter().find(|(e, _, _)| is_payload(e));
+
+    for p in others.iter().map(|(e, _, _)| e.path).chain(retired.iter().map(String::as_str)) {
         vol.delete(&format!("{}.prev", efi_path(p)))?;
     }
-    for (e, body, _) in changed {
+    for p in prune {
+        vol.delete(&efi_path(p))?;
+    }
+    for (e, body, _) in &others {
         if let Err(err) = vol.write(&format!("{}.new", efi_path(e.path)), body) {
-            for (e, _, _) in changed {
+            for (e, _, _) in &others {
                 let _ = vol.delete(&format!("{}.new", efi_path(e.path)));
             }
             return Err(format!("{}: {err}; nothing changed", e.path));
         }
     }
+    // The new payload, under its own name: nothing points at it yet.
+    let payload_path = format!("{}/{}.efi", bootrec::PAYLOAD_DIR, m.serial);
+    if let Some((_, body, _)) = new_payload {
+        let p = efi_path(&payload_path);
+        let written = vol.write(&p, body).and_then(|()| match vol.read(&p, body.len() + 1)? {
+            Some(back) if back == *body => Ok(()),
+            _ => Err(format!("{p} did not read back as written")),
+        });
+        if let Err(err) = written {
+            let _ = vol.delete(&p);
+            for (e, _, _) in &others {
+                let _ = vol.delete(&format!("{}.new", efi_path(e.path)));
+            }
+            return Err(format!("{payload_path}: {err}; nothing changed"));
+        }
+    }
     carry_identity(vol, changed);
 
     let mut files: Vec<String> = retired.to_vec();
-    files.extend(changed.iter().map(|(e, _, new)| format!("{}{}", if *new { "+" } else { "" }, e.path)));
+    files.extend(others.iter().map(|(e, _, new)| format!("{}{}", if *new { "+" } else { "" }, e.path)));
     let files = files.join(" ");
+    let (payload, good) = match (new_payload, launched_from) {
+        (Some(_), Some(from)) => (payload_path.as_str(), from),
+        _ => ("", ""),
+    };
     let trial = State {
         serial: m.serial,
         prev: state.serial,
         trial: Some((m.serial, 0)),
         files: &files,
+        payload,
+        good,
         ..*state
     };
     vol.write_state(&trial)?;
 
     let mut swap = || -> Result<(), String> {
+        // The step that changes what boots (#229).
+        if !payload.is_empty() {
+            activate(vol, payload)?;
+        }
         for p in retired {
             let p = efi_path(p);
             vol.rename(&p, &format!("{}.prev", base(&p)))?;
         }
-        for (e, _, new) in changed {
+        for (e, _, new) in &others {
             let p = efi_path(e.path);
             if !new && vol.exists(&p) {
                 vol.rename(&p, &format!("{}.prev", base(&p)))?;
