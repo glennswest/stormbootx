@@ -167,12 +167,13 @@ gone() {
 newest() {
     local f best=-1 name="" seq p
     for f in /stormboot/boot.a /stormboot/boot.b; do
-        seq=$(on_disk "$f" | sed -n 's/^seq //p')
-        p=$(on_disk "$f" | sed -n 's/^payload //p')
+        # A slot not yet written reads as empty (set -e, pipefail).
+        seq=$({ on_disk "$f" || true; } | sed -n 's/^seq //p')
+        p=$({ on_disk "$f" || true; } | sed -n 's/^payload //p')
         [[ -n $seq ]] && (( seq > best )) && { best=$seq; name=$p; }
     done
     [[ $name == "$1" ]] && say "[disk] the newest record ($best) names $1" || {
-        for f in /stormboot/boot.a /stormboot/boot.b; do on_disk "$f" | sed "s|^|  $f : |"; done
+        for f in /stormboot/boot.a /stormboot/boot.b; do { on_disk "$f" || echo "(absent)"; } | sed "s|^|  $f : |"; done
         die "[disk] the newest record names ${name:-nothing}, not $1"
     }
 }
