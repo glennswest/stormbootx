@@ -126,6 +126,7 @@ for want in \
     'boot fs     : seek ok' \
     'boot fs     : loader entry: title stormbootx #42 loader entry' \
     'boot fs     : create refused (WRITE_PROTECTED)' \
+    'esp fs    : held open, it stays: 1 filesystem(s) stay installed on ' \
     'esp fs    : withdrawn'; do
     grep -qF -- "$want" "$W/console.txt" || { say "missing: $want"; ok=no; }
 done

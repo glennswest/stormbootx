@@ -102,6 +102,12 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#230 — review finding 376240a9715a in `src/espfs.rs` (P1).** A
+      failed `UninstallProtocolInterface` of the ESP's filesystem was
+      ignored, so the image could be unloaded under it. `espfs::withdraw` is
+      `Result`, keeps the records that stay, `blockio::withdraw` returns the
+      error (main resets). espprobe holds it open `EXCLUSIVE` and requires
+      the refusal (`tests/esp-ovmf.sh`).
 - [ ] **#229 — review findings in `src/selfupdate.rs` (P1, stormcentral#1558).**
       - `f0736064aeff` (a failed rollback cleared its journal): fixed.
         `State::rolled_back` only after a revert with no error; otherwise

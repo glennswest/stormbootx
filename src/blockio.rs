@@ -574,9 +574,12 @@ pub fn withdraw() -> Option<Result<(), String>> {
     let (handle, proto, dp) = unsafe { PUBLISHED.take() }?;
     // The ESP's filesystem first (#42): it sits on the disk's partition
     // handle, which would otherwise survive the disconnect carrying it.
-    let fs = crate::espfs::withdraw();
-    if fs > 0 {
-        uefi::println!("esp fs      : {fs} filesystem(s) withdrawn");
+    // One that stays is a callback into this image (#230): the disk is not
+    // taken back either, and the caller resets rather than return.
+    match crate::espfs::withdraw() {
+        Ok(0) => {}
+        Ok(fs) => uefi::println!("esp fs      : {fs} filesystem(s) withdrawn"),
+        Err(e) => return Some(Err(format!("the ESP's filesystem: {e}"))),
     }
     let result = unsafe {
         let bs = uefi::table::system_table_raw()

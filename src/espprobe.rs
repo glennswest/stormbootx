@@ -169,7 +169,23 @@ fn probe() -> Result<(), String> {
         uefi::println!("  stormbootx: loaded from the buffer; starting it");
         let status = boot::start_image(image);
         uefi::println!("  started   : the image ran and came back ({status:?})");
-        let n = espfs::withdraw();
+        // #230: an opener the firmware will not disconnect (EXCLUSIVE, not
+        // BY_DRIVER) refuses the uninstall. withdraw must say so and keep
+        // the record, not report it gone.
+        let held = unsafe {
+            boot::open_protocol::<SimpleFileSystem>(
+                OpenProtocolParams { handle: Handle::from_ptr(fs).ok_or("no handle")?, agent: boot::image_handle(), controller: None },
+                OpenProtocolAttributes::Exclusive,
+            )
+        }
+        .map_err(|e| format!("an EXCLUSIVE open of the ESP's filesystem: {e:?}"))?;
+        match espfs::withdraw() {
+            Err(e) if espfs::is_ours(fs) => uefi::println!("  esp fs    : held open, it stays: {e}"),
+            Err(e) => return Err(format!("espfs::withdraw failed ({e}) and dropped the record")),
+            Ok(n) => return Err(format!("espfs::withdraw took back {n} filesystem(s) held open EXCLUSIVE")),
+        }
+        drop(held);
+        let n = espfs::withdraw().map_err(|e| format!("espfs::withdraw once closed: {e}"))?;
         if n != 1 {
             return Err(format!("espfs::withdraw took back {n} filesystem(s), not 1"));
         }

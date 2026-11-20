@@ -351,7 +351,7 @@ kept for a later need; the test command sets it to keep the code honest.
 | `src/universal.rs` | universal boot (#15): is the engine new enough, which MAC is the machine's, what host the reply named; which SMBIOS serial is a placeholder (#7, matches stormipmi) |
 | `src/esp.rs` | the attached ESP read without the firmware's FAT (#37): GPT, FAT12/16/32 at 512..4096-byte sectors; listings, reads at any position and lookups from a directory for `espfs.rs` (#42); `partitions`, every GPT entry, for the inventory (#167) |
 | `src/espboot.rs` | read `BOOTX64.EFI` through `esp.rs` and `LoadImage` it from the buffer, under the ESP's path |
-| `src/espfs.rs` | a read-only `EFI_SIMPLE_FILE_SYSTEM` over `esp.rs` on the bridged ESP's partition handle (#42), so the bootloader opens its other files; `withdraw` before the disk goes |
+| `src/espfs.rs` | a read-only `EFI_SIMPLE_FILE_SYSTEM` over `esp.rs` on the bridged ESP's partition handle (#42), so the bootloader opens its other files; `withdraw` before the disk goes, `Err` (and the record kept) when one stays installed, which resets rather than returns (#230) |
 | `src/espprobe.rs` | third binary: who can read a 4K ESP; booted under OVMF by `tests/esp-ovmf.sh` |
 | `src/sha256.rs` | the digest, because `EFI_HASH2` is optional |
 | `src/config.rs` | the target, read from the media rather than compiled in; `local.conf` read before `stormboot.conf` (#83); `boot_from_ram_disk` (#172: the image's volume has a RAM-disk device-path node, i.e. UEFI HTTP boot of the ISO; `media : a RAM disk (UEFI HTTP boot): the downloaded image, gone at reset`, and `selfupdate` declines it) |

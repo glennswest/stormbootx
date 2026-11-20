@@ -4,6 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-11-20
+- **fix:** #230 (376240a9715a): `espfs::withdraw` reports a filesystem it could not uninstall, for example one held by an `EXCLUSIVE` opener, instead of dropping it silently. It keeps that filesystem's record, and `blockio::withdraw` returns the error, so the fall-through resets rather than letting the firmware unload an image whose `OpenVolume` is still installed. `espprobe` (`tests/esp-ovmf.sh`) holds the filesystem open, requires `withdraw` to refuse and keep it, then closes it and requires the withdraw to succeed.
 - **fix:** #229 (f0736064aeff): a rollback that cannot put every file back keeps its journal. `\stormboot\state` keeps the trial (start 3: unfinished), `prev` and `files`, and nothing half restored is chain-loaded. The start goes on as it is, and the next start finishes the rollback. `apply`'s swap-failure path and `stormbootx-stick`'s do the same instead of writing the old state over a partial revert.
 - **fix:** #229 (a689832bcbe2): the self-update reads `dns =` before it opens the medium exclusively. Before, a lease with no DNS server could never fall back to it. The lease wait itself was #148.
 - **test:** #229: host test `an_unfinished_rollback_keeps_its_journal`; `tests/update-boots.sh` boot `held` (a read-only `README.txt.prev`: the rollback stops, the journal stays, nothing is chain-loaded), then `revert` finishes it.

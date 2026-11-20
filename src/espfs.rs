@@ -524,21 +524,46 @@ pub fn install(disk: Handle, disk_path: &DevicePath, p: &esp::Partition) -> Resu
 /// Uninstall every filesystem `install` put up: their functions are in this
 /// image, which the firmware unloads when it returns. The volumes are leaked,
 /// not freed, in case a file the bootloader left open is still about.
+///
+/// `Err` when one stays installed (#230): an opener the firmware will not
+/// disconnect (an `EXCLUSIVE` open) refuses the uninstall, and the ESP's
+/// handle is ours, not a child a disk's disconnect takes with it. Its record
+/// is kept, so `is_ours` and a later `withdraw` still see it, and the caller
+/// must not let this image be unloaded (`blockio::withdraw` resets).
 #[allow(static_mut_refs)]
-pub fn withdraw() -> usize {
-    let Some(bs) = bs() else { return 0 };
+pub fn withdraw() -> Result<usize, String> {
+    if unsafe { INSTALLED.is_empty() } {
+        return Ok(0);
+    }
+    let Some(bs) = bs() else {
+        return Err(String::from("no boot services to uninstall the ESP's filesystem with"));
+    };
     let mut n = 0;
-    for i in unsafe { INSTALLED.drain(..) } {
-        unsafe {
-            if (bs.uninstall_protocol_interface)(i.handle, &SimpleFileSystemProtocol::GUID, i.sfs) == Status::SUCCESS {
-                n += 1;
+    let mut stays = Vec::new();
+    unsafe {
+        INSTALLED.retain(|i| {
+            let st = (bs.uninstall_protocol_interface)(i.handle, &SimpleFileSystemProtocol::GUID, i.sfs);
+            if st != Status::SUCCESS {
+                stays.push(format!("{:p} ({st:?})", i.handle));
+                return true;
             }
+            n += 1;
             if let Some(dp) = i.path {
+                // A bare device path calls nothing in this image.
                 let _ = (bs.uninstall_protocol_interface)(i.handle, &DEVICE_PATH_GUID, dp);
             }
-        }
+            false
+        });
     }
-    n
+    if stays.is_empty() {
+        Ok(n)
+    } else {
+        Err(format!(
+            "{} filesystem(s) stay installed on {} after {n} withdrawn; their functions are in this image",
+            stays.len(),
+            stays.join(", ")
+        ))
+    }
 }
 
 /// Whether `h` carries a filesystem this image installed. espprobe's check
