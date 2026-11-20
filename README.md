@@ -1607,11 +1607,14 @@ medium carries `BOOTAA64.EFI`, chain-loads the attached image's
 stormnic drivers are x86 builds, so there is no arm64 rustnic. It is a
 separate golden so an arm64 failure never holds up the x86 ones;
 storminstall picks it by its manifest row's `"arch": "arm64"`.
-`build-boot-agent.sh --arch arm64` lays any arm64 medium down. Until
-stormcentral#604 the build template has no aarch64 std (the build adds it
-with rustup), no `qemu-system-aarch64` and no AAVMF, so the arm64 binary is
-compiled and its medium checked (`EFI_NAME=BOOTAA64.EFI
-tests/iso-layout.sh`), but not yet booted.
+`build-boot-agent.sh --arch arm64` lays any arm64 medium down. Every build
+checks the medium (`EFI_NAME=BOOTAA64.EFI tests/iso-layout.sh`) and boots it
+under AAVMF, EDK2's arm64 firmware on QEMU's `virt` machine
+(`ARCH=arm64 tests/net-ovmf.sh`, `tests/aavmf-boots.sh`). The golden's ISO
+and stick start and name their medium. The golden's binary claims from a stub
+engine, attaches an NVMe/TCP stub, reads 96 MiB through its BlockIO and
+starts the image's `\EFI\BOOT\BOOTAA64.EFI`. No arm64 machine has booted it
+yet: that is #172's Orion O6N.
 
 **The USB sticks are their own goldens** (#41, owner on #35; #97), at FAT16,
 which the blades boot; the FAT32 stick a Dell 14G needs is `boot/<golden>-usb.img`
@@ -1809,7 +1812,6 @@ Open issues:
 | #93 | install-config sizes on real firmware variable stores |
 | #100, #99 | boot time: one NVMe/TCP command in flight (~46 MiB/s on metal); #99 (mlxfec's cap9 wait) is moot since #202 removed mlxfec |
 | #71–#74 | more Rust NIC drivers, paused by the owner at P3 (each behind its repo's first issue); stormnic-e1000e is on the rustnic media since v0.40.0 (#70), stormnic-igb since #69; stormnic-mlx5 is on the rustnic media since #202 and in the default driver set since #73, passed on C2NR0Q2 and forge1 |
-| #84 | arm64 media: built (`stormbootx-arm64`); booting it under AAVMF and registering the golden wait on stormcentral#604 |
 | #138 | the R230's NIC FEC step: v0.25.0's real-time budget is released, the metal boot is not seen |
 | #154 | `stormbootx-stick` writing a signed raw disk image when a stick has no room for a file update |
 | #143 | the fall-through shows as `BdsDxe: failed to start Boot0002 … Aborted` |

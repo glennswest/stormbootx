@@ -3,6 +3,10 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-20
+- **test:** #84: the arm64 media boot under AAVMF on every build (`ARCH=arm64 tests/net-ovmf.sh`, `tests/aavmf-boots.sh`; stormcentral#604 put qemu-system-aarch64 and edk2-aarch64 on the build template). The `stormbootx-arm64` ISO and the `stormbootx-arm64-disk` stick start and say `media : fw arm64`. The golden's binary claims from the stub engine, sets the RTC, attaches the NVMe/TCP stub, reads 96 MiB (87 MiB/s under TCG) and starts `\EFI\BOOT\BOOTAA64.EFI`, and the payload reads the hand-down back.
+- **fix:** #84: tcp4probe opens its own architecture's bootloader (`BOOTAA64.EFI` on aarch64), not always `BOOTX64.EFI`.
+
 ### 2026-11-17
 - **fix:** #221: `tests/net-ovmf.sh`'s check that api_port saw nothing in the `bootport` boot runs only when that boot ran. `NET_ONLY=<another boot>` failed on the other boot's stub log.
 

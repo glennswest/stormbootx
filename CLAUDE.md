@@ -70,14 +70,25 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   EFI_NAME=BOOTAA64.EFI tests/iso-layout.sh t/arm/boot/stormbootx-arm64.iso && \
   EFI_NAME=BOOTAA64.EFI tests/usb-layout.sh t/arm/boot/stormbootx-arm64-usb.img t/arm/media && \
   deploy/build-golden.sh stormbootx-arm64-disk $PWD/t/armdisk && \
+  cargo build --release --target aarch64-unknown-uefi --bin tcp4probe && \
+  ARCH=arm64 A64_GOLDEN_ISO=t/arm/boot/stormbootx-arm64.iso A64_GOLDEN_DISK=t/armdisk/boot/stormbootx-arm64-disk.img \
+    tests/net-ovmf.sh t/arm/bin/stormbootx.efi ${CARGO_TARGET_DIR:-target}/aarch64-unknown-uefi/release/tcp4probe.efi && \
   scripts/build-stormdist.sh $PWD/t/sd && tests/dist-ovmf.sh $R/tcp4probe.efi t/sd/stormdist && \
   tests/update-ovmf.sh $R/tcp4probe.efi'
 ```
 
 `deploy/build-golden.sh stormbootx-arm64` (#84) builds the agent for
-`aarch64-unknown-uefi` (adding the std with rustup until stormcentral#604)
-and lays its ISO down with `BOOTAA64.EFI`; `iso-layout.sh` checks it. Nothing
-boots it yet: there is no `qemu-system-aarch64` or AAVMF on the template.
+`aarch64-unknown-uefi` and lays its ISO down with `BOOTAA64.EFI`;
+`iso-layout.sh` checks it. `ARCH=arm64 tests/net-ovmf.sh` (#84, since
+stormcentral#604 put qemu-system-aarch64 and edk2-aarch64 on the template)
+sources `tests/aavmf-boots.sh` after net-ovmf's stubs and boots under AAVMF
+(QEMU `virt`, TCG, `-cpu max`, Fedora's `QEMU_EFI-silent-pflash.raw`: the
+default build is DEBUG and its lines land in the middle of ours on the
+PL011): the arm64 golden's ISO and the `-disk` golden's stick must start and
+say `media : fw arm64`; the golden's binary on a test ISO must claim from
+the stub engine, set the RTC from the SNTP stub, attach the NVMe/TCP stub,
+read the 96 MiB payload (tcp4probe for aarch64, as `BOOTAA64.EFI`) through
+its BlockIO and start it, and the payload must read the hand-down back.
 
 `tests/repro.sh` (#53) builds `stormbootx.efi` from two paths with two
 `CARGO_HOME`s and requires the same bytes: `build.rs` links with `/Brepro`
