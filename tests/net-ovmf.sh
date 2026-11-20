@@ -91,6 +91,10 @@
 # PAYLOAD is any EFI application that prints; the sc-build command uses
 # tcp4probe.efi and looks for its banner.
 #
+# With ARCH=arm64 (#84) STORMBOOTX.EFI and PAYLOAD.EFI are aarch64 builds and
+# the boots are tests/aavmf-boots.sh's, under AAVMF on QEMU's virt machine,
+# against the same stubs (the payload as BOOTAA64.EFI).
+#
 # With UPDATE_KEY set (an Ed25519 PEM whose public half STORMBOOTX.EFI was
 # built with, as STORMBOOTX_UPDATE_TEST_KEY), the two boots above are
 # replaced by the self-update's boots off a writable disk (#83,
@@ -291,11 +295,14 @@ SILENT_PORT=$(cat "$W/silent.port" 2>/dev/null) || die "the silent port did not 
 
 # The disk: a 128 MiB FAT16 at 4096-byte sectors (the shape stormblock lays
 # on a 4K release), the payload padded to 96 MiB, in a GPT at 4096-byte blocks.
+# ARCH=arm64 (#84): the payload as BOOTAA64.EFI, padded to 32 MiB (TCG).
+PAYLOAD_NAME=BOOTX64.EFI PAYLOAD_PAD=96M
+[[ "${ARCH:-x86_64}" == arm64 ]] && PAYLOAD_NAME=BOOTAA64.EFI PAYLOAD_PAD=32M
 cp "$PAYLOAD" "$W/payload.efi"
-truncate -s 96M "$W/payload.efi"
+truncate -s "$PAYLOAD_PAD" "$W/payload.efi"
 mkfs.fat -C -S 4096 -F 16 -s 1 -n RELEASE "$W/esp4k.img" 131072 >/dev/null
 mmd -i "$W/esp4k.img" ::/EFI ::/EFI/BOOT
-mcopy -i "$W/esp4k.img" "$W/payload.efi" ::/EFI/BOOT/BOOTX64.EFI
+mcopy -i "$W/esp4k.img" "$W/payload.efi" "::/EFI/BOOT/$PAYLOAD_NAME"
 python3 "$ROOT/tests/gpt4k.py" "$W/esp4k.img" "$W/disk4k.img"
 
 # The NVMe/TCP target: ICReq, Fabrics Connect, Property Get/Set, Identify
@@ -839,6 +846,13 @@ print("band        : %s (%d of %d pixels in the bottom 8 rows of %dx%d)" % ("gre
         die "[$name] expected lines missing"
     fi
 }
+
+if [[ "${ARCH:-x86_64}" == arm64 ]]; then
+    # shellcheck source=tests/aavmf-boots.sh
+    source "$ROOT/tests/aavmf-boots.sh"
+    say "PASS"
+    exit 0
+fi
 
 if [[ -n "${UPDATE_KEY:-}" ]]; then
     # shellcheck source=tests/update-boots.sh
