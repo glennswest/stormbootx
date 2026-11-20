@@ -80,6 +80,12 @@ pub const MAX_MANIFEST: usize = 16 << 10;
 /// Starts a new set gets to reach an attach before it is put back.
 pub const TRIAL_STARTS: u32 = 2;
 
+/// A trial's start count past its last: putting the set back began and did
+/// not finish (#229). The journal (`files`, `prev`) is kept, and the next
+/// start finishes it before anything else. A binary from before #229 reads it
+/// as a trial that had its starts, and puts the set back too.
+pub const ROLLBACK_UNFINISHED: u32 = TRIAL_STARTS + 1;
+
 /// The bootloader every manifest must carry: this architecture's
 /// removable-media path (#84). An arm64 medium's manifest names
 /// `BOOTAA64.EFI`, so an x86 manifest is refused there and the reverse.
@@ -394,6 +400,30 @@ impl<'a> State<'a> {
             .filter(|(p, _)| path_ok(p))
     }
 
+    /// The state once the set on trial is put back, every file of it: the
+    /// previous serial in place, the one on trial failed here, and the
+    /// journal of what changed cleared. Only after a revert with no error
+    /// (#229): a journal cleared early is a rollback nothing finishes.
+    pub fn rolled_back(&self) -> State<'a> {
+        let serial = self.trial.map_or(0, |t| t.0);
+        State { serial: self.prev, failed: self.failed.max(serial), trial: None, prev: 0, files: "", ..*self }
+    }
+
+    /// The state when putting the set on trial back did not finish (#229):
+    /// the journal stays as it is, the serial on trial counts as failed here,
+    /// and the next start finishes the rollback (`at_start`'s `resumed`).
+    /// No trial, no change.
+    pub fn rollback_unfinished(&self) -> State<'a> {
+        match self.trial {
+            Some((serial, _)) => State {
+                failed: self.failed.max(serial),
+                trial: Some((serial, ROLLBACK_UNFINISHED)),
+                ..*self
+            },
+            None => *self,
+        }
+    }
+
     /// The file's text. `out` must hold it; 160 bytes plus the file list.
     pub fn render(&self, out: &mut [u8]) -> Option<usize> {
         let mut w = Buf { out, len: 0 };
@@ -436,14 +466,17 @@ pub enum Start {
     /// it before going on.
     Trial { serial: u64, start: u32 },
     /// The set on trial had its starts and never reached an attach: put the
-    /// previous set back.
-    Revert { serial: u64, back_to: u64 },
+    /// previous set back. `resumed`: an earlier start began that and could
+    /// not finish it (#229), so this start finishes it.
+    Revert { serial: u64, back_to: u64, resumed: bool },
 }
 
 pub fn at_start(s: &State) -> Start {
     match s.trial {
         None => Start::Normal,
-        Some((serial, starts)) if starts >= TRIAL_STARTS => Start::Revert { serial, back_to: s.prev },
+        Some((serial, starts)) if starts >= TRIAL_STARTS => {
+            Start::Revert { serial, back_to: s.prev, resumed: starts >= ROLLBACK_UNFINISHED }
+        }
         Some((serial, starts)) => Start::Trial { serial, start: starts + 1 },
     }
 }
@@ -787,8 +820,46 @@ mod tests {
         s.trial = Some((6, 1));
         assert_eq!(at_start(&s), Start::Trial { serial: 6, start: 2 });
         s.trial = Some((6, 2));
-        assert_eq!(at_start(&s), Start::Revert { serial: 6, back_to: 5 });
+        assert_eq!(at_start(&s), Start::Revert { serial: 6, back_to: 5, resumed: false });
         assert_eq!(at_start(&State::default()), Start::Normal);
+    }
+
+    /// #229: a rollback clears its journal only when it finished; one that
+    /// did not keeps it, and the next start finishes it.
+    #[test]
+    fn an_unfinished_rollback_keeps_its_journal() {
+        let files = "stormboot/drivers/old.efi EFI/BOOT/BOOTX64.EFI +stormboot/drivers/new.efi";
+        let s = State { serial: 6, min: 5, failed: 4, prev: 5, trial: Some((6, 2)), files };
+
+        let done = s.rolled_back();
+        assert_eq!(done, State { serial: 5, min: 5, failed: 6, ..State::default() });
+        assert_eq!(at_start(&done), Start::Normal);
+
+        let left = s.rollback_unfinished();
+        assert_eq!(left.trial, Some((6, ROLLBACK_UNFINISHED)));
+        assert_eq!((left.serial, left.prev, left.failed, left.min), (6, 5, 6, 5));
+        assert_eq!(left.files, files, "every changed path is still known");
+        assert_eq!(at_start(&left), Start::Revert { serial: 6, back_to: 5, resumed: true });
+
+        // It survives the medium: written, read back, the same.
+        let mut buf = [0u8; 512];
+        let n = left.render(&mut buf).unwrap();
+        let back = State::parse(core::str::from_utf8(&buf[..n]).unwrap());
+        assert_eq!(back, left);
+        assert_eq!(at_start(&back), Start::Revert { serial: 6, back_to: 5, resumed: true });
+
+        // Failing again changes nothing: the next start still finishes it.
+        assert_eq!(left.rollback_unfinished(), left);
+        // And once it finishes, the same end as a rollback that never stopped.
+        assert_eq!(left.rolled_back(), done);
+
+        // A swap that failed straight after the trial was recorded (start 0)
+        // goes to the same unfinished state.
+        let fresh = State { trial: Some((6, 0)), ..s };
+        assert_eq!(fresh.rollback_unfinished().trial, Some((6, ROLLBACK_UNFINISHED)));
+        // No trial: nothing to finish.
+        let none = State { serial: 5, ..State::default() };
+        assert_eq!(none.rollback_unfinished(), none);
     }
 
     #[test]

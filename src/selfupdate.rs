@@ -126,32 +126,48 @@ pub fn at_start() -> Option<Status> {
             TRIAL.store(serial, Ordering::Relaxed);
             None
         }
-        Start::Revert { serial, back_to } => {
-            uefi::println!(
-                "update      : serial {serial} started {} times and never attached; putting serial {back_to} back",
-                manifest::TRIAL_STARTS
-            );
+        Start::Revert { serial, back_to, resumed } => {
+            if resumed {
+                uefi::println!(
+                    "update      : putting serial {back_to} back in place of serial {serial} did not finish on an earlier start; finishing it"
+                );
+            } else {
+                uefi::println!(
+                    "update      : serial {serial} started {} times and never attached; putting serial {back_to} back",
+                    manifest::TRIAL_STARTS
+                );
+            }
             let (done, failed) = revert(&mut vol, &state);
             for e in &failed {
                 uefi::println!("              {e}");
             }
-            let after = State {
-                serial: back_to,
-                failed: state.failed.max(serial),
-                trial: None,
-                prev: 0,
-                files: "",
-                ..state
-            };
-            if let Err(e) = vol.write_state(&after) {
+            // The journal of what changed is cleared only once every file of
+            // it is back (#229). Until then it stays, the next start finishes
+            // the rollback (`revert` is idempotent), and nothing half
+            // restored is started: this start goes on as it is.
+            let complete = failed.is_empty();
+            let after = if complete { state.rolled_back() } else { state.rollback_unfinished() };
+            let written = vol.write_state(&after);
+            drop(vol);
+            if let Err(e) = &written {
                 uefi::println!("              state not written ({e})");
             }
-            drop(vol);
-            uefi::println!("update      : {done} file(s) put back; starting the restored {BOOT_PATH}");
             handoff::set_update(&format!("failed:{serial}"), false);
-            // The failed trial's last start, for the restored binary's claim,
-            // and this start's lines (#213).
-            crate::lastlog::keep_trial(serial);
+            // The failed trial's last start, for the restored binary's claim
+            // (#213). A resumed rollback's previous start was the one that
+            // could not finish it, and the trial's log is already kept.
+            if !resumed {
+                crate::lastlog::keep_trial(serial);
+            }
+            if !complete {
+                uefi::println!(
+                    "update      : {done} file(s) put back, {} not; the next start finishes it. Nothing is started from a set half put back: this start goes on",
+                    failed.len()
+                );
+                crate::lastlog::save();
+                return None;
+            }
+            uefi::println!("update      : {done} file(s) put back; starting the restored {BOOT_PATH}");
             crate::lastlog::save();
             Some(chain_load())
         }
@@ -160,7 +176,9 @@ pub fn at_start() -> Option<Status> {
 
 /// Put every file the last update changed back: drop its `.new`, and return
 /// its `.prev`, or remove it when it was new. Returns how many were put back
-/// and what went wrong.
+/// and what went wrong. Idempotent (#229): a file already back has no `.prev`
+/// and is left alone, so a rollback that stopped part way is finished by
+/// running it again over the same journal.
 fn revert(vol: &mut Vol, state: &State) -> (usize, Vec<String>) {
     let mut done = 0;
     let mut errors = Vec::new();
@@ -319,6 +337,9 @@ fn try_update(mac: Option<&str>) -> Result<(), String> {
     if config::boot_from_ram_disk() {
         return Err("the boot medium is a RAM disk (UEFI HTTP boot); the served image is what updates, not this copy".to_string());
     }
+    // `dns =` is a file on this medium, and `Vol` holds the medium
+    // exclusively: read it before (#229), for a lease that names no DNS.
+    let stated_dns = if config::parse_ipv4(host).is_none() { config::stated_dns() } else { None };
     let mut vol = Vol::mount().map_err(|e| format!("the boot medium cannot be opened ({e})"))?;
     let info = vol.fs_info()?;
     if info.read_only() {
@@ -343,7 +364,7 @@ fn try_update(mac: Option<&str>) -> Result<(), String> {
         return Err(format!("no lease after {LEASE_SECS} s to look up {host}; not checked"));
     }
     let lease = net::leased_reply().unwrap_or_default();
-    let addr = clock::lookup(host, &lease)?;
+    let addr = clock::lookup_with(host, &lease, || stated_dns)?;
     let host_hdr = if port == 80 { host.to_string() } else { format!("{host}:{port}") };
     let url = format!("http://{host_hdr}{path}");
     let get = |what: &str, limit: usize| -> Result<Vec<u8>, String> {
@@ -538,11 +559,19 @@ fn apply(
     };
     if let Err(e) = swap() {
         let (_, errors) = revert(vol, &trial);
-        let _ = vol.write_state(state);
-        return Err(format!(
-            "the swap failed ({e}); the previous set is back{}",
-            if errors.is_empty() { String::new() } else { format!(" except {}", errors.join("; ")) }
-        ));
+        if errors.is_empty() {
+            return Err(match vol.write_state(state) {
+                Ok(()) => format!("the swap failed ({e}); the previous set is back"),
+                Err(w) => format!("the swap failed ({e}); the previous set is back, and its state was not written ({w})"),
+            });
+        }
+        // Not all of it came back (#229): the trial's journal stays, marked
+        // for the next start to finish putting serial `state.serial` back.
+        let next = match vol.write_state(&trial.rollback_unfinished()) {
+            Ok(()) => format!("the next start finishes putting serial {} back", state.serial),
+            Err(w) => format!("and the state was not written ({w})"),
+        };
+        return Err(format!("the swap failed ({e}), and {} not put back; {next}", errors.join("; ")));
     }
     Ok(())
 }

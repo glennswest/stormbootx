@@ -869,11 +869,19 @@ fn apply(
     };
     if let Err(e) = swap() {
         let errors = revert(vol, &trial);
-        let _ = vol.write_state(state);
-        return Err(format!(
-            "the swap failed ({e}); the previous set is back{}",
-            if errors.is_empty() { String::new() } else { format!(" except {}", errors.join("; ")) }
-        ));
+        if errors.is_empty() {
+            return Err(match vol.write_state(state) {
+                Ok(()) => format!("the swap failed ({e}); the previous set is back"),
+                Err(w) => format!("the swap failed ({e}); the previous set is back, and its state was not written ({w})"),
+            });
+        }
+        // Not all of it came back (#229): the trial's journal stays, marked
+        // for the stick's next boot to finish putting the old set back.
+        let next = match vol.write_state(&trial.rollback_unfinished()) {
+            Ok(()) => format!("the stick's next boot finishes putting serial {} back", state.serial),
+            Err(w) => format!("and the state was not written ({w})"),
+        };
+        return Err(format!("the swap failed ({e}), and {} not put back; {next}", errors.join("; ")));
     }
     r.say("apply", "swapped: the old files are .prev, the bootloader last");
     Ok(())

@@ -106,7 +106,7 @@ may come from the clock, a random number or the build user.
 
 `tests/update-ovmf.sh` (#83) must stay last: it rebuilds `stormbootx.efi`
 with an Ed25519 test key compiled in (`STORMBOOTX_UPDATE_TEST_KEY`) and boots
-a writable GPT medium on a USB stick thirteen times through
+a writable GPT medium on a USB stick fourteen times through
 `tests/update-boots.sh`, sourced by `net-ovmf.sh` for its stubs (#89):
 an `update =` naming a host must be looked up at the lease's DNS server
 (#148);
@@ -118,7 +118,9 @@ signature refused; serial 5 written, restarted, trial passed on the attach;
 serial 5 `current`; serial 6 refused as another machine's canary, then taken
 as this one's, retiring a driver; serial 7 refused for room; serial 8 (a
 dead NVMe port in its conf) fails two trial starts and the third puts serial
-6 back; a fresh FAT32 medium (#185) takes serial 5 and passes its trial. mtools
+6 back, first with a read-only `.prev` so the rollback stops with its
+journal kept and nothing chain-loaded, then finished on the next start
+(#229); a fresh FAT32 medium (#185) takes serial 5 and passes its trial. mtools
 checks the disk after each boot, and `last.log`/`trial.log` on it (#213): the
 failed trial's last start is kept and goes with the restored binary's claim.
 

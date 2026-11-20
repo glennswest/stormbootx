@@ -35,8 +35,12 @@
 #   bad1      serial 8, whose stormboot.conf names a dead NVMe port: written,
 #             restart, trial start 1 falls through
 #   bad2      trial start 2 falls through
-#   revert    the third start puts serial 6 back and chain-loads it; serial 6
-#             refuses 8 (failed here), attaches, and hands down failed:8
+#   held      the third start puts serial 6 back, but README.txt.prev is
+#             read-only (mattrib +r): the rest comes back, the journal stays
+#             (trial = 8 3), and nothing is chain-loaded (#229)
+#   revert    the fourth start finishes the rollback and chain-loads serial
+#             6; serial 6 refuses 8 (failed here), attaches, and hands down
+#             failed:8
 #   fat32     a fresh FAT32 medium, the golden's -usb.img (#185), takes serial 5
 #             and passes its trial
 
@@ -328,14 +332,37 @@ state_has "trial = 8 2"
 log_has /stormboot/last.log "update      : serial 8 on trial, start 2 of 2; it must reach an attach"
 log_has /stormboot/last.log "no network boot: "
 
-uboot revert "${attached[@]}" \
+# #229: a rollback that cannot finish keeps its journal. README.txt.prev is
+# read-only, so the firmware's FAT will not open it to rename it back: the
+# other files come back, the state keeps the trial (start 3: unfinished) and
+# every changed path, and nothing half restored is chain-loaded.
+mattrib -i "$IMG@@$OFF" +r ::/stormboot/drivers/README.txt.prev
+uboot held \
     "update      : serial 8 started 2 times and never attached; putting serial 6 back" \
-    "update      : 4 file(s) put back; starting the restored \\EFI\\BOOT\\BOOTX64.EFI" \
+    "stormboot/drivers/README.txt: " \
+    "update      : 3 file(s) put back, 1 not; the next start finishes it. Nothing is started from a set half put back: this start goes on" \
+    "last log    : serial 8's last start (" \
+    "not:starting the restored"
+state_has "trial = 8 3"
+state_has "prev = 6"
+state_has "failed = 8"
+on_disk /stormboot/state | grep -q '^files = .*stormboot/drivers/README.txt' \
+    && say "[disk] state: README.txt still in the journal" || die "[disk] the journal lost README.txt"
+same /EFI/BOOT/BOOTX64.EFI "$W/rel6/EFI/BOOT/BOOTX64.EFI"
+same /stormboot/drivers/README.txt.prev "$W/rel6/stormboot/drivers/README.txt"
+log_has /stormboot/trial.log "update      : serial 8 on trial, start 2 of 2; it must reach an attach"
+mattrib -i "$IMG@@$OFF" -r ::/stormboot/drivers/README.txt.prev
+
+# The next start (serial 6's binary, back in place) finishes it and starts
+# the restored set.
+uboot revert "${attached[@]}" \
+    "update      : putting serial 6 back in place of serial 8 did not finish on an earlier start; finishing it" \
+    "update      : 1 file(s) put back; starting the restored \\EFI\\BOOT\\BOOTX64.EFI" \
+    "not:started 2 times and never attached" \
     "update      : serial 8 failed its trial on this medium; staying on serial 6 until a newer one" \
     "handed down : StormBootUpdate = failed:8  (attributes 0x6)" \
     "stub:\"update_serial\":6,\"update\":\"failed:8\",\"api_port\":9180,\"trial_log\":\"stormbootx " \
-    "last log    : serial 8's last start (" \
-    ") kept in \\stormboot\\trial.log" \
+    "not:last log    : serial 8's last start (" \
     "stub:no network boot: " \
     "stub:agent kept: " \
     "not:passed its trial"

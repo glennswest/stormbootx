@@ -102,6 +102,23 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#229 — review findings in `src/selfupdate.rs` (P1, stormcentral#1558).**
+      - `f0736064aeff` (a failed rollback cleared its journal): fixed.
+        `State::rolled_back` only after a revert with no error; otherwise
+        `rollback_unfinished` (trial start 3 = `ROLLBACK_UNFINISHED`, journal
+        kept, serial failed) and nothing is chain-loaded; the next start
+        finishes it (`Start::Revert { resumed }`). `apply`'s swap-failure path
+        the same, and the stick updater's. Host test
+        `an_unfinished_rollback_keeps_its_journal`; boot `held` in
+        `tests/update-boots.sh` (a read-only `.prev`, `mattrib +r`).
+      - `a689832bcbe2` (hostname lookup before a lease): the lease wait was
+        #148 (4d77aee, after the reviewed commit); left was `dns =` read
+        while `Vol` holds the medium exclusively: now read before the mount
+        (`clock::lookup_with`). Slirp's DHCP always names a DNS server, so
+        that fallback has no boot here; `named` covers the lease wait.
+      - `1e8c7deb4259` (no bootable path between the two bootloader
+        renames): needs a media layout change (a stable launcher and
+        payload slots, or another way); asked the owner on the issue.
 - [x] **#201 — retire nic-drivers as a boot helper (P2). Done 2026-11-15:** 972defd; sc-build of it passed (the refusal, the rustnic golden, usb-layout, media-ovmf virtio). Registry removal sent to the master; leftovers stormcentral#1426, stormipmi#110, stormd#74. No image: no medium's bytes changed.
       No medium takes it as an input (#52), it holds no iPXE (#91), and the
       owner left it out of the release (stormcos#881: carry the small media,

@@ -114,12 +114,18 @@ fn resolve(host: &str, lease: &[u8]) -> Result<[u8; 4], String> {
 /// the lease's option 6 server (or `dns =`), asked twice over UDP. Also the
 /// self-update's lookup of stormcentral (#83).
 pub fn lookup(host: &str, lease: &[u8]) -> Result<[u8; 4], String> {
+    lookup_with(host, lease, config::stated_dns)
+}
+
+/// `lookup` with `dns =` from the caller: the self-update holds the medium
+/// exclusively when it looks up, so it reads `dns =` before (#229).
+pub fn lookup_with(host: &str, lease: &[u8], stated_dns: impl FnOnce() -> Option<[u8; 4]>) -> Result<[u8; 4], String> {
     if let Some(a) = config::parse_ipv4(host) {
         return Ok(a);
     }
     let dns = dnsname::dhcp_option(lease, dnsname::OPT_DNS)
         .and_then(dnsname::first_dns)
-        .or_else(config::stated_dns)
+        .or_else(stated_dns)
         .ok_or_else(|| format!("no DNS server to look up {host} (none in the lease, no dns =)"))?;
     let mut last = String::new();
     for _ in 0..2 {

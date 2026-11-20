@@ -4,6 +4,9 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-11-20
+- **fix:** #229 (f0736064aeff): a rollback that cannot put every file back keeps its journal. `\stormboot\state` keeps the trial (start 3: unfinished), `prev` and `files`, and nothing half restored is chain-loaded. The start goes on as it is, and the next start finishes the rollback. `apply`'s swap-failure path and `stormbootx-stick`'s do the same instead of writing the old state over a partial revert.
+- **fix:** #229 (a689832bcbe2): the self-update reads `dns =` before it opens the medium exclusively. Before, a lease with no DNS server could never fall back to it. The lease wait itself was #148.
+- **test:** #229: host test `an_unfinished_rollback_keeps_its_journal`; `tests/update-boots.sh` boot `held` (a read-only `README.txt.prev`: the rollback stops, the journal stays, nothing is chain-loaded), then `revert` finishes it.
 - **docs:** `docs/presentation.md` brought up to v0.44.0: no FEC pin or `fec` console command (#202), `prefer_media_drivers` ignored, the fw goldens retired, last.log, handoff guard, boot panel, thirteen host suites, arm64 booted under AAVMF (#84).
 - **test:** #84: the arm64 media boot under AAVMF on every build (`ARCH=arm64 tests/net-ovmf.sh`, `tests/aavmf-boots.sh`; stormcentral#604 put qemu-system-aarch64 and edk2-aarch64 on the build template). The `stormbootx-arm64` ISO and the `stormbootx-arm64-disk` stick start and say `media : fw arm64`. The golden's binary claims from the stub engine, sets the RTC, attaches the NVMe/TCP stub, reads 96 MiB (87 MiB/s under TCG) and starts `\EFI\BOOT\BOOTAA64.EFI`, and the payload reads the hand-down back.
 - **fix:** #84: tcp4probe opens its own architecture's bootloader (`BOOTAA64.EFI` on aarch64), not always `BOOTX64.EFI`.
