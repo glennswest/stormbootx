@@ -118,7 +118,10 @@ then.
         that fallback has no boot here; `named` covers the lease wait.
       - `1e8c7deb4259` (no bootable path between the two bootloader
         renames): needs a media layout change (a stable launcher and
-        payload slots, or another way); asked the owner on the issue.
+        payload slots, or another way); asked the owner on the issue
+        (2026-11-20, `wait-owner`, recommended: a stable launcher + A/B
+        slots). f81ae24's sc-build passed (host test, `held`/`revert`
+        boots). No image requested yet: the issue is not done.
 - [x] **#201 — retire nic-drivers as a boot helper (P2). Done 2026-11-15:** 972defd; sc-build of it passed (the refusal, the rustnic golden, usb-layout, media-ovmf virtio). Registry removal sent to the master; leftovers stormcentral#1426, stormipmi#110, stormd#74. No image: no medium's bytes changed.
       No medium takes it as an input (#52), it holds no iPXE (#91), and the
       owner left it out of the release (stormcos#881: carry the small media,
