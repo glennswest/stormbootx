@@ -22,7 +22,7 @@ scratch files go in `tmp/`.
 Push first, then `sc-build` from this checkout. It builds the pushed commit
 on a fresh build VM as `stormbuild`. There is no checkout there, and no `ssh root@`.
 The plain `cargo build && cargo test` default does not suit a `no_std` UEFI
-crate, so name the command. This builds the three binaries, runs the thirteen
+crate, so name the command. This builds the three binaries, runs the fourteen
 host suites and the initiator crate's tests, boots `espprobe` and stormbootx under OVMF, boots an ISO's
 `startup.nsh` from two EFI Shells, and runs the self-update's boots:
 
@@ -41,6 +41,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   rustc --edition 2021 --test src/logwire.rs -o t/logwire-test && ./t/logwire-test && \
   rustc --edition 2021 --test src/command.rs -o t/command-test && ./t/command-test && \
   rustc --edition 2021 --test src/distmedia.rs -o t/distmedia-test && ./t/distmedia-test && \
+  rustc --edition 2021 --test src/bootrec.rs -o t/bootrec-test && ./t/bootrec-test && \
   cargo test -p nvme-tcp-initiator && \
   R=${CARGO_TARGET_DIR:-target}/x86_64-unknown-uefi/release && \
   tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi && \
