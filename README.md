@@ -53,7 +53,7 @@ as a NIC driver (#26; absent on ordinary media). It writes to these:
 | the attached clone on the engine | the booted OS writes to its disk, and the BlockIO handle is read-write |
 | the hardware clock (RTC), through UEFI `SetTime` | a boot whose NTP server answers while the RTC is more than a second off (#77); UTC, time zone and daylight left as the firmware had them |
 | **volatile** EFI variables, `StormBootTag`, `StormBootHostNqn`, `StormBootClock`, `StormBootUpdate` and `StormBootInstallConfig` (+ its chunks) | every boot that names the machine, attaches an image, asks NTP, has a self-update state or finds an `install-config.yaml` on the media (#76, #77, #83, #79); gone at the next reset |
-| its own boot medium: `\EFI\BOOT\BOOTX64.EFI`, `\startup.nsh`, `\stormboot\stormboot.conf`, `\stormboot\drivers\*` (with `*.new`/`*.prev` copies), `\stormboot\state`, and `\stormboot\local.conf` only to keep a `name =` | a writable medium (USB stick, local ESP) with `update =`, when a newer signed release verifies, and the starts of its trial (#83, *Self-update*) |
+| its own boot medium: `\stormboot\payload\<serial>.efi` and the boot record `\stormboot\boot.a`/`boot.b` (#229), `\startup.nsh`, `\stormboot\stormboot.conf`, `\stormboot\drivers\*` (with `*.new`/`*.prev` copies), `\stormboot\state`, and `\stormboot\local.conf` only to keep a `name =`; never the launcher, `\EFI\BOOT\BOOTX64.EFI`, once there is one | a writable medium (USB stick, local ESP) with `update =`, when a newer signed release verifies, and the starts of its trial (#83, *Self-update*) |
 | its own boot medium: `\stormboot\last.log` (this start's console, at most 64 KiB) and `\stormboot\trial.log` (a failed trial's last start) | every start on a writable medium, before the attach and after the fall-through (#213, *The start's log*); never on a read-only medium or a RAM disk |
 | one **non-volatile** EFI variable, `StormBootMinSerial` | when a self-updated medium passes its trial (#83): the highest release serial this machine has run, so an older signed release can't be replayed onto it |
 
@@ -177,13 +177,40 @@ So a frozen screen says where the boot stopped:
 Nothing after ExitBootServices can be timed by UEFI: a hang there needs a
 BMC watchdog the OS takes over.
 
+## The medium: the launcher and its payload
+
+Since #229 a medium's removable-media bootloader (`\EFI\BOOT\BOOTX64.EFI`,
+`BOOTAA64.EFI` on arm64) is **stormbootx-launch** (`src/launch.rs`), a small
+binary that nothing renames or rewrites. stormbootx itself is a payload
+beside it, `\stormboot\stormbootx.efi` as a medium is built. The launcher
+reads the **boot record** (`src/bootrec.rs`): two files,
+`\stormboot\boot.a` and `\stormboot\boot.b`, each `stormbootx-boot 1`, a
+`seq`, the `payload` path, its `sha256`, and a `check` line (the SHA-256 of
+the lines above it). It starts the payload of the newest whole record, its
+hash checked, from the bytes it read and under its own file path; if that
+one is missing, does not match or does not load, the older record's, then
+`\stormboot\stormbootx.efi`. It says nothing unless it passes over
+something (`launch : \stormboot\boot.b is not a whole record; ignored`),
+writes nothing, and returns the payload's status. stormbootx names the
+file it was started from: `payload : \stormboot\payload\9.efi, started by
+the launcher`.
+
+A record is written to the slot that does not name what boots now, with the
+next `seq`, so a write cut short leaves the other record whole. That is why a
+self-update has no step at which the medium cannot boot (finding
+1e8c7deb4259): the new stormbootx is written under a new name, nothing points
+at it until one record write does, and the launcher is never touched. A
+`--probe` medium boots tcp4probe itself, and `build-boot-agent.sh
+--no-launcher` builds the layout before #229, for the migration test.
+
 ## What it does, step by step
 
 `src/main.rs`, `run()`:
 
 0. **A self-update on trial** (#83, `src/selfupdate.rs`), before anything
-   else: counts this start, or, after two starts that never attached, puts
-   the previous files back and chain-loads them. See *Self-update*.
+   else: counts this start, or, after two starts that never attached (or
+   when the trial's payload is not the one the launcher started, #229),
+   puts the previous files back and chain-loads them. See *Self-update*.
 1. **Banner**: version and build stamp (`STORMBOOTX_BUILD`: the short commit,
    with `-dirty` if the tree had changes, set by `build-boot-agent.sh`;
    `unstamped build` otherwise), so the console always says which binary is
@@ -677,15 +704,16 @@ stormcentral#279.
   serial 42
   canary 52:54:00:12:34:56          (optional, repeatable: only these MACs)
   downgrade true                    (optional: a deliberate rollback, #96)
-  file <sha256> <size> EFI/BOOT/BOOTX64.EFI
+  file <sha256> <size> EFI/BOOT/BOOTX64.EFI          (the launcher)
+  file <sha256> <size> stormboot/stormbootx.efi
   file <sha256> <size> stormboot/stormboot.conf
   file <sha256> <size> stormboot/drivers/stormnic-ixgbe.efi
   file <sha256> <size> startup.nsh
   ```
 
   Paths are only `startup.nsh`, `EFI/BOOT/*` and `stormboot/*` (never
-  `stormboot/state` or `stormboot/local.conf`), and `BOOTX64.EFI` must be
-  there. A media golden's `media.files` is exactly its `file` lines.
+  `stormboot/state`, `stormboot/local.conf`, the boot record or
+  `stormboot/payload/*`), and `BOOTX64.EFI` must be there. A media golden's `media.files` is exactly its `file` lines.
 - **Authentic.** The signature is checked against the Ed25519 public keys
   compiled in (`manifest::RELEASE_KEYS`, current and next) before a byte of
   the manifest is believed, then each fetched file's size and SHA-256. Plain
@@ -708,19 +736,37 @@ stormcentral#279.
   judged: `update : current (running v0.23.0; serial 1 offers v0.14.0,
   which is older); not taken`. A deliberate rollback to an older version
   says `downgrade true` in the manifest.
-- **A/B.** Only the files that differ are fetched. Each is written as
-  `*.new`; then the current file becomes `*.prev` and the new one takes its
-  name, the bootloader last; a loadable driver the release no longer carries
-  becomes `*.prev` too. `\stormboot\state` records the trial before the swap,
-  and the machine warm-resets into the new set:
+- **Last known good and new.** Only the files that differ are fetched. The
+  release's stormbootx is compared with the payload that is running, and,
+  if it differs, written as `\stormboot\payload\<serial>.efi` and read back;
+  every other payload is deleted first, so a medium holds two at most, the
+  one running and the new one (#229). Every other file is written as
+  `*.new`. `\stormboot\state` records the trial (with `payload =` and
+  `good =`, the payload to go back to), then a boot record names the new
+  payload, then each current file becomes `*.prev` and the new one takes
+  its name; a loadable driver the release no longer carries becomes `*.prev`
+  too. The launcher is never rewritten: a release whose launcher differs
+  says so and keeps the medium's. The machine warm-resets into the new set:
   `update : v0.12.0 -> v0.13.0 (golden-…, serial 6), 3 file(s), 280 KB; restarting into it`.
+- **The migration.** On a medium from before #229, stormbootx is itself
+  `BOOTX64.EFI`. Its update renames the old files out of the way and the new
+  ones in, the bootloader last: `BOOTX64.EFI` becomes the launcher and
+  `stormboot/stormbootx.efi` is new. That swap has the one window #229 is
+  about, once per medium.
 - **The trial.** The new binary counts its starts
   (`update : serial 6 on trial, start 1 of 2; it must reach an attach`) and
   passes once it has attached an image, or the engine answered a `local`
   intent (`update : serial 6 passed its trial (attached); it stays`). After
-  two starts without that, the third puts every changed file back from
-  `*.prev`, marks the serial failed on this medium, and chain-loads the
-  restored binary. A boot that fails for a reason that is not the release
+  two starts without that, the third names the good payload in the boot
+  record again, deletes the failed one, puts every other changed file back
+  from `*.prev`, marks the serial failed on this medium, and chain-loads the
+  launcher, which starts the restored payload. A start whose payload is not
+  the trial's (power lost before the record was written, or the launcher
+  passed over the new payload) does the same at once:
+  `update : serial 9's payload \stormboot\payload\9.efi did not start (this
+  is \stormboot\payload\6.efi); putting serial 6 back`. A rollback that
+  cannot put every file back keeps the trial's journal (`trial = <n> 3`)
+  and starts nothing half restored; the next start finishes it (#229). A boot that fails for a reason that is not the release
   (the engine down twice) also puts it back; the cost is a stick on the
   previous release until the next serial.
 - **Linux is told**: `StormBootUpdate` (volatile, #76's vendor GUID) is
@@ -730,8 +776,8 @@ stormcentral#279.
   `tag =` that the release's `stormboot.conf` would drop.
 - **Room.** The new files are written beside the old, so the medium needs
   their size free (the `*.prev` copies about to be replaced count); a
-  medium without room says so and is left alone. The 4 MiB ESP of
-  `build-boot-agent.sh` holds a set of binary and drivers three times over.
+  medium without room says so and is left alone (the payloads about to be
+  pruned count too).
 - **A failed trial says why** (#213): the start that puts a set back keeps
   the previous start's `last.log`, the failed set's last, as
   `\stormboot\trial.log` (`last log : serial 8's last start (212 line(s))
@@ -757,17 +803,24 @@ disk. The previous start's file is read first, and goes with the claim as
 files. On a node, the stick's FAT holds both files to read.
 
 `tests/update-ovmf.sh` boots a writable GPT medium on a USB stick
-(`qemu-xhci` + `usb-storage`) under OVMF ten times against a stub
-stormcentral and a test key: stormcentral's own first promotion
-(`tests/fixtures/`, hex signature) verifies against the release key; a
-manifest signed by another key is refused; serial 5 is written, restarts,
-passes its trial on the attach; serial 5 again is `current`; serial 6 for
+(`qemu-xhci` + `usb-storage`) under OVMF against a stub stormcentral and a
+test key, starting from the layout before #229: stormcentral's own first
+promotion (`tests/fixtures/`, hex signature) verifies against the release
+key; a manifest signed by another key is refused; serial 5 is written (the
+migration: `BOOTX64.EFI` becomes the launcher), restarts, passes its trial
+on the attach; serial 5 again is `current`; serial 6 for
 another machine's MAC only is refused, then, naming this machine as a canary
 too, taken, retiring the driver it no longer carries to `.prev`; serial 7,
 larger than the ESP, is refused for room; serial 8, whose `stormboot.conf`
 names a dead NVMe port, fails both trial starts, and the third start puts
-serial 6 back, which then refuses 8. The disk is checked with mtools after
-each boot, `last.log` and `trial.log` too (#213): the failed trial's second
+serial 6 back (first with a read-only `.prev`, so the rollback stops with
+its journal kept, then finished), which then refuses 8; serial 6 and 8 are
+payloads named by the boot record, two on the disk at most. A trial cut
+between its state and its record is put back by the payload the launcher
+starts. A fresh launcher medium boots the newest record's payload, then,
+with that record torn, the older one's, with its payload off its hash the
+older one's again, and with no record the shipped one. The disk is checked
+with mtools after each boot, `last.log` and `trial.log` too (#213): the failed trial's second
 start is in `trial.log` and in the restored binary's claim as `trial_log`.
 
 ### Why chain-load
@@ -1276,7 +1329,10 @@ have done:
 5. **apply** exactly as the self-update does: files checked against the
    signed size and SHA-256, written as `*.new` and read back, the trial in
    `state`, then the `*.prev` swap with the bootloader last, put back if it
-   fails; `name =`/`tag =` carried into `local.conf`. The stick's next boot
+   fails. On a stick with the launcher (#229) the release's stormbootx is a
+   new `stormboot/payload/<serial>.efi` beside the payload the launcher
+   starts now, which it finds as the launcher does, and a boot record names
+   it; the launcher is never rewritten; `name =`/`tag =` carried into `local.conf`. The stick's next boot
    runs the new set on trial and puts the old one back if it never attaches;
 6. **report** one line per step, exit 0 unless something failed, and
    `/run/stormbootx-stick/status.json` (`outcome`: `updated`, `current`,
@@ -1387,15 +1443,15 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   tests/update-ovmf.sh $R/tcp4probe.efi'
 ```
 
-That builds `stormbootx.efi`, `tcp4probe.efi` and `espprobe.efi`, and runs the
-thirteen host test suites and the initiator crate's. Then it boots espprobe under OVMF (`tests/esp-ovmf.sh`),
+That builds `stormbootx.efi`, `stormbootx-launch.efi`, `tcp4probe.efi` and
+`espprobe.efi`, and runs the fourteen host test suites and the initiator crate's. Then it boots espprobe under OVMF (`tests/esp-ovmf.sh`),
 and stormbootx itself against the stub engine and NVMe/TCP target
 (`tests/net-ovmf.sh`, with stormnic-virtio built in the job for its
 take-over boots). Last, it builds an ISO and boots its `startup.nsh`
 from an EFI Shell (`tests/shell-ovmf.sh`, #60), once with the old EDK shell
 and once with OVMF's own. `tests/update-ovmf.sh` (#83) runs last, because it
-rebuilds `stormbootx.efi` with a test key: ten self-update boots off a
-writable USB stick (*Self-update*).
+rebuilds `stormbootx.efi` with a test key: the self-update boots off a
+writable USB stick, and the launcher's (*Self-update*).
 `tests/repro.sh` (#53) builds `stormbootx.efi` twice, from two copies of
 the commit at different paths with two `CARGO_HOME`s, and requires the same
 bytes. Two things made one commit give two digests in two goldens: lld-link

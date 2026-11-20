@@ -107,7 +107,7 @@ may come from the clock, a random number or the build user.
 
 `tests/update-ovmf.sh` (#83) must stay last: it rebuilds `stormbootx.efi`
 with an Ed25519 test key compiled in (`STORMBOOTX_UPDATE_TEST_KEY`) and boots
-a writable GPT medium on a USB stick fourteen times through
+a writable GPT medium on a USB stick nineteen times through
 `tests/update-boots.sh`, sourced by `net-ovmf.sh` for its stubs (#89):
 an `update =` naming a host must be looked up at the lease's DNS server
 (#148);
@@ -121,7 +121,12 @@ as this one's, retiring a driver; serial 7 refused for room; serial 8 (a
 dead NVMe port in its conf) fails two trial starts and the third puts serial
 6 back, first with a read-only `.prev` so the rollback stops with its
 journal kept and nothing chain-loaded, then finished on the next start
-(#229); a fresh FAT32 medium (#185) takes serial 5 and passes its trial. mtools
+(#229); the medium starts in the layout before #229 (`--no-launcher`), so
+serial 5 is the migration to the launcher, and serials 6 and 8 are payloads
+named by the boot record (two on the disk at most); `cut` is a trial whose
+record was never written, put back by the payload the launcher starts; four
+`launch-*` boots on a fresh launcher medium: the newest record, a torn one,
+a payload off its hash, no record; a fresh FAT32 medium (#185) takes serial 5 and passes its trial. mtools
 checks the disk after each boot, and `last.log`/`trial.log` on it (#213): the
 failed trial's last start is kept and goes with the restored binary's claim.
 
@@ -321,6 +326,8 @@ kept for a later need; the test command sets it to keep the code honest.
 | File | Job |
 |---|---|
 | `src/main.rs` | `run()`: the boot, step by step; the hold and the boot again (#167); the fall-through |
+| `src/launch.rs` | fourth binary, `stormbootx-launch` (#229): the medium's `BOOTX64.EFI`/`BOOTAA64.EFI`, never rewritten; starts the payload of the newest whole boot record (hash checked), else the older, else `\stormboot\stormbootx.efi`; writes nothing |
+| `src/bootrec.rs` | the boot record (#229): `\stormboot\boot.a`/`boot.b`, `seq`, `payload`, `sha256`, `check`; which slot the next write goes to, the launcher's order (core-only, digest handed in, host-tested; shared with the launcher and stormbootx-stick) |
 | `src/api.rs` | stormbootx's own API (#167): `/api/v1/status`, `/inventory`, `/log`, `POST /api/v1/command`; Ed25519 over `RELEASE_KEYS` and `command_key =`, the `StormBootCommandId` floor (NV); the engine's record (stormblock#494); the commands done at the boot's fixed points; the hold (`hold =`, `hold_retry =`) |
 | `src/command.rs` | the signed command's text, body and verbs (no `fec` verbs since #202/#203: the FEC is the driver's), and the API's HTTP parsing (core + alloc, host-tested) |
 | `src/smbios.rs` | the serials (Type 1 → 2 → 3, placeholders and shared chassis serials rejected), before any network exists; the MAC as the floor |
@@ -336,7 +343,7 @@ kept for a later need; the test command sets it to keep the code honest.
 | `src/handoffguard.rs` | the handoff's guard (#219): a one-shot, allocation-free `BEFORE_EXIT_BOOT_SERVICES` line on the serial consoles and the panel, a green framebuffer line after the drivers' ExitBootServices handlers, the UEFI watchdog (`handoff_watchdog =`, 300 s) until ExitBootServices; `disarm` when the bootloader returns |
 | `src/handoff.rs` | `StormBootTag`/`StormBootHostNqn`, volatile EFI variables naming the machine to Linux's initramfs (#76, stormblock#249); `StormBootEngine` (#183); `StormBootClock` (#77); `StormBootUpdate` (#83); `StormBootInstallConfig` + chunks (#79) |
 | `src/lastlog.rs` | each start's console on the medium (#213): `\stormboot\last.log` at fixed points before the attach (sealed after it, #46), the failed trial's as `trial.log`, and the claim's `trial_log`/`last_log`/`log` within the agent's 15 KiB |
-| `src/selfupdate.rs` | the boot medium updates itself (#83): trial count and revert at start; fetch, Ed25519 check, `*.new`/`*.prev` swap and restart after `net::up`; `mark_good` after the attach; `StormBootMinSerial` (NV) |
+| `src/selfupdate.rs` | the boot medium updates itself (#83): trial count and revert at start (a trial payload the launcher did not start goes back at once; a rollback that cannot finish keeps its journal, #229); fetch, Ed25519 check, the new stormbootx as `\stormboot\payload\<serial>.efi` activated by a boot record (others pruned), `*.new`/`*.prev` swap for the rest, restart after `net::up`; on a medium with no launcher the old swap (the migration); `mark_good` after the attach; `StormBootMinSerial` (NV) |
 | `src/manifest.rs` | the self-update's signed manifest, `RELEASE_KEYS` (stormcentral's, #86), `\stormboot\state`, trial and serial decisions, HTTP framing, `update =` (core-only, host-tested) |
 | `src/installconf.rs` | `install-config.yaml` (#79): the media slot, the chunk variables' names and the `v1:<len>:<N>:<sha256>` header (core-only, host-tested) |
 | `src/clock.rs` | the RTC set from NTP before Linux (#77): option 42 / `ntp =` / `pool.ntp.org`, one bounded SNTP exchange, `SetTime` in UTC |
@@ -561,6 +568,16 @@ These have each cost a debugging session. Do not "simplify" them away.
   stick written from today's build, an old promotion), and the serial alone
   once rewrote a v0.15.0 stick to v0.14.0. A deliberate rollback says
   `downgrade true`.
+- **The launcher is never rewritten, and a record write is what boots a
+  release** (#229, finding 1e8c7deb4259; the master's call on #229,
+  2026-11-20). FAT cannot rename over a file, so the old swap of
+  `BOOTX64.EFI` had a moment with no bootloader on the medium. Now
+  `BOOTX64.EFI` is stormbootx-launch, stormbootx is a payload, and the
+  boot record is two files written alternately: a torn write is an
+  invalid record and the other still names what booted. Keep exactly the
+  running payload and the new one; never point a record at a payload
+  before it is written and read back; never let an update touch the
+  launcher. A medium with no launcher takes it by the old swap, once.
 - **The trial is counted at start, before anything that could hang.** A new
   set that hangs in the NIC driver or the network never reaches the code that
   would notice; counting first means the third power cycle puts the old set
