@@ -13,6 +13,13 @@ path = "src/main.rs"
 # before anyone writes a stick. Shares tcp4.rs by path rather than through a
 # library crate: a UEFI binary is `no_main`/`no_std` and there is exactly one
 # module to share.
+# A writable medium's removable-media bootloader (#229): it starts the
+# stormbootx payload the boot record names and is never rewritten, so a
+# self-update has no step at which the medium cannot boot.
+[[bin]]
+name = "stormbootx-launch"
+path = "src/launch.rs"
+
 [[bin]]
 name = "tcp4probe"
 path = "src/tcp4probe.rs"
