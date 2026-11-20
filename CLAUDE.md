@@ -22,7 +22,7 @@ scratch files go in `tmp/`.
 Push first, then `sc-build` from this checkout. It builds the pushed commit
 on a fresh build VM as `stormbuild`. There is no checkout there, and no `ssh root@`.
 The plain `cargo build && cargo test` default does not suit a `no_std` UEFI
-crate, so name the command. This builds the three binaries, runs the fourteen
+crate, so name the command. This builds the four binaries, runs the fourteen
 host suites and the initiator crate's tests, boots `espprobe` and stormbootx under OVMF, boots an ISO's
 `startup.nsh` from two EFI Shells, and runs the self-update's boots:
 
