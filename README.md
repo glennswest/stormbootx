@@ -1388,7 +1388,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
 ```
 
 That builds `stormbootx.efi`, `tcp4probe.efi` and `espprobe.efi`, and runs the
-ten host test suites and the initiator crate's. Then it boots espprobe under OVMF (`tests/esp-ovmf.sh`),
+thirteen host test suites and the initiator crate's. Then it boots espprobe under OVMF (`tests/esp-ovmf.sh`),
 and stormbootx itself against the stub engine and NVMe/TCP target
 (`tests/net-ovmf.sh`, with stormnic-virtio built in the job for its
 take-over boots). Last, it builds an ISO and boots its `startup.nsh`

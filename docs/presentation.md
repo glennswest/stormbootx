@@ -15,7 +15,7 @@ paginate: true
 
 **A UEFI boot agent that attaches a machine's image over NVMe/TCP and boots it.**
 
-v0.41.0 (2026-11-10) · `x86_64-unknown-uefi` · `no_std` · ~320 KB
+v0.44.0 (2026-11-17) · `x86_64-unknown-uefi` · `no_std` · ~320 KB
 
 No kernel, no initramfs, no PXE, no TFTP. It carries its own TCP/IP (smoltcp
 on the NIC driver's SNP), so it needs no network stack from the firmware.
@@ -126,8 +126,10 @@ Any failure on any arrow → **fall through to the local disk**.
   ESP; the bridge is the fallback.
 - **NIC drivers from the media** (`drivers.rs`, #26): every `*.efi` in
   `\stormboot\drivers` is started after the platform's own drivers bind, so
-  it only takes NICs nothing else drives, except `prefer_media_drivers`
-  (#108, #131), which takes VMs' virtio-net from OVMF's driver. Each step
+  it takes every NIC a stormnic driver on the media matches by
+  vendor:device, from whatever firmware driver holds it (#108, #131, #202),
+  and gives it back if ours does not bind. The driver brings the port up,
+  speed and FEC, by its own rule; stormbootx sets none. Each step
   is printed, and a hung SNP call is named (`snpwatch.rs`, #88).
 - **Network** (`net.rs`, `entropy.rs`, #56): its own TCP/IP, smoltcp on each
   NIC's SNP (opened exclusively), with no firmware TCP4 anywhere. DHCP on
@@ -147,9 +149,16 @@ Any failure on any arrow → **fall through to the local disk**.
   claims as the machine stormbootx claimed as.
 - **Self-update** (`selfupdate.rs`, `manifest.rs`, #83): a writable medium
   takes a newer Ed25519-signed release from stormcentral, on trial.
-- **NIC FEC report and pin** (`mlxfec.rs`, `fecpin.rs`): prints each ConnectX
-  port's FEC; `fec_pin = rs` writes one whose NV value differs, one warm reset,
-  no link state read (#186). A ConnectX-3 says it has none (#25).
+- **Last log** (`lastlog.rs`, #213): each start's console is kept on the
+  medium as `\stormboot\last.log`, a failed trial's as `trial.log`, and the
+  claim carries both.
+- **Handoff guard** (`handoffguard.rs`, #219): a line before
+  ExitBootServices, a green line after the drivers' handlers, and the UEFI
+  watchdog (`handoff_watchdog =`, 300 s).
+- **Boot panel** (`ui.rs`, #144, #220): drawn with stormblock-screen-spec
+  on the GOP; its first frame stays up at the handoff. `ui = log` turns it off.
+- **No FEC in stormbootx** (#202): the NIC driver owns speed and FEC. The FEC
+  pin, `mlxfec`, `fec =` and the `fec` commands are gone.
 
 ---
 
@@ -166,7 +175,7 @@ A boot path must never need the network in order to boot without it.
 5. Returns `EFI_ABORTED`; the boot manager tries the next option.
 
 Console (`shell.rs`): `nics` · `state` · `dhcp [secs]` · `connect IP PORT` ·
-`pci [all]` · `fec [MODE]` · `reset` · `boot`
+`pci [all]` · `reset` · `boot`
 
 ---
 
@@ -207,9 +216,8 @@ Read from the volume it booted from. `key = value`, each key independent.
 | `rng` | `firmware` | first entropy source: `firmware`, `cpu`, `jitter` |
 | `media` | — | the label printed under the banner |
 | `esp` | `auto` | who reads the ESP: firmware then stormbootx, or one alone (#37) |
-| `fec`, `fec_pin` | — | a recovery stick's FEC; `rs` pins NV FEC at boot (#186) |
 | `nic_verbose` | `false` | stormnic drivers print their full trace (#80) |
-| `prefer_media_drivers` | — | `virtio`, `mlx5`, `e1000e`: take NICs from firmware (#108, #131, #70) |
+| `prefer_media_drivers` | — | ignored since #202 (named on the console): every stormnic driver takes the NICs it matches |
 | `update` | — | the self-update's URL, or `off` (#83) |
 | `version`, `commit` | — | written on the media for storminstall; not read (#94) |
 
@@ -217,10 +225,10 @@ Read from the volume it booted from. `key = value`, each key independent.
 
 ## How it ships and is operated
 
-- **Built** with `sc-build` on the build box: three `.efi`s plus ten host
-  test suites (`intent` 9, `sha256` 7, `universal` 9, `dnsname` 8, `esp` 13,
-  `sntp` 8, `manifest` 13, `installconf` 7, `inventory` 6, `connectx` 4)
-  and the initiator crate's 7; then `espprobe` boots under OVMF against a 4K
+- **Built** with `sc-build` on the build box: three `.efi`s plus thirteen host
+  test suites (`intent`, `sha256`, `universal`, `dnsname`, `esp`, `sntp`,
+  `manifest`, `installconf`, `inventory`, `pcibus`, `logwire`, `command`,
+  `distmedia`) and the initiator crate's; then `espprobe` boots under OVMF against a 4K
   disk (#37), stormbootx boots against a stub engine and NVMe/TCP target
   with no firmware network stack (`net-ovmf.sh`, #56), an ISO's
   `startup.nsh` starts it from the old EDK shell and OVMF's Shell 2.x
@@ -228,16 +236,17 @@ Read from the volume it booted from. `key = value`, each key independent.
   byte (`repro.sh`, #53), and the self-update boots off a USB stick
   (`update-ovmf.sh`, #83).
 - **Ships as goldens** (#21, decided 2026-09-28), written by
-  `deploy/build-golden.sh`: `stormbootx` (no NIC drivers: the firmware's own, #52),
-  `stormbootx-rustnic` (the Rust stormnic-ixgbe, stormnic-mlx4 and
-  stormnic-virtio drivers, #45, #108); the drivers ship inside each
+  `deploy/build-golden.sh`: `stormbootx-rustnic` (the Rust stormnic drivers: virtio, mlx5, mlx4, ixgbe,
+  e1000e, igb), the `-disk`, `-mlx5test`, `-arm64`, `-arm64-disk` and `-stick`
+  goldens; the fw goldens (`stormbootx`, `stormbootx-disk`) are retired by #202
+  and build only with `STORMBOOTX_FW_MEDIA=1`; the drivers ship inside each
   medium, not as a golden of their own (#201), and no iPXE anywhere (#91). Every golden names no fallback
   namespace (#36). Both media are stormcentral components of kind
   `media`: `stormcentral component build stormbootx` (or
   `stormbootx-rustnic`) builds a drive golden whose bytes are the ISO.
   Nothing is kept on the build box.
 - **Packaging** is `scripts/build-boot-agent.sh`; hand-built variants:
-  `--pin`, `--probe`, `--fec` (a recovery stick).
+  `--pin`, `--probe`.
 - **No boot option?** The media's `\startup.nsh` (#60) finds the volume
   with `BOOTX64.EFI` and `stormboot.conf` on `fs0`..`fs7` and starts it from
   the firmware's EFI Shell.
@@ -281,7 +290,6 @@ smoltcp, through stormuefi to a running stormcos (#56, #68).
 | #69–#74 | more Rust NIC drivers (iPXE retired from every medium, #91) | paused by the owner at P3 |
 | #92, #89 | v0.29.0 promoted (canary server1 first, the master, after the 2026-10-17 freeze), and a stick taking it on metal | the master |
 | #100 | more than one NVMe/TCP command in flight (~46 MiB/s on metal) | — |
-| #84 | arm64 media (`BOOTAA64.EFI`) | the owner; stormcentral#604 |
 | #110 | the claim over HTTPS against a fleet CA | — (stormcos#35 closed as a design) |
 | #14 | test containers | a test's engine token (stormcentral#133) |
 
@@ -289,13 +297,13 @@ smoltcp, through stormuefi to a running stormcos (#56, #68).
 
 ## Status
 
-- **v0.41.0** (2026-11-10), on metal since 2026-09-05 (v0.24.0 first). Since then: the API and `maint` (#167), HTTP boot and arm64 sticks (#172), `-usb.img` for the Dell R6415 (#185), `prefer_media_drivers = mlx5` (#131), the engine's boot port (#183), and the FEC pin at boot, `fec_pin = rs` (#186); jumbo frames on the Intel 10G (#192); stormnic-e1000e and stormnic-igb on the rustnic media (#70, #69); a stormdist release medium installs offline, with its read rate (#198).
+- **v0.44.0** (2026-11-17): the boot panel in the boot screen's look (#220), the handoff guard (#219), last.log (#213), our drivers only and no FEC in stormbootx (#202), the nic-drivers golden retired (#201); arm64 media boot under AAVMF on every build (#84, 2026-11-20). Before it, v0.41.0 (2026-11-10), on metal since 2026-09-05 (v0.24.0 first). Since then: the API and `maint` (#167), HTTP boot and arm64 sticks (#172), `-usb.img` for the Dell R6415 (#185), `prefer_media_drivers = mlx5` (#131), the engine's boot port (#183), and the FEC pin at boot (#186, removed by #202); jumbo frames on the Intel 10G (#192); stormnic-e1000e and stormnic-igb on the rustnic media (#70, #69); a stormdist release medium installs offline, with its read rate (#198).
 - Intents (#11) and universal boot (#15) are in the binary and tested
   under OVMF against a stub engine, and inert until the engine serves
   them: forge runs stormblock 13.7.0 (2026-10-09), so every
   intent read is a 404 (→ `auto`, which claims, #3) and there is no
   `boothost/default`.
 - **P1:** #92 (promote the install-config-capable media), #14.
-- **Decisions open:** #84 (arm64 media), #35 (what the fw golden keeps).
+- **Decisions open:** #35 (what the fw golden keeps).
 
 Source: https://github.com/glennswest/stormbootx
