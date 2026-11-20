@@ -295,11 +295,11 @@ SILENT_PORT=$(cat "$W/silent.port" 2>/dev/null) || die "the silent port did not 
 
 # The disk: a 128 MiB FAT16 at 4096-byte sectors (the shape stormblock lays
 # on a 4K release), the payload padded to 96 MiB, in a GPT at 4096-byte blocks.
-# ARCH=arm64 (#84): the payload as BOOTAA64.EFI, padded to 32 MiB (TCG).
-PAYLOAD_NAME=BOOTX64.EFI PAYLOAD_PAD=96M
-[[ "${ARCH:-x86_64}" == arm64 ]] && PAYLOAD_NAME=BOOTAA64.EFI PAYLOAD_PAD=32M
+# ARCH=arm64 (#84): the payload as BOOTAA64.EFI.
+PAYLOAD_NAME=BOOTX64.EFI
+[[ "${ARCH:-x86_64}" == arm64 ]] && PAYLOAD_NAME=BOOTAA64.EFI
 cp "$PAYLOAD" "$W/payload.efi"
-truncate -s "$PAYLOAD_PAD" "$W/payload.efi"
+truncate -s 96M "$W/payload.efi"
 mkfs.fat -C -S 4096 -F 16 -s 1 -n RELEASE "$W/esp4k.img" 131072 >/dev/null
 mmd -i "$W/esp4k.img" ::/EFI ::/EFI/BOOT
 mcopy -i "$W/esp4k.img" "$W/payload.efi" "::/EFI/BOOT/$PAYLOAD_NAME"

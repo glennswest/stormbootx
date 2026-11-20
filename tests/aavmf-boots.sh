@@ -16,7 +16,7 @@
 #   a64-claim   STORMBOOTX-AARCH64.EFI on a test ISO naming the stubs: smoltcp
 #               over the firmware's SNP, a lease from slirp, the engine's
 #               version, the default claim (`stubhost`), the RTC set from the
-#               SNTP stub, the attach, the firmware's FAT reading the payload
+#               SNTP stub, the attach, the firmware's FAT reading the 96 MiB payload
 #               through stormbootx's BlockIO, and the payload (tcp4probe built
 #               for aarch64) started as \EFI\BOOT\BOOTAA64.EFI and reading the
 #               hand-down back.
@@ -142,11 +142,14 @@ a64 a64-claim "$W/a64.iso" \
     "namespace : " \
     "x 4096 bytes" \
     "blockio     : published on handle" \
-    "MiB read in all" \
+    "blockio     : 96 MiB read in all" \
     "boot        : starting \\EFI\\BOOT\\BOOTAA64.EFI from the attached image" \
     "is there a TCP/IP stack in this firmware" \
     "handed down : StormBootTag = stubhost  (attributes 0x6)" \
     "handed down : StormBootClock = synced:10.0.2.2  (attributes 0x6)" \
+    "boot fs     : \\EFI\\BOOT lists . | .. | BOOTAA64.EFI" \
+    "boot fs     : BOOTAA64.EFI is 100663296 bytes; not hashed here" \
+    "rtc         : 2031-05-04 03:0" \
     "not:no network boot" \
     "not:BOOTX64.EFI" \
     "stub:GET /api/v1/health" \

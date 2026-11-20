@@ -222,15 +222,21 @@ fn boot_fs() {
         Err(e) => uefi::println!("boot fs     : no \\EFI\\BOOT ({:?})", e.status()),
     }
 
-    // The bootloader itself, read in an odd size, then sought into.
+    // The bootloader itself (this architecture's name, #84), read in an odd
+    // size, then sought into.
+    #[cfg(not(target_arch = "aarch64"))]
+    const LOADER: (&str, &uefi::CStr16) = ("BOOTX64.EFI", cstr16!("\\EFI\\BOOT\\BOOTX64.EFI"));
+    #[cfg(target_arch = "aarch64")]
+    const LOADER: (&str, &uefi::CStr16) = ("BOOTAA64.EFI", cstr16!("\\EFI\\BOOT\\BOOTAA64.EFI"));
+    let name = LOADER.0;
     match root
-        .open(cstr16!("\\EFI\\BOOT\\BOOTX64.EFI"), FileMode::Read, FileAttribute::empty())
+        .open(LOADER.1, FileMode::Read, FileAttribute::empty())
         .map(|h| h.into_regular_file())
     {
         Ok(Some(mut f)) => {
             let size = f.get_boxed_info::<FileInfo>().map(|i| i.file_size()).unwrap_or(0);
             if size > 8 << 20 {
-                uefi::println!("boot fs     : BOOTX64.EFI is {size} bytes; not hashed here");
+                uefi::println!("boot fs     : {name} is {size} bytes; not hashed here");
             } else {
                 let mut hash = sha256::Sha256::new();
                 let mut buf = alloc::vec![0u8; 7919];
@@ -258,7 +264,7 @@ fn boot_fs() {
                 }
                 let hex = hash.finalize().to_hex();
                 uefi::println!(
-                    "boot fs     : BOOTX64.EFI {total} bytes, sha256 {}",
+                    "boot fs     : {name} {total} bytes, sha256 {}",
                     core::str::from_utf8(&hex).unwrap_or("?")
                 );
                 let mut again = [0u8; 64];
@@ -272,8 +278,8 @@ fn boot_fs() {
                 uefi::println!("boot fs     : seek {}", if seek { "ok" } else { "WRONG" });
             }
         }
-        Ok(None) => uefi::println!("boot fs     : BOOTX64.EFI is a directory"),
-        Err(e) => uefi::println!("boot fs     : BOOTX64.EFI does not open ({:?})", e.status()),
+        Ok(None) => uefi::println!("boot fs     : {name} is a directory"),
+        Err(e) => uefi::println!("boot fs     : {name} does not open ({:?})", e.status()),
     }
 
     // A systemd-boot loader entry, opened relative to a directory.
