@@ -109,25 +109,41 @@ then.
       error (main resets). espprobe holds it open `EXCLUSIVE` and requires
       the refusal (`tests/esp-ovmf.sh`).
 - [ ] **#229 — review findings in `src/selfupdate.rs` (P1, stormcentral#1558).**
-      - `f0736064aeff` (a failed rollback cleared its journal): fixed.
-        `State::rolled_back` only after a revert with no error; otherwise
-        `rollback_unfinished` (trial start 3 = `ROLLBACK_UNFINISHED`, journal
-        kept, serial failed) and nothing is chain-loaded; the next start
-        finishes it (`Start::Revert { resumed }`). `apply`'s swap-failure path
-        the same, and the stick updater's. Host test
-        `an_unfinished_rollback_keeps_its_journal`; boot `held` in
-        `tests/update-boots.sh` (a read-only `.prev`, `mattrib +r`).
-      - `a689832bcbe2` (hostname lookup before a lease): the lease wait was
-        #148 (4d77aee, after the reviewed commit); left was `dns =` read
-        while `Vol` holds the medium exclusively: now read before the mount
-        (`clock::lookup_with`). Slirp's DHCP always names a DNS server, so
-        that fallback has no boot here; `named` covers the lease wait.
-      - `1e8c7deb4259` (no bootable path between the two bootloader
-        renames): needs a media layout change (a stable launcher and
-        payload slots, or another way); asked the owner on the issue
-        (2026-11-20, `wait-owner`, recommended: a stable launcher + A/B
-        slots). f81ae24's sc-build passed (host test, `held`/`revert`
-        boots). No image requested yet: the issue is not done.
+      f0736064aeff and a689832bcbe2 fixed in f81ae24 (sc-build passed).
+      **1e8c7deb4259 (no bootable path between the two bootloader renames):
+      the master's call on #229 (2026-11-20, not an owner ruling): a stable
+      launcher that is never renamed, keeping last-known-good + new, older
+      pruned.** Design, in order of the commits:
+      1. `src/bootrec.rs` (core-only, host-tested, `rustc --test`): the boot
+         record `\stormboot\boot.a` / `boot.b` — `stormbootx-boot 1`, `seq`,
+         `payload <path>`, `sha256`, `check` (SHA-256 of the lines above).
+         Two slots, each write goes to the invalid or lower-`seq` one with
+         `seq + 1`: a torn write is an invalid record, and the other stays.
+         `order`: valid records newest first, then `stormboot/stormbootx.efi`.
+      2. `src/launch.rs`, bin `stormbootx-launch`: the medium's
+         `BOOTX64.EFI`/`BOOTAA64.EFI`. Reads the records with the firmware's
+         SFS, loads each candidate payload (its SHA-256 checked) from a
+         buffer under its file path, starts the first that loads, returns
+         its status. Quiet unless it skips one. Updates nothing.
+      3. Layout: `build-boot-agent.sh` lays the launcher at the removable
+         path and stormbootx at `\stormboot\stormbootx.efi` (`--launcher`,
+         else a sibling `stormbootx-launch.efi`, else built); `--probe` as
+         before. Goldens build and carry it; layout tests check it.
+      4. `selfupdate.rs`: the running payload is its LoadedImage file path.
+         With a launcher, the manifest's `stormboot/stormbootx.efi` is
+         compared with the running payload and a new one is written as
+         `stormboot/payload/<serial>.efi` (other payloads but the running
+         one pruned first), the journal records it (`@path`, `good =`), and
+         the activation is a record write; the launcher is never touched.
+         Revert: a record for `good`, then the failed payload deleted. A
+         start whose running payload is not the one on trial (activation
+         never happened, or the launcher fell back) puts it back. A medium
+         with no launcher (stormbootx is `BOOTX64.EFI`) takes the release
+         by the old swap, once: that is the migration.
+      5. `stormbootx-stick`: the same activation.
+      6. Tests: bootrec host test; launcher boots (torn newest record, bad
+         payload hash, no records) in `update-boots.sh`; the update boots
+         on the new layout; stick.sh. Docs, CHANGELOG, v0.45.0.
 - [x] **#201 — retire nic-drivers as a boot helper (P2). Done 2026-11-15:** 972defd; sc-build of it passed (the refusal, the rustnic golden, usb-layout, media-ovmf virtio). Registry removal sent to the master; leftovers stormcentral#1426, stormipmi#110, stormd#74. No image: no medium's bytes changed.
       No medium takes it as an input (#52), it holds no iPXE (#91), and the
       owner left it out of the release (stormcos#881: carry the small media,
