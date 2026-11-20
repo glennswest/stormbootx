@@ -24,7 +24,9 @@
 # Needs qemu-system-aarch64 and edk2-aarch64. Everything is under $W.
 
 AAVMF_DIR=${AAVMF_DIR:-/usr/share/edk2/aarch64}
-AAVMF_CODE=${AAVMF_CODE:-$AAVMF_DIR/QEMU_EFI-pflash.raw}
+# The silent build: the default one is DEBUG and writes its debug lines to
+# the same PL011 as the console, in the middle of ours.
+AAVMF_CODE=${AAVMF_CODE:-$AAVMF_DIR/QEMU_EFI-silent-pflash.raw}
 AAVMF_VARS=${AAVMF_VARS:-$AAVMF_DIR/vars-template-pflash.raw}
 AAVMF_BIOS=${AAVMF_BIOS:-$AAVMF_DIR/QEMU_EFI.fd}
 A64_LIMIT=${A64_LIMIT:-420}
@@ -107,6 +109,8 @@ a64() {
         fi
     done
     if [[ $fail -ne 0 ]]; then
+        say "[$name] its boot, attach and bootloader lines:"
+        grep -nE 'blockio|BOOTX64|BOOTAA64|boot fs|boot  ' "$txt" | head -40 | sed 's/^/  | /' || true
         say "[$name] console, last 60 lines:"
         grep -v '^\s*$' "$txt" | tail -60 | sed 's/^/  | /'
         die "[$name] expected lines missing"
