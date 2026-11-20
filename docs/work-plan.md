@@ -102,7 +102,7 @@ then.
 
 ### Open, no external blocker
 
-- [ ] **#230 — review finding 376240a9715a in `src/espfs.rs` (P1).** A
+- [x] **#230 — review finding 376240a9715a in `src/espfs.rs` (P1). Done 2026-11-20:** 557ac8f, full sc-build passed (espprobe: `held open, it stays … (ACCESS_DENIED)`, then `withdrawn`). A
       failed `UninstallProtocolInterface` of the ESP's filesystem was
       ignored, so the image could be unloaded under it. `espfs::withdraw` is
       `Result`, keeps the records that stay, `blockio::withdraw` returns the
