@@ -606,10 +606,11 @@ fn active_payload(vol: &Medium) -> Option<String> {
         raw[0].as_deref().and_then(|b| bootrec::parse(b, digest)),
         raw[1].as_deref().and_then(|b| bootrec::parse(b, digest)),
     ];
-    bootrec::order(&slots).into_iter().flatten().find_map(|(path, want)| {
+    let found = bootrec::order(&slots).into_iter().flatten().find_map(|(path, want)| {
         let b = vol.read(path, manifest::MAX_FILE as usize + 1).ok().flatten()?;
         want.is_none_or(|w| digest(&b) == w).then(|| path.to_string())
-    })
+    });
+    found
 }
 
 /// `selfupdate::activate`: name `path` in the record slot that does not name
