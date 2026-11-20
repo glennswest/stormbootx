@@ -30,7 +30,9 @@ say "test key $PUB"
 
 say "building stormbootx with the test key compiled in"
 ( cd "$ROOT" && STORMBOOTX_UPDATE_TEST_KEY=$PUB STORMBOOTX_BUILD=update-test \
-    cargo build --locked --release --target x86_64-unknown-uefi --bin stormbootx )
+    cargo build --locked --release --target x86_64-unknown-uefi --bin stormbootx --bin stormbootx-launch )
 cp "${CARGO_TARGET_DIR:-$ROOT/target}/x86_64-unknown-uefi/release/stormbootx.efi" "$T/stormbootx-testkey.efi"
+# The launcher (#229) beside it, where build-boot-agent.sh looks for it.
+cp "${CARGO_TARGET_DIR:-$ROOT/target}/x86_64-unknown-uefi/release/stormbootx-launch.efi" "$T/"
 
 UPDATE_KEY="$T/key.pem" "$ROOT/tests/net-ovmf.sh" "$T/stormbootx-testkey.efi" "$PAYLOAD"

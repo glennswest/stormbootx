@@ -186,11 +186,15 @@ fn stale_payloads(vol: &mut Vol, keep: &str) -> Vec<String> {
 /// failed its trial back and chain-load the binary it restored. `Some` is the
 /// status to return with (the chain-loaded binary's).
 pub fn at_start() -> Option<Status> {
+    // Which file this is, when the launcher chose it (#229).
+    let running = running_path();
+    if let Some(p) = running.as_deref().filter(|p| launched(p)) {
+        uefi::println!("payload     : {}, started by the launcher", efi_path(p));
+    }
     let mut vol = Vol::mount().ok()?;
     let text = vol.read_text(STATE_PATH).ok()??;
     let state = State::parse(&text);
     SERIAL.store(state.serial, Ordering::Relaxed);
-    let running = running_path();
     match manifest::at_start(&state, running.as_deref()) {
         Start::Normal => {
             if state.serial > 0 {

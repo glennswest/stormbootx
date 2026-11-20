@@ -5,7 +5,9 @@
 # `stormbootx-test`.
 #
 # The medium is a GPT disk (scripts/build-boot-agent.sh without --iso),
-# writable, on a USB stick (qemu-xhci + usb-storage, removable; MEDIUM=virtio
+# first in the layout before #229 (stormbootx itself as BOOTX64.EFI,
+# --no-launcher), so the first update is the migration to the launcher;
+# the releases are the launcher layout. Writable, on a USB stick (qemu-xhci + usb-storage, removable; MEDIUM=virtio
 # puts it on virtio-blk instead), booted from its removable-media path. One
 # OVMF variable store serves every boot, so StormBootMinSerial persists, and
 # QEMU restarts on a reset (no -no-reboot), so a boot that updates restarts
@@ -21,26 +23,38 @@
 #             serial (#90)
 #   realagain the same: "declined here before", nothing new written
 #   badsig    serial 5 signed with another key: refused, nothing written
-#   update    serial 5 signed: five files differ (two new, one a "driver"
-#             that is not a PE image), written, restart; the new binary's
-#             first start is a trial, and the attach passes it
+#   update    serial 5 signed: six files differ (three new, one a "driver"
+#             that is not a PE image), written, restart; the migration
+#             (#229): BOOTX64.EFI becomes the launcher by the old swap, and
+#             it starts \stormboot\stormbootx.efi, whose first start is a
+#             trial, and the attach passes it
 #   current   serial 5 again: nothing to do; StormBootUpdate = serial:5, and
 #             the claim's agent says update_serial 5 (#90; trial:5:1 in the
 #             update boot, failed:8 under serial 6 after the revert)
 #   notcanary serial 6 names another machine as its only canary: refused
-#   canary    serial 6 names this machine (52:54:00:12:34:56): taken, and the
-#             driver it no longer carries is retired to .prev
+#   canary    serial 6 names this machine (52:54:00:12:34:56): taken through
+#             the launcher (#229): \stormboot\payload\6.efi written, the
+#             boot record names it, the launcher untouched; the driver it no
+#             longer carries is retired to .prev
 #   short     serial 7 carries a file larger than the ESP: refused for room,
 #             nothing written
-#   bad1      serial 8, whose stormboot.conf names a dead NVMe port: written,
-#             restart, trial start 1 falls through
+#   bad1      serial 8, whose stormboot.conf names a dead NVMe port: written
+#             as payload\8.efi (stormbootx.efi pruned: payload\6.efi is the
+#             last known good), restart, trial start 1 falls through
 #   bad2      trial start 2 falls through
 #   held      the third start puts serial 6 back, but README.txt.prev is
 #             read-only (mattrib +r): the rest comes back, the journal stays
 #             (trial = 8 3), and nothing is chain-loaded (#229)
 #   revert    the fourth start finishes the rollback and chain-loads serial
 #             6; serial 6 refuses 8 (failed here), attaches, and hands down
-#             failed:8
+#             failed:8; payload\8.efi is gone, the record names payload\6.efi
+#   cut       #229's power loss between the trial's state and its record:
+#             payload\9.efi on the disk and in the state, no record for it.
+#             The launcher starts payload\6.efi, which puts serial 6 back
+#   launch    a fresh launcher medium with records made here: the newest
+#             record's payload starts; a torn newest record, a payload that
+#             does not match its record's sha256, and no record at all each
+#             fall back to the next (#229)
 #   fat32     a fresh FAT32 medium, the golden's -usb.img (#185), takes serial 5
 #             and passes its trial
 
@@ -59,9 +73,15 @@ case ${MEDIUM:-usb} in
     *) die "MEDIUM=$MEDIUM is not usb or virtio" ;;
 esac
 
-"$ROOT/scripts/build-boot-agent.sh" --binary "$EFI" --engine 10.0.2.2 --api-port "$PORT" \
-    --port "$NVME_PORT" --nsid 1 --ntp "10.0.2.2:$NTP_PORT" --update "$URL" \
-    --tree "$W/tree0" --output "$IMG" >/dev/null
+# The medium before #229 (stormbootx as BOOTX64.EFI), and the releases'
+# tree in the launcher layout (BOOTX64.EFI the launcher, stormbootx in
+# \stormboot\stormbootx.efi), from the same settings.
+agent=(--binary "$EFI" --engine 10.0.2.2 --api-port "$PORT"
+       --port "$NVME_PORT" --nsid 1 --ntp "10.0.2.2:$NTP_PORT" --update "$URL")
+"$ROOT/scripts/build-boot-agent.sh" "${agent[@]}" --no-launcher --output "$IMG" >/dev/null
+"$ROOT/scripts/build-boot-agent.sh" "${agent[@]}" --tree "$W/tree0" --output "$W/tree0.img" >/dev/null
+[[ -f "$W/tree0/stormboot/stormbootx.efi" ]] || die "the release tree has no stormboot/stormbootx.efi"
+cmp -s "$W/tree0/EFI/BOOT/BOOTX64.EFI" "$EFI" && die "the release tree's BOOTX64.EFI is stormbootx, not the launcher"
 cp "$OVMF_VARS" "$W/update.vars"
 openssl genpkey -algorithm ed25519 -out "$W/other.pem" 2>/dev/null
 
@@ -87,7 +107,8 @@ release() {
     done
     rm -rf "$r" "$W/serve"
     cp -r "$W/tree0" "$r"
-    printf 'stormbootx-update-test serial %s\n' "$serial" >> "$r/EFI/BOOT/BOOTX64.EFI"
+    # stormbootx differs per serial; the launcher never does (#229).
+    printf 'stormbootx-update-test serial %s\n' "$serial" >> "$r/stormboot/stormbootx.efi"
     printf 'rem serial %s\r\n' "$serial" >> "$r/startup.nsh"
     printf '\n# release serial %s\n' "$serial" >> "$r/stormboot/stormboot.conf"
     [[ -n $bad ]] && sed -i 's/^port .*/port     = 9/' "$r/stormboot/stormboot.conf"
@@ -136,6 +157,34 @@ log_has() {
     }
 }
 
+# gone PATH: the boot left no such file.
+gone() {
+    on_disk "$1" >/dev/null && die "[disk] $1 is still there"
+    say "[disk] $1 is gone"
+}
+
+# newest NAME: the newest valid-looking boot record (#229) names NAME.
+newest() {
+    local f best=-1 name="" seq p
+    for f in /stormboot/boot.a /stormboot/boot.b; do
+        seq=$(on_disk "$f" | sed -n 's/^seq //p')
+        p=$(on_disk "$f" | sed -n 's/^payload //p')
+        [[ -n $seq ]] && (( seq > best )) && { best=$seq; name=$p; }
+    done
+    [[ $name == "$1" ]] && say "[disk] the newest record ($best) names $1" || {
+        for f in /stormboot/boot.a /stormboot/boot.b; do on_disk "$f" | sed "s|^|  $f : |"; done
+        die "[disk] the newest record names ${name:-nothing}, not $1"
+    }
+}
+
+# record FILE SEQ PATH PAYLOAD: a boot record (src/bootrec.rs) naming PATH,
+# with PAYLOAD's sha256, written here as stormbootx writes one.
+record() {
+    local body
+    body=$(printf 'stormbootx-boot 1\nseq %s\npayload %s\nsha256 %s' "$2" "$3" "$(sha256sum < "$4" | cut -d' ' -f1)")
+    { printf '%s\n' "$body"; printf 'check %s\n' "$(printf '%s\n' "$body" | sha256sum | cut -d' ' -f1)"; } > "$1"
+}
+
 # uboot NAME EXPECTED...: boot the medium; stop at the payload or a fall-through.
 uboot() {
     local name=$1; shift
@@ -159,7 +208,7 @@ uboot() {
     kill "$qemu" 2>/dev/null; wait "$qemu" 2>/dev/null || true
     tr -d '\r' < "$log" | sed 's/\x1b\[[0-9;]*[A-Za-z]//g' > "$txt"
     say "[$name] console:"
-    { grep -E "^(stormbootx |update|drivers|    \[ *[0-9]+ s\] .*retire|attaching|blockio     : published|RESULT|no network boot|handed down : StormBootUpdate|media|  portal)" "$txt" || true; } \
+    { grep -E "^(stormbootx |update|launch|payload|drivers|    \[ *[0-9]+ s\] .*retire|attaching|blockio     : published|RESULT|no network boot|handed down : StormBootUpdate|media|  portal)" "$txt" || true; } \
         | sed 's/^/  | /'
     say "[$name] stub log:"
     { grep boothelpers "$W/stub.log" || echo "(no boothelper requests)"; } | sed 's/^/  > /'
@@ -250,7 +299,8 @@ state_has "min = 1"
 
 release 5 "$UPDATE_KEY" driver
 uboot update "${attached[@]}" \
-    "-> v$TV (golden-stormbootx-test-5, serial 5), 5 file(s)" \
+    "-> v$TV (golden-stormbootx-test-5, serial 5), 6 file(s)" \
+    "payload     : \\stormboot\\stormbootx.efi, started by the launcher" \
     "; restarting into it" \
     "update      : serial 5 on trial, start 1 of 2; it must reach an attach" \
     "retire.efi not started: LoadImage" \
@@ -259,8 +309,12 @@ uboot update "${attached[@]}" \
     "stub:GET /api/v1/boothelpers/stormbootx-test/files/EFI/BOOT/BOOTX64.EFI" \
     "stub:\"commit\":\"update-test\"" \
     "stub:\"update_serial\":5,\"update\":\"trial:5:1\",\"api_port\":9180,\""
+# The migration (#229): the launcher in BOOTX64.EFI, the old stormbootx its
+# .prev, the release's stormbootx beside it; no record yet.
 same /EFI/BOOT/BOOTX64.EFI "$W/rel5/EFI/BOOT/BOOTX64.EFI"
 same /EFI/BOOT/BOOTX64.EFI.prev "$W/A.efi"
+same /stormboot/stormbootx.efi "$W/rel5/stormboot/stormbootx.efi"
+gone /stormboot/boot.a
 same /stormboot/stormboot.conf "$W/rel5/stormboot/stormboot.conf"
 same /stormboot/drivers/README.txt "$W/rel5/stormboot/drivers/README.txt"
 same /stormboot/drivers/retire.efi "$W/rel5/stormboot/drivers/retire.efi"
@@ -270,6 +324,7 @@ state_has "min = 5"
 
 uboot current "${attached[@]}" \
     "update      : current (serial 5, v$TV)" \
+    "not:differs from this medium's launcher" \
     "handed down : StormBootUpdate = serial:5  (attributes 0x6)" \
     "stub:\"update_serial\":5,\"update\":\"serial:5\",\"api_port\":9180,\"" \
     "not:restarting into it" \
@@ -288,12 +343,17 @@ state_has "serial = 5"
 release 6 "$UPDATE_KEY" canary=52:54:00:00:00:01 canary=$MAC
 uboot canary "${attached[@]}" \
     "-> v$TV (golden-stormbootx-test-6, serial 6), 4 file(s)" \
+    "payload     : \\stormboot\\payload\\6.efi, started by the launcher" \
     ", 1 driver(s) retired; restarting into it" \
     "update      : serial 6 on trial, start 1 of 2; it must reach an attach" \
     "update      : serial 6 passed its trial (attached); it stays" \
     "handed down : StormBootUpdate = good:6  (attributes 0x6)"
-same /EFI/BOOT/BOOTX64.EFI "$W/rel6/EFI/BOOT/BOOTX64.EFI"
-same /EFI/BOOT/BOOTX64.EFI.prev "$W/rel5/EFI/BOOT/BOOTX64.EFI"
+# Through the launcher (#229): the new stormbootx under its own name, the
+# record naming it, the last known good kept, the launcher as it was.
+same /EFI/BOOT/BOOTX64.EFI "$W/rel5/EFI/BOOT/BOOTX64.EFI"
+same /stormboot/payload/6.efi "$W/rel6/stormboot/stormbootx.efi"
+same /stormboot/stormbootx.efi "$W/rel5/stormboot/stormbootx.efi"
+newest stormboot/payload/6.efi
 same /stormboot/drivers/retire.efi.prev "$W/rel5/stormboot/drivers/retire.efi"
 on_disk /stormboot/drivers/retire.efi >/dev/null && die "[disk] retire.efi is still loadable"
 say "[disk] /stormboot/drivers/retire.efi is gone (retired to .prev)"
@@ -307,7 +367,8 @@ uboot short "${attached[@]}" \
     "update      : serial 7 needs " \
     "KB free; nothing written" \
     "not:restarting into it"
-same /EFI/BOOT/BOOTX64.EFI "$W/rel6/EFI/BOOT/BOOTX64.EFI"
+newest stormboot/payload/6.efi
+gone /stormboot/payload/7.efi
 on_disk /stormboot/big.bin >/dev/null && die "[disk] big.bin was written"
 on_disk /stormboot/big.bin.new >/dev/null && die "[disk] big.bin.new was left behind"
 state_has "serial = 6"
@@ -315,13 +376,20 @@ state_has "serial = 6"
 release 8 "$UPDATE_KEY" bad
 uboot bad1 \
     "-> v$TV (golden-stormbootx-test-8, serial 8), 4 file(s)" \
+    "payload     : \\stormboot\\payload\\8.efi, started by the launcher" \
     "update      : serial 8 on trial, start 1 of 2; it must reach an attach" \
     "no network boot: " \
     "not:passed its trial"
-same /EFI/BOOT/BOOTX64.EFI "$W/rel8/EFI/BOOT/BOOTX64.EFI"
-same /EFI/BOOT/BOOTX64.EFI.prev "$W/rel6/EFI/BOOT/BOOTX64.EFI"
+# Two payloads, never more: the running one (6) and the new one (8); the
+# one before (stormbootx.efi, serial 5's) pruned.
+same /stormboot/payload/8.efi "$W/rel8/stormboot/stormbootx.efi"
+same /stormboot/payload/6.efi "$W/rel6/stormboot/stormbootx.efi"
+gone /stormboot/stormbootx.efi
+newest stormboot/payload/8.efi
 state_has "trial = 8 1"
 state_has "prev = 6"
+state_has "payload = stormboot/payload/8.efi"
+state_has "good = stormboot/payload/6.efi"
 
 uboot bad2 \
     "update      : serial 8 on trial, start 2 of 2; it must reach an attach" \
@@ -348,7 +416,9 @@ state_has "prev = 6"
 state_has "failed = 8"
 on_disk /stormboot/state | grep -q '^files = .*stormboot/drivers/README.txt' \
     && say "[disk] state: README.txt still in the journal" || die "[disk] the journal lost README.txt"
-same /EFI/BOOT/BOOTX64.EFI "$W/rel6/EFI/BOOT/BOOTX64.EFI"
+newest stormboot/payload/6.efi
+gone /stormboot/payload/8.efi
+state_has "payload = stormboot/payload/8.efi"
 same /stormboot/drivers/README.txt.prev "$W/rel6/stormboot/drivers/README.txt"
 log_has /stormboot/trial.log "update      : serial 8 on trial, start 2 of 2; it must reach an attach"
 mattrib -i "$IMG@@$OFF" -r ::/stormboot/drivers/README.txt.prev
@@ -357,7 +427,8 @@ mattrib -i "$IMG@@$OFF" -r ::/stormboot/drivers/README.txt.prev
 # the restored set.
 uboot revert "${attached[@]}" \
     "update      : putting serial 6 back in place of serial 8 did not finish on an earlier start; finishing it" \
-    "update      : 1 file(s) put back; starting the restored \\EFI\\BOOT\\BOOTX64.EFI" \
+    "update      : 2 file(s) put back; starting the restored \\EFI\\BOOT\\BOOTX64.EFI" \
+    "payload     : \\stormboot\\payload\\6.efi, started by the launcher" \
     "not:started 2 times and never attached" \
     "update      : serial 8 failed its trial on this medium; staying on serial 6 until a newer one" \
     "handed down : StormBootUpdate = failed:8  (attributes 0x6)" \
@@ -369,12 +440,72 @@ uboot revert "${attached[@]}" \
 log_has /stormboot/trial.log "update      : serial 8 on trial, start 2 of 2; it must reach an attach"
 log_has /stormboot/trial.log "no network boot: "
 log_has /stormboot/last.log "update      : serial 8 failed its trial on this medium; staying on serial 6 until a newer one"
-same /EFI/BOOT/BOOTX64.EFI "$W/rel6/EFI/BOOT/BOOTX64.EFI"
+newest stormboot/payload/6.efi
+gone /stormboot/payload/8.efi
 same /stormboot/stormboot.conf "$W/rel6/stormboot/stormboot.conf"
 same /startup.nsh "$W/rel6/startup.nsh"
 same /stormboot/drivers/README.txt "$W/rel6/stormboot/drivers/README.txt"
 state_has "serial = 6"
 state_has "failed = 8"
+
+# #229, finding 1e8c7deb4259: power lost after the trial was recorded and
+# before the record named its payload. The new payload is on the disk and in
+# the state, and nothing points at it: the launcher starts the last known
+# good (payload\6.efi), which sees the trial's payload did not start and
+# puts serial 6 back, deleting payload\9.efi.
+cp "$W/rel6/stormboot/stormbootx.efi" "$W/p9.efi"
+printf 'stormbootx-update-test serial 9 (cut)\n' >> "$W/p9.efi"
+mcopy -o -i "$IMG@@$OFF" "$W/p9.efi" ::/stormboot/payload/9.efi
+printf '# a trial cut short (update-boots.sh)\nserial = 9\nmin = 6\nfailed = 8\ntrial = 9 0\nprev = 6\npayload = stormboot/payload/9.efi\ngood = stormboot/payload/6.efi\n' > "$W/state9"
+mcopy -o -i "$IMG@@$OFF" "$W/state9" ::/stormboot/state
+uboot cut "${attached[@]}" \
+    "payload     : \\stormboot\\payload\\6.efi, started by the launcher" \
+    "update      : serial 9's payload \\stormboot\\payload\\9.efi did not start (this is \\stormboot\\payload\\6.efi); putting serial 6 back" \
+    "update      : 1 file(s) put back; starting the restored \\EFI\\BOOT\\BOOTX64.EFI" \
+    "not:on trial, start"
+gone /stormboot/payload/9.efi
+newest stormboot/payload/6.efi
+state_has "serial = 6"
+state_has "failed = 9"
+on_disk /stormboot/state | grep -q '^payload' && die "[disk] the state still names a trial payload"
+say "[disk] state: no trial payload"
+
+# The launcher alone (#229), on a fresh launcher medium with no update =:
+# records written here. payload\9.efi is stormbootx with a tail, so which
+# file ran is the console's `payload :` line.
+IMG="$W/launch.img"
+"$ROOT/scripts/build-boot-agent.sh" --binary "$EFI" --engine 10.0.2.2 --api-port "$PORT" \
+    --port "$NVME_PORT" --nsid 1 --ntp "10.0.2.2:$NTP_PORT" --output "$IMG" >/dev/null
+cp "$OVMF_VARS" "$W/update.vars"
+cp "$EFI" "$W/l9.efi"
+printf 'stormbootx-launch-test payload 9\n' >> "$W/l9.efi"
+mmd -i "$IMG@@$OFF" ::/stormboot/payload
+mcopy -i "$IMG@@$OFF" "$W/l9.efi" ::/stormboot/payload/9.efi
+record "$W/boot.a" 1 stormboot/stormbootx.efi "$EFI"
+record "$W/boot.b" 2 stormboot/payload/9.efi "$W/l9.efi"
+mcopy -o -i "$IMG@@$OFF" "$W/boot.a" ::/stormboot/boot.a
+mcopy -o -i "$IMG@@$OFF" "$W/boot.b" ::/stormboot/boot.b
+uboot launch-newest "${attached[@]}" \
+    "payload     : \\stormboot\\payload\\9.efi, started by the launcher" \
+    "not:launch      : "
+# The newest record torn (a write cut short): the older one is followed.
+head -c 70 "$W/boot.b" > "$W/boot.b.torn"
+mcopy -o -i "$IMG@@$OFF" "$W/boot.b.torn" ::/stormboot/boot.b
+uboot launch-torn "${attached[@]}" \
+    "launch      : \\stormboot\\boot.b is not a whole record; ignored" \
+    "payload     : \\stormboot\\stormbootx.efi, started by the launcher"
+# The newest record whole, its payload not what it names.
+mcopy -o -i "$IMG@@$OFF" "$W/boot.b" ::/stormboot/boot.b
+printf 'x' >> "$W/l9.efi"
+mcopy -o -i "$IMG@@$OFF" "$W/l9.efi" ::/stormboot/payload/9.efi
+uboot launch-hash "${attached[@]}" \
+    "launch      : \\stormboot\\payload\\9.efi does not match its record's sha256 (" \
+    "payload     : \\stormboot\\stormbootx.efi, started by the launcher"
+# No record at all: the shipped stormbootx, with nothing to say.
+mdel -i "$IMG@@$OFF" ::/stormboot/boot.a ::/stormboot/boot.b
+uboot launch-none "${attached[@]}" \
+    "payload     : \\stormboot\\stormbootx.efi, started by the launcher" \
+    "not:launch      : "
 
 # #185: the same update and trial on the -usb.img's FAT32 ESP (a fresh medium
 # and a fresh floor): rename, write and free-space through the firmware's FAT.
@@ -388,6 +519,8 @@ uboot fat32 "${attached[@]}" \
     "-> v$TV (golden-stormbootx-test-5, serial 5), " \
     "update      : serial 5 passed its trial (attached); it stays"
 same /EFI/BOOT/BOOTX64.EFI "$W/rel5/EFI/BOOT/BOOTX64.EFI"
-same /EFI/BOOT/BOOTX64.EFI.prev "$W/A.efi"
+same /stormboot/payload/5.efi "$W/rel5/stormboot/stormbootx.efi"
+same /stormboot/stormbootx.efi "$W/A.efi"
+newest stormboot/payload/5.efi
 same /stormboot/stormboot.conf "$W/rel5/stormboot/stormboot.conf"
 state_has "serial = 5"

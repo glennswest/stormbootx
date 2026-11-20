@@ -25,7 +25,10 @@
 //! 5. **apply** exactly as the self-update does: every changed file checked
 //!    against the signed size and SHA-256, written as `*.new`, the trial
 //!    recorded in `state`, then the `*.prev` swap with the bootloader last,
-//!    put back if the swap fails; a `name =`/`tag =` the new `stormboot.conf`
+//!    put back if the swap fails. On a stick with the launcher (#229) the
+//!    release's stormbootx is written as `stormboot/payload/<serial>.efi`
+//!    beside the payload the launcher starts now (any other pruned), and a
+//!    boot record names it; the launcher is never rewritten; a `name =`/`tag =` the new `stormboot.conf`
 //!    would drop is kept in `local.conf`. The stick's next boot runs the new
 //!    set on trial, and puts the old one back if it never attaches;
 //! 6. **report** one line per step, an exit status (0 unless something
@@ -54,6 +57,9 @@ mod manifest;
 #[allow(dead_code)]
 #[path = "../../../src/sha256.rs"]
 mod sha256;
+#[allow(dead_code)]
+#[path = "../../../src/bootrec.rs"]
+mod bootrec;
 
 use manifest::{Entry, Manifest, Setting, State, Verdict};
 
@@ -581,6 +587,64 @@ fn nv_min(o: &Opts) -> u64 {
         .unwrap_or(0)
 }
 
+fn digest(b: &[u8]) -> [u8; 32] {
+    *sha256::digest(b).as_bytes()
+}
+
+/// The two boot records (#229), each if it is whole.
+fn records(vol: &Medium) -> [Option<Vec<u8>>; 2] {
+    bootrec::SLOTS.map(|f| vol.read(f, bootrec::MAX_RECORD + 1).ok().flatten())
+}
+
+/// The payload the stick's launcher starts (#229), as it chooses: the
+/// newest whole record whose file is there with its sha256, then the older,
+/// then `stormboot/stormbootx.efi`. `None` on a stick with no launcher
+/// (stormbootx itself is its bootloader).
+fn active_payload(vol: &Medium) -> Option<String> {
+    let raw = records(vol);
+    let slots = [
+        raw[0].as_deref().and_then(|b| bootrec::parse(b, digest)),
+        raw[1].as_deref().and_then(|b| bootrec::parse(b, digest)),
+    ];
+    bootrec::order(&slots).into_iter().flatten().find_map(|(path, want)| {
+        let b = vol.read(path, manifest::MAX_FILE as usize + 1).ok().flatten()?;
+        want.is_none_or(|w| digest(&b) == w).then(|| path.to_string())
+    })
+}
+
+/// `selfupdate::activate`: name `path` in the record slot that does not name
+/// what boots now, with the next `seq`.
+fn activate(vol: &Medium, path: &str) -> Result<(), String> {
+    let bytes = vol
+        .read(path, manifest::MAX_FILE as usize + 1)?
+        .ok_or_else(|| format!("{path} is not there to name in the boot record"))?;
+    let raw = records(vol);
+    let slots = [
+        raw[0].as_deref().and_then(|b| bootrec::parse(b, digest)),
+        raw[1].as_deref().and_then(|b| bootrec::parse(b, digest)),
+    ];
+    let (slot, seq) = bootrec::next_slot(&slots);
+    let rec = bootrec::Record { seq, payload: path, sha256: digest(&bytes) };
+    let mut buf = [0u8; bootrec::MAX_RECORD];
+    let n = bootrec::render(&rec, digest, &mut buf).ok_or_else(|| format!("{path}: not a name a record may carry"))?;
+    // `write` syncs and reads back.
+    vol.write(bootrec::SLOTS[slot], &buf[..n])
+}
+
+/// `selfupdate::stale_payloads`: every payload but `keep`.
+fn stale_payloads(vol: &Medium, keep: &str) -> Vec<String> {
+    let mut out: Vec<String> = vol
+        .list(bootrec::PAYLOAD_DIR)
+        .into_iter()
+        .map(|n| format!("{}/{n}", bootrec::PAYLOAD_DIR))
+        .filter(|p| bootrec::payload_ok(p) && !p.eq_ignore_ascii_case(keep))
+        .collect();
+    if !keep.eq_ignore_ascii_case(bootrec::SHIPPED) && vol.exists(bootrec::SHIPPED) {
+        out.push(bootrec::SHIPPED.to_string());
+    }
+    out
+}
+
 fn update(o: &Opts, root: &Path, r: &mut Report) -> Result<(), String> {
     let vol = Medium { root };
     if !vol.exists(manifest::BOOTLOADER) || !vol.exists("stormboot") {
@@ -716,11 +780,26 @@ fn update(o: &Opts, root: &Path, r: &mut Report) -> Result<(), String> {
     }
 
     // What differs, fetched and checked against the signed manifest before
-    // anything is written.
+    // anything is written. With the launcher (#229), the release's
+    // stormbootx is compared with the payload it starts now, and the
+    // launcher itself is never rewritten.
+    let active = active_payload(&vol);
+    if let Some(a) = &active {
+        r.say("read", format!("the launcher starts {a}"));
+    }
     let mut changed: Vec<(&Entry, Vec<u8>, bool)> = Vec::new();
     for e in m.files() {
-        let have = vol.read(e.path, e.size as usize + 1)?;
+        let is_payload = active.is_some() && e.path.eq_ignore_ascii_case(bootrec::SHIPPED);
+        let at = match (&active, is_payload) {
+            (Some(a), true) => a.as_str(),
+            _ => e.path,
+        };
+        let have = vol.read(at, e.size as usize + 1)?;
         if have.as_deref().is_some_and(|h| h.len() as u64 == e.size && sha256::digest(h).as_bytes() == &e.sha256) {
+            continue;
+        }
+        if active.is_some() && e.path.eq_ignore_ascii_case(manifest::BOOTLOADER) {
+            r.say("decide", format!("serial {}'s {} differs from the stick's launcher, which an update never rewrites; kept", m.serial, e.path));
             continue;
         }
         let body = get(&format!("files/{}", e.path), e.size as usize)?;
@@ -733,7 +812,7 @@ fn update(o: &Opts, root: &Path, r: &mut Report) -> Result<(), String> {
                 sha256::digest(&body)
             ));
         }
-        changed.push((e, body, have.is_none()));
+        changed.push((e, body, have.is_none() && !is_payload));
     }
     let retired: Vec<String> = vol
         .list(DRIVERS)
@@ -750,9 +829,17 @@ fn update(o: &Opts, root: &Path, r: &mut Report) -> Result<(), String> {
     }
     changed.sort_by_key(|(e, _, _)| e.path.eq_ignore_ascii_case(manifest::BOOTLOADER));
 
+    let payload = active.is_some() && changed.iter().any(|(e, _, _)| e.path.eq_ignore_ascii_case(bootrec::SHIPPED));
+    let prune = match (&active, payload) {
+        (Some(a), true) => stale_payloads(&vol, a),
+        _ => Vec::new(),
+    };
     let mut reclaim = 0u64;
     for p in changed.iter().map(|(e, _, _)| e.path).chain(retired.iter().map(String::as_str)) {
         reclaim += vol.size(&format!("{p}.prev")).unwrap_or(0);
+    }
+    for p in &prune {
+        reclaim += vol.size(p).unwrap_or(0);
     }
     let need: u64 = changed.iter().map(|(e, _, _)| e.size + 8192).sum::<u64>() + 8192;
     let free = free_space(root).unwrap_or(u64::MAX);
@@ -775,14 +862,21 @@ fn update(o: &Opts, root: &Path, r: &mut Report) -> Result<(), String> {
     );
     r.say("decide", format!("update: {what}"));
     for (e, _, new) in &changed {
-        r.say("decide", format!("  {}{}", e.path, if *new { " (new)" } else { "" }));
+        if payload && e.path.eq_ignore_ascii_case(bootrec::SHIPPED) {
+            r.say("decide", format!("  {} as {}/{}.efi, named in the boot record", e.path, bootrec::PAYLOAD_DIR, m.serial));
+        } else {
+            r.say("decide", format!("  {}{}", e.path, if *new { " (new)" } else { "" }));
+        }
+    }
+    for p in &prune {
+        r.say("decide", format!("  {p} pruned (two payloads at most: the one running and the new one)"));
     }
     if o.dry_run {
         r.outcome = "would-update";
         r.say("done", "dry run: nothing written");
         return Ok(());
     }
-    apply(&vol, &m, &state, &changed, &retired, r)?;
+    apply(&vol, &m, &state, &changed, &retired, active.as_deref().filter(|_| payload), &prune, r)?;
     r.outcome = "updated";
     r.say("done", format!("{what}; the stick's next boot runs it on trial"));
     Ok(())
@@ -825,41 +919,78 @@ fn current(r: &mut Report, why: &str) -> Result<(), String> {
 }
 
 /// `selfupdate::apply`: the new set beside the old, the trial recorded, then
-/// the swap, the bootloader last, put back if it fails.
+/// the swap, the bootloader last, put back if it fails. `active` is the
+/// launcher's payload when the release's stormbootx goes in as a new payload
+/// (#229): written under its own name, `prune` deleted first, and named by
+/// a boot record after the trial is recorded.
+#[allow(clippy::too_many_arguments)]
 fn apply(
     vol: &Medium,
     m: &Manifest,
     state: &State,
     changed: &[(&Entry, Vec<u8>, bool)],
     retired: &[String],
+    active: Option<&str>,
+    prune: &[String],
     r: &mut Report,
 ) -> Result<(), String> {
-    for p in changed.iter().map(|(e, _, _)| e.path).chain(retired.iter().map(String::as_str)) {
+    let is_payload = |e: &Entry| active.is_some() && e.path.eq_ignore_ascii_case(bootrec::SHIPPED);
+    let others: Vec<&(&Entry, Vec<u8>, bool)> = changed.iter().filter(|(e, _, _)| !is_payload(e)).collect();
+    let new_payload = changed.iter().find(|(e, _, _)| is_payload(e));
+    for p in others.iter().map(|(e, _, _)| e.path).chain(retired.iter().map(String::as_str)) {
         vol.delete(&format!("{p}.prev"))?;
     }
-    for (e, body, _) in changed {
+    for p in prune {
+        vol.delete(p)?;
+    }
+    for (e, body, _) in &others {
         if let Err(err) = vol.write(&format!("{}.new", e.path), body) {
-            for (e, _, _) in changed {
+            for (e, _, _) in &others {
                 let _ = vol.delete(&format!("{}.new", e.path));
             }
             return Err(format!("{}: {err}; nothing changed", e.path));
         }
     }
-    r.say("apply", format!("{} file(s) written as .new and read back", changed.len()));
+    let payload_path = format!("{}/{}.efi", bootrec::PAYLOAD_DIR, m.serial);
+    if let Some((_, body, _)) = new_payload {
+        if let Err(err) = vol.write(&payload_path, body) {
+            let _ = vol.delete(&payload_path);
+            for (e, _, _) in &others {
+                let _ = vol.delete(&format!("{}.new", e.path));
+            }
+            return Err(format!("{payload_path}: {err}; nothing changed"));
+        }
+    }
+    r.say("apply", format!("{} file(s) written beside the old and read back", changed.len()));
     carry_identity(vol, changed, r);
 
     let mut files: Vec<String> = retired.to_vec();
-    files.extend(changed.iter().map(|(e, _, new)| format!("{}{}", if *new { "+" } else { "" }, e.path)));
+    files.extend(others.iter().map(|(e, _, new)| format!("{}{}", if *new { "+" } else { "" }, e.path)));
     let files = files.join(" ");
-    let trial = State { serial: m.serial, prev: state.serial, trial: Some((m.serial, 0)), files: &files, ..*state };
+    let (payload, good) = match (new_payload, active) {
+        (Some(_), Some(a)) => (payload_path.as_str(), a),
+        _ => ("", ""),
+    };
+    let trial = State {
+        serial: m.serial,
+        prev: state.serial,
+        trial: Some((m.serial, 0)),
+        files: &files,
+        payload,
+        good,
+        ..*state
+    };
     vol.write_state(&trial)?;
     r.say("apply", format!("state: serial {} on trial, prev {}", m.serial, state.serial));
 
     let swap = || -> Result<(), String> {
+        if !payload.is_empty() {
+            activate(vol, payload)?;
+        }
         for p in retired {
             vol.rename(p, &format!("{p}.prev"))?;
         }
-        for (e, _, new) in changed {
+        for (e, _, new) in &others {
             if !new && vol.exists(e.path) {
                 vol.rename(e.path, &format!("{}.prev", e.path))?;
             }
@@ -883,13 +1014,31 @@ fn apply(
         };
         return Err(format!("the swap failed ({e}), and {} not put back; {next}", errors.join("; ")));
     }
-    r.say("apply", "swapped: the old files are .prev, the bootloader last");
+    if payload.is_empty() {
+        r.say("apply", "swapped: the old files are .prev, the bootloader last");
+    } else {
+        r.say("apply", format!("the boot record names {payload}; the old files are .prev; the launcher is as it was"));
+    }
     Ok(())
 }
 
 /// `selfupdate::revert`.
 fn revert(vol: &Medium, state: &State) -> Vec<String> {
     let mut errors = Vec::new();
+    // The trial's payload (#229): the record names the good one again, then
+    // the new one goes.
+    if !state.payload.is_empty() {
+        let r = activate(vol, state.good).and_then(|()| {
+            if state.payload.eq_ignore_ascii_case(state.good) {
+                Ok(())
+            } else {
+                vol.delete(state.payload)
+            }
+        });
+        if let Err(e) = r {
+            errors.push(format!("{}: {e}", state.payload));
+        }
+    }
     for (path, new) in state.changed() {
         let prev = format!("{path}.prev");
         let _ = vol.delete(&format!("{path}.new"));

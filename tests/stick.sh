@@ -8,6 +8,10 @@
 #   update    v0.20.0 stick, serial 5: written as .new, read back, swapped
 #             with the bootloader last (.prev kept), the trial in `state`,
 #             `name =` carried into local.conf beside the stick's own line
+#   launcher  a stick with the launcher (#229): serial 9's stormbootx goes in
+#             as stormboot/payload/9.efi, named by boot.a, the launcher and
+#             the running payload kept; then serial 10 prunes stormbootx.efi
+#             (two payloads at most) and is named by boot.b
 #   trial     run again: serial 5 is on trial, nothing new
 #   failed    a stick on which serial 6 failed its trial: declined
 #   off       `update = off`: left alone
@@ -77,6 +81,8 @@ srv=$!
 for _ in $(seq 50); do curl -s "http://127.0.0.1:$PORT/" >/dev/null 2>&1 && break; sleep 0.1; done
 
 # release SERIAL VERSION KEY [canary=MAC] [tamper]: published under $URL.
+# LAUNCH=1: the launcher layout (#229), BOOTX64.EFI the launcher (the same
+# bytes in every release) and stormbootx in stormboot/stormbootx.efi.
 release() {
     local serial=$1 v=$2 key=$3 opt canaries=() tamper=
     shift 3
@@ -86,7 +92,12 @@ release() {
     local r="$T/rel$serial" at="$SERVE/api/v1/boothelpers/${AT:-stormbootx-test}"
     rm -rf "$r" "$at"
     mkdir -p "$r/EFI/BOOT" "$r/stormboot/drivers" "$at"
-    printf 'MZ stormbootx %s serial %s\n' "$v" "$serial" > "$r/EFI/BOOT/BOOTX64.EFI"
+    if [[ -n ${LAUNCH:-} ]]; then
+        printf 'MZ stormbootx-launch\n' > "$r/EFI/BOOT/BOOTX64.EFI"
+        printf 'MZ stormbootx %s serial %s\n' "$v" "$serial" > "$r/stormboot/stormbootx.efi"
+    else
+        printf 'MZ stormbootx %s serial %s\n' "$v" "$serial" > "$r/EFI/BOOT/BOOTX64.EFI"
+    fi
     printf 'MZ driver %s serial %s\n' "$v" "$serial" > "$r/stormboot/drivers/stormnic-ixgbe.efi"
     printf '@echo -off\r\nrem serial %s\r\n' "$serial" > "$r/startup.nsh"
     cat > "$r/stormboot/stormboot.conf" <<EOF
@@ -163,6 +174,41 @@ grep -qx "dns = 192.168.31.252" "$S/stormboot/local.conf" || die "[update] local
 grep -qx "name = server1" "$S/stormboot/local.conf" || die "[update] name not carried"
 [[ -z "$(find "$S" -name '*.new')" ]] || die "[update] a .new is left"
 sums "$S" | sed 's/^/  : /'
+
+# --- launcher (#229): a stick whose BOOTX64.EFI is the launcher takes the
+# release's stormbootx as a new payload named by a boot record; the launcher
+# and the payload it starts now stay.
+L="$T/launch"
+mk_tree "$L" 0.20.0
+printf 'MZ stormbootx-launch\n' > "$L/EFI/BOOT/BOOTX64.EFI"
+printf 'MZ stormbootx 0.20.0\n' > "$L/stormboot/stormbootx.efi"
+LAUNCH=1 release 9 "$VERSION-test" "$T/key.pem"
+stick launcher 0 --esp "$L" -- \
+    "read   : the launcher starts stormboot/stormbootx.efi" \
+    "decide :   stormboot/stormbootx.efi as stormboot/payload/9.efi, named in the boot record" \
+    "apply  : the boot record names stormboot/payload/9.efi; the old files are .prev; the launcher is as it was" \
+    "not:differs from the stick's launcher" 'json:"outcome":"updated"'
+cmp -s "$L/stormboot/payload/9.efi" "$T/rel9/stormboot/stormbootx.efi" || die "[launcher] payload/9.efi is not serial 9's"
+grep -qx "MZ stormbootx 0.20.0" "$L/stormboot/stormbootx.efi" || die "[launcher] the running payload was not kept"
+grep -qx "MZ stormbootx-launch" "$L/EFI/BOOT/BOOTX64.EFI" || die "[launcher] the launcher changed"
+[[ ! -e "$L/EFI/BOOT/BOOTX64.EFI.prev" ]] || die "[launcher] the launcher was renamed"
+grep -qx "payload stormboot/payload/9.efi" "$L/stormboot/boot.a" || die "[launcher] boot.a: $(cat "$L/stormboot/boot.a" 2>&1)"
+grep -qx "payload = stormboot/payload/9.efi" "$L/stormboot/state" || die "[launcher] state: $(cat "$L/stormboot/state")"
+grep -qx "good = stormboot/stormbootx.efi" "$L/stormboot/state" || die "[launcher] state: $(cat "$L/stormboot/state")"
+# Serial 9 passed its trial (as its boot would write), then serial 10: the
+# launcher starts payload/9.efi now, so stormbootx.efi is pruned and the
+# record goes to the other slot.
+printf 'serial = 9\nmin = 9\nfailed = 0\n' > "$L/stormboot/state"
+LAUNCH=1 release 10 "$VERSION-test" "$T/key.pem"
+stick launcher2 0 --esp "$L" -- \
+    "read   : the launcher starts stormboot/payload/9.efi" \
+    "decide :   stormboot/stormbootx.efi pruned (two payloads at most: the one running and the new one)" \
+    "apply  : the boot record names stormboot/payload/10.efi"
+[[ ! -e "$L/stormboot/stormbootx.efi" ]] || die "[launcher2] stormbootx.efi was not pruned"
+cmp -s "$L/stormboot/payload/9.efi" "$T/rel9/stormboot/stormbootx.efi" || die "[launcher2] payload/9.efi changed"
+cmp -s "$L/stormboot/payload/10.efi" "$T/rel10/stormboot/stormbootx.efi" || die "[launcher2] payload/10.efi is not serial 10's"
+grep -qx "payload stormboot/payload/10.efi" "$L/stormboot/boot.b" || die "[launcher2] boot.b: $(cat "$L/stormboot/boot.b" 2>&1)"
+grep -qx "payload stormboot/payload/9.efi" "$L/stormboot/boot.a" || die "[launcher2] boot.a was rewritten"
 
 # --- trial: nothing until the stick's next boot judges serial 5.
 stick trial 0 --esp "$S" -- "serial 5 is on trial" 'json:"outcome":"current"'

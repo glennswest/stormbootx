@@ -65,7 +65,7 @@ key other >/dev/null
 
 say "building stormbootx with the test release key compiled in"
 ( cd "$ROOT" && STORMBOOTX_DIST_TEST_KEY=$PUB STORMBOOTX_BUILD=dist-test CARGO_TARGET_DIR="$T/target" \
-    cargo build --locked --release --target x86_64-unknown-uefi --bin stormbootx )
+    cargo build --locked --release --target x86_64-unknown-uefi --bin stormbootx --bin stormbootx-launch )
 "$ROOT/scripts/build-boot-agent.sh" --binary "$T/target/x86_64-unknown-uefi/release/stormbootx.efi" \
     --no-fallback --media dist --size 64 --output "$T/base.img" >/dev/null
 
