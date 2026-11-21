@@ -3,10 +3,14 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
-### 2026-11-20
-- **fix:** #231 (47063dda87c6): a NIC whose start fails after stormbootx's exclusive SNP open is given back to the firmware at once: the open is closed and the NIC reconnected (`SnpOpen`, a guard made at the open; `release` gives back through it). Before, only NICs that started were ever given back, so a failed one kept its firmware PXE and HTTP boot away on the very fall-through that needs them, and with every NIC failed nothing was given back at all.
-- **fix:** #231 (26ccc36ac667): the API's `GET /api/v1/status` no longer takes the stack a second time while the NIC it answers on is borrowed (two `&mut` over one NIC). The poll hands the answer the leased addresses it took before borrowing a NIC, and `net()` refuses while a NIC is polled.
-- **test:** #231: `tests/nicfail-ovmf.sh`, a stormbootx built with `STORMBOOTX_NET_TEST_FAIL=0` (a test build), and net-ovmf's `nicfail` boot: nic 0 fails after its open, is given back, and the firmware's PXE on it starts the payload. api-boots' status still carries the lease's address.
+## [v0.45.1] — 2026-11-21
+
+### Fixed
+- #231 (47063dda87c6): a NIC whose start fails after stormbootx's exclusive SNP open is given back to the firmware at once: the open is closed and the NIC reconnected (`SnpOpen`, a guard made at the open; `release` gives back through it). Before, only NICs that started were ever given back, so a failed one kept its firmware PXE and HTTP boot away on the very fall-through that needs them, and with every NIC failed nothing was given back at all.
+- #231 (26ccc36ac667): the API's `GET /api/v1/status` no longer takes the stack a second time while the NIC it answers on is borrowed (two `&mut` over one NIC). The poll hands the answer the leased addresses it took before borrowing a NIC, and `net()` refuses while a NIC is polled.
+
+### Tests
+- #231: `tests/nicfail-ovmf.sh`, a stormbootx built with `STORMBOOTX_NET_TEST_FAIL=0` (a test build), and net-ovmf's `nicfail` boot: nic 0 fails after its open, is given back, and the firmware's PXE on it starts the payload. api-boots' status still carries the lease's address.
 
 ## [v0.45.0] — 2026-11-20
 

@@ -102,7 +102,7 @@ then.
 
 ### Open, no external blocker
 
-- [ ] **#231 — review findings in `src/net.rs` (P1, stormcentral#1558).**
+- [x] **#231 — review findings in `src/net.rs` (P1, stormcentral#1558). Done 2026-11-21:** 04e0ad9 + 0336c44 + f9b80bd; full sc-build passed on f9b80bd (2665 s; `nicfail`: given back, PXE on it booted the payload; api status `"addresses":["10.0.2.15"]`). Reproduced on wip/231-repro (expect-fail: `UEFI PXEv4 … Not Found`). v0.45.1.
       1. 47063dda87c6: a NIC whose init fails after the exclusive SNP open
          keeps it (never closed, never reconnected), so the firmware's
          PXE/HTTP on it is gone exactly when the fall-through needs it. Fix:
