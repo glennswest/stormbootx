@@ -289,9 +289,6 @@ struct Ui {
     keys: VecDeque<InputKey>,
     /// Keys are ours to read until a bootloader runs under the panel.
     keys_ours: bool,
-    /// `handoff` gave the console to a bootloader that is not stormuefi
-    /// (#236); `handed_back` puts the panel back.
-    yielded: bool,
     t0: u64,
     ticks_per_ms: u64,
     drawn_at: u64,
@@ -505,7 +502,6 @@ pub fn begin() {
         details: false,
         keys: VecDeque::new(),
         keys_ours: true,
-        yielded: false,
         t0,
         ticks_per_ms,
         drawn_at: 0,
@@ -1060,29 +1056,10 @@ pub fn progress(bytes: u64, mib_s: u64) {
     redraw(u, true, &[Step::Image as usize], true);
 }
 
-/// A bootloader starts. `panel`: the image is a stormcos image (it has
-/// pallets, `esp::has_pallets`), so the bootloader is stormuefi, which
-/// prints lines and reads no keys: it runs under the panel, its keys its own,
-/// its lines in the handoff step, the frame the boot screen's first (#220),
-/// left up for the screen to draw over. Any other bootloader may draw a menu
-/// or ask for a key (#236, 89b3587e2182), so it gets the firmware's console:
-/// the panel is suspended before it starts, and comes back if it returns.
-pub fn handoff(detail: &str, panel: bool) {
-    if !panel {
-        let Some(u) = ui() else { return };
-        if !u.installed {
-            return;
-        }
-        uefi::println!(
-            "handover    : the firmware's console, for a bootloader that is not stormuefi (no stormcos pallet on the image)"
-        );
-        step(Step::Handoff, detail);
-        suspend();
-        if let Some(u) = ui() {
-            u.yielded = true;
-        }
-        return;
-    }
+/// A bootloader runs under the panel from here: its keys are its own, its
+/// lines show in the handoff step, and the frame is the boot screen's first
+/// (#220), left up for the screen to draw over.
+pub fn handoff(detail: &str) {
     if let Some(u) = ui() {
         u.keys_ours = false;
         u.details = false;
@@ -1091,15 +1068,11 @@ pub fn handoff(detail: &str, panel: bool) {
     step(Step::Handoff, detail);
 }
 
-/// The bootloader came back: keys are ours again, and the panel if the
-/// bootloader had the console.
+/// The bootloader came back: keys are ours again.
 pub fn handed_back(reason: &str) {
     if let Some(u) = ui() {
         u.keys_ours = true;
         u.last = false;
-        if core::mem::take(&mut u.yielded) && !u.ended {
-            resume();
-        }
     }
     fail(Step::Handoff, reason);
 }
