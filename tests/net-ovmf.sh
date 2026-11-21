@@ -1140,10 +1140,14 @@ boot noesp "$host_cpu" "" 404 good \
 # starts, and the screen under it is not the panel's frame. Both paths: the
 # firmware's FAT, and stormbootx's own read (esp = stormbootx).
 for bridge in "" stormbootx; do
+    # The firmware's FAT reads all 96 MiB through the BlockIO; on the bridge
+    # stormbootx reads the file itself and says so.
+    started="blockio     : 96 MiB read in all"
+    [[ -n $bridge ]] && started="boot        : starting \\EFI\\BOOT\\BOOTX64.EFI from the attached image (read by stormbootx)"
     BOOT_PORT=$PLAIN_PORT BOOT_ESP=$bridge \
     boot "plainimg${bridge:+-bridge}" "$host_cpu" "" 404 good \
         "handover    : the firmware's console, for a bootloader that is not stormuefi (no stormcos pallet on the image)" \
-        "blockio     : 96 MiB read in all" \
+        "$started" \
         "is there a TCP/IP stack in this firmware" \
         "handover    : no frame: " \
         "not:handover    : the spec's frame stays up"
