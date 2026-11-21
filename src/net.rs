@@ -18,7 +18,11 @@
 //!   If the open is refused, the NIC is used shared and the console says so.
 //!   `release` gives every NIC back (closes the opens and reconnects them) on
 //!   the fall-through, so a later boot option finds the firmware's stack
-//!   again.
+//!   again. A NIC that fails to start after its open is given back at once
+//!   (`SnpOpen`, #231).
+//! - **Nothing a poll calls takes the stack again** (#231). The API's answer
+//!   runs inside a NIC's poll, with that NIC borrowed; `net()` refuses while
+//!   a poll runs, and the poll hands the answer the addresses it reports.
 //! - **DHCP** comes from smoltcp's dhcpv4 socket, on every NIC at once. The raw
 //!   reply is kept for `dnsname.rs` (options 12/15/6, #23).
 //! - **The MTU** (#165) is the SNP's `MaxPacketSize` until a lease, then what
@@ -52,6 +56,7 @@ use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
 use core::ptr;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use crate::entropy::{self, Entropy};
 use crate::snpwatch::{self, Snp};
@@ -390,10 +395,59 @@ struct Lease {
     reply: Option<Vec<u8>>,
 }
 
-struct Nic {
+/// One NIC's SNP open (#231, 47063dda87c6). Made the moment the open
+/// returns, before anything else can fail: an exclusive open has already
+/// taken the NIC from the firmware's MNP, and a NIC whose start fails after
+/// it must still be given back, or its PXE and HTTP boot are gone on the
+/// very fall-through that needs them. Dropped, it closes the open and
+/// reconnects the NIC; `release` gives back through it too.
+struct SnpOpen {
     index: usize,
     handle: uefi_raw::Handle,
     exclusive: bool,
+    given: bool,
+}
+
+impl SnpOpen {
+    /// Close an exclusive open and reconnect the NIC, once. `None` for a
+    /// shared open (nothing was taken) or one already given back.
+    fn give_back(&mut self) -> Option<Status> {
+        if !self.exclusive || self.given {
+            return None;
+        }
+        self.given = true;
+        let bs = bs()?;
+        let closed = unsafe {
+            (bs.close_protocol)(
+                self.handle,
+                &SNP as *const Guid as *const uefi_raw::Guid,
+                boot::image_handle().as_ptr(),
+                ptr::null_mut(),
+            )
+        };
+        connect(self.handle);
+        Some(closed)
+    }
+}
+
+impl Drop for SnpOpen {
+    /// Reached only when a NIC was not used: `release` forgets the stack.
+    fn drop(&mut self) {
+        match self.give_back() {
+            Some(Status::SUCCESS) => uefi::println!(
+                "      nic {}: given back to the firmware (exclusive SNP closed, reconnected)",
+                self.index
+            ),
+            Some(st) => uefi::println!("      nic {}: SNP not closed ({st:?}); reconnected", self.index),
+            None => {}
+        }
+    }
+}
+
+struct Nic {
+    index: usize,
+    handle: uefi_raw::Handle,
+    own: SnpOpen,
     mac: [u8; 32],
     mac_len: usize,
     /// The MTU in use: the SNP's until a lease, then `dnsname::link_mtu`.
@@ -482,9 +536,11 @@ impl Nic {
 
     /// Answer the API's connections (#167): read a request, have `api.rs`
     /// answer it, send that, close. Runs on every poll, so the API answers
-    /// whenever stormbootx pumps the stack, from `up` to the chain-load. The
-    /// answer never calls back into this module.
-    fn serve(&mut self, now: Instant) {
+    /// whenever stormbootx pumps the stack, from `up` to the chain-load.
+    /// `addrs` is every leased address, taken before any NIC was borrowed
+    /// (#231, 26ccc36ac667): the answer must not reach the stack again while
+    /// this NIC is borrowed, and `net()` refuses it if it tries.
+    fn serve(&mut self, now: Instant, addrs: &[[u8; 4]]) {
         let Some(port) = crate::api::port() else { return };
         for c in self.api.iter_mut() {
             let s = self.sockets.get_mut::<tcp::Socket>(c.handle);
@@ -528,7 +584,7 @@ impl Nic {
                     crate::command::Request::Partial => crate::command::error(400, "the request ended early"),
                     crate::command::Request::Bad(why) => crate::command::error(400, why),
                     crate::command::Request::Done { method, path, body } => {
-                        crate::api::answer(method, path, body, peer)
+                        crate::api::answer(method, path, body, peer, addrs)
                     }
                 };
             }
@@ -542,9 +598,14 @@ impl Nic {
         }
     }
 
-    fn poll(&mut self, now: Instant) {
+    /// `addrs`: `Net::addresses`, taken by the caller before this NIC was
+    /// borrowed (#231).
+    fn poll(&mut self, now: Instant, addrs: &[[u8; 4]]) {
+        // Nothing reached from here may take the stack again (#231): a
+        // second `&mut Net` would alias this NIC.
+        let _busy = Polling::enter();
         self.iface.poll(now, &mut self.dev, &mut self.sockets);
-        self.serve(now);
+        self.serve(now, addrs);
         let event = match self.sockets.get_mut::<dhcpv4::Socket>(self.dhcp).poll() {
             None => return,
             Some(dhcpv4::Event::Deconfigured) => None,
@@ -653,8 +714,35 @@ pub fn nic_summary() -> Vec<(uefi_raw::Handle, String, bool, u32)> {
         .collect()
 }
 
+/// The stack. Refused while a NIC is being polled (#231, 26ccc36ac667): a
+/// callback from the poll (the API's answer) taking it again would hold a
+/// second `&mut Net` over the NIC the poll still has borrowed.
 fn net() -> Result<&'static mut Net, String> {
+    if POLLING.load(Ordering::Relaxed) {
+        return Err("the network is being polled; nothing called from a poll may take it again".to_string());
+    }
     unsafe { (*NET.0.get()).as_mut() }.ok_or_else(|| "the network is not up".to_string())
+}
+
+/// Set while a NIC is polled (#231).
+static POLLING: AtomicBool = AtomicBool::new(false);
+
+/// `POLLING` for one poll; cleared when dropped, as the poll returns.
+struct Polling(bool);
+
+impl Polling {
+    fn enter() -> Self {
+        Polling(!POLLING.swap(true, Ordering::Relaxed))
+    }
+}
+
+impl Drop for Polling {
+    fn drop(&mut self) {
+        // Only the outermost clears it.
+        if self.0 {
+            POLLING.store(false, Ordering::Relaxed);
+        }
+    }
 }
 
 /// What `up` found, for the console.
@@ -718,7 +806,7 @@ pub fn up(rng: entropy::Start) -> Result<Up, String> {
                     mac_text(&nic.mac[..nic.mac_len]),
                     nic.link_mtu,
                     if nic.link_up() { "UP" } else { "down/unknown" },
-                    if nic.exclusive { "" } else { "  (shared: the firmware kept it)" }
+                    if nic.own.exclusive { "" } else { "  (shared: the firmware kept it)" }
                 );
                 nics.push(nic);
             }
@@ -743,7 +831,7 @@ fn summary(n: &Net, waited_ms: u64) -> Up {
         nics,
         rng: n.rng.source,
         waited_ms,
-        shared: n.nics.iter().filter(|c| !c.exclusive).count(),
+        shared: n.nics.iter().filter(|c| !c.own.exclusive).count(),
     }
 }
 
@@ -766,6 +854,8 @@ fn open_nic(index: usize, handle: uefi_raw::Handle, clock: &Clock, rng: &mut Ent
         )
     };
     let exclusive = st == Status::SUCCESS && !iface.is_null();
+    // From here every early return gives the NIC back (#231).
+    let own = SnpOpen { index, handle, exclusive, given: false };
     if !exclusive {
         iface = handle_protocol(handle, &SNP).ok_or("no SNP interface")?;
     }
@@ -803,6 +893,12 @@ fn open_nic(index: usize, handle: uefi_raw::Handle, clock: &Clock, rng: &mut Ent
                 ptr::null(),
             );
         }
+    }
+    // A test build fails this NIC here, after its open and start, as a
+    // driver that will not start would (#231: tests/nicfail-ovmf.sh). No
+    // golden sets it.
+    if option_env!("STORMBOOTX_NET_TEST_FAIL").and_then(|v| v.parse::<usize>().ok()) == Some(index) {
+        return Err("failed on purpose after its exclusive open (STORMBOOTX_NET_TEST_FAIL, a test build)".into());
     }
     let m = mode();
     if m.hw_address_size != 6 || m.media_header_size != 14 {
@@ -858,7 +954,7 @@ fn open_nic(index: usize, handle: uefi_raw::Handle, clock: &Clock, rng: &mut Ent
     Ok(Nic {
         index,
         handle,
-        exclusive,
+        own,
         mac,
         mac_len: 6,
         link_mtu,
@@ -878,9 +974,15 @@ fn open_nic(index: usize, handle: uefi_raw::Handle, clock: &Clock, rng: &mut Ent
 impl Net {
     fn poll_all(&mut self) {
         let now = self.clock.now();
+        let addrs = self.addresses();
         for nic in self.nics.iter_mut() {
-            nic.poll(now);
+            nic.poll(now, &addrs);
         }
+    }
+
+    /// Every leased address, before any NIC is borrowed for a poll (#231).
+    fn addresses(&self) -> Vec<[u8; 4]> {
+        self.nics.iter().filter_map(|c| c.lease.as_ref().map(|l| l.address)).collect()
     }
 
     /// Every NIC's link and what DHCP has seen on it, for the line printed
@@ -921,25 +1023,15 @@ impl Net {
 /// Called on the fall-through. The stack is gone afterwards.
 pub fn release() {
     snpwatch::close();
-    let Some(n) = (unsafe { (*NET.0.get()).take() }) else { return };
-    let Some(bs) = bs() else { return };
+    let Some(mut n) = (unsafe { (*NET.0.get()).take() }) else { return };
     // Said on the console (#68): on metal, the line is the only evidence a
     // fall-through left the NICs to the next boot option.
     let mut given = 0;
-    for nic in n.nics.iter().filter(|c| c.exclusive) {
-        let closed = unsafe {
-            (bs.close_protocol)(
-                nic.handle,
-                &SNP as *const Guid as *const uefi_raw::Guid,
-                boot::image_handle().as_ptr(),
-                ptr::null_mut(),
-            )
-        };
-        connect(nic.handle);
-        if closed == uefi_raw::Status::SUCCESS {
-            given += 1;
-        } else {
-            uefi::println!("net         : nic {}: SNP not closed ({closed:?})", nic.index);
+    for nic in n.nics.iter_mut() {
+        match nic.own.give_back() {
+            Some(uefi_raw::Status::SUCCESS) => given += 1,
+            Some(closed) => uefi::println!("net         : nic {}: SNP not closed ({closed:?})", nic.index),
+            None => {}
         }
     }
     uefi::println!(
@@ -1030,7 +1122,7 @@ pub fn pump(ms: u64) {
 /// API answers (#167).
 pub fn addresses() -> Vec<[u8; 4]> {
     let Ok(n) = net() else { return Vec::new() };
-    n.nics.iter().filter_map(|c| c.lease.as_ref().map(|l| l.address)).collect()
+    n.addresses()
 }
 
 /// The DHCP reply of the NIC `udp_exchange` would use, for its options
@@ -1331,8 +1423,9 @@ impl TcpSocket {
 
     fn with<R>(&self, f: impl FnOnce(&mut tcp::Socket<'static>, &Clock) -> R) -> Result<R, String> {
         let n = net()?;
+        let addrs = n.addresses();
         let nic = &mut n.nics[self.nic];
-        nic.poll(n.clock.now());
+        nic.poll(n.clock.now(), &addrs);
         Ok(f(nic.sockets.get_mut::<tcp::Socket>(self.handle), &n.clock))
     }
 

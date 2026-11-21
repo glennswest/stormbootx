@@ -75,6 +75,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   ARCH=arm64 A64_GOLDEN_ISO=t/arm/boot/stormbootx-arm64.iso A64_GOLDEN_DISK=t/armdisk/boot/stormbootx-arm64-disk.img \
     tests/net-ovmf.sh t/arm/bin/stormbootx.efi ${CARGO_TARGET_DIR:-target}/aarch64-unknown-uefi/release/tcp4probe.efi && \
   scripts/build-stormdist.sh $PWD/t/sd && tests/dist-ovmf.sh $R/tcp4probe.efi t/sd/stormdist && \
+  tests/nicfail-ovmf.sh $R/tcp4probe.efi && \
   tests/update-ovmf.sh $R/tcp4probe.efi'
 ```
 
@@ -104,6 +105,14 @@ contents; xorriso writes Rock Ridge with owner 0 (`-r`), `TZ=UTC`; the
 stormnic drivers build remapped with `/Brepro`. The second build runs with
 umask 077, another zone and (`unshare -r`) another uid. Nothing on a medium
 may come from the clock, a random number or the build user.
+
+`tests/nicfail-ovmf.sh PAYLOAD` (#231) rebuilds stormbootx with
+`STORMBOOTX_NET_TEST_FAIL=0` (a test build: nic 0 fails after its exclusive
+SNP open, Start and Initialize) and boots net-ovmf's `nicfail` with the
+firmware's IPv4 stack on: stormbootx must say `nic 0: given back to the
+firmware`, and the next boot option, the firmware's PXE on that NIC, must
+lease and start the payload. It replaces `stormbootx.efi` in the target
+dir, so it runs just before update-ovmf.
 
 `tests/update-ovmf.sh` (#83) must stay last: it rebuilds `stormbootx.efi`
 with an Ed25519 test key compiled in (`STORMBOOTX_UPDATE_TEST_KEY`) and boots
@@ -334,7 +343,7 @@ kept for a later need; the test command sets it to keep the code honest.
 | `src/api.rs` | stormbootx's own API (#167): `/api/v1/status`, `/inventory`, `/log`, `POST /api/v1/command`; Ed25519 over `RELEASE_KEYS` and `command_key =`, the `StormBootCommandId` floor (NV); the engine's record (stormblock#494); the commands done at the boot's fixed points; the hold (`hold =`, `hold_retry =`) |
 | `src/command.rs` | the signed command's text, body and verbs (no `fec` verbs since #202/#203: the FEC is the driver's), and the API's HTTP parsing (core + alloc, host-tested) |
 | `src/smbios.rs` | the serials (Type 1 → 2 → 3, placeholders and shared chassis serials rejected), before any network exists; the MAC as the floor |
-| `src/net.rs` | the TCP/IP stack (#56): smoltcp on every NIC's SNP (opened exclusively), DHCP, `TcpSocket`, the TSC clock; its own ARP for the next hops (#168); the API's listening sockets, served from every poll (#167); `release` gives the NICs back on the fall-through |
+| `src/net.rs` | the TCP/IP stack (#56): smoltcp on every NIC's SNP (opened exclusively, the open a guard that gives a NIC that fails to start back at once, #231), DHCP, `TcpSocket`, the TSC clock; its own ARP for the next hops (#168); the API's listening sockets, served from every poll (#167), whose answer gets the addresses from the poll and may not take the stack again (`net()` refuses during a poll, #231); `release` gives the NICs back on the fall-through |
 | `src/profile.rs` | the `timing :` line (#168): a mark at the end of each step, durations on the TSC |
 | `src/snpwatch.rs` | which driver is under each SNP (named before the first call), and a `TPL_NOTIFY` timer that names an SNP call that has not returned (#88) |
 | `src/entropy.rs` | randomness for the ISN, DHCP xid and ports: firmware `EFI_RNG`, then RDSEED/RDRAND (RNDR on aarch64), then jitter through SHA-256; never fails |

@@ -193,11 +193,11 @@ pub fn engine(portal: [u8; 4], port: u16, host: &str, name: &str) {
 
 /// The answer to one request. Runs inside a poll of the stack: it reads and
 /// queues, and never touches the network.
-pub fn answer(method: &str, path: &str, body: &[u8], peer: [u8; 4]) -> Vec<u8> {
+pub fn answer(method: &str, path: &str, body: &[u8], peer: [u8; 4], addrs: &[[u8; 4]]) -> Vec<u8> {
     let Some(s) = st() else { return command::error(503, "starting") };
     let path = path.split('?').next().unwrap_or(path);
     match (method, path) {
-        ("GET", "/api/v1/status") => command::response(200, "application/json", status_json(s).as_bytes()),
+        ("GET", "/api/v1/status") => command::response(200, "application/json", status_json(s, addrs).as_bytes()),
         ("GET", "/api/v1/inventory") => match hardware::cached() {
             Some(j) => command::response(200, "application/json", j.as_bytes()),
             None => command::error(503, "the inventory is collected at the claim, or when holding"),
@@ -244,9 +244,11 @@ pub fn answer(method: &str, path: &str, body: &[u8], peer: [u8; 4]) -> Vec<u8> {
     }
 }
 
-fn status_json(s: &State) -> String {
+/// `addrs`: every leased address, from the poll that carries the request
+/// (#231): `net::addresses` cannot be called from there.
+fn status_json(s: &State, addrs: &[[u8; 4]]) -> String {
     let names: Vec<String> = s.names.iter().map(|n| format!("\"{}\"", command::escape(n))).collect();
-    let addrs: Vec<String> = net::addresses().iter().map(|a| format!("\"{}\"", ip(*a))).collect();
+    let addrs: Vec<String> = addrs.iter().map(|a| format!("\"{}\"", ip(*a))).collect();
     format!(
         "{{\"agent\":\"stormbootx\",\"version\":\"{}\",\"commit\":\"{}\",\"phase\":\"{}\",\"detail\":\"{}\",\
          \"names\":[{}],\"addresses\":[{}],\"command_id\":{},\"pending\":{},\"last\":{}}}",

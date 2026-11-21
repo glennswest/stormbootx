@@ -63,7 +63,8 @@ lease (#162, *The log over the network*): nothing is written for it.
 Nothing is written to the platform's network configuration any more (#56;
 until 0.9 a `STATIC` IP4 policy was switched to `DHCP` in NVRAM). The NICs are
 taken from the firmware's own stack for the boot (SNP opened exclusively) and
-given back on the fall-through.
+given back on the fall-through. A NIC that fails to start after its open is
+given back at once (`nic N: given back to the firmware`, #231).
 
 ## The boot screen
 
@@ -1454,6 +1455,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   EFI_NAME=BOOTAA64.EFI tests/iso-layout.sh t/arm/boot/stormbootx-arm64.iso && \
   EFI_NAME=BOOTAA64.EFI tests/usb-layout.sh t/arm/boot/stormbootx-arm64-usb.img t/arm/media && \
   deploy/build-golden.sh stormbootx-arm64-disk $PWD/t/armdisk && \
+  tests/nicfail-ovmf.sh $R/tcp4probe.efi && \
   tests/update-ovmf.sh $R/tcp4probe.efi'
 ```
 
@@ -1463,7 +1465,10 @@ and stormbootx itself against the stub engine and NVMe/TCP target
 (`tests/net-ovmf.sh`, with stormnic-virtio built in the job for its
 take-over boots). Last, it builds an ISO and boots its `startup.nsh`
 from an EFI Shell (`tests/shell-ovmf.sh`, #60), once with the old EDK shell
-and once with OVMF's own. `tests/update-ovmf.sh` (#83) runs last, because it
+and once with OVMF's own. `tests/nicfail-ovmf.sh` (#231) builds a
+stormbootx whose nic 0 fails after its exclusive SNP open, and requires
+the NIC given back and the firmware's PXE booting on it next.
+`tests/update-ovmf.sh` (#83) runs last, because it
 rebuilds `stormbootx.efi` with a test key: the self-update boots off a
 writable USB stick, and the launcher's (*Self-update*).
 `tests/repro.sh` (#53) builds `stormbootx.efi` twice, from two copies of
