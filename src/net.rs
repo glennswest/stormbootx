@@ -804,6 +804,9 @@ fn open_nic(index: usize, handle: uefi_raw::Handle, clock: &Clock, rng: &mut Ent
             );
         }
     }
+    if option_env!("STORMBOOTX_NET_TEST_FAIL").and_then(|v| v.parse::<usize>().ok()) == Some(index) {
+        return Err("failed on purpose after its exclusive open (STORMBOOTX_NET_TEST_FAIL, a test build)".into());
+    }
     let m = mode();
     if m.hw_address_size != 6 || m.media_header_size != 14 {
         return Err(format!(

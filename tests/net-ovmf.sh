@@ -880,6 +880,28 @@ common=(
 )
 host_cpu=max
 [[ $accel == kvm ]] && host_cpu=host
+
+# #231 (47063dda87c6): a NIC that fails to start after stormbootx's
+# exclusive open is given back at once. tests/nicfail-ovmf.sh builds the
+# binary that fails nic 0 there; with the firmware's IPv4 stack on, its PXE
+# is the next boot option and must lease and start the payload on that NIC.
+if [[ -n "${NICFAIL:-}" ]]; then
+    BOOT_NOFALLBACK=1 BOOT_PXE=1 WAIT_FOR="is there a TCP/IP stack in this firmware" BOOT_SETTLE=3 \
+    boot nicfail "$host_cpu" "" 404 good \
+        "nic 0: driver Virtio Network Driver" \
+        "nic 0: given back to the firmware (exclusive SNP closed, reconnected)" \
+        "nic 0: not used (failed on purpose after its exclusive open (STORMBOOTX_NET_TEST_FAIL, a test build))" \
+        "no network boot: 1 NIC(s) have an SNP, and none of them would start" \
+        "is there a TCP/IP stack in this firmware" \
+        "not:SNP not closed" \
+        "not:tcp4        : smoltcp over SNP" \
+        "not-stub:POST /api/v1/synonyms/boothost/"
+    grep -qE "Start PXE over IPv4|Station IP address is" "$W/nicfail.txt" \
+        && say "[nicfail] the firmware's PXE ran on the NIC stormbootx gave back" \
+        || say "note: no PXE banner on the console (the payload's banner is the evidence)"
+    say "PASS"
+    exit 0
+fi
 boot shipped "$host_cpu" "" 404 good "${common[@]}" "rng         : " \
     "handover    : the spec's frame stays up (" \
     "engine      : no boot port at 10.0.2.2:9089 (" \
