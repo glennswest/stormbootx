@@ -622,22 +622,29 @@ pub fn response(raw: &mut [u8]) -> Option<(u16, &[u8])> {
 }
 
 /// Undo chunked transfer coding in place; the length of what is left.
+///
+/// This runs before the manifest's signature is checked, on bytes anyone on
+/// the path can write, so no chunk size may index past the input (#233,
+/// 85c49e1e33d3): its end and its CRLF's end are found with arithmetic that
+/// cannot wrap, and a chunk longer than what is left is `None`, never a panic.
 fn dechunk(buf: &mut [u8]) -> Option<usize> {
     let (mut rd, mut wr) = (0usize, 0usize);
     loop {
-        let eol = buf[rd..].windows(2).position(|w| w == b"\r\n")? + rd;
+        let eol = buf.get(rd..)?.windows(2).position(|w| w == b"\r\n")? + rd;
         let line = core::str::from_utf8(&buf[rd..eol]).ok()?;
         let size = usize::from_str_radix(line.split(';').next()?.trim(), 16).ok()?;
         rd = eol + 2;
         if size == 0 {
             return Some(wr);
         }
-        if buf.len() < rd + size + 2 || &buf[rd + size..rd + size + 2] != b"\r\n" {
+        let end = rd.checked_add(size)?;
+        let next = end.checked_add(2)?;
+        if buf.get(end..next)? != b"\r\n" {
             return None;
         }
-        buf.copy_within(rd..rd + size, wr);
+        buf.copy_within(rd..end, wr);
         wr += size;
-        rd += size + 2;
+        rd = next;
     }
 }
 

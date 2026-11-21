@@ -3,6 +3,10 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-21
+- **fix:** #233 (85c49e1e33d3, security): the self-update's HTTP framing (`manifest::response`, also `stormbootx-stick`'s) can no longer be made to panic by a chunk size. `dechunk` added a hexadecimal chunk length to its position unchecked: `ffffffffffffffed` wrapped the end to 1 on 64-bit, the length check passed, and the slice panicked, before the manifest's signature is checked. The chunk's end and its CRLF's end are now `checked_add`, both ranges are read with `get`, and a chunk longer than what is left is refused.
+- **test:** #233: `chunk_sizes_cannot_wrap` (the finding's body, sizes near `usize::MAX`, a size past the input, a missing CRLF), each `None`. On the old code it panicked at the length check.
+
 ## [v0.45.2] — 2026-11-21
 
 ### Fixed
