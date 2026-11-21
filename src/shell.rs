@@ -202,7 +202,9 @@ fn dhcp(args: &[&str]) {
 /// exists only where a UEFI driver bound; the bus itself does not care, so a
 /// card whose option ROM never loaded is invisible everywhere *except* here.
 ///
-/// Read-only, and deliberately its own walk rather than the `enumerate()` the
+/// Read-only: each root bridge is opened `GET_PROTOCOL` (#235), so the walk
+/// takes nothing from the drivers bound under it. And deliberately its own
+/// walk rather than the `enumerate()` the
 /// crate offers: enumeration is entitled to assign bus numbers, and a boot path
 /// has no business renumbering a live bus to satisfy a diagnostic.
 ///
@@ -223,7 +225,11 @@ fn pci(args: &[&str]) {
     let mut found = 0usize;
     let mut nics = 0usize;
     for h in handles.iter() {
-        let Ok(mut bridge) = boot::open_protocol_exclusive::<PciRootBridgeIo>(*h) else {
+        // A look, never a claim (#235, c3c3cbf2d83b): an EXCLUSIVE open
+        // disconnects PciBusDxe and every driver under it, the NICs the stack
+        // holds SNP pointers to and the local disk among them.
+        let Some(mut bridge) = crate::blockio::open_get::<PciRootBridgeIo>(*h) else {
+            uefi::println!("  root bridge {:?}: not opened (GET_PROTOCOL refused); its devices are not listed", h.as_ptr());
             continue;
         };
         // Buses are discovered rather than swept: start at this root bridge's
