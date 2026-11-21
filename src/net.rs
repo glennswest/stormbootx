@@ -1307,6 +1307,22 @@ impl TcpSocket {
     /// while another NIC is left to try. A reset is an answer, not a wrong
     /// wire: the target was reached and nothing listens on that port.
     pub fn connect_within(remote: [u8; 4], port: u16, secs: u32) -> Result<Self, String> {
+        Self::connect_on(remote, port, secs, secs, false)
+    }
+
+    /// Connect as `connect_within`, but never give up before every NIC with a
+    /// lease has had its own bounded try (7e4c6aff3459, #239): `secs` is the
+    /// least the connect waits, and past it each leased NIC not yet tried
+    /// still gets its 5 s, and a try in flight finishes. With four leased NICs
+    /// and only the fourth on the engine's wire, a fixed 15 s went to the
+    /// first three and the fourth was never asked. `reply_secs` bounds each
+    /// later operation on the socket, apart from the connect.
+    pub fn connect_each(remote: [u8; 4], port: u16, secs: u32, reply_secs: u32) -> Result<Self, String> {
+        Self::connect_on(remote, port, secs, reply_secs, true)
+    }
+
+    fn connect_on(remote: [u8; 4], port: u16, secs: u32, reply_secs: u32, each: bool) -> Result<Self, String> {
+        let per_nic = Duration::from_secs(5);
         if net().is_err() {
             up(crate::config::stated_rng())?;
         }
@@ -1314,6 +1330,8 @@ impl TcpSocket {
         let start = n.clock.now();
         let deadline = start + Duration::from_secs(secs as u64);
         let mut tried = vec![false; n.nics.len()];
+        // Which NICs have had a try at all, never reset by a second round.
+        let mut turned = vec![false; n.nics.len()];
         let mut attempt: Option<(usize, SocketHandle, Instant)> = None;
         let mut last = String::new();
         let mut note = start + Duration::from_secs(1);
@@ -1341,7 +1359,7 @@ impl TcpSocket {
                             }
                             n.preferred = Some(i);
                         }
-                        return Ok(TcpSocket { nic: i, handle: h, secs, progress: false });
+                        return Ok(TcpSocket { nic: i, handle: h, secs: reply_secs, progress: false });
                     }
                     tcp::State::Closed => {
                         n.nics[i].sockets.remove(h);
@@ -1354,8 +1372,16 @@ impl TcpSocket {
                         let others = n.nics.iter().enumerate().any(|(j, c)| {
                             j != i && !tried[j] && c.lease.is_some()
                         });
-                        let limit = if others { Duration::from_secs(5) } else { deadline - t0 };
-                        if now - t0 >= limit || now >= deadline {
+                        // Past the deadline, `each` still lets this try have
+                        // its own 5 s; a NIC tried in time keeps the rest.
+                        let limit = if others {
+                            per_nic
+                        } else if each && deadline < t0 + per_nic {
+                            per_nic
+                        } else {
+                            deadline - t0
+                        };
+                        if now - t0 >= limit || (now >= deadline && !(each && now - t0 < per_nic)) {
                             n.nics[i].sockets.get_mut::<tcp::Socket>(h).abort();
                             let addrs = n.addresses();
                             n.nics[i].poll(now, &addrs);
@@ -1368,7 +1394,17 @@ impl TcpSocket {
                 }
             }
             if now >= deadline {
-                break;
+                // Under `each`, a try in flight finishes, and a leased NIC
+                // that has had none still gets one.
+                let owed = each
+                    && (attempt.is_some()
+                        || n.nics.iter().enumerate().any(|(j, c)| c.lease.is_some() && !turned[j]));
+                if !owed {
+                    break;
+                }
+                if attempt.is_none() {
+                    tried.iter_mut().zip(&turned).for_each(|(t, &u)| *t = u);
+                }
             }
             if attempt.is_none() {
                 let order = n.order();
@@ -1378,6 +1414,7 @@ impl TcpSocket {
                     tried.iter_mut().for_each(|t| *t = false);
                 }
                 if let Some(&i) = order.iter().find(|&&i| !tried[i] && n.nics[i].lease.is_some()) {
+                    turned[i] = true;
                     let local = local_port(&mut n.rng);
                     let nic = &mut n.nics[i];
                     nic.prime(remote);
@@ -1409,16 +1446,17 @@ impl TcpSocket {
             n.nics[i].sockets.remove(h);
         }
         let leased = n.nics.iter().filter(|c| c.lease.is_some()).count();
+        let spent = (n.clock.now() - start).secs();
         if leased == 0 {
             return Err(format!(
-                "no address after {secs} s: nothing answered DHCP on any of {} NIC(s)",
+                "no address after {spent} s: nothing answered DHCP on any of {} NIC(s)",
                 n.nics.len()
             ));
         }
         Err(if last.is_empty() {
-            format!("{}:{port} did not answer within {secs} s", ip_text(remote))
+            format!("{}:{port} did not answer within {spent} s", ip_text(remote))
         } else {
-            format!("{last} — after {secs} s, {leased} of {} NIC(s) leased", n.nics.len())
+            format!("{last} — after {spent} s, {leased} of {} NIC(s) leased", n.nics.len())
         })
     }
 

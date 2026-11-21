@@ -118,6 +118,21 @@ then.
       `local.conf`: the same), `idcut` (only `local.conf.new` there: read
       and kept); update-boots `idfail` on the UEFI side.
 
+- [ ] **#239 — review finding 7e4c6aff3459 in `src/registry.rs` (major).**
+      The boot-port probe (#183) had a fixed 15 s for the connect, and
+      `connect_within` gives each leased NIC 5 s while another is left: with
+      four leased NICs and only the fourth on the engine's wire, the first
+      three spent the budget, the fourth was never asked, and `find_engine`
+      fell back to `api_port` (TLS once stormblock#524 lands: no claim, no
+      boot). Fix: `TcpSocket::connect_each` (net.rs), used for the boot port
+      only: past `secs` the connect still gives every leased NIC that has had
+      no try its 5 s, and a try in flight finishes; the reply's bound
+      (`reply_secs`) is set apart from the connect's. Every other caller of
+      `connect_within` is unchanged. Test: net-ovmf `bootport-fourth`
+      (`BOOT_DEADNICS=3`: three slirp NICs ahead on the bus whose router is
+      10.0.2.4, so 10.0.2.2's ARP is never answered and the SYN never
+      leaves; `nic 3 … reached` the boot port, never `api_port`).
+
 - [x] **#236 — review finding 89b3587e2182 in `src/ui.rs` (P1). Done 2026-11-21:** dea48a6 + 56b93d6 + dcc5106; full sc-build passed on dcc5106 (2534 s). Reproduced on wip/236-repro (a no-pallet image booted under the frame). v0.45.5.
       Every attached image's bootloader ran under the panel's ConOut hook:
       a menu or prompt not shown, its keys and F2 dead. Fix: the panel stays

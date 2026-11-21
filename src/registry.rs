@@ -343,10 +343,13 @@ pub fn claim_default(
 }
 
 /// How long the boot port gets once there is a lease (#183), for the connect
-/// and for the reply. A port that drops SYNs (a laptop's firewall) costs this
-/// once a boot. It has to outlast 5 s per NIC with a lease and the wrong wire
-/// (`net.rs`), because a boot port missed that way is `api_port` found, and
-/// once :9090 is TLS that is an engine this boot cannot talk to.
+/// and, apart from it, for the reply. A port that drops SYNs (a laptop's
+/// firewall) costs this once a boot. The connect is `connect_each`
+/// (7e4c6aff3459, #239): past these 15 s every NIC with a lease that has not
+/// been tried still gets its 5 s, because a boot port missed on the wrong wire
+/// is `api_port` found, and once :9090 is TLS that is an engine this boot
+/// cannot talk to. A fixed 15 s was spent by three leased NICs before a
+/// fourth, the one on the engine's wire, was asked.
 const BOOT_PORT_SECS: u32 = 15;
 
 /// Where this boot talks to the engine, and what it answered there.
@@ -378,7 +381,7 @@ pub fn find_engine(server: [u8; 4], boot_port: Option<u16>, api_port: u16) -> En
             return Engine { port: api_port, host: api_host, version: Err(e), iface: None };
         }
         let host = addr(port);
-        let (version, iface) = engine_version(server, port, &host, BOOT_PORT_SECS);
+        let (version, iface) = engine_version(server, port, &host, BOOT_PORT_SECS, true);
         match version {
             Ok(_) => {
                 uefi::println!("engine      : reached {host} (the boot port)");
@@ -390,7 +393,7 @@ pub fn find_engine(server: [u8; 4], boot_port: Option<u16>, api_port: u16) -> En
             }
         }
     }
-    let (version, iface) = engine_version(server, api_port, &api_host, 30);
+    let (version, iface) = engine_version(server, api_port, &api_host, 30, false);
     if version.is_ok() {
         uefi::println!("engine      : reached {api_host} (api_port)");
     }
@@ -412,8 +415,14 @@ fn engine_version(
     port: u16,
     host: &str,
     secs: u32,
+    each: bool,
 ) -> (Result<String, String>, Option<Interface>) {
-    let reply = TcpSocket::connect_within(server, port, secs)
+    let sock = if each {
+        TcpSocket::connect_each(server, port, secs, secs)
+    } else {
+        TcpSocket::connect_within(server, port, secs)
+    };
+    let reply = sock
         .and_then(|sock| exchange(sock, host, "GET", "/api/v1/health", None));
     let (response, iface) = match reply {
         Ok(r) => r,
