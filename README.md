@@ -780,7 +780,13 @@ stormcentral#279.
   `serial:<n>`, `trial:<n>:<start>`, `good:<n>` or `failed:<n>`.
 - **`local.conf`** is the medium's own. It is read before `stormboot.conf`, so
   its keys win, and an update never writes it, except to keep a `name =` or
-  `tag =` that the release's `stormboot.conf` would drop.
+  `tag =` that the release's `stormboot.conf` would drop. That is done for
+  certain or not at all (#237): the new text is `local.conf.new`, written and
+  read back, then the old one moves aside to `.prev`, the new one takes its
+  place and `.prev` goes; while a cut leaves only `.prev` and `.new`, the
+  `.new` is what is read. A `local.conf` that cannot be read, or the new one
+  not written, stops the update before its trial, with nothing changed: a
+  new `stormboot.conf` without the name would boot the machine as another.
 - **Room.** The new files are written beside the old, so the medium needs
   their size free (the `*.prev` copies about to be replaced count); a
   medium without room says so and is left alone (the payloads about to be

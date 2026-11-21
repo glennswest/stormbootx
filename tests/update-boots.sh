@@ -23,6 +23,8 @@
 #             serial (#90)
 #   realagain the same: "declined here before", nothing new written
 #   badsig    serial 5 signed with another key: refused, nothing written
+#   idfail    serial 5, but the medium's `name =` cannot be kept in
+#             local.conf (local.conf.new a directory): nothing changed (#237)
 #   update    serial 5 signed: six files differ (three new, one a "driver"
 #             that is not a PE image), written, restart; the migration
 #             (#229): BOOTX64.EFI becomes the launcher by the old swap, and
@@ -299,6 +301,29 @@ state_has "serial = 0"
 state_has "min = 1"
 
 release 5 "$UPDATE_KEY" driver
+# #237 (9ddc02f6bbad): the medium names the machine (`name =`), the release's
+# stormboot.conf does not, so the name moves to local.conf; here
+# local.conf.new is a directory and cannot be written. The update must stop
+# with nothing changed: no trial, the old set and its stormboot.conf (and
+# the name) as they were, no .new left.
+mcopy -o -i "$IMG@@$OFF" ::/stormboot/stormboot.conf "$W/conf0"
+{ cat "$W/conf0"; printf 'name = idtest\r\n'; } > "$W/conf-named"
+mcopy -o -i "$IMG@@$OFF" "$W/conf-named" ::/stormboot/stormboot.conf
+mmd -i "$IMG@@$OFF" ::/stormboot/local.conf.new
+uboot idfail \
+    "-> v$TV (golden-stormbootx-test-5, serial 5), 6 file(s)" \
+    "update      : could not keep name = idtest in \\stormboot\\local.conf (" \
+    "; nothing changed" \
+    "not:; restarting into it" \
+    "not:on trial"
+same /EFI/BOOT/BOOTX64.EFI "$W/A.efi"
+same /stormboot/stormboot.conf "$W/conf-named"
+gone /stormboot/stormboot.conf.new
+gone /EFI/BOOT/BOOTX64.EFI.new
+state_has "serial = 0"
+mrd -i "$IMG@@$OFF" ::/stormboot/local.conf.new
+mcopy -o -i "$IMG@@$OFF" "$W/conf0" ::/stormboot/stormboot.conf
+
 uboot update "${attached[@]}" \
     "-> v$TV (golden-stormbootx-test-5, serial 5), 6 file(s)" \
     "payload     : \\stormboot\\stormbootx.efi, started by the launcher" \

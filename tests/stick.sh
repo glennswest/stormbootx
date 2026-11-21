@@ -175,6 +175,42 @@ grep -qx "name = server1" "$S/stormboot/local.conf" || die "[update] name not ca
 [[ -z "$(find "$S" -name '*.new')" ]] || die "[update] a .new is left"
 sums "$S" | sed 's/^/  : /'
 
+# --- #237 (9ddc02f6bbad): the machine's name is kept, or the update stops
+# with nothing changed. idfail: local.conf.new cannot be written (a
+# directory there); idread: local.conf cannot be read. Serial 5 is current.
+for case in idfail idread; do
+    I="$T/$case"
+    mk_tree "$I" 0.20.0
+    printf 'name = server1\n' >> "$I/stormboot/stormboot.conf"
+    if [[ $case == idfail ]]; then
+        printf 'dns = 192.168.31.252\n' > "$I/stormboot/local.conf"
+        mkdir "$I/stormboot/local.conf.new"
+        why="could not keep name = server1 in stormboot/local.conf"
+    else
+        mkdir "$I/stormboot/local.conf"
+        why="read stormboot/local.conf: "
+    fi
+    before=$(sums "$I")
+    stick "$case" 1 --esp "$I" -- "$why" "not:state: serial 5 on trial" 'json:"outcome":"error"'
+    [[ "$(sums "$I")" == "$before" ]] || die "[$case] the stick changed: $(diff <(echo "$before") <(sums "$I"))"
+    grep -qx "name = server1" "$I/stormboot/stormboot.conf" || die "[$case] stormboot.conf lost the name"
+done
+grep -qF "nothing changed" "$T/idfail.out" || die "[idfail] no 'nothing changed'"
+# idcut: a carry cut between its renames, the old local.conf as .prev and
+# the read-back new one as .new: the update reads the .new (the name is
+# there) and finishes putting it in place.
+I="$T/idcut"
+mk_tree "$I" 0.20.0
+printf 'name = server1\n' >> "$I/stormboot/stormboot.conf"
+printf 'dns = 192.168.31.252\n' > "$I/stormboot/local.conf.prev"
+printf 'dns = 192.168.31.252\nname = server1\n' > "$I/stormboot/local.conf.new"
+stick idcut 0 --esp "$I" -- \
+    "apply  : kept the cut carry's local.conf in stormboot/local.conf" \
+    "apply  : state: serial 5 on trial, prev 0" 'json:"outcome":"updated"'
+grep -qx "name = server1" "$I/stormboot/local.conf" || die "[idcut] local.conf: $(cat "$I/stormboot/local.conf" 2>&1)"
+grep -qx "dns = 192.168.31.252" "$I/stormboot/local.conf" || die "[idcut] local.conf lost its own line"
+[[ ! -e "$I/stormboot/local.conf.new" && ! -e "$I/stormboot/local.conf.prev" ]] || die "[idcut] .new or .prev left"
+
 # --- launcher (#229): a stick whose BOOTX64.EFI is the launcher takes the
 # release's stormbootx as a new payload named by a boot record; the launcher
 # and the payload it starts now stay.

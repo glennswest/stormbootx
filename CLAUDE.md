@@ -116,7 +116,7 @@ dir, so it runs just before update-ovmf.
 
 `tests/update-ovmf.sh` (#83) must stay last: it rebuilds `stormbootx.efi`
 with an Ed25519 test key compiled in (`STORMBOOTX_UPDATE_TEST_KEY`) and boots
-a writable GPT medium on a USB stick nineteen times through
+a writable GPT medium on a USB stick twenty times through
 `tests/update-boots.sh`, sourced by `net-ovmf.sh` for its stubs (#89):
 an `update =` naming a host must be looked up at the lease's DNS server
 (#148);
@@ -124,7 +124,7 @@ stormcentral's real serial-1 manifest (`tests/fixtures/`, v0.14.0) verifies
 and is declined as older than the running version, writing only `min = 1`,
 then "declined here before" (#96); test releases carry the running version
 with a `-test` suffix; bad
-signature refused; serial 5 written, restarted, trial passed on the attach;
+signature refused; serial 5 not taken while the medium's `name =` cannot be kept in `local.conf` (#237); serial 5 written, restarted, trial passed on the attach;
 serial 5 `current`; serial 6 refused as another machine's canary, then taken
 as this one's, retiring a driver; serial 7 refused for room; serial 8 (a
 dead NVMe port in its conf) fails two trial starts and the third puts serial
