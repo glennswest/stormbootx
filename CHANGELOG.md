@@ -3,11 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
-### 2026-11-21 (#235)
+### 2026-11-21
 - **fix:** #235 (c3c3cbf2d83b): the failure console's `pci` opens each PCI root bridge with `GET_PROTOCOL` rather than `EXCLUSIVE`. An exclusive open can disconnect PciBusDxe and every driver under it: the NICs whose SNP the stack still holds, and the local disk the fall-through is about to boot. Where the open was refused, the bridge was skipped silently; it is now named.
 - **test:** #235: net-ovmf's `pcicmd` boot types into the console (`BOOT_TYPE`, `tests/screen.py type`). `pci` must list the virtio NIC, `connect` to the stub engine must then open over the live stack, and `boot` must fall through: the NIC is given back and the local disk starts.
-
-### 2026-11-21
 - **fix:** #234 (ad40f4d4558e): `build-boot-agent.sh --pin` (and `--portal`) writes `claim = no`. Before, it wrote only the portal, port, nqn and nsid, and the claim defaults to on. So a pinned stick still read the engine's intent and claimed: an engine's answer replaced the pinned namespace, and an intent of `local` skipped it.
 - **test:** #234: net-ovmf's `pinned` boot. The stub engine is up, says `local` for this MAC and answers the claim. The pinned medium must say `claim : disabled by the config file`, attach its own namespace (96 MiB read) and start the payload. The stub must see no health read, intent or claim.
 
