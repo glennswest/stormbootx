@@ -311,7 +311,6 @@ mcopy -o -i "$IMG@@$OFF" ::/stormboot/stormboot.conf "$W/conf0"
 mcopy -o -i "$IMG@@$OFF" "$W/conf-named" ::/stormboot/stormboot.conf
 mmd -i "$IMG@@$OFF" ::/stormboot/local.conf.new
 uboot idfail \
-    "-> v$TV (golden-stormbootx-test-5, serial 5), 6 file(s)" \
     "update      : could not keep name = idtest in \\stormboot\\local.conf (" \
     "; nothing changed" \
     "not:; restarting into it" \

@@ -762,6 +762,16 @@ boot() {
           done
           if [[ -n $BOOT_TYPE ]] && grep -q "stormbootx console\." "$log" 2>/dev/null; then
               local cmds line n
+              # A `c` sent just before the console came up may still be in
+              # the keyboard's queue: Enter once, after a second, so it goes
+              # as a line of its own (`cpci` was typed once).
+              sleep 1
+              n=$(grep -o '> ' "$log" | wc -l)
+              python3 "$ROOT/tests/screen.py" key "$W/$name.mon" ret >/dev/null 2>&1 || true
+              for _ in $(seq 1 50); do
+                  (( $(grep -o '> ' "$log" | wc -l) > n )) && break
+                  sleep 0.2
+              done
               IFS='|' read -ra cmds <<< "$BOOT_TYPE"
               for line in "${cmds[@]}"; do
                   # The prompt this line answers, then the keys.
