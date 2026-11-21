@@ -102,6 +102,18 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#235 — review finding c3c3cbf2d83b in `src/shell.rs` (P1).**
+      The console's `pci` opened each PCI root bridge `EXCLUSIVE`, which may
+      disconnect PciBusDxe and every driver under it (the NICs the stack
+      holds SNP pointers to, the local disk), and where refused it skipped
+      the bridge silently. Fix: a `GET_PROTOCOL` open (`blockio::open_get`),
+      as 1a9e601 did for the old FEC pin; a bridge that will not open is
+      named. Test: net-ovmf's `pcicmd` boot types into the console
+      (`BOOT_TYPE`, `screen.py type`): `pci` must list the virtio NIC, then
+      `connect` to the stub engine over the live stack must open, then
+      `boot` falls through to the local disk, which starts. Reproduced on
+      the old code first (expect-fail).
+
 - [x] **#234 — review finding ad40f4d4558e in `scripts/build-boot-agent.sh` (P1). Done 2026-11-21:** 7b70f88 + d674e9c; full sc-build passed on d674e9c (2511 s, `pinned` boot). Reproduced on wip/234-repro (the old pinned medium asked the engine, was told `local`, attached nothing). No image: no golden pins (no medium's bytes changed).
       `--pin`/`--portal` wrote portal, port, nqn and nsid but not
       `claim = no`, and `config::resolve` defaults the claim on: a pinned
