@@ -998,6 +998,28 @@ mod tests {
     }
 
     #[test]
+    fn chunk_sizes_cannot_wrap() {
+        // 85c49e1e33d3 (#233): `ffffffffffffffed` with rd = 18 made
+        // rd + size + 2 wrap to 1 on 64-bit, so the length guard passed and
+        // the slice panicked, before the manifest's signature is looked at.
+        let head = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n";
+        let bodies: [&[u8]; 6] = [
+            b"ffffffffffffffed\r\nx\r\n",
+            b"ffffffffffffffee\r\n\r\n",
+            b"ffffffffffffffff\r\n\r\n",
+            b"5\r\nhello\r\nffffffffffffffff\r\nab\r\n",
+            // A chunk longer than what is left, and one with no CRLF after it.
+            b"10\r\nhello\r\n0\r\n\r\n",
+            b"5\r\nhelloXY0\r\n\r\n",
+        ];
+        for body in bodies {
+            let mut raw = head.to_vec();
+            raw.extend_from_slice(body);
+            assert_eq!(response(&mut raw), None, "{}", std::string::String::from_utf8_lossy(body));
+        }
+    }
+
+    #[test]
     fn update_settings() {
         assert_eq!(setting("off"), Some(Setting::Off));
         assert_eq!(setting("false"), Some(Setting::Off));
