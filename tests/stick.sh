@@ -196,6 +196,21 @@ for case in idfail idread; do
     grep -qx "name = server1" "$I/stormboot/stormboot.conf" || die "[$case] stormboot.conf lost the name"
 done
 grep -qF "nothing changed" "$T/idfail.out" || die "[idfail] no 'nothing changed'"
+# idro: the reviewer's case, a read-only local.conf on a writable volume.
+# Before #237 its write failed, was only logged, and the update swapped in
+# a stormboot.conf without the name. Now the new local.conf is written as
+# .new and renamed into place, and the name is kept.
+I="$T/idro"
+mk_tree "$I" 0.20.0
+printf 'name = server1\n' >> "$I/stormboot/stormboot.conf"
+printf 'dns = 192.168.31.252\n' > "$I/stormboot/local.conf"
+chmod a-w "$I/stormboot/local.conf"
+stick idro 0 --esp "$I" -- \
+    "apply  : kept name = server1 in stormboot/local.conf" \
+    "not:could not keep" 'json:"outcome":"updated"'
+grep -qx "name = server1" "$I/stormboot/local.conf" || die "[idro] name not kept: $(cat "$I/stormboot/local.conf")"
+grep -qx "dns = 192.168.31.252" "$I/stormboot/local.conf" || die "[idro] local.conf lost its own line"
+[[ ! -e "$I/stormboot/local.conf.new" && ! -e "$I/stormboot/local.conf.prev" ]] || die "[idro] .new or .prev left"
 # idcut: a carry cut between its renames, the old local.conf as .prev and
 # the read-back new one as .new: the update reads the .new (the name is
 # there) and finishes putting it in place.
