@@ -1240,6 +1240,25 @@ mod tests {
         assert_eq!(e, "receive timed out (0 of 8 bytes)");
     }
 
+    /// #232 reproduction on the old code: a short R2T.
+    #[test]
+    fn a_short_r2t_is_an_error_not_a_panic() {
+        let mut q = Queue::open(Conn {
+            ctrl: fake(1).ctrl,
+            inbuf: Vec::new(),
+            out: VecDeque::new(),
+            pending: None,
+            mtu: None,
+            held: Vec::new(),
+        })
+        .unwrap();
+        let mut p = vec![PDU_R2T, 0, 8, 0, 0, 0, 0, 0];
+        put32(&mut p, 4, 12);
+        p.extend([0u8; 4]);
+        q.sock.out.extend(p);
+        assert!(q.complete(1, Some(&[0u8; 4096]), None).is_err());
+    }
+
     #[test]
     fn transfer_limits() {
         assert_eq!(transfer_limit(0, 0, 4096), 64 * 1024);
