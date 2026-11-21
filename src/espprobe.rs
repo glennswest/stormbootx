@@ -124,6 +124,13 @@ fn probe() -> Result<(), String> {
             }
             Err(e) => uefi::println!("  gpt       : {}", e.describe()),
         }
+        // What stormbootx decides the hand-over by (#236): a pallet makes it a
+        // stormcos image, whose bootloader runs under the panel.
+        match esp::has_pallets(&mut disk, block) {
+            Ok(true) => uefi::println!("  pallets   : yes: a stormcos image, its bootloader under the panel"),
+            Ok(false) => uefi::println!("  pallets   : none: its bootloader gets the firmware's console"),
+            Err(e) => uefi::println!("  pallets   : {}", e.describe()),
+        }
         let loader = match espboot::read(&mut disk, block) {
             Ok(l) => l,
             Err(e) => {
