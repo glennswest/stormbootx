@@ -67,9 +67,6 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 const STATE: &str = "stormboot/state";
 const CONF: &str = "stormboot/stormboot.conf";
 const LOCAL_CONF: &str = "stormboot/local.conf";
-/// A carried identity's new `local.conf`, and the old one moved aside (#237).
-const LOCAL_CONF_NEW: &str = "stormboot/local.conf.new";
-const LOCAL_CONF_PREV: &str = "stormboot/local.conf.prev";
 const DRIVERS: &str = "stormboot/drivers";
 /// stormblock's slab header magic (stormblock `drive/slab.rs`).
 const SLAB_MAGIC: &[u8; 8] = b"STRMSLAB";
@@ -655,7 +652,7 @@ fn update(o: &Opts, root: &Path, r: &mut Report) -> Result<(), String> {
         return Err(format!("{} carries no stormbootx ({} and stormboot/)", root.display(), manifest::BOOTLOADER));
     }
     let main_conf = vol.text(CONF)?.unwrap_or_default();
-    let local = local_conf(&vol)?.unwrap_or_default();
+    let local = vol.text(LOCAL_CONF)?.unwrap_or_default();
     let conf = format!("{local}\n{main_conf}");
     // The stick's stormbootx, from the line every medium since v0.19 carries
     // (#94); one without it is older than any release that could be offered.
@@ -966,17 +963,7 @@ fn apply(
         }
     }
     r.say("apply", format!("{} file(s) written beside the old and read back", changed.len()));
-    // The machine's name, kept before anything records a trial (#237): a
-    // failure here stops the update with nothing changed.
-    if let Err(err) = carry_identity(vol, changed, r) {
-        if new_payload.is_some() {
-            let _ = vol.delete(&payload_path);
-        }
-        for (e, _, _) in &others {
-            let _ = vol.delete(&format!("{}.new", e.path));
-        }
-        return Err(format!("{err}; nothing changed"));
-    }
+    carry_identity(vol, changed, r);
 
     let mut files: Vec<String> = retired.to_vec();
     files.extend(others.iter().map(|(e, _, new)| format!("{}{}", if *new { "+" } else { "" }, e.path)));
@@ -1070,18 +1057,13 @@ fn revert(vol: &Medium, state: &State) -> Vec<String> {
 
 /// `selfupdate::carry_identity`: a `name =`/`tag =` the new `stormboot.conf`
 /// drops moves to `local.conf`, which no update replaces.
-/// `Err` when that cannot be done for certain (#237, 9ddc02f6bbad): a read of
-/// either file that fails, or a `local.conf` not written and read back.
-fn carry_identity(vol: &Medium, changed: &[(&Entry, Vec<u8>, bool)], r: &mut Report) -> Result<(), String> {
+fn carry_identity(vol: &Medium, changed: &[(&Entry, Vec<u8>, bool)], r: &mut Report) {
     let Some((_, new, _)) = changed.iter().find(|(e, _, _)| e.path.eq_ignore_ascii_case(CONF)) else {
-        return Ok(());
+        return;
     };
-    let Some(old) = vol.text(CONF)? else { return Ok(()) };
+    let Ok(Some(old)) = vol.text(CONF) else { return };
     let new = String::from_utf8_lossy(new);
-    // A carry cut between its renames (`.prev` and `.new` there): this one
-    // finishes putting the `.new` in place.
-    let cut = vol.text(LOCAL_CONF)?.is_none() && vol.exists(LOCAL_CONF_PREV);
-    let mut local = local_conf(vol)?.unwrap_or_default();
+    let mut local = vol.text(LOCAL_CONF).ok().flatten().unwrap_or_default();
     let mut carried = Vec::new();
     for key in ["name", "tag"] {
         if let Some(v) = manifest::conf_field(&old, key) {
@@ -1094,36 +1076,13 @@ fn carry_identity(vol: &Medium, changed: &[(&Entry, Vec<u8>, bool)], r: &mut Rep
             }
         }
     }
-    if carried.is_empty() && !cut {
-        return Ok(());
+    if carried.is_empty() {
+        return;
     }
-    let what = if carried.is_empty() { String::from("the cut carry's local.conf") } else { carried.join(", ") };
-    replace_local(vol, &local).map_err(|e| format!("could not keep {what} in {LOCAL_CONF} ({e})"))?;
-    r.say("apply", format!("kept {what} in {LOCAL_CONF}"));
-    Ok(())
-}
-
-/// `local.conf`, or between a carry's two renames (#237: `.prev` and the
-/// read-back `.new` both there) `local.conf.new`, as stormbootx reads it.
-fn local_conf(vol: &Medium) -> Result<Option<String>, String> {
-    match vol.text(LOCAL_CONF)? {
-        Some(t) => Ok(Some(t)),
-        None if vol.exists(LOCAL_CONF_PREV) => vol.text(LOCAL_CONF_NEW),
-        None => Ok(None),
+    match vol.write(LOCAL_CONF, local.as_bytes()) {
+        Ok(()) => r.say("apply", format!("kept {} in {LOCAL_CONF}", carried.join(", "))),
+        Err(e) => r.say("apply", format!("could not keep {} in {LOCAL_CONF} ({e})", carried.join(", "))),
     }
-}
-
-/// `local.conf` replaced and never lost (#237): `.new` written and read
-/// back, the old one aside as `.prev`, the new one in its place, `.prev`
-/// gone.
-fn replace_local(vol: &Medium, text: &str) -> Result<(), String> {
-    vol.write(LOCAL_CONF_NEW, text.as_bytes())?;
-    vol.delete(LOCAL_CONF_PREV)?;
-    if vol.exists(LOCAL_CONF) {
-        vol.rename(LOCAL_CONF, LOCAL_CONF_PREV)?;
-    }
-    vol.rename(LOCAL_CONF_NEW, LOCAL_CONF)?;
-    vol.delete(LOCAL_CONF_PREV)
 }
 
 /// One GET, `Connection: close`: the status and the body.

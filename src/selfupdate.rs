@@ -706,17 +706,7 @@ fn apply(
             return Err(format!("{payload_path}: {err}; nothing changed"));
         }
     }
-    // The machine's name, kept before anything records a trial (#237): a
-    // failure here stops the update with nothing changed.
-    if let Err(err) = carry_identity(vol, changed) {
-        if new_payload.is_some() {
-            let _ = vol.delete(&efi_path(&payload_path));
-        }
-        for (e, _, _) in &others {
-            let _ = vol.delete(&format!("{}.new", efi_path(e.path)));
-        }
-        return Err(format!("{err}; nothing changed"));
-    }
+    carry_identity(vol, changed);
 
     let mut files: Vec<String> = retired.to_vec();
     files.extend(others.iter().map(|(e, _, new)| format!("{}{}", if *new { "+" } else { "" }, e.path)));
@@ -776,26 +766,13 @@ fn apply(
 /// The release's `stormboot.conf` replaces the medium's. A `name =` or
 /// `tag =` the old one set and the new one does not is this machine's, so it
 /// moves to `local.conf`, which is read first and never updated.
-///
-/// `Err` when that cannot be done for certain (#237, 9ddc02f6bbad): a read
-/// of either file that fails, or a `local.conf` that is not written and
-/// read back. The update then stops, for a new `stormboot.conf` without the
-/// name would boot the machine as another.
-fn carry_identity(vol: &mut Vol, changed: &[(&Entry, Vec<u8>, bool)]) -> Result<(), String> {
+fn carry_identity(vol: &mut Vol, changed: &[(&Entry, Vec<u8>, bool)]) {
     let Some((_, new, _)) = changed.iter().find(|(e, _, _)| e.path.eq_ignore_ascii_case("stormboot/stormboot.conf")) else {
-        return Ok(());
+        return;
     };
-    let Some(old) = vol.read_text(config::CONF_PATH)? else { return Ok(()) };
+    let Ok(Some(old)) = vol.read_text(config::CONF_PATH) else { return };
     let new = String::from_utf8_lossy(new);
-    // A carry cut between its renames left `.prev` and the read-back `.new`:
-    // the `.new` is the file, and this carry finishes putting it in place.
-    let (mut local, cut) = match vol.read_text(config::LOCAL_CONF_PATH)? {
-        Some(t) => (t, false),
-        None if vol.exists(config::LOCAL_CONF_PREV_PATH) => {
-            (vol.read_text(config::LOCAL_CONF_NEW_PATH)?.unwrap_or_default(), true)
-        }
-        None => (String::new(), false),
-    };
+    let mut local = vol.read_text(config::LOCAL_CONF_PATH).ok().flatten().unwrap_or_default();
     let mut carried = Vec::new();
     for key in ["name", "tag"] {
         if let Some(v) = config::field(&old, key) {
@@ -808,32 +785,13 @@ fn carry_identity(vol: &mut Vol, changed: &[(&Entry, Vec<u8>, bool)]) -> Result<
             }
         }
     }
-    if carried.is_empty() && !cut {
-        return Ok(());
+    if carried.is_empty() {
+        return;
     }
-    let what = if carried.is_empty() { String::from("the cut carry's local.conf") } else { carried.join(", ") };
-    replace_local(vol, &local).map_err(|e| format!("could not keep {what} in {} ({e})", config::LOCAL_CONF_PATH))?;
-    uefi::println!("update      : kept {what} in {}", config::LOCAL_CONF_PATH);
-    Ok(())
-}
-
-/// `local.conf` replaced and never lost (#237): the new text as
-/// `local.conf.new`, read back; then the old one aside as `.prev`, the new
-/// one in its place, `.prev` gone. A cut between the renames leaves `.prev`
-/// and `.new`, and `config::local_conf` reads the `.new`.
-fn replace_local(vol: &mut Vol, text: &str) -> Result<(), String> {
-    let new = config::LOCAL_CONF_NEW_PATH;
-    vol.write(new, text.as_bytes())?;
-    match vol.read(new, text.len() + 1)? {
-        Some(back) if back == text.as_bytes() => {}
-        _ => return Err(format!("{new} did not read back as written")),
+    match vol.write(config::LOCAL_CONF_PATH, local.as_bytes()) {
+        Ok(()) => uefi::println!("update      : kept {} in {}", carried.join(", "), config::LOCAL_CONF_PATH),
+        Err(e) => uefi::println!("update      : could not keep {} in {} ({e})", carried.join(", "), config::LOCAL_CONF_PATH),
     }
-    vol.delete(config::LOCAL_CONF_PREV_PATH)?;
-    if vol.exists(config::LOCAL_CONF_PATH) {
-        vol.rename(config::LOCAL_CONF_PATH, base(config::LOCAL_CONF_PREV_PATH))?;
-    }
-    vol.rename(new, base(config::LOCAL_CONF_PATH))?;
-    vol.delete(config::LOCAL_CONF_PREV_PATH)
 }
 
 /// One GET, `Connection: close`; the status and the body, chunking undone.

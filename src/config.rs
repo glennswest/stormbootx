@@ -53,27 +53,11 @@ pub const CONF_PATH: &str = r"\stormboot\stormboot.conf";
 /// and never touches this file; it carries a `name =`/`tag =` here when the
 /// new `stormboot.conf` would drop it.
 pub const LOCAL_CONF_PATH: &str = r"\stormboot\local.conf";
-/// A carried identity's new `local.conf`, written and read back before the
-/// old one moves aside to `.prev` (#237).
-pub const LOCAL_CONF_NEW_PATH: &str = r"\stormboot\local.conf.new";
-pub const LOCAL_CONF_PREV_PATH: &str = r"\stormboot\local.conf.prev";
-
-/// `local.conf`, or, between a carry's two renames (#237: the old one is
-/// `.prev`, the new one, already read back, still `.new`), `local.conf.new`.
-/// A `.new` with no `.prev` beside it is a carry cut while writing it, over
-/// no `local.conf`: nothing to read, and the old `stormboot.conf`, not yet
-/// replaced, still names the machine.
-pub fn local_conf() -> Option<String> {
-    read_file(LOCAL_CONF_PATH).or_else(|| {
-        read_bytes(LOCAL_CONF_PREV_PATH, 0)?;
-        read_file(LOCAL_CONF_NEW_PATH)
-    })
-}
 
 /// `local.conf` then `stormboot.conf`, as one text: `field` takes the first
 /// match, so the medium's own settings win.
 pub fn conf_text() -> Option<String> {
-    match (local_conf(), read_file(CONF_PATH)) {
+    match (read_file(LOCAL_CONF_PATH), read_file(CONF_PATH)) {
         (Some(local), Some(main)) => Some(format!("{local}\n{main}")),
         (local, main) => local.or(main),
     }
@@ -83,7 +67,7 @@ pub fn conf_text() -> Option<String> {
 /// says it (and so wins), else `stormboot.conf`. The laptop app (#164) puts
 /// its portal, name and syslog in `local.conf` over a golden's own.
 pub fn file_of(keys: &[&str]) -> &'static str {
-    match local_conf() {
+    match read_file(LOCAL_CONF_PATH) {
         Some(t) if keys.iter().any(|k| field(&t, k).is_some()) => LOCAL_CONF_PATH,
         _ => CONF_PATH,
     }
