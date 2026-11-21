@@ -102,7 +102,7 @@ then.
 
 ### Open, no external blocker
 
-- [ ] **#234 — review finding ad40f4d4558e in `scripts/build-boot-agent.sh` (P1).**
+- [x] **#234 — review finding ad40f4d4558e in `scripts/build-boot-agent.sh` (P1). Done 2026-11-21:** 7b70f88 + d674e9c; full sc-build passed on d674e9c (2511 s, `pinned` boot). Reproduced on wip/234-repro (the old pinned medium asked the engine, was told `local`, attached nothing). No image: no golden pins (no medium's bytes changed).
       `--pin`/`--portal` wrote portal, port, nqn and nsid but not
       `claim = no`, and `config::resolve` defaults the claim on: a pinned
       stick still read the engine's intent and claimed, so an engine's answer
