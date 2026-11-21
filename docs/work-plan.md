@@ -126,9 +126,10 @@ then.
       `api::init`, and `arm` takes the stored value (300 s if never read).
       `config::read_bytes` says `… read from the boot medium with an image
       attached (#46)` whenever `lastlog` is sealed, so any other such read
-      shows. Test: net-ovmf `watchdog` ejects its CD at `attaching`
-      (`BOOT_EJECT`, the eject checked): `watchdog 15 s` must still be
-      armed, and the read line must not appear.
+      shows. Test: net-ovmf `watchdog`: `watchdog 15 s` armed, and the read
+      line must not appear (on the old `arm` it does). An ejected CD at
+      `attaching` was tried first and proved nothing: OVMF's FAT still
+      answered the old code's read with the 15 s.
 
 - [x] **#238 — review findings 72491726eb32, c231b2695f8c, d5f305f99f7a, 4f8442f65a87 in `src/api.rs` (major). Done 2026-11-21:** a2ff54d; full sc-build passed on a2ff54d (2839 s). Reproduced on wip/238-repro (4b9f09e: the four new boots on the old api.rs all fail).
       (1) A signed `hold` taken in a hold with `hold_retry =` set only made

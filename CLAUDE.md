@@ -154,7 +154,7 @@ Its `ebs` and `watchdog` boots (#219) tell tcp4probe what to do with an SMBIOS
 OEM string (`-smbios type=11,value=tcp4probe:ebs`): call ExitBootServices
 (stormbootx's line before it, tcp4probe's own on COM1 after it, the screen's
 bottom rows green) or hang before it (`handoff_watchdog = 15` must reset the
-VM; its CD is ejected at `attaching` (#242), so the 15 s must be the value read at start, and `config.rs`'s `read from the boot medium with an image attached` line must not appear). Its `httpboot` boot (#172) has no CD: `tests/bootvar.py` writes a
+VM; the 15 s must be the value read at start, and `config.rs`'s `read from the boot medium with an image attached` line must not appear, #242). Its `httpboot` boot (#172) has no CD: `tests/bootvar.py` writes a
 `Uri(http://…/httpboot.iso)` boot option and BootNext into OVMF's variable
 store, the firmware's HTTP boot downloads the ISO into a RAM disk, and
 stormbootx must say `media : a RAM disk`, decline the self-update for it,
