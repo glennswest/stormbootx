@@ -1357,7 +1357,8 @@ impl TcpSocket {
                         let limit = if others { Duration::from_secs(5) } else { deadline - t0 };
                         if now - t0 >= limit || now >= deadline {
                             n.nics[i].sockets.get_mut::<tcp::Socket>(h).abort();
-                            n.nics[i].poll(now);
+                            let addrs = n.addresses();
+                            n.nics[i].poll(now, &addrs);
                             n.nics[i].sockets.remove(h);
                             last = format!("nic {i}: no answer from {}:{port}", ip_text(remote));
                             tried[i] = true;
@@ -1574,10 +1575,11 @@ impl Drop for TcpSocket {
     fn drop(&mut self) {
         let Ok(n) = net() else { return };
         let now = n.clock.now();
+        let addrs = n.addresses();
         let Some(nic) = n.nics.get_mut(self.nic) else { return };
         nic.sockets.get_mut::<tcp::Socket>(self.handle).abort();
         // Once, so the reset goes out.
-        nic.poll(now);
+        nic.poll(now, &addrs);
         nic.sockets.remove(self.handle);
     }
 }
