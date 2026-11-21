@@ -102,7 +102,7 @@ then.
 
 ### Open, no external blocker
 
-- [ ] **#235 — review finding c3c3cbf2d83b in `src/shell.rs` (P1).**
+- [x] **#235 — review finding c3c3cbf2d83b in `src/shell.rs` (P1). Done 2026-11-21:** d963973; full sc-build passed on 067207d (2507 s, `pcicmd`). Reproduced on wip/235-repro (after `pci` the firmware stopped the drivers under the bus and the console never answered again). v0.45.4.
       The console's `pci` opened each PCI root bridge `EXCLUSIVE`, which may
       disconnect PciBusDxe and every driver under it (the NICs the stack
       holds SNP pointers to, the local disk), and where refused it skipped
