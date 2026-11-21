@@ -102,6 +102,20 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#232 — review finding b96775eacdee in `crates/nvme-tcp-initiator` (P1, security).**
+      `recv_pdu` checked only plen, hlen >= 8, then allocated `plen - 8`
+      (up to 4 GiB) and indexed fixed fields: a CapsuleResp with plen = hlen
+      = 8 panicked at `rest[..16]`, short R2T/C2HData in `le16`/`le32`.
+      Fix: `check_header` (pure) before anything past the common header is
+      read: hlen exactly 24 for CapsuleResp, R2T, C2HData and the
+      termination PDUs (digests are declined), plen 24 for CapsuleResp and
+      R2T, C2HData's PDO within hlen..=plen and its payload at most
+      `TRANSFER_CEILING` (512 KiB, the largest command this client issues),
+      a termination at most 152; any other type refused before its body is
+      read. ICResp's hlen/plen must be 128. Checked arithmetic for DATAO +
+      DATAL and R2T offsets. Tests: host tests with the fake controller
+      sending each malformed PDU (an error, no panic, no allocation).
+
 - [x] **#231 — review findings in `src/net.rs` (P1, stormcentral#1558). Done 2026-11-21:** 04e0ad9 + 0336c44 + f9b80bd; full sc-build passed on f9b80bd (2665 s; `nicfail`: given back, PXE on it booted the payload; api status `"addresses":["10.0.2.15"]`). Reproduced on wip/231-repro (expect-fail: `UEFI PXEv4 … Not Found`). v0.45.1.
       1. 47063dda87c6: a NIC whose init fails after the exclusive SNP open
          keeps it (never closed, never reconnected), so the firmware's
