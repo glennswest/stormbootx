@@ -288,7 +288,7 @@ used, the other is not a local disk). `ONLY="name …"` boots only those. The me
 boot needs `starting … from the stormdist medium` before tcp4probe's lines.
 
 `tests/api-boots.sh` (#167), sourced at the end of `net-ovmf.sh`, boots
-three times with slirp forwarding the guest's API (9180) to the host: a failed
+seven times with slirp forwarding the guest's API (9180) to the host: a failed
 claim holds (`hold = 30`, but nothing local boots, so until a command);
 status, inventory and log read; a non-command, another key, another host
 and a replayed id refused; `format APIDISK1` zeroes that disk's first and
@@ -297,7 +297,15 @@ refused; `maint` with no `boothost/maint` holds again; `inventory` again;
 `poweroff`. Then the engine's record carries a signed `hold`, reported
 done; `boot-next 0000` resets. A third, `apimaint`: the record's signed
 `maint`, the stub serving `boothost/maint`: the claim carries
-`"image":"maint"` and the clone boots.
+`"image":"maint"` and the clone boots. Then four for #238: `apiretry`
+(`hold_retry = 1`, a signed `hold` turns the retry off and the machine is
+still held past its minute), `apistall` (the engine takes every record read
+and never answers: the retry still comes within its minute, the hold timed on
+the TSC and each read bounded by what is left), `apifloor`
+(`tests/bootvar.py --var` puts `StormBootCommandId` in the store as NV|BS,
+so the firmware refuses the floor's write: `format` is refused with 503 and
+never run) and `apifloorbad` (the variable holds `garbage`: no command is
+taken that boot, never a floor of 0).
 
 `Cargo.lock` is tracked, as it should be for anything that produces a binary.
 Without it every build resolved fresh, and this is a firmware binary whose
@@ -340,7 +348,7 @@ kept for a later need; the test command sets it to keep the code honest.
 | `src/main.rs` | `run()`: the boot, step by step; the hold and the boot again (#167); the fall-through |
 | `src/launch.rs` | fourth binary, `stormbootx-launch` (#229): the medium's `BOOTX64.EFI`/`BOOTAA64.EFI`, never rewritten; starts the payload of the newest whole boot record (hash checked), else the older, else `\stormboot\stormbootx.efi`; writes nothing |
 | `src/bootrec.rs` | the boot record (#229): `\stormboot\boot.a`/`boot.b`, `seq`, `payload`, `sha256`, `check`; which slot the next write goes to, the launcher's order (core-only, digest handed in, host-tested; shared with the launcher and stormbootx-stick) |
-| `src/api.rs` | stormbootx's own API (#167): `/api/v1/status`, `/inventory`, `/log`, `POST /api/v1/command`; Ed25519 over `RELEASE_KEYS` and `command_key =`, the `StormBootCommandId` floor (NV); the engine's record (stormblock#494); the commands done at the boot's fixed points; the hold (`hold =`, `hold_retry =`) |
+| `src/api.rs` | stormbootx's own API (#167): `/api/v1/status`, `/inventory`, `/log`, `POST /api/v1/command`; Ed25519 over `RELEASE_KEYS` and `command_key =`, the `StormBootCommandId` floor (NV); the engine's record (stormblock#494); the commands done at the boot's fixed points; the hold (`hold =`, `hold_retry =`), timed on `net::now_ms` with every engine read bounded by what is left (#238); a command is taken only once its floor is written and read back (#238) |
 | `src/command.rs` | the signed command's text, body and verbs (no `fec` verbs since #202/#203: the FEC is the driver's), and the API's HTTP parsing (core + alloc, host-tested) |
 | `src/smbios.rs` | the serials (Type 1 → 2 → 3, placeholders and shared chassis serials rejected), before any network exists; the MAC as the floor |
 | `src/net.rs` | the TCP/IP stack (#56): smoltcp on every NIC's SNP (opened exclusively, the open a guard that gives a NIC that fails to start back at once, #231), DHCP, `TcpSocket`, the TSC clock; its own ARP for the next hops (#168); the API's listening sockets, served from every poll (#167), whose answer gets the addresses from the poll and may not take the stack again (`net()` refuses during a poll, #231); `release` gives the NICs back on the fall-through |

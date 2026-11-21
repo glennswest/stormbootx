@@ -99,6 +99,23 @@ fn request(
     request_on(server, port, host, method, path, body, None).map(|(r, _)| r)
 }
 
+/// `request`, all of it (connect, send, the whole reply) within `secs`.
+fn request_within(
+    server: [u8; 4],
+    port: u16,
+    host: &str,
+    method: &str,
+    path: &str,
+    body: Option<&str>,
+    secs: u32,
+) -> Result<String, String> {
+    let secs = secs.max(1);
+    let until = crate::net::now_ms() + secs as u64 * 1000;
+    let mut sock = TcpSocket::connect_within(server, port, secs)?;
+    sock.until(until);
+    exchange(sock, host, method, path, body).map(|(r, _)| r)
+}
+
 /// A claim: `request`, waiting `CLAIM_SECS` for the reply.
 fn claim(server: [u8; 4], port: u16, host: &str, path: &str, body: &str) -> Result<String, String> {
     request_on(server, port, host, "POST", path, Some(body), Some(CLAIM_SECS)).map(|(r, _)| r)
@@ -470,19 +487,32 @@ pub fn boot_intent(
 /// The command waiting on this machine's host record (#167,
 /// stormblock#494): `GET /api/v1/synonyms/boothost/<name>/command`, the same
 /// signed object the API takes (`command.rs`). A 404 is none.
-pub fn command(server: [u8; 4], port: u16, host: &str, name: &str) -> Result<(u16, String), String> {
+///
+/// The whole request, connect to the reply's end, takes at most `secs`
+/// (d5f305f99f7a, #238): a hold reads it every 5 s, and an engine gone since
+/// it was found must not stretch the hold by 30 s a read.
+pub fn command(server: [u8; 4], port: u16, host: &str, name: &str, secs: u32) -> Result<(u16, String), String> {
     let path = format!("/api/v1/synonyms/{BOOTHOST_NS}/{name}/command");
-    let response = request(server, port, host, "GET", &path, None)?;
+    let response = request_within(server, port, host, "GET", &path, None, secs)?;
     let (status, body) = split_response(&response)?;
     Ok((status, body.to_string()))
 }
 
 /// Tell the engine a command from the record is done, so it clears it:
 /// `POST …/command/done {"id":…,"result":"…"}`. Returns the status.
-pub fn command_done(server: [u8; 4], port: u16, host: &str, name: &str, id: u64, result: &str) -> Result<u16, String> {
+/// Within `secs`, as `command`.
+pub fn command_done(
+    server: [u8; 4],
+    port: u16,
+    host: &str,
+    name: &str,
+    id: u64,
+    result: &str,
+    secs: u32,
+) -> Result<u16, String> {
     let path = format!("/api/v1/synonyms/{BOOTHOST_NS}/{name}/command/done");
     let body = format!("{{\"id\":{id},\"result\":\"{}\"}}", json_str(result));
-    let response = request(server, port, host, "POST", &path, Some(&body))?;
+    let response = request_within(server, port, host, "POST", &path, Some(&body), secs)?;
     Ok(split_response(&response)?.0)
 }
 

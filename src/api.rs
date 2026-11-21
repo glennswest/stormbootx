@@ -55,6 +55,13 @@ pub const DEFAULT_PORT: u16 = 9180;
 const RECORD_EVERY_MS: u64 = 5_000;
 /// How often a hold sends the log.
 const FLUSH_EVERY_MS: u64 = 10_000;
+/// The most one read of the engine's record may take in a hold: it is read
+/// every 5 s, and an engine that stopped answering must not stretch the hold.
+const RECORD_SECS: u32 = 5;
+/// A read of the record at the boot's fixed points.
+const RECORD_BOOT_SECS: u32 = 30;
+/// Reporting a record's command done.
+const DONE_SECS: u32 = 10;
 
 /// Where a command came from, for its report.
 #[derive(Clone, Copy, PartialEq)]
@@ -79,7 +86,9 @@ struct State {
     names: Vec<String>,
     phase: &'static str,
     detail: String,
-    floor: u64,
+    /// `StormBootCommandId`, or why it could not be read: then no command is
+    /// taken this boot (c231b2695f8c, #238).
+    floor: Result<u64, String>,
     pending: Option<(Signed, Verb, Source)>,
     /// `{"id":…,"command":…,"result":…}` of the last command done.
     last: Option<String>,
@@ -138,6 +147,9 @@ pub fn init() {
         None => {}
     }
     let floor = floor();
+    if let Err(e) = &floor {
+        uefi::println!("api         : {e}; no command is taken this boot");
+    }
     match port {
         Some(p) => uefi::println!("api         : port {p} once a NIC holds a lease; commands signed by {note}"),
         None => uefi::println!("api         : off (api = off in {})", config::file_of(&["api"])),
@@ -258,7 +270,10 @@ fn status_json(s: &State, addrs: &[[u8; 4]]) -> String {
         command::escape(&s.detail),
         names.join(","),
         addrs.join(","),
-        s.floor,
+        match &s.floor {
+            Ok(f) => f.to_string(),
+            Err(_) => "null".into(),
+        },
         match &s.pending {
             Some((c, v, _)) => format!("{{\"id\":{},\"command\":\"{}\"}}", c.id, v.name()),
             None => "null".into(),
@@ -268,7 +283,10 @@ fn status_json(s: &State, addrs: &[[u8; 4]]) -> String {
 }
 
 /// Check a command and queue it: signature, host, id, verb. The floor is
-/// raised here, before it runs.
+/// raised here, before it runs, and written to the variable store and read
+/// back before the command is queued or answered 202: a floor that did not
+/// stick would let the next boot take the same signed command again
+/// (c231b2695f8c, 4f8442f65a87, #238), so that command is refused.
 fn accept(s: &mut State, body: &str, from: Source) -> Result<(), (u16, String)> {
     if s.phase == "handed off" {
         return Err((409, "the image's bootloader is running; stormbootx takes no command now".into()));
@@ -282,10 +300,14 @@ fn accept(s: &mut State, body: &str, from: Source) -> Result<(), (u16, String)> 
     if !s.keys.iter().any(|k| ed25519_compact::PublicKey::new(*k).verify(text.as_bytes(), &sig).is_ok()) {
         return Err((403, format!("the signature is not by any of {} key(s) ({})", s.keys.len(), s.key_note)));
     }
-    command::for_me(&c, &s.names, s.floor).map_err(|e| (403, e))?;
+    let floor = match &s.floor {
+        Ok(f) => *f,
+        Err(e) => return Err((503, format!("no replay protection this boot ({e}); no command is taken"))),
+    };
+    command::for_me(&c, &s.names, floor).map_err(|e| (403, e))?;
     let v = command::verb(&c.command, &c.args).map_err(|e| (400, e))?;
-    s.floor = c.id;
-    set_floor(c.id);
+    set_floor(c.id).map_err(|e| (503, format!("{e}; the command is not taken, so it cannot be replayed")))?;
+    s.floor = Ok(c.id);
     uefi::println!(
         "command     : {}{}{} (id {}, from {}{}), signature good",
         v.name(),
@@ -303,20 +325,32 @@ fn accept(s: &mut State, body: &str, from: Source) -> Result<(), (u16, String)> 
 }
 
 /// `StormBootCommandId`: the highest command id this machine has taken.
-fn floor() -> u64 {
+/// Only an absent variable is a fresh machine's 0: one that cannot be read,
+/// or does not hold a number, is no floor at all (c231b2695f8c, #238).
+fn floor() -> Result<u64, String> {
     let mut buf = [0u8; 24];
     match uefi::runtime::get_variable(cstr16!("StormBootCommandId"), &handoff::VENDOR, &mut buf) {
-        Ok((d, _)) => core::str::from_utf8(d).ok().and_then(|t| t.trim().parse().ok()).unwrap_or(0),
-        Err(_) => 0,
+        Ok((d, _)) => command::floor_text(d).ok_or_else(|| {
+            format!("StormBootCommandId holds {:?}, not a command id", String::from_utf8_lossy(d))
+        }),
+        Err(e) if e.status() == Status::NOT_FOUND => Ok(0),
+        Err(e) => Err(format!("StormBootCommandId could not be read ({:?})", e.status())),
     }
 }
 
-fn set_floor(id: u64) {
+/// Raise the floor in NVRAM, and read it back (4f8442f65a87, #238).
+/// `tests/api-boots.sh` makes the write fail as firmware does: a variable
+/// already there with other attributes is `INVALID_PARAMETER`.
+fn set_floor(id: u64) -> Result<(), String> {
     let attrs =
         VariableAttributes::NON_VOLATILE | VariableAttributes::BOOTSERVICE_ACCESS | VariableAttributes::RUNTIME_ACCESS;
     let v = id.to_string();
-    if let Err(e) = uefi::runtime::set_variable(cstr16!("StormBootCommandId"), &handoff::VENDOR, attrs, v.as_bytes()) {
-        uefi::println!("command     : StormBootCommandId not set ({:?}); a replay is refused this boot only", e.status());
+    uefi::runtime::set_variable(cstr16!("StormBootCommandId"), &handoff::VENDOR, attrs, v.as_bytes())
+        .map_err(|e| format!("StormBootCommandId not set ({:?})", e.status()))?;
+    match floor() {
+        Ok(f) if f == id => Ok(()),
+        Ok(f) => Err(format!("StormBootCommandId reads back {f}, not {id}")),
+        Err(e) => Err(format!("{e} after it was set")),
     }
 }
 
@@ -326,15 +360,16 @@ fn ip(a: [u8; 4]) -> String {
 
 // ---------------------------------------------------------------- the record
 
-/// Read the engine's record once and queue what it carries.
-fn read_record() {
+/// Read the engine's record once and queue what it carries, all within
+/// `secs` (#238).
+fn read_record(secs: u32) {
     let Some(s) = st() else { return };
     if s.pending.is_some() {
         return;
     }
     let Some(e) = &s.engine else { return };
     let (portal, port, host, name) = (e.portal, e.port, e.host.clone(), e.name.clone());
-    let (status, body) = match registry::command(portal, port, &host, &name) {
+    let (status, body) = match registry::command(portal, port, &host, &name, secs) {
         Ok(r) => r,
         Err(_) => return,
     };
@@ -351,10 +386,10 @@ fn read_record() {
         Err((_, why)) => {
             // One the engine has not cleared yet, done here before.
             let id = command::json_u64(&body, "id").unwrap_or(0);
-            if id != 0 && id <= s.floor {
+            if id != 0 && s.floor.as_ref().is_ok_and(|&f| id <= f) {
                 if s.record_said != id {
                     s.record_said = id;
-                    let _ = registry::command_done(portal, port, &host, &name, id, "taken before");
+                    let _ = registry::command_done(portal, port, &host, &name, id, "taken before", secs);
                 }
                 return;
             }
@@ -380,7 +415,7 @@ fn done(c: &Signed, v: &Verb, from: Source, result: &str) {
     if from == Source::Record {
         if let Some(e) = &s.engine {
             let (portal, port, host, name) = (e.portal, e.port, e.host.clone(), e.name.clone());
-            match registry::command_done(portal, port, &host, &name, c.id, result) {
+            match registry::command_done(portal, port, &host, &name, c.id, result, DONE_SECS) {
                 Ok(200..=299) => {}
                 Ok(code) => uefi::println!("command     : the engine answered HTTP {code} to done"),
                 Err(e) => uefi::println!("command     : done not reported to the engine ({e})"),
@@ -424,7 +459,7 @@ pub enum Claim {
 /// and do it. The boot's fixed points call this.
 pub fn checkpoint(read_engine: bool) -> Next {
     if read_engine {
-        read_record();
+        read_record(RECORD_BOOT_SECS);
     }
     match st().and_then(|s| s.pending.take()) {
         Some((c, v, from)) => execute(c, v, from),
@@ -620,20 +655,42 @@ pub fn hold(why: &str, how: Hold, retry_min: u64) -> After {
     ui::next(&format!("holding: API at {}  (L: the local disk now)", at.join(", ")));
     netlog::flush();
 
-    let (mut t, mut record_at, mut flush_at) = (0u64, 0u64, FLUSH_EVERY_MS);
-    let retry_ms = retry_min * 60_000;
+    // Every deadline is on the stack's clock (d5f305f99f7a, #238): a record
+    // read, a command or a flush counts against the hold, as it did not
+    // when the loop added 100 ms a pass.
+    let start = net::now_ms();
+    let (mut record_at, mut flush_at) = (start, start + FLUSH_EVERY_MS);
+    let mut retry_at = (retry_min > 0).then(|| start + retry_min * 60_000);
+    let end_at = |how: Hold| match how {
+        Hold::Secs(n) => Some(start + n * 1000),
+        _ => None,
+    };
     loop {
         net::pump(100);
-        t += 100;
-        if t >= record_at {
-            record_at = t + RECORD_EVERY_MS;
-            read_record();
+        let now = net::now_ms();
+        if now >= record_at {
+            // Never past the hold's end or its retry.
+            let left = [end_at(how), retry_at].into_iter().flatten().map(|d| d.saturating_sub(now)).min();
+            let secs = match left {
+                Some(ms) => (ms / 1000).min(RECORD_SECS as u64) as u32,
+                None => RECORD_SECS,
+            };
+            if secs > 0 {
+                read_record(secs);
+            }
+            record_at = net::now_ms() + RECORD_EVERY_MS;
         }
         let next = checkpoint(false);
         match next {
             Next::Go => {}
             Next::Hold => {
+                // Held by a command: until another, as at the boot's fixed
+                // points (`Stop::Hold`, no retry). The hold's own retry is
+                // off too (72491726eb32, #238).
                 how = Hold::Forever;
+                if retry_at.take().is_some() {
+                    uefi::println!("hold        : held by a command; the boot is not tried again every {retry_min} min");
+                }
                 phase("holding", "told to hold");
             }
             Next::Install => return After::Retry(Claim::Install),
@@ -641,21 +698,22 @@ pub fn hold(why: &str, how: Hold, retry_min: u64) -> After {
             Next::Retry => return After::Retry(Claim::Intent),
             Next::Local => return After::FallThrough,
         }
-        if t >= flush_at {
-            flush_at = t + FLUSH_EVERY_MS;
+        let now = net::now_ms();
+        if now >= flush_at {
             netlog::flush();
+            flush_at = net::now_ms() + FLUSH_EVERY_MS;
         }
         if matches!(ui::take_char(), Some(Some('l' | 'L'))) {
             uefi::println!("hold        : L pressed; the local disk");
             return After::FallThrough;
         }
-        if let Hold::Secs(n) = how {
-            if t >= n * 1000 {
+        if let (Hold::Secs(n), Some(end)) = (how, end_at(how)) {
+            if now >= end {
                 uefi::println!("hold        : {n} s and no command; the local disk");
                 return After::FallThrough;
             }
         }
-        if retry_ms > 0 && t >= retry_ms {
+        if retry_at.is_some_and(|r| now >= r) {
             uefi::println!("hold        : {retry_min} min; booting again");
             return After::Retry(Claim::Intent);
         }

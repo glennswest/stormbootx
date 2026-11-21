@@ -172,6 +172,16 @@ pub fn verb(command: &str, args: &str) -> Result<Verb, String> {
     }
 }
 
+/// `StormBootCommandId`'s contents: the decimal id `api.rs` writes. Anything
+/// else (empty, not a number, not UTF-8) is `None`, never 0: a floor that
+/// reads as 0 would take every signed command again (c231b2695f8c, #238).
+pub fn floor_text(d: &[u8]) -> Option<u64> {
+    let t = core::str::from_utf8(d).ok()?.trim_end_matches('\0').trim();
+    if t.is_empty() || !t.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    t.parse().ok()
+}
 
 /// Whether a command whose signature verified is this machine's, now: its
 /// host one of `names` (any case), its id above `floor`.
@@ -387,6 +397,20 @@ mod tests {
             "{{\"host\":\"{host}\",\"id\":{id},\"command\":\"{command}\",\"args\":\"{args}\",\
              \"issued\":\"2026-10-22T03:00:00Z\",\"by\":\"stormcentral\",\"sig\":\"{SIG}\"}}"
         )
+    }
+
+    #[test]
+    fn a_floor_is_a_number_or_nothing() {
+        assert_eq!(floor_text(b"17"), Some(17));
+        assert_eq!(floor_text(b" 17\n"), Some(17));
+        assert_eq!(floor_text(b"17\0"), Some(17));
+        assert_eq!(floor_text(b"0"), Some(0));
+        assert_eq!(floor_text(b""), None);
+        assert_eq!(floor_text(b"-1"), None);
+        assert_eq!(floor_text(b"+5"), None);
+        assert_eq!(floor_text(b"1e3"), None);
+        assert_eq!(floor_text(b"\xff\xfe"), None);
+        assert_eq!(floor_text(b"99999999999999999999999"), None);
     }
 
     #[test]

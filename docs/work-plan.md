@@ -118,6 +118,26 @@ then.
       `local.conf`: the same), `idcut` (only `local.conf.new` there: read
       and kept); update-boots `idfail` on the UEFI side.
 
+- [ ] **#238 — review findings 72491726eb32, c231b2695f8c, d5f305f99f7a, 4f8442f65a87 in `src/api.rs` (major).**
+      (1) A signed `hold` taken in a hold with `hold_retry =` set only made
+      the hold forever: the retry still restarted the boot. Now `Next::Hold`
+      in the hold turns the retry off, as `Stop::Hold` at a fixed point
+      always had. (2, 4) `set_floor` only warned when `StormBootCommandId`
+      was not written, and `accept` queued and answered 202 anyway; an
+      unreadable or malformed floor read as 0. Now the floor is written and
+      read back before the command is queued, or it is refused (503, never
+      run); only an absent variable is 0 (`command::floor_text`, host
+      test), any other read is no floor, and no command is taken that boot.
+      (3) The hold counted 100 ms a pass and not the time in record reads
+      (30 s each on an engine gone quiet), commands or flushes. Now every
+      deadline is on `net::now_ms` (the TSC), and each record read is
+      bounded, connect to the reply's end (`TcpSocket::until`), by
+      `RECORD_SECS` (5) and what is left of the hold and its retry; done
+      reports by `DONE_SECS` (10). Tests: api-boots `apiretry`,
+      `apistall` (the stub's `command.hang`), `apifloor` (`bootvar.py
+      --var`: the variable as NV|BS, so the firmware refuses the write)
+      and `apifloorbad`.
+
 - [x] **#239 — review finding 7e4c6aff3459 in `src/registry.rs` (major). Done 2026-11-21:** ede07b3; full sc-build passed on ede07b3 (2644 s; the first run of the job lost net-ovmf's `intent` boot to a QEMU exit in PEI, before stormbootx started, and the rerun passed). Reproduced on wip/239-repro (740b374: nics 0-2 spent the 15 s, `no boot port … asking api_port`, nic 3 reached api_port).
       The boot-port probe (#183) had a fixed 15 s for the connect, and
       `connect_within` gives each leased NIC 5 s while another is left: with

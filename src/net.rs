@@ -1105,6 +1105,13 @@ pub fn lease_within(secs: u32) -> Result<(), String> {
     ))
 }
 
+/// Milliseconds on the stack's clock (the TSC, calibrated at `up`): a
+/// monotonic time for deadlines that must count every call between them
+/// (#238's hold). 0 before the stack is up.
+pub fn now_ms() -> u64 {
+    net().map(|n| n.clock.now().total_millis().max(0) as u64).unwrap_or(0)
+}
+
 /// Pump the stack for `ms` milliseconds: leases, the log's sends and the
 /// API's connections (#167). The hold loop's heartbeat.
 pub fn pump(ms: u64) {
@@ -1287,6 +1294,9 @@ pub struct TcpSocket {
     secs: u32,
     /// `read_to_end` says while the reply has not begun (`patient`).
     progress: bool,
+    /// The clock's millisecond (`now_ms`) past which no operation waits on,
+    /// progress or none (#238: a hold's record read ends within the hold).
+    until: Option<u64>,
 }
 
 const RX_BUFFER: usize = 256 * 1024;
@@ -1359,7 +1369,7 @@ impl TcpSocket {
                             }
                             n.preferred = Some(i);
                         }
-                        return Ok(TcpSocket { nic: i, handle: h, secs: reply_secs, progress: false });
+                        return Ok(TcpSocket { nic: i, handle: h, secs: reply_secs, progress: false, until: None });
                     }
                     tcp::State::Closed => {
                         n.nics[i].sockets.remove(h);
@@ -1485,7 +1495,7 @@ impl TcpSocket {
             if k > 0 {
                 off += k;
                 last = now;
-            } else if now - last > limit {
+            } else if now - last > limit || self.past(now) {
                 return Err("transmit timed out".into());
             }
         }
@@ -1523,7 +1533,7 @@ impl TcpSocket {
             if k > 0 {
                 got += k;
                 last = now;
-            } else if now - last > limit {
+            } else if now - last > limit || self.past(now) {
                 return Err(format!("receive timed out ({got} of {n} bytes)"));
             }
         }
@@ -1536,6 +1546,16 @@ impl TcpSocket {
     pub fn patient(&mut self, secs: u32) {
         self.secs = secs;
         self.progress = true;
+    }
+
+    /// No operation on this socket waits past `ms` on `now_ms`'s clock,
+    /// whatever its progress (d5f305f99f7a, #238).
+    pub fn until(&mut self, ms: u64) {
+        self.until = Some(ms);
+    }
+
+    fn past(&self, now: Instant) -> bool {
+        self.until.is_some_and(|u| now.total_millis().max(0) as u64 >= u)
     }
 
     /// Read until the peer closes, or `limit` bytes. Used for one HTTP
@@ -1568,6 +1588,13 @@ impl TcpSocket {
                     return Err(format!("the connection {why} with no reply after {} s", (now - start).secs()));
                 }
                 Err(_) => break,
+                _ if self.past(now) => {
+                    return Err(format!(
+                        "no whole reply within its time ({} bytes after {} s)",
+                        out.len(),
+                        (now - start).secs()
+                    ));
+                }
                 Ok(0) if now - last > wait => {
                     return Err(if out.is_empty() {
                         format!("no reply within {} s (the request was sent)", self.secs)

@@ -180,6 +180,11 @@ class H(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(data)
             return
+        # An engine gone quiet after it was found (#238): the record read
+        # is taken and never answered.
+        if self.path.endswith("/command") and os.path.exists(W + "/command.hang"):
+            time.sleep(120)
+            return
         # A command on the host record (#167, stormblock#494): command.json,
         # signed by tests/api-boots.sh, under whatever name it is read.
         if self.path.endswith("/command") and os.path.exists(W + "/command.json"):

@@ -25,8 +25,23 @@
 #              intent, the claim carries `"image":"maint"`, never the
 #              media's fallback, and the maintenance clone is attached and
 #              its BOOTX64.EFI started.
+#   apiretry   (#238, 72491726eb32) `hold_retry = 1`: a signed `hold` in
+#              the hold turns the retry off, and the machine is still
+#              holding past the minute the retry was due; then `poweroff`.
+#   apistall   (#238, d5f305f99f7a) `hold_retry = 1`, and the engine takes
+#              every record read and never answers: the retry still comes
+#              within its minute (each read bounded, the hold timed on the
+#              clock), not after a 30 s wait per read.
+#   apifloor   (#238, c231b2695f8c, 4f8442f65a87) StormBootCommandId is
+#              already in the store as NV|BS (no RT), so the firmware
+#              refuses stormbootx's write of the floor (INVALID_PARAMETER,
+#              as a full or protected store would refuse it): `format` is
+#              refused with 503 and never run, the disk keeps its GPT, and
+#              the same command again is refused the same way.
+#   apifloorbad (#238) StormBootCommandId holds `garbage`: no floor, so
+#              no command is taken this boot, rather than a floor of 0.
 
-[[ -z "${NET_ONLY:-}" || "$NET_ONLY" == api || "$NET_ONLY" == apirecord || "$NET_ONLY" == apimaint ]] || return 0
+case "${NET_ONLY:-}" in ""|api|apirecord|apimaint|apiretry|apistall|apifloor|apifloorbad) ;; *) return 0 ;; esac
 command -v openssl >/dev/null || die "[api] openssl is not installed"
 command -v curl >/dev/null || die "[api] curl is not installed"
 command -v sfdisk >/dev/null || die "[api] sfdisk is not installed"
@@ -91,6 +106,8 @@ api_boot() {
     local name=$1 iso="$W/$1.iso"
     "$ROOT/scripts/build-boot-agent.sh" --iso --binary "$EFI" --engine 10.0.2.2 --api-port "$PORT" \
         --ntp "10.0.2.2:$NTP_PORT" --no-fallback --hold 30 --command-key "$CMD_PUB" --output "$iso" >/dev/null
+    # API_CONF (#238): more lines in the medium's stormboot.conf.
+    [[ -n "${API_CONF:-}" ]] && append_conf "$iso" "$API_CONF"
     : > "$W/stub.log"
     : > "$W/$name.serial"
     say "[$name] booting under OVMF ($accel), the API at 127.0.0.1:$APIP"
@@ -114,7 +131,7 @@ truncate -s 64M "$W/apidisk.img"
 printf 'label: gpt\n,16M,L\n' | sfdisk -q "$W/apidisk.img"
 printf 'KEEP-THIS-MIDDLE' | dd of="$W/apidisk.img" bs=1M seek=32 conv=notrunc status=none
 cp "$OVMF_VARS" "$W/api.vars"
-rm -f "$W/command.json" "$W/maint.ok"
+rm -f "$W/command.json" "$W/maint.ok" "$W/command.hang"
 
 # ---------------------------------------------------------------- boot 1
 if [[ -z "${NET_ONLY:-}" || "$NET_ONLY" == api ]]; then
@@ -231,5 +248,96 @@ grep '^POST .*/claim' "$W/stub.log" | grep -vq '"image":"maint"' \
 kill "$API_QEMU" 2>/dev/null; wait "$API_QEMU" 2>/dev/null || true
 rm -f "$W/command.json" "$W/maint.ok"
 say "[apimaint] the maintenance image attached and its bootloader started"
+fi
+
+# The hold's line when `hold_retry = 1` (#238).
+HOLD_RETRY_LINE="hold        : holding until a command; the API at http://10.0.2.15:9180 (status, inventory, log, signed commands); the boot again every 1 min"
+
+# ---------------------------------------------------------------- boot 4
+if [[ -z "${NET_ONLY:-}" || "$NET_ONLY" == apiretry ]]; then
+cp "$OVMF_VARS" "$W/api.vars"
+API_CONF="hold_retry = 1" api_boot apiretry
+console_wait apiretry "$HOLD_RETRY_LINE" 180
+held=$(date +%s)
+expect_post apiretry 202 '"accepted":400,"command":"hold"' "$(signed "$W/cmd.pem" $ME 400 hold)"
+console_wait apiretry "command     : hold (id 400): holding until another command"
+console_wait apiretry "hold        : held by a command; the boot is not tried again every 1 min"
+# Past the minute the retry was due, and well past it.
+while (( $(date +%s) - held < 80 )); do sleep 1; done
+tr -d '\r' < "$W/apiretry.serial" | grep -qF "1 min; booting again" \
+    && { say "[apiretry] the boot was tried again after a hold command"; api_fail apiretry; }
+status=$(api_get /api/v1/status)
+[[ $status == *'"phase":"holding","detail":"told to hold"'* ]] \
+    && say "[apiretry] $(( $(date +%s) - held )) s after the hold began, still held: ${status:0:200}" \
+    || { say "[apiretry] status: $status"; api_fail apiretry; }
+expect_post apiretry 202 '"accepted":401' "$(signed "$W/cmd.pem" $ME 401 poweroff)"
+for _ in $(seq 20); do kill -0 "$API_QEMU" 2>/dev/null || break; sleep 1; done
+kill -0 "$API_QEMU" 2>/dev/null && { say "[apiretry] still running after poweroff"; api_fail apiretry; }
+wait "$API_QEMU" 2>/dev/null || true
+say "[apiretry] held past the retry, then powered off"
+fi
+
+# ---------------------------------------------------------------- boot 5
+if [[ -z "${NET_ONLY:-}" || "$NET_ONLY" == apistall ]]; then
+cp "$OVMF_VARS" "$W/api.vars"
+: > "$W/command.hang"
+API_CONF="hold_retry = 1" api_boot apistall
+console_wait apistall "$HOLD_RETRY_LINE" 240
+held=$(date +%s)
+# The minute, the last record read's 5 s, and slack. Before #238 every
+# read of the record waited 30 s uncounted: the minute took minutes.
+console_wait apistall "hold        : 1 min; booting again" 90
+took=$(( $(date +%s) - held ))
+reads=$(grep -c "GET /api/v1/synonyms/boothost/.*/command" "$W/stub.log" || true)
+say "[apistall] the retry came $took s after the hold began; the engine took $reads record read(s) and answered none"
+(( took <= 85 )) || { say "[apistall] the retry was late"; api_fail apistall; }
+(( reads >= 5 )) || { say "[apistall] the hold did not keep reading the record"; api_fail apistall; }
+kill "$API_QEMU" 2>/dev/null; wait "$API_QEMU" 2>/dev/null || true
+rm -f "$W/command.hang"
+fi
+
+# ---------------------------------------------------------------- boot 6
+VENDOR_GUID=ab361f54-0166-44a4-a088-1ac22e98ab76
+if [[ -z "${NET_ONLY:-}" || "$NET_ONLY" == apifloor ]]; then
+cp "$OVMF_VARS" "$W/api.vars"
+python3 "$ROOT/tests/bootvar.py" "$W/api.vars" --var StormBootCommandId "$VENDOR_GUID" 0x3 5 \
+    | sed 's/^/net-ovmf: [apifloor] /' || die "[apifloor] the variable was not written"
+# A GPT again (boot 1 wiped it), so a wipe would show.
+printf 'label: gpt\n,16M,L\n' | sfdisk -q "$W/apidisk.img"
+api_boot apifloor
+console_wait apifloor "hold        : holding until a command; the API at http://10.0.2.15:9180" 180
+status=$(api_get /api/v1/status)
+[[ $status == *'"command_id":5,'* ]] && say "[apifloor] the floor reads 5" \
+    || { say "[apifloor] status: $status"; api_fail apifloor; }
+for try in 1 2; do
+    expect_post apifloor 503 "the command is not taken, so it cannot be replayed" "$(signed "$W/cmd.pem" $ME 600 format APIDISK1)"
+done
+console_wait apifloor "StormBootCommandId not set ("
+sleep 5
+tr -d '\r' < "$W/apifloor.serial" | grep -qF "format (id 600)" \
+    && { say "[apifloor] the format ran with no floor saved"; api_fail apifloor; }
+status=$(api_get /api/v1/status)
+[[ $status == *'"command_id":5,"pending":null'* ]] && say "[apifloor] the floor is still 5, nothing pending" \
+    || { say "[apifloor] status: $status"; api_fail apifloor; }
+kill "$API_QEMU" 2>/dev/null; wait "$API_QEMU" 2>/dev/null || true
+sfdisk -d "$W/apidisk.img" 2>/dev/null | grep -q "^label: gpt" \
+    && say "[apifloor] the disk keeps its GPT: no wipe" || die "[apifloor] the disk was wiped"
+fi
+
+# ---------------------------------------------------------------- boot 7
+if [[ -z "${NET_ONLY:-}" || "$NET_ONLY" == apifloorbad ]]; then
+cp "$OVMF_VARS" "$W/api.vars"
+python3 "$ROOT/tests/bootvar.py" "$W/api.vars" --var StormBootCommandId "$VENDOR_GUID" 0x7 garbage \
+    | sed 's/^/net-ovmf: [apifloorbad] /' || die "[apifloorbad] the variable was not written"
+api_boot apifloorbad
+console_wait apifloorbad 'api         : StormBootCommandId holds "garbage", not a command id; no command is taken this boot' 90
+console_wait apifloorbad "hold        : holding until a command; the API at http://10.0.2.15:9180" 180
+expect_post apifloorbad 503 "no replay protection this boot" "$(signed "$W/cmd.pem" $ME 700 poweroff)"
+status=$(api_get /api/v1/status)
+[[ $status == *'"command_id":null,'* ]] && say "[apifloorbad] status: no floor" \
+    || { say "[apifloorbad] status: $status"; api_fail apifloorbad; }
+sleep 3
+kill -0 "$API_QEMU" 2>/dev/null || { say "[apifloorbad] the VM went off: the poweroff ran"; api_fail apifloorbad; }
+kill "$API_QEMU" 2>/dev/null; wait "$API_QEMU" 2>/dev/null || true
 fi
 API_QEMU=
