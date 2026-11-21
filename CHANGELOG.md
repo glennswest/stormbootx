@@ -3,10 +3,16 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
-### 2026-11-21
-- **fix:** #232 (b96775eacdee, security): the NVMe/TCP initiator checks every PDU's common header before it allocates or reads the body. A CapsuleResp or R2T must be 24 bytes. A C2HData must have a 24-byte header, data starting within the PDU, and at most 512 KiB of data, the largest command this client issues. A termination is 24 to 152 bytes, an ICResp 128, and any other type is refused unread. Before, a CapsuleResp of plen = hlen = 8 panicked, short R2T and C2HData PDUs panicked in the field reads, and an 8-byte header could ask for an allocation of nearly 4 GiB. DATAO + DATAL and R2T ranges are checked without wrapping.
-- **build:** #232: the sc-build command runs `cargo clippy -p nvme-tcp-initiator --all-targets -- -D warnings`, so a lint in the initiator crate fails the build.
-- **test:** #232: host tests (`cargo test -p nvme-tcp-initiator`) feed the queue short CapsuleResp, R2T and C2HData PDUs, a near-4 GiB plen (refused with its body unread), PDO before and past the PDU, DATAL past the PDU, DATAO at `u32::MAX`, an R2T past the write, an unknown type, an oversized termination and a malformed ICResp. Each must be an error.
+## [v0.45.2] — 2026-11-21
+
+### Fixed
+- #232 (b96775eacdee, security): the NVMe/TCP initiator checks every PDU's common header before it allocates or reads the body. A CapsuleResp or R2T must be 24 bytes. A C2HData must have a 24-byte header, data starting within the PDU, and at most 512 KiB of data, the largest command this client issues. A termination is 24 to 152 bytes, an ICResp 128, and any other type is refused unread. Before, a CapsuleResp of plen = hlen = 8 panicked, short R2T and C2HData PDUs panicked in the field reads, and an 8-byte header could ask for an allocation of nearly 4 GiB. DATAO + DATAL and R2T ranges are checked without wrapping.
+
+### Build
+- #232: the sc-build command runs `cargo clippy -p nvme-tcp-initiator --all-targets -- -D warnings`, so a lint in the initiator crate fails the build.
+
+### Tests
+- #232: host tests (`cargo test -p nvme-tcp-initiator`) feed the queue short CapsuleResp, R2T and C2HData PDUs, a near-4 GiB plen (refused with its body unread), PDO before and past the PDU, DATAL past the PDU, DATAO at `u32::MAX`, an R2T past the write, an unknown type, an oversized termination and a malformed ICResp. Each must be an error.
 
 ## [v0.45.1] — 2026-11-21
 

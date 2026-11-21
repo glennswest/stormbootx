@@ -217,7 +217,7 @@ dependencies = [
 
 [[package]]
 name = "stormbootx"
-version = "0.45.1"
+version = "0.45.2"
 dependencies = [
  "ed25519-compact",
  "nvme-tcp-initiator",
@@ -229,7 +229,7 @@ dependencies = [
 
 [[package]]
 name = "stormbootx-stick"
-version = "0.45.1"
+version = "0.45.2"
 dependencies = [
  "ed25519-compact",
 ]

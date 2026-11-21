@@ -102,7 +102,7 @@ then.
 
 ### Open, no external blocker
 
-- [ ] **#232 — review finding b96775eacdee in `crates/nvme-tcp-initiator` (P1, security).**
+- [x] **#232 — review finding b96775eacdee in `crates/nvme-tcp-initiator` (P1, security). Done 2026-11-21:** 3c20e1d + 63faa6a; full sc-build passed on 3c20e1d (2587 s), crate tests + clippy on 63faa6a. Reproduced on wip/232-repro (a 12-byte R2T panicked at `le32`). v0.45.2.
       `recv_pdu` checked only plen, hlen >= 8, then allocated `plen - 8`
       (up to 4 GiB) and indexed fixed fields: a CapsuleResp with plen = hlen
       = 8 panicked at `rest[..16]`, short R2T/C2HData in `le16`/`le32`.
