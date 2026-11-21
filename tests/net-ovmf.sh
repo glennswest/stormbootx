@@ -885,17 +885,18 @@ host_cpu=max
 # exclusive open is given back at once. tests/nicfail-ovmf.sh builds the
 # binary that fails nic 0 there; with the firmware's IPv4 stack on, its PXE
 # is the next boot option and must lease and start the payload on that NIC.
+# Only that decides: with the IPv4 stack on, OVMF shows a second SNP handle
+# (nic 1), which may start once nic 0 is given back, so whether stormbootx
+# itself has a network here is not asked. On the old code the PXE option
+# said `Not Found` (the NIC still held) and nothing started.
 if [[ -n "${NICFAIL:-}" ]]; then
     BOOT_NOFALLBACK=1 BOOT_PXE=1 WAIT_FOR="is there a TCP/IP stack in this firmware" BOOT_SETTLE=3 \
     boot nicfail "$host_cpu" "" 404 good \
         "nic 0: driver Virtio Network Driver" \
         "nic 0: given back to the firmware (exclusive SNP closed, reconnected)" \
         "nic 0: not used (failed on purpose after its exclusive open (STORMBOOTX_NET_TEST_FAIL, a test build))" \
-        "no network boot: 1 NIC(s) have an SNP, and none of them would start" \
         "is there a TCP/IP stack in this firmware" \
-        "not:SNP not closed" \
-        "not:tcp4        : smoltcp over SNP" \
-        "not-stub:POST /api/v1/synonyms/boothost/"
+        "not:SNP not closed"
     grep -qE "Start PXE over IPv4|Station IP address is" "$W/nicfail.txt" \
         && say "[nicfail] the firmware's PXE ran on the NIC stormbootx gave back" \
         || say "note: no PXE banner on the console (the payload's banner is the evidence)"
