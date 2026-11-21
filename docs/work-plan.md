@@ -102,7 +102,7 @@ then.
 
 ### Open, no external blocker
 
-- [ ] **#237 — review finding 9ddc02f6bbad in `crates/stormbootx-stick/src/main.rs` (P1).**
+- [x] **#237 — review finding 9ddc02f6bbad in `crates/stormbootx-stick/src/main.rs` (P1). Done 2026-11-21:** e08c60c + 5abe76f + 686f8e9; the full sc-build passed on ede07b3 (#239's, a descendant: 2644 s), with stick.sh `idfail`/`idread`/`idro`/`idcut` and update-boots `idfail` (686f8e9's own run had been lost to stormcentral#1638).
       `carry_identity` (stick and `selfupdate.rs`) logged a failed write of
       `local.conf` and went on to the trial and the swap, so the new
       `stormboot.conf` dropped the machine's `name =`/`tag =`; a read error
