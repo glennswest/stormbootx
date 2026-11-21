@@ -178,7 +178,7 @@ sums "$S" | sed 's/^/  : /'
 # --- #237 (9ddc02f6bbad): the machine's name is kept, or the update stops
 # with nothing changed. idfail: local.conf.new cannot be written (a
 # directory there); idread: local.conf cannot be read. Serial 5 is current.
-for case in idfail idread; do
+for case in idread idfail; do
     I="$T/$case"
     mk_tree "$I" 0.20.0
     printf 'name = server1\n' >> "$I/stormboot/stormboot.conf"
