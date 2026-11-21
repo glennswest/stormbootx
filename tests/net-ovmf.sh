@@ -1205,6 +1205,10 @@ boot bridge "$host_cpu" "" ok good \
 # screen's bottom must be the green line painted after the drivers' handlers.
 # `watchdog`: a payload that hangs before ExitBootServices; the UEFI watchdog
 # (handoff_watchdog = 15) resets the machine, which ends QEMU (-no-reboot).
+# The 15 s is the medium's as read at start (#242, 6406ecfd9ee8): stormbootx
+# says so when anything reads the medium with an image attached (#46), and
+# that line must not appear. (An ejected CD proves nothing: OVMF's FAT kept
+# answering from what it had read.)
 BOOT_SMBIOS=tcp4probe:ebs BOOT_BAND=1 WAIT_FOR="tcp4probe   : past ExitBootServices" BOOT_SETTLE=1 \
 boot ebs "$host_cpu" "" ok good \
     "handoff     : watchdog 300 s until ExitBootServices; ExitBootServices marked (a console line before, a green line on the " \
@@ -1216,6 +1220,7 @@ boot ebs "$host_cpu" "" ok good \
 BOOT_SMBIOS=tcp4probe:hang BOOT_CONF="handoff_watchdog = 15" WAIT_FOR="never printed: the watchdog ends this boot" \
 boot watchdog "$host_cpu" "" ok good \
     "handoff     : watchdog 15 s until ExitBootServices" \
+    "not:read from the boot medium with an image attached" \
     "tcp4probe   : hanging before ExitBootServices (SMBIOS OEM string tcp4probe:hang)" \
     "net-ovmf    : qemu exited by itself" \
     "not:handoff     : ExitBootServices called by the bootloader"
