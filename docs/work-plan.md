@@ -118,7 +118,7 @@ then.
       `local.conf`: the same), `idcut` (only `local.conf.new` there: read
       and kept); update-boots `idfail` on the UEFI side.
 
-- [ ] **#239 — review finding 7e4c6aff3459 in `src/registry.rs` (major).**
+- [x] **#239 — review finding 7e4c6aff3459 in `src/registry.rs` (major). Done 2026-11-21:** ede07b3; full sc-build passed on ede07b3 (2644 s; the first run of the job lost net-ovmf's `intent` boot to a QEMU exit in PEI, before stormbootx started, and the rerun passed). Reproduced on wip/239-repro (740b374: nics 0-2 spent the 15 s, `no boot port … asking api_port`, nic 3 reached api_port).
       The boot-port probe (#183) had a fixed 15 s for the connect, and
       `connect_within` gives each leased NIC 5 s while another is left: with
       four leased NICs and only the fourth on the engine's wire, the first
