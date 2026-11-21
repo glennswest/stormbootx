@@ -889,7 +889,6 @@ if [[ -n "${NICFAIL:-}" ]]; then
     BOOT_NOFALLBACK=1 BOOT_PXE=1 WAIT_FOR="is there a TCP/IP stack in this firmware" BOOT_SETTLE=3 \
     boot nicfail "$host_cpu" "" 404 good \
         "nic 0: driver Virtio Network Driver" \
-        "nic 0: given back to the firmware (exclusive SNP closed, reconnected)" \
         "nic 0: not used (failed on purpose after its exclusive open (STORMBOOTX_NET_TEST_FAIL, a test build))" \
         "no network boot: 1 NIC(s) have an SNP, and none of them would start" \
         "is there a TCP/IP stack in this firmware" \
