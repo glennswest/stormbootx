@@ -33,6 +33,11 @@
 //! allocator beyond `alloc`, or a clock: one initiator for both loaders, so
 //! there is no third copy to drift (the issue that made this a crate).
 //!
+//! **A target is not trusted with this loader's memory** (#232). Every PDU's
+//! common header is checked against its type's layout before anything after
+//! it is allocated or read (`check_header`), so a malformed or hostile target
+//! ends the attach with an error and the boot falls through.
+//!
 //! `no_std` + `alloc`, no dependencies. `cargo test -p nvme-tcp-initiator`
 //! runs it on the host against an in-memory controller that refuses a
 //! command without PSDT=01b and an admin command before CC.EN.
@@ -133,20 +138,67 @@ const FLAGS_SGL: u8 = 0x40;
 /// The MTU is still read, and still printed, because "the path is 9000" is
 /// worth knowing on a console when a boot is slow. It no longer decides
 /// anything.
+/// A ceiling of our own on one command's transfer. A target that advertises a
+/// very large MDTS is offering more than a boot path has any use for, and with
+/// several commands in flight (#100) smaller commands keep more of them going.
+/// It is also the most data one C2HData PDU may carry (#232): no command this
+/// client issues asks for more (block sizes stop at 64 KiB, Identify is 4 KiB).
+const TRANSFER_CEILING: usize = 512 * 1024;
+
+/// The common header every PDU starts with.
+const CH_LEN: usize = 8;
+/// The header length of a CapsuleResp, R2T, C2HData and termination PDU with
+/// header digests off, as this client always negotiates them.
+const HLEN_24: usize = 24;
+/// A termination PDU's header and the most error data it may carry.
+const TERM_MAX: usize = 24 + 128;
+
+/// Whether a PDU's common header describes a PDU this client can take, checked
+/// before anything after the common header is read or allocated (#232,
+/// b96775eacdee). Every later index into the PDU relies on it: CapsuleResp and
+/// R2T are exactly 24 bytes, C2HData's data starts within its PDU and carries
+/// at most `TRANSFER_CEILING`, a termination is at most 152 bytes, and any
+/// other type (ICResp has its own path) is refused unread. A target that sends
+/// anything else gets an error, so the boot falls through rather than
+/// panicking or allocating what a 32-bit length asked for.
+fn check_header(ptype: u8, hlen: usize, pdo: usize, plen: usize) -> Result<(), String> {
+    let bad = |why: &str| Err(format!("malformed PDU (type {ptype:#04x}, hlen {hlen}, pdo {pdo}, plen {plen}): {why}"));
+    match ptype {
+        PDU_RESP | PDU_R2T => {
+            if hlen != HLEN_24 || plen != HLEN_24 {
+                return bad("a CapsuleResp or R2T is 24 bytes");
+            }
+        }
+        PDU_C2H_DATA => {
+            if hlen != HLEN_24 {
+                return bad("a C2HData header is 24 bytes");
+            }
+            if pdo < hlen || pdo > plen {
+                return bad("its data does not start within the PDU");
+            }
+            if plen - pdo > TRANSFER_CEILING {
+                return bad("more data than any command here asks for");
+            }
+        }
+        PDU_C2H_TERM | PDU_H2C_TERM => {
+            if hlen != HLEN_24 || !(HLEN_24..=TERM_MAX).contains(&plen) {
+                return bad("a termination is 24 to 152 bytes");
+            }
+        }
+        other => return Err(format!("unexpected PDU type {other:#04x}")),
+    }
+    Ok(())
+}
+
 fn transfer_limit(mdts: u8, mpsmin: u32, block_size: u32) -> usize {
     /// What to use when the controller declines to say. Every controller
     /// accepts it, and it is what this client used before MDTS was read.
     const UNSTATED: usize = 64 * 1024;
-    /// A ceiling of our own. A target that advertises a very large MDTS is
-    /// offering more than a boot path has any use for, and with several
-    /// commands in flight (#100) smaller commands keep more of them going.
-    const CEILING: usize = 512 * 1024;
-
     let page = 1usize << (12 + mpsmin.min(12));
     let limit = if mdts == 0 {
         UNSTATED
     } else {
-        page.saturating_mul(1usize << mdts.min(20)).min(CEILING)
+        page.saturating_mul(1usize << mdts.min(20)).min(TRANSFER_CEILING)
     };
 
     // Down to a whole number of blocks. CDW12 carries NLB as a 0-based count,
@@ -236,14 +288,25 @@ struct Pdu {
 
 /// A C2HData PDU's CCCID, data offset and payload. `rest` follows the common
 /// header: CCCID at 0, DATAO at 4, DATAL at 8; the payload at PDO.
+/// `check_header` has passed it; the lengths are checked again here, with
+/// arithmetic that cannot wrap (#232).
 fn c2h_parts(rest: &[u8], pdo: usize) -> Result<(u16, usize, &[u8]), String> {
+    if rest.len() < HLEN_24 - CH_LEN {
+        return Err("C2HData header runs past the PDU".into());
+    }
     let offset = le32(rest, 4) as usize;
     let length = le32(rest, 8) as usize;
-    let at = pdo.saturating_sub(8);
-    if at + length > rest.len() {
-        return Err("C2HData payload runs past the PDU".into());
-    }
-    Ok((le16(rest, 0), offset, &rest[at..at + length]))
+    let at = pdo.checked_sub(CH_LEN).ok_or("C2HData data starts inside its common header")?;
+    let end = at
+        .checked_add(length)
+        .filter(|&e| e <= rest.len())
+        .ok_or("C2HData payload runs past the PDU")?;
+    Ok((le16(rest, 0), offset, &rest[at..end]))
+}
+
+/// Whether `offset..offset + length` lies within `len` bytes, without wrapping.
+fn within(offset: usize, length: usize, len: usize) -> bool {
+    offset.checked_add(length).is_some_and(|e| e <= len)
 }
 
 /// Whether a C2HData PDU completes its command with no CapsuleResp to follow.
@@ -307,6 +370,11 @@ impl<T: Transport> Queue<T> {
                 "expected ICResp, got PDU type {:#04x} (is this an NVMe/TCP port?)",
                 resp[0]
             ));
+        }
+        // An ICResp is 128 bytes (#232): any other length would put the next
+        // PDU's header somewhere this client is not reading.
+        if resp[2] != 128 || le32(&resp, 4) != 128 {
+            return Err(format!("malformed ICResp (hlen {}, plen {})", resp[2], le32(&resp, 4)));
         }
         if resp[11] & 0x3 != 0 {
             return Err("controller insists on PDU digests, which this client declined".into());
@@ -372,23 +440,16 @@ impl<T: Transport> Queue<T> {
     /// The next PDU: its type, flags, PDO and everything after the 8-byte
     /// common header.
     fn recv_pdu(&mut self) -> Result<Pdu, String> {
-        let ch = self.read_exact(8)?;
-        let hlen = ch[2] as usize;
-        let plen = le32(&ch, 4) as usize;
-        if plen < 8 || hlen < 8 {
-            return Err(format!(
-                "malformed PDU (type {:#04x}, hlen {hlen}, plen {plen})",
-                ch[0]
-            ));
-        }
-        let rest = self.read_exact(plen - 8)?;
-        if matches!(ch[0], PDU_RESP | PDU_C2H_DATA) && rest.len() < 16 {
-            return Err(format!("PDU type {:#04x} too short ({plen} bytes)", ch[0]));
-        }
+        let ch = self.read_exact(CH_LEN)?;
+        let (hlen, pdo, plen) = (ch[2] as usize, ch[3] as usize, le32(&ch, 4) as usize);
+        // Before the body is allocated or read (#232): its length and layout
+        // are what every caller indexes by.
+        check_header(ch[0], hlen, pdo, plen)?;
+        let rest = self.read_exact(plen - CH_LEN)?;
         Ok(Pdu {
             ptype: ch[0],
             flags: ch[1],
-            pdo: ch[3] as usize,
+            pdo,
             rest,
         })
     }
@@ -422,10 +483,9 @@ impl<T: Transport> Queue<T> {
                     let length = le32(&rest, 8) as usize;
                     let data = write_data
                         .ok_or("controller asked for data on a command carrying none")?;
-                    if offset + length > data.len() {
+                    if !within(offset, length, data.len()) {
                         return Err(format!(
-                            "controller asked for bytes {offset}..{} of a {}-byte transfer",
-                            offset + length,
+                            "controller asked for {length} bytes at {offset} of a {}-byte transfer",
                             data.len()
                         ));
                     }
@@ -452,7 +512,7 @@ impl<T: Transport> Queue<T> {
                     let buf = read_into
                         .as_deref_mut()
                         .ok_or("unexpected read data on a command that asked for none")?;
-                    if offset + length > buf.len() {
+                    if !within(offset, length, buf.len()) {
                         return Err("controller returned more data than requested".into());
                     }
                     buf[offset..offset + length].copy_from_slice(payload);
@@ -748,7 +808,7 @@ impl<T: Transport> Namespace<T> {
                         continue;
                     };
                     let (_, start, len) = flight[i];
-                    if offset + payload.len() > len {
+                    if !within(offset, payload.len(), len) {
                         return Err("controller returned more data than requested".into());
                     }
                     buf[start + offset..start + offset + payload.len()].copy_from_slice(payload);
@@ -837,6 +897,8 @@ mod tests {
         max_held: usize,
         /// A read covering this LBA fails with Internal Error.
         fail_lba: Option<u64>,
+        /// The ICResp's hlen, 128 unless a test says otherwise (#232).
+        icresp_hlen: u8,
     }
 
     struct Conn {
@@ -908,7 +970,7 @@ mod tests {
                 PDU_ICREQ => {
                     let mut r = vec![0u8; 128];
                     r[0] = PDU_ICRESP;
-                    r[2] = 128;
+                    r[2] = self.ctrl.borrow().icresp_hlen;
                     put32(&mut r, 4, 128);
                     r[11] = if self.ctrl.borrow().digests { 0x1 } else { 0 };
                     put32(&mut r, 12, 8192);
@@ -1108,6 +1170,7 @@ mod tests {
             hold_reads: false,
             max_held: 0,
             fail_lba: None,
+            icresp_hlen: 128,
         };
         Fake { ctrl: Rc::new(RefCell::new(ctrl)), connects: 0, stalled_ms: 0 }
     }
@@ -1238,6 +1301,135 @@ mod tests {
         .unwrap();
         let e = q.read_exact(8).err().unwrap();
         assert_eq!(e, "receive timed out (0 of 8 bytes)");
+    }
+
+    /// A queue past its ICResp, and a common header of the caller's (#232).
+    fn queue() -> Queue<Conn> {
+        Queue::open(Conn {
+            ctrl: fake(1).ctrl,
+            inbuf: Vec::new(),
+            out: VecDeque::new(),
+            pending: None,
+            mtu: None,
+            held: Vec::new(),
+        })
+        .unwrap()
+    }
+    fn header(ptype: u8, hlen: u8, pdo: u8, plen: u32) -> Vec<u8> {
+        let mut h = vec![ptype, 0, hlen, pdo, 0, 0, 0, 0];
+        put32(&mut h, 4, plen);
+        h
+    }
+    /// What the queue makes of `bytes` arriving where a PDU is due, and how
+    /// many of them it left unread.
+    fn receive(bytes: Vec<u8>) -> (String, usize) {
+        let mut q = queue();
+        q.sock.out.extend(bytes);
+        let mut buf = vec![0u8; 4096];
+        let e = q.complete(1, None, Some(&mut buf)).err().expect("a malformed PDU must be an error");
+        (e, q.sock.out.len())
+    }
+
+    #[test]
+    fn short_pdus_are_errors_not_panics() {
+        // b96775eacdee: a CapsuleResp of plen = hlen = 8 panicked at rest[..16].
+        let (e, _) = receive(header(PDU_RESP, 8, 0, 8));
+        assert!(e.contains("a CapsuleResp or R2T is 24 bytes"), "{e}");
+        // An R2T and a C2HData too short for their fields (le16/le32 panicked).
+        let mut r2t = header(PDU_R2T, 8, 0, 12);
+        r2t.extend([0u8; 4]);
+        let (e, _) = receive(r2t);
+        assert!(e.contains("24 bytes"), "{e}");
+        let mut c2h = header(PDU_C2H_DATA, 8, 8, 16);
+        c2h.extend([0u8; 8]);
+        let (e, _) = receive(c2h);
+        assert!(e.contains("a C2HData header is 24 bytes"), "{e}");
+        // hlen larger than the PDU.
+        let mut resp = header(PDU_RESP, 24, 0, 16);
+        resp.extend([0u8; 8]);
+        let (e, _) = receive(resp);
+        assert!(e.contains("malformed PDU"), "{e}");
+    }
+
+    #[test]
+    fn a_huge_plen_is_refused_before_anything_is_allocated_or_read() {
+        // An eight-byte header asking for nearly 4 GiB: refused with the body
+        // still unread (and so never allocated).
+        let mut p = header(PDU_C2H_DATA, 24, 24, 0xFFFF_FFF0);
+        p.extend([0u8; 16]);
+        let (e, left) = receive(p);
+        assert!(e.contains("more data than any command here asks for"), "{e}");
+        assert_eq!(left, 16, "nothing past the common header was read");
+        // Just over the ceiling is refused too; at it is taken.
+        assert!(check_header(PDU_C2H_DATA, 24, 24, 24 + TRANSFER_CEILING + 1).is_err());
+        assert!(check_header(PDU_C2H_DATA, 24, 24, 24 + TRANSFER_CEILING).is_ok());
+    }
+
+    #[test]
+    fn c2h_data_must_start_and_end_inside_its_pdu() {
+        assert!(check_header(PDU_C2H_DATA, 24, 16, 64).is_err(), "PDO inside the header");
+        assert!(check_header(PDU_C2H_DATA, 24, 80, 64).is_err(), "PDO past the PDU");
+        assert!(check_header(PDU_C2H_DATA, 24, 32, 64).is_ok(), "PDO padded past hlen (CPDA)");
+        // DATAL past the PDU.
+        let mut p = header(PDU_C2H_DATA, 24, 24, 24 + 8);
+        let mut f = vec![0u8; 16];
+        put16(&mut f, 0, 1);
+        put32(&mut f, 8, 4096);
+        p.extend(f);
+        p.extend([0u8; 8]);
+        let (e, _) = receive(p);
+        assert!(e.contains("payload runs past the PDU"), "{e}");
+        // DATAO + DATAL past the command's buffer, at the top of the range.
+        let mut p = header(PDU_C2H_DATA, 24, 24, 24 + 8);
+        let mut f = vec![0u8; 16];
+        put16(&mut f, 0, 1);
+        put32(&mut f, 4, u32::MAX);
+        put32(&mut f, 8, 8);
+        p.extend(f);
+        p.extend([0u8; 8]);
+        let (e, _) = receive(p);
+        assert!(e.contains("more data than requested"), "{e}");
+    }
+
+    #[test]
+    fn an_r2t_past_the_write_is_refused() {
+        let mut q = queue();
+        let mut p = header(PDU_R2T, 24, 0, 24);
+        let mut f = vec![0u8; 16];
+        put16(&mut f, 0, 1);
+        put32(&mut f, 4, u32::MAX);
+        put32(&mut f, 8, u32::MAX);
+        p.extend(f);
+        q.sock.out.extend(p);
+        let e = q.complete(1, Some(&[0u8; 4096]), None).err().unwrap();
+        assert!(e.contains("of a 4096-byte transfer"), "{e}");
+    }
+
+    #[test]
+    fn unknown_and_oversized_pdus_are_refused_unread() {
+        let mut p = header(0x42, 24, 0, 64);
+        p.extend([0u8; 56]);
+        let (e, left) = receive(p);
+        assert!(e.contains("unexpected PDU type 0x42"), "{e}");
+        assert_eq!(left, 56);
+        let mut p = header(PDU_C2H_TERM, 24, 0, 4096);
+        p.extend([0u8; 16]);
+        let (e, left) = receive(p);
+        assert!(e.contains("a termination is 24 to 152 bytes"), "{e}");
+        assert_eq!(left, 16);
+        // A well-formed termination still ends the command as before.
+        let mut p = header(PDU_C2H_TERM, 24, 0, 24);
+        p.extend([0u8; 16]);
+        let (e, _) = receive(p);
+        assert!(e.contains("controller terminated the connection"), "{e}");
+    }
+
+    #[test]
+    fn a_malformed_icresp_fails_the_attach() {
+        let mut f = fake(1);
+        f.ctrl.borrow_mut().icresp_hlen = 8;
+        let e = attach(&mut f).err().unwrap();
+        assert!(e.contains("malformed ICResp (hlen 8, plen 128)"), "{e}");
     }
 
     #[test]
