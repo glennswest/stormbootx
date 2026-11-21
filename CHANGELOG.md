@@ -3,6 +3,10 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-21
+- **fix:** #234 (ad40f4d4558e): `build-boot-agent.sh --pin` (and `--portal`) writes `claim = no`. Before, it wrote only the portal, port, nqn and nsid, and the claim defaults to on. So a pinned stick still read the engine's intent and claimed: an engine's answer replaced the pinned namespace, and an intent of `local` skipped it.
+- **test:** #234: net-ovmf's `pinned` boot. The stub engine is up, says `local` for this MAC and answers the claim. The pinned medium must say `claim : disabled by the config file`, attach its own namespace (96 MiB read) and start the payload. The stub must see no health read, intent or claim.
+
 ## [v0.45.3] — 2026-11-21
 
 ### Fixed

@@ -1155,7 +1155,7 @@ others.
 | `fallback` | on | `none` (or `no`/`off`/`false`/`0`): no `nqn`/`nsid` is attached when no claim answers; the boot falls through to the local disk (#36). Every golden writes it; `build-boot-agent.sh --no-fallback` |
 | `api_port` | `9090` | engine API port on the portal host |
 | `boot_port` | `9089` | the engine's plain boot-only port, asked first; refused, silent or not an engine, the boot uses `api_port` (#183, stormblock#524). `off` asks `api_port` alone |
-| `claim` | `yes` | `no` / `false` / `0` / `off` skips the claim |
+| `claim` | `yes` | `no` / `false` / `0` / `off` skips the engine altogether: no health read, intent or claim, and `nqn`/`nsid` are attached. `build-boot-agent.sh --pin` writes `claim = no` (#234); before, a pinned stick still claimed |
 | `name` (or `tag`) | none (DNS name, then MAC, then SMBIOS) | states the identity; the only name claimed |
 | `dns` | none | DNS server for the PTR of the machine's own address, when its DHCP reply names none or cannot be read (#26); `build-boot-agent.sh --dns` |
 | `ntp` | none (DHCP option 42, then `pool.ntp.org`) | NTP server for the hardware clock when the lease names none: `host[:port]`, or `off` to leave the clock alone (#77); `build-boot-agent.sh --ntp` |

@@ -624,6 +624,9 @@ BOOT_NIC_VERBOSE=
 BOOT_ESP=
 # BOOT_NOFALLBACK=1 (#36) builds the medium as the goldens are: no nqn/nsid.
 BOOT_NOFALLBACK=
+# BOOT_PIN=1 (#234) builds a pinned medium (`--portal`): the stub's address,
+# port and nsid 1, and `claim = no`.
+BOOT_PIN=
 # BOOT_IC (#93): an install-config.yaml of another size for this boot's ESP.
 BOOT_IC=
 # BOOT_CONF: lines added to the medium's stormboot.conf.
@@ -668,6 +671,7 @@ boot() {
     [[ -n "$BOOT_NIC_VERBOSE" ]] && args+=(--nic-verbose)
     [[ -n "$BOOT_ESP" ]] && args+=(--esp "$BOOT_ESP")
     if [[ -n "$BOOT_NOFALLBACK" ]]; then args+=(--no-fallback); else args+=(--nsid 1); fi
+    [[ -n "$BOOT_PIN" ]] && args=("${args[@]/#--engine/--portal}")
     # The shipped boot's medium names a self-update (#83), which an ISO must
     # skip as read-only; the other names none.
     [[ $name == shipped ]] && args+=(--update "http://10.0.2.2:$PORT/api/v1/boothelpers/stormbootx-test")
@@ -1186,6 +1190,23 @@ fall_through_within() {
     (( ms >= $2 && ms < $3 )) || die "[$1] fall-through took $ms ms, not $2..$3 ms"
     say "[$1] fall-through $ms ms (wanted $2..$3)"
 }
+# #234 (ad40f4d4558e): a pinned medium claims nothing. The stub engine is
+# up, says `local` for this MAC and answers the claim, so a medium that asked
+# it anything would fall through or attach the engine's answer; the pinned
+# one must attach its own nsid and start the payload, the stub asked nothing.
+BOOT_PIN=1 BOOT_INTENT=local \
+boot pinned "$host_cpu" "" ok good \
+    "claim       : disabled by the config file" \
+    "blockio     : published on handle" \
+    "blockio     : 96 MiB read in all" \
+    "is there a TCP/IP stack in this firmware" \
+    "not:intent      : " \
+    "not:no network boot" \
+    "not-stub:GET /api/v1/health" \
+    "not-stub:/intent" \
+    "not-stub:/claim" \
+    "not-stub:POST /api/v1/synonyms/boothost/"
+
 BOOT_INTENT=local BOOT_DISK="$W/localboot.img" WAIT_FOR="is there a TCP/IP stack in this firmware" \
 boot localdisk "$host_cpu" "" ok good \
     "intent      : local" \
