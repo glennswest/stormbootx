@@ -118,14 +118,24 @@ fn bus_of(path: &str) -> &'static str {
     }
 }
 
-/// The checked stormdist medium, if one is attached. Prints a line for each
-/// medium that is one, checked or refused; ordinary disks say nothing.
-pub fn find() -> Option<Found> {
+/// The checked stormdist medium, if one is attached and `use_media` (not
+/// `install_source = off`). Prints a line for each medium that is one,
+/// checked or refused; ordinary disks say nothing.
+///
+/// Every medium recognised as stormdist is marked never to be a local disk
+/// (`blockio::not_local`) *before* its signatures are checked, whether it
+/// then verifies, is refused, is a second one or is not to be used at all
+/// (#241): a stick written from the ISO may say it is fixed, its hybrid GPT
+/// carries an ESP with a bootloader, and the fall-through must never start
+/// what the signature check refused or `install_source = off` turned off.
+/// So every disk is looked at, and the first that verifies is the one used.
+pub fn find(use_media: bool) -> Option<Found> {
     let handles = boot::locate_handle_buffer(SearchType::ByProtocol(&BlockIO::GUID)).ok()?;
     let keys = keys();
-    if test_key().is_some() {
+    if use_media && test_key().is_some() {
         uefi::println!("dist        : a TEST key is compiled in (STORMBOOTX_DIST_TEST_KEY)");
     }
+    let mut found: Option<Found> = None;
     for &h in handles.iter() {
         let Some(bio) = crate::blockio::open_get::<BlockIO>(h) else { continue };
         let media = bio.media();
@@ -134,16 +144,25 @@ pub fn find() -> Option<Found> {
         }
         let block = media.block_size();
         let mut d = Disk(BlockDisk { bio: &bio, media_id: media.media_id(), block: block as u64, bounce: Vec::new() });
-        let layout = match distmedia::layout(&mut d) {
+        let layout = distmedia::layout(&mut d);
+        if matches!(layout, Err(distmedia::Error::NotIso | distmedia::Error::NotRelease)) {
+            continue;
+        }
+        // A stormdist medium (or an ISO 9660 volume too broken to tell): never
+        // the local disk, from here on, whatever the check below says.
+        crate::blockio::not_local(h);
+        let path = crate::blockio::path_of(h).and_then(crate::hardware::text).unwrap_or_default();
+        let layout = match layout {
             Ok(l) => l,
-            Err(distmedia::Error::NotIso | distmedia::Error::NotRelease) => continue,
             Err(e) => {
-                let path = crate::blockio::path_of(h).and_then(crate::hardware::text).unwrap_or_default();
-                uefi::println!("dist        : {path}: not used: {}", e.describe());
+                uefi::println!("dist        : {path}: not used, and not a local disk: {}", e.describe());
                 continue;
             }
         };
-        let path = crate::blockio::path_of(h).and_then(crate::hardware::text).unwrap_or_default();
+        if !use_media {
+            uefi::println!("dist        : {path}: a stormdist medium, not used (install_source = off), and not a local disk");
+            continue;
+        }
         // A whole disk of 2048-byte blocks is a CD (an ATAPI or SCSI drive);
         // a BMC's virtual CD is USB, and its USB rate is what the line is for.
         let bus = match bus_of(&path) {
@@ -154,19 +173,27 @@ pub fn find() -> Option<Found> {
         match check(&mut d, &layout, &keys) {
             Ok((boot, release)) => {
                 let f = Found { disk: h, layout, boot, release, path, bus };
+                if let Some(first) = &found {
+                    uefi::println!(
+                        "dist        : {}: stormdist {} verifies too, not used (the first, {}, is), and not a local disk",
+                        f.path,
+                        f.name(),
+                        first.path
+                    );
+                    continue;
+                }
                 uefi::println!(
                     "dist        : stormdist {} on {} ({}, {block}-byte blocks): BOOT.sig and RELEASE.sig verify, RELEASE.toml matches BOOT.toml",
                     f.name(),
                     f.path,
                     f.bus
                 );
-                crate::blockio::not_local(h);
-                return Some(f);
+                found = Some(f);
             }
-            Err(why) => uefi::println!("dist        : {path}: a stormdist medium, refused: {why}"),
+            Err(why) => uefi::println!("dist        : {path}: a stormdist medium, refused (and not a local disk): {why}"),
         }
     }
-    None
+    found
 }
 
 fn check(d: &mut Disk, l: &Layout, keys: &[[u8; 32]]) -> Result<(Boot, Release), String> {

@@ -1224,16 +1224,30 @@ When (`install_source =`): by default forge first. The medium is used only
 when the network boot gave no image (no NIC, no lease, no engine, no claim)
 **and** no local disk boots, so an installed node with a release stick left
 in boots its own disk. A `local` intent never installs. `install_source =
-local` installs from the medium before the network; `off` never looks. A
+local` installs from the medium before the network; `off` never uses it. A
 medium that fails a check is named and refused, and the boot goes on as if it
 were not there. A diff or backup ISO (no `BOOT.toml`) is named and not used.
+With two checked media, the first is used and the other named.
+
+A stormdist medium is **never the local disk** (#241), whatever its check
+says and under `off` too: a stick written from the ISO may say it is fixed,
+and its hybrid GPT carries an ESP with the release's bootloader, which the
+fall-through must not start unchecked. Every disk is looked at, and each one
+recognised as stormdist (or an ISO 9660 volume too broken to tell) is marked
+before its signatures are checked:
+
+```
+dist        : PciRoot(0x0)/…/USB(0x0,0x0)/Unit(0x0): a stormdist medium, refused (and not a local disk): BOOT.sig does not verify against the 1 compiled-in release key(s)
+```
 
 `tests/dist-ovmf.sh` makes a real medium with `stormdist make` (stormdist
 v0.5.0, `scripts/build-stormdist.sh`) signed by a test key compiled into its
 own stormbootx build (`STORMBOOTX_DIST_TEST_KEY`; `build-golden.sh` refuses
 it), and boots it as a CD and as a USB stick: before the network, after a
 failed network boot, an installed disk that wins, a tampered ESP, another
-key, and `off`.
+key, and `off`; then (#241) as a stick that says it is fixed, refused and
+`off` (nothing to fall through to, nothing started), and beside a CD of the
+same release (the CD's installs; the stick is not a local disk).
 
 ## Booting from a laptop (#164)
 

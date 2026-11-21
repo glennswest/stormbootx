@@ -102,6 +102,14 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#241 — review finding dbebc4b303b0 in `src/localinstall.rs` (P1, security).**
+      A rejected, `off` or second stormdist medium on a stick that says it is
+      fixed stayed eligible for `find_local`. Fix: `find` marks every
+      recognised medium `not_local` before the check, scans all disks, runs
+      under `off`; `NOT_LOCAL` a set; `local_disks` honours it. Test:
+      dist-ovmf `fixed-otherkey`, `fixed-off`, `two`; reproduction on the old
+      code (`wip/241-repro`, `ONLY=fixed-otherkey`, expect-fail).
+
 - [x] **#230 — review finding 376240a9715a in `src/espfs.rs` (P1). Done 2026-11-20:** 557ac8f, full sc-build passed (espprobe: `held open, it stays … (ACCESS_DENIED)`, then `withdrawn`). A
       failed `UninstallProtocolInterface` of the ESP's filesystem was
       ignored, so the image could be unloaded under it. `espfs::withdraw` is

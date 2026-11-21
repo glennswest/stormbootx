@@ -272,7 +272,10 @@ built with `STORMBOOTX_DIST_TEST_KEY` (its own target dir) with no network:
 `cd-local` (a CD, `install_source = local`), `usb-forge` (a USB stick, the
 network gives nothing, nothing local boots), `installed` (a fixed disk that
 boots wins), `tampered` (an ESP byte flipped after signing), `otherkey`,
-`off`. The medium boots on its own after stormbootx returns, so a positive
+`off`; and (#241) on a stick that says it is fixed (`removable=off`):
+`fixed-otherkey` and `fixed-off` (never the local disk: nothing to fall
+through to, nothing started), `two` (a CD and the fixed stick: the first is
+used, the other is not a local disk). `ONLY="name …"` boots only those. The medium boots on its own after stormbootx returns, so a positive
 boot needs `starting … from the stormdist medium` before tcp4probe's lines.
 
 `tests/api-boots.sh` (#167), sourced at the end of `net-ovmf.sh`, boots
@@ -350,7 +353,7 @@ kept for a later need; the test command sets it to keep the code honest.
 | `src/sntp.rs` | SNTP request and reply checks, NTP era → Unix, the UTC calendar (core-only, host-tested) |
 | `src/blockio.rs` | publish the namespace as a block device, then chain-load its `BOOTX64.EFI` (the firmware's FAT, then `esp.rs`) |
 | `src/distmedia.rs` | a stormdist release medium (#198): ISO 9660 primary-volume lookup, `BOOT.toml`, `RELEASE.toml`'s version/kind/bytes, `DIST_KEYS` (stormcentral's release key, not the boothelper key), the read-rate line (core + alloc, host-tested) |
-| `src/localinstall.rs` | install from a stormdist medium (#198): find and check it before the network (both signatures, `release_sha256`), read `boot/esp.img` timed and check `esp_sha256`, start its `BOOTX64.EFI` from those bytes under the firmware's filesystem on the medium's ESP; `install_source =` |
+| `src/localinstall.rs` | install from a stormdist medium (#198): find and check it before the network, every stormdist medium marked never the local disk before its check, under `off` too (#241) (both signatures, `release_sha256`), read `boot/esp.img` timed and check `esp_sha256`, start its `BOOTX64.EFI` from those bytes under the firmware's filesystem on the medium's ESP; `install_source =` |
 | `src/intent.rs` | the boot intent (`install`/`local`/`auto`) read before the claim; every doubt is `auto` |
 | `src/inventory.rs` | the firmware inventory with the claim (#4, #20, #167 `"v":2`): SMBIOS Type 0/1/2/4/17/38/42, ATA IDENTIFY, NVMe Identify, SCSI INQUIRY and VPD parsers, partition kinds, the JSON and its budget, the console lines (core-only, host-tested) |
 | `src/hardware.rs` | what the inventory is collected from: the stack's NICs, their drivers and MTU, PCI class 01 (connected first), BlockIO disks with `EFI_DISK_INFO`, NVMe pass-thru, `EFI_SCSI_IO` VPD and their GPT/MBR and ESP `\EFI`, the SMBIOS table; once, before anything is attached |

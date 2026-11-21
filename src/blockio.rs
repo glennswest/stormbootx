@@ -229,6 +229,10 @@ pub fn local_disks() -> usize {
     handles
         .iter()
         .filter(|h| {
+            // A stormdist medium is not a local disk (#198, #241).
+            if is_not_local(h.as_ptr()) {
+                return false;
+            }
             let Some(p) = crate::net::handle_protocol(h.as_ptr(), &BlockIoProtocol::GUID) else {
                 return false;
             };
@@ -274,21 +278,25 @@ struct LocalEsp {
     found: String,
 }
 
-/// A whole disk that is never the local disk (#198): the stormdist medium,
-/// which carries an ESP with a bootloader too, and a stick written from one
-/// may say it is fixed.
-struct NotLocal(core::cell::Cell<Option<uefi_raw::Handle>>);
+/// The whole disks that are never the local disk (#198): every stormdist
+/// medium attached, checked, refused or not looked at (#241), since each
+/// carries an ESP with a bootloader and a stick written from one may say it
+/// is fixed. A refused medium's bootloader is exactly what must not run.
+struct NotLocal(core::cell::RefCell<alloc::vec::Vec<uefi_raw::Handle>>);
 // Boot services are single-threaded.
 unsafe impl Sync for NotLocal {}
-static NOT_LOCAL: NotLocal = NotLocal(core::cell::Cell::new(None));
+static NOT_LOCAL: NotLocal = NotLocal(core::cell::RefCell::new(alloc::vec::Vec::new()));
 
 /// Never count `h` as a local disk (`localinstall.rs`).
 pub fn not_local(h: Handle) {
-    NOT_LOCAL.0.set(Some(h.as_ptr()));
+    let mut v = NOT_LOCAL.0.borrow_mut();
+    if !v.contains(&h.as_ptr()) {
+        v.push(h.as_ptr());
+    }
 }
 
-fn is_not_local(h: Handle) -> bool {
-    NOT_LOCAL.0.get() == Some(h.as_ptr())
+fn is_not_local(h: uefi_raw::Handle) -> bool {
+    NOT_LOCAL.0.borrow().contains(&h)
 }
 
 fn find_local() -> Result<LocalEsp, String> {
@@ -311,7 +319,7 @@ fn find_local() -> Result<LocalEsp, String> {
         }
         // The attached image is not a local disk (the fall-through withdraws
         // it first; this is the belt to that). Nor is a stormdist medium.
-        if is_published(h.as_ptr()) || is_not_local(h) {
+        if is_published(h.as_ptr()) || is_not_local(h.as_ptr()) {
             continue;
         }
         let dp = path_of(h);

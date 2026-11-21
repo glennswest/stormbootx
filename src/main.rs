@@ -1061,10 +1061,9 @@ fn main() -> Status {
     // network, installed from now (`install_source = local`) or when the
     // network boot gives no image and nothing local boots (the default).
     let source = config::install_source();
-    let mut dist = match source {
-        config::InstallSource::Off => None,
-        _ => localinstall::find(),
-    };
+    // Every stormdist medium is looked at even when `off`, so that none is
+    // ever taken for the local disk (#241).
+    let mut dist = localinstall::find(source != config::InstallSource::Off);
     if dist.is_some() {
         profile::mark("dist find");
     }
