@@ -102,6 +102,24 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#231 — review findings in `src/net.rs` (P1, stormcentral#1558).**
+      1. 47063dda87c6: a NIC whose init fails after the exclusive SNP open
+         keeps it (never closed, never reconnected), so the firmware's
+         PXE/HTTP on it is gone exactly when the fall-through needs it. Fix:
+         `SnpOpen`, a guard made at the open, closing and reconnecting on
+         drop; `Nic` holds it, `release` gives back through it. Test:
+         `tests/nicfail-ovmf.sh` builds stormbootx with
+         `STORMBOOTX_NET_TEST_FAIL=0` (a test build only: nic 0 fails after
+         Start/Initialize) and net-ovmf's `nicfail` boot (`NICFAIL=1`)
+         requires the give-back line and the firmware's PXE booting the
+         payload on that NIC; reproduced first on the old code (expect-fail).
+      2. 26ccc36ac667: `Nic::serve` → `api::answer` → `status_json` →
+         `net::addresses` → a second `&mut Net` while the NIC is borrowed.
+         Fix: the addresses are snapshotted before a NIC is polled and handed
+         to `api::answer`; `net()` refuses while a NIC is being polled, so no
+         callback can take the stack again. api-boots' status must still
+         carry `"addresses":["10.0.2.15"]`.
+
 - [x] **#241 — review finding dbebc4b303b0 in `src/localinstall.rs` (P1, security). Done 2026-11-20:** b817d54, full sc-build passed on 9993f28 (dist-ovmf `fixed-otherkey`, `fixed-off`, `two` PASS); the old code failed `fixed-otherkey` (started the refused stick's ESP as the local disk).
       A rejected, `off` or second stormdist medium on a stick that says it is
       fixed stayed eligible for `find_local`. Fix: `find` marks every
