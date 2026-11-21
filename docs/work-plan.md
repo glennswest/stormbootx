@@ -102,6 +102,17 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#234 — review finding ad40f4d4558e in `scripts/build-boot-agent.sh` (P1).**
+      `--pin`/`--portal` wrote portal, port, nqn and nsid but not
+      `claim = no`, and `config::resolve` defaults the claim on: a pinned
+      stick still read the engine's intent and claimed, so an engine's answer
+      replaced the pinned namespace, and an intent of `local` skipped it.
+      Fix: the pinned conf says `claim = no`. Test: net-ovmf's `pinned` boot
+      (`BOOT_PIN=1`), with the stub engine up, answering the claim and
+      saying `local` for this MAC: `claim : disabled by the config file`,
+      the pinned namespace attached and the payload started, and the stub
+      never asked for health, intent or a claim.
+
 - [x] **#233 — review finding 85c49e1e33d3 in `src/manifest.rs` (P1, security). Done 2026-11-21:** 9323036; full sc-build passed on it (2509 s). Reproduced on wip/233-repro (panicked at `manifest.rs:635`). v0.45.3.
       `dechunk` added a hex chunk size to `rd` unchecked: `ffffffffffffffed`
       wraps `rd + size + 2` to 1 on 64-bit, the guard passes and the slice
