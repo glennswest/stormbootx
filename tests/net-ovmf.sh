@@ -128,6 +128,7 @@ BOOTPORT_PID=""
 SILENT_PID=""
 NVME_PID=""
 BLANK_PID=""
+PLAIN_PID=""
 NTP_PID=""
 SYSLOG_PID=""
 HTTP_PID=""
@@ -140,6 +141,7 @@ cleanup() {
     [[ -n "$SYSLOG_PID" ]] && kill "$SYSLOG_PID" 2>/dev/null
     [[ -n "$NVME_PID" ]] && kill "$NVME_PID" 2>/dev/null
     [[ -n "$BLANK_PID" ]] && kill "$BLANK_PID" 2>/dev/null
+    [[ -n "$PLAIN_PID" ]] && kill "$PLAIN_PID" 2>/dev/null
     rm -rf "$W"
 }
 trap cleanup EXIT
@@ -303,7 +305,11 @@ truncate -s 96M "$W/payload.efi"
 mkfs.fat -C -S 4096 -F 16 -s 1 -n RELEASE "$W/esp4k.img" 131072 >/dev/null
 mmd -i "$W/esp4k.img" ::/EFI ::/EFI/BOOT
 mcopy -i "$W/esp4k.img" "$W/payload.efi" "::/EFI/BOOT/$PAYLOAD_NAME"
-python3 "$ROOT/tests/gpt4k.py" "$W/esp4k.img" "$W/disk4k.img"
+# A stormcos image carries pallets (#236): the panel stays up under its
+# bootloader. plain4k.img is the same image with none, an image whose
+# bootloader is not stormuefi, for the `plainimg` boots.
+python3 "$ROOT/tests/gpt4k.py" "$W/esp4k.img" "$W/disk4k.img" --pallet
+python3 "$ROOT/tests/gpt4k.py" "$W/esp4k.img" "$W/plain4k.img"
 
 # The NVMe/TCP target: ICReq, Fabrics Connect, Property Get/Set, Identify
 # (namespace and controller) and Read, which is all nvme.rs sends on a boot.
@@ -429,6 +435,13 @@ BLANK_PID=$!
 for _ in $(seq 100); do [[ -s "$W/blank.port" ]] && break; sleep 0.1; done
 BLANK_PORT=$(cat "$W/blank.port" 2>/dev/null) || die "the blank NVMe/TCP stub did not start"
 say "blank NVMe/TCP stub on 127.0.0.1:$BLANK_PORT"
+
+# A third serving the image with no pallet (#236).
+python3 "$W/nvme.py" "$W/plain4k.img" "$W/plain.port" &
+PLAIN_PID=$!
+for _ in $(seq 100); do [[ -s "$W/plain.port" ]] && break; sleep 0.1; done
+PLAIN_PORT=$(cat "$W/plain.port" 2>/dev/null) || die "the no-pallet NVMe/TCP stub did not start"
+say "no-pallet NVMe/TCP stub on 127.0.0.1:$PLAIN_PORT"
 
 # The shipped boot's local drives (#167), for the inventory: an NVMe disk
 # whose GPT holds an ESP (`\EFI\BOOT` and `\EFI\ubuntu`, no bootloader, so
@@ -801,7 +814,9 @@ boot() {
     # #220: the payload runs under the panel's last frame, the boot
     # screen's first (stormblock-screen-spec), left up for it to draw over.
     local handover=
-    if [[ $name == shipped ]] && kill -0 "$qemu" 2>/dev/null; then
+    # #236: an image with no pallet gets no frame: its bootloader has the
+    # firmware's console.
+    if [[ $name == shipped || $name == plainimg* ]] && kill -0 "$qemu" 2>/dev/null; then
         python3 "$ROOT/tests/screen.py" dump "$W/$name.mon" "$W/$name.ppm" \
             && handover=$(python3 "$ROOT/tests/screen.py" frame "$W/$name.ppm" || true)
         say "[$name] $handover"
@@ -928,6 +943,7 @@ if [[ -n "${NICFAIL:-}" ]]; then
 fi
 boot shipped "$host_cpu" "" 404 good "${common[@]}" "rng         : " \
     "handover    : the spec's frame stays up (" \
+    "not:handover    : the firmware's console" \
     "engine      : no boot port at 10.0.2.2:9089 (" \
     "engine      : reached 10.0.2.2:$PORT (api_port)" \
     "handed down : StormBootEngine = 10.0.2.2:$PORT  (attributes 0x6)" \
@@ -1118,6 +1134,21 @@ boot noesp "$host_cpu" "" 404 good \
 # its own read-only filesystem on the ESP's partition handle in place of
 # OVMF's FAT, and starts the 96 MiB BOOTX64.EFI under it. The payload must
 # find that filesystem as its own volume, read-only, and be refused a write.
+# #236 (89b3587e2182): an image with no stormcos pallet has a bootloader that
+# is not stormuefi, which may draw a menu or ask for a key, so it gets the
+# firmware's console: stormbootx says so, suspends the panel before it
+# starts, and the screen under it is not the panel's frame. Both paths: the
+# firmware's FAT, and stormbootx's own read (esp = stormbootx).
+for bridge in "" stormbootx; do
+    BOOT_PORT=$PLAIN_PORT BOOT_ESP=$bridge \
+    boot "plainimg${bridge:+-bridge}" "$host_cpu" "" 404 good \
+        "handover    : the firmware's console, for a bootloader that is not stormuefi (no stormcos pallet on the image)" \
+        "blockio     : 96 MiB read in all" \
+        "is there a TCP/IP stack in this firmware" \
+        "handover    : no frame: " \
+        "not:handover    : the spec's frame stays up"
+done
+
 BOOT_ESP=stormbootx \
 boot bridge "$host_cpu" "" ok good \
     "boot        : the firmware did not load it (esp = stormbootx); reading the ESP here" \

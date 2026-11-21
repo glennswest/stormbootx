@@ -766,8 +766,10 @@ fn firmware_boot(disk: uefi_raw::Handle) -> Result<Loaded, String> {
         ) {
             Ok(loaded) => {
                 uefi::println!("boot        : starting {} from the attached image", crate::espboot::BOOTLOADER);
+                // The console first (#236), so the guard's panel row is
+                // drawn only where the panel stays.
+                crate::ui::handoff(&format!("starting {}", crate::espboot::BOOTLOADER), stormcos_image());
                 crate::handoffguard::arm();
-                crate::ui::handoff(&format!("starting {}", crate::espboot::BOOTLOADER));
                 let outcome = match boot::start_image(loaded) {
                     Ok(()) => String::from("the image's bootloader exited"),
                     Err(e) => format!("the image's bootloader returned {e:?}"),
@@ -821,14 +823,24 @@ fn bridge_boot(disk: uefi_raw::Handle) -> Result<(), String> {
         Some(p) => p.to_boxed(),
         None => crate::espboot::partition_path(our_dp, &loader.partition)?,
     };
+    crate::ui::handoff(&format!("starting {} (read by stormbootx)", crate::espboot::BOOTLOADER), stormcos_image());
     crate::handoffguard::arm();
-    crate::ui::handoff(&format!("starting {} (read by stormbootx)", crate::espboot::BOOTLOADER));
     let r = crate::espboot::start(&esp_path, &loader, "the attached image (read by stormbootx)");
     crate::handoffguard::disarm();
     if let Err(e) = &r {
         crate::ui::handed_back(e);
     }
     r
+}
+
+/// Whether the attached image is a stormcos image: a pallet in its GPT
+/// (#236). Its bootloader is then stormuefi, and the panel stays up under it;
+/// anything unreadable is "no", which gives the bootloader the console.
+fn stormcos_image() -> bool {
+    let Some(ns) = (unsafe { namespace() }) else { return false };
+    let block_size = ns.geometry.block_size;
+    let mut d = NsDisk { ns, bounce: alloc::vec::Vec::new() };
+    crate::esp::has_pallets(&mut d, block_size).unwrap_or(false)
 }
 
 /// The attached namespace as an `esp::Disk`: any byte range, read as whole

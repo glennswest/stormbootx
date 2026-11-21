@@ -102,6 +102,18 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#236 — review finding 89b3587e2182 in `src/ui.rs` (P1).**
+      Every attached image's bootloader ran under the panel's ConOut hook:
+      a menu or prompt not shown, its keys and F2 dead. Fix: the panel stays
+      only for a stormcos image (a pallet in its GPT, `esp::has_pallets`):
+      its bootloader is stormuefi, lines only, no keys (#220 unchanged).
+      Any other: `ui::handoff(.., false)` suspends the panel before
+      StartImage on both paths (before the guard's arm, so no panel row is
+      painted over it), `handed_back` resumes it. Tests: esp host test;
+      `gpt4k.py --pallet` for the stub's image; net-ovmf `plainimg` and
+      `plainimg-bridge` (no pallet: the console line, the attach, the
+      payload, no frame under it).
+
 - [x] **#235 — review finding c3c3cbf2d83b in `src/shell.rs` (P1). Done 2026-11-21:** d963973; full sc-build passed on 067207d (2507 s, `pcicmd`). Reproduced on wip/235-repro (after `pci` the firmware stopped the drivers under the bus and the console never answered again). v0.45.4.
       The console's `pci` opened each PCI root bridge `EXCLUSIVE`, which may
       disconnect PciBusDxe and every driver under it (the NICs the stack

@@ -2,12 +2,17 @@
 # A GPT disk at 4096-byte blocks with one ESP partition holding ESP.IMG
 # (a FAT image), the shape stormblock lays on a 4K release.
 #
-#   tests/gpt4k.py ESP.IMG DISK.IMG
+#   tests/gpt4k.py ESP.IMG DISK.IMG [--pallet]
+#
+# --pallet (#236) adds a small stormcos pallet-typed partition after the ESP
+# (zeros), as a stormcos image carries: stormbootx then keeps its panel up
+# under the bootloader, which on such an image is stormuefi.
 #
 # Used by tests/net-ovmf.sh (the stub target's disk) and tests/laptop-ovmf.sh
 # (the image stormboot-serve serves, #164).
 import struct, sys, uuid, zlib
 esp, out = sys.argv[1], sys.argv[2]
+pallet = "--pallet" in sys.argv[3:]
 bs = 4096
 data = open(esp, 'rb').read()
 first = (1 << 20) // bs
@@ -17,6 +22,12 @@ entries = bytearray(128 * 128)
 entries[0:128] = (uuid.UUID('C12A7328-F81F-11D2-BA4B-00A0C93EC93B').bytes_le
                   + uuid.uuid4().bytes_le + struct.pack('<QQQ', first, last, 0)
                   + 'EFI system'.encode('utf-16-le').ljust(72, b'\0'))
+if pallet:
+    # In the slack after the ESP, before the backup table.
+    pfirst = last + 8
+    entries[128:256] = (uuid.UUID('A324B90E-CED9-4019-B338-7A5B98E1B7D2').bytes_le
+                        + uuid.uuid4().bytes_le + struct.pack('<QQQ', pfirst, pfirst + 7, 0)
+                        + 'pallet'.encode('utf-16-le').ljust(72, b'\0'))
 ecrc = zlib.crc32(entries)
 disk_guid = uuid.uuid4().bytes_le
 def header(me, alt, table):

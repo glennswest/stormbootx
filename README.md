@@ -135,9 +135,15 @@ run under it (their lines on the serial console and in the handoff step),
 and stormblock's screen draws its own first frame in the same geometry
 before it takes the display. net-ovmf's `shipped` boot checks that the
 frame is still on the screen while the payload runs (`handover : the spec's
-frame stays up`). stormbootx hands `ConOut` back, with a cleared screen,
-only before the network console, a local disk's bootloader, and any return
-to the firmware or the EFI Shell.
+frame stays up`). That is for a stormcos image only (#236): one whose GPT
+carries a stormcos pallet, so its bootloader is stormuefi, which prints lines
+and reads no keys. Any other image's bootloader may draw a menu or ask for a
+key, so stormbootx says `handover : the firmware's console, for a bootloader
+that is not stormuefi` and gives it `ConOut` back before it starts, and the
+panel returns if it comes back (net-ovmf's `plainimg` boots, both ways of
+starting it). stormbootx also hands `ConOut` back, with a cleared screen,
+before the network console, a local disk's bootloader, and any return to the
+firmware or the EFI Shell.
 
 The consoles are read again after every connect over all handles, after the
 NIC take-over and at the handoff (#219): a connect can stop a terminal and

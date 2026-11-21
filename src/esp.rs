@@ -186,6 +186,22 @@ pub fn partitions<D: Disk>(disk: &mut D, block_size: u32, out: &mut [GptEntry]) 
     Ok(n)
 }
 
+/// A stormcos pallet's GPT type, `A324B90E-CED9-4019-B338-7A5B98E1B7D2` as
+/// stored (stormblock's `pallet-format`, `PALLET_TYPE_GUID`).
+pub const PALLET_TYPE: [u8; 16] = [
+    0x0E, 0xB9, 0x24, 0xA3, 0xD9, 0xCE, 0x19, 0x40, 0xB3, 0x38, 0x7A, 0x5B, 0x98, 0xE1, 0xB7, 0xD2,
+];
+
+/// Whether the disk's primary GPT holds a stormcos pallet (#236): the
+/// image is a stormcos image, so its bootloader is stormuefi, which prints
+/// lines and reads no keys, and the boot panel may stay up under it. Any
+/// other image's bootloader gets the firmware's console.
+pub fn has_pallets<D: Disk>(disk: &mut D, block_size: u32) -> Result<bool, Error> {
+    let mut found = false;
+    walk_gpt(disk, block_size, &mut |_, e| found |= e[0..16] == PALLET_TYPE)?;
+    Ok(found)
+}
+
 /// Every entry of the primary GPT, used or not, to `each` (1-based number,
 /// the entry's bytes), then the entry array's CRC: an `Err` means whatever
 /// `each` saw must be thrown away.
@@ -1229,6 +1245,26 @@ mod tests {
             assert_eq!(fat.read_at(&mut img.disk, &e, len + 9, &mut buf, &mut hint), Ok(0));
         }
         assert_eq!(fat.read_at(&mut img.disk, &efi, 0, &mut [0u8; 4], &mut Hint::default()), Err(Error::NotAFile));
+    }
+
+    #[test]
+    fn pallets_are_seen_in_the_gpt() {
+        // #236: no pallet on the test image (an ESP and a type-0x11 entry).
+        let mut img = image("pal", 4096, 4096, 16, 64, 1);
+        assert_eq!(has_pallets(&mut img.disk, img.block), Ok(false));
+        // Entry 1 retyped as a pallet, both CRCs made good again.
+        let bs = img.block as usize;
+        let h = &mut img.disk.head;
+        h[bs * 2..bs * 2 + 16].copy_from_slice(&PALLET_TYPE);
+        let ec = crc32(&h[bs * 2..bs * 2 + 128 * 128]);
+        h[bs + 88..bs + 92].copy_from_slice(&ec.to_le_bytes());
+        h[bs + 16..bs + 20].fill(0);
+        let c = crc32(&h[bs..bs + 92]);
+        h[bs + 16..bs + 20].copy_from_slice(&c.to_le_bytes());
+        assert_eq!(has_pallets(&mut img.disk, img.block), Ok(true));
+        // A table whose CRC is off says nothing.
+        img.disk.head[bs * 2 + 20] ^= 1;
+        assert!(has_pallets(&mut img.disk, img.block).is_err());
     }
 
     #[test]
