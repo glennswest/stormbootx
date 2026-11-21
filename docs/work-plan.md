@@ -102,7 +102,7 @@ then.
 
 ### Open, no external blocker
 
-- [ ] **#241 — review finding dbebc4b303b0 in `src/localinstall.rs` (P1, security).**
+- [x] **#241 — review finding dbebc4b303b0 in `src/localinstall.rs` (P1, security). Done 2026-11-20:** b817d54, full sc-build passed on 9993f28 (dist-ovmf `fixed-otherkey`, `fixed-off`, `two` PASS); the old code failed `fixed-otherkey` (started the refused stick's ESP as the local disk).
       A rejected, `off` or second stormdist medium on a stick that says it is
       fixed stayed eligible for `find_local`. Fix: `find` marks every
       recognised medium `not_local` before the check, scans all disks, runs
