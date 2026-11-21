@@ -18,7 +18,18 @@
 #   installed  the same with a fixed disk that boots: that disk, not the medium
 #   tampered   a byte of the ESP changed after signing: refused, nothing started
 #   otherkey   the ISO signed by another key: refused
-#   off        install_source = off: the medium is not looked at
+#   off        install_source = off: the medium is not used
+#
+# A stick written from the ISO may say it is fixed, and its hybrid GPT carries
+# an ESP with the release's bootloader; the fall-through must never start it
+# as the local disk (#241). With the stick fixed (`usb-storage,removable=off`):
+#
+#   fixed-otherkey  refused: nothing to fall through to, nothing started
+#   fixed-off       install_source = off: likewise
+#   two             a checked CD and a checked fixed stick: the first is
+#                   used, the second is not a local disk, so it installs
+#
+# ONLY="name …" boots only those.
 #
 # The medium is bootable itself and carries a bootindex (OVMF connects only
 # devices in the boot order), so the firmware would start its tcp4probe after
@@ -134,6 +145,10 @@ LISTS='boot fs     : \EFI\BOOT lists'
 boot() {
     local name=$1 iso=$2 how=$3 conf=$4 await=$5 ldisk=$6
     shift 6
+    # ONLY="name …" boots only those (a reproduction, #241).
+    if [[ -n "${ONLY:-}" && " $ONLY " != *" $name "* ]]; then
+        return 0
+    fi
     say "[$name] $(basename "$iso") as a $how; $(printf '%s' "$conf" | tr '\n' ';')"
     cp "$T/base.img" "$T/$name.img"
     printf '%s\n' "$conf" > "$T/local.conf"
@@ -146,6 +161,18 @@ boot() {
     usb) cp "$iso" "$T/$name.stick"
          dist=(-drive if=none,id=dist,format=raw,file="$T/$name.stick"
                -device qemu-xhci,id=xhci -device usb-storage,bus=xhci.0,drive=dist,removable=on,bootindex=2) ;;
+    # A stick that says it is fixed (#241).
+    usbfixed)
+         cp "$iso" "$T/$name.stick"
+         dist=(-drive if=none,id=dist,format=raw,file="$T/$name.stick"
+               -device qemu-xhci,id=xhci -device usb-storage,bus=xhci.0,drive=dist,removable=off,bootindex=2) ;;
+    # The ISO as a CD and a copy of it as a fixed stick: two checked media.
+    cd+usbfixed)
+         cp "$iso" "$T/$name.stick"
+         dist=(-drive if=none,id=dist,format=raw,readonly=on,file="$iso"
+               -device scsi-cd,drive=dist,bus=scsi.0,bootindex=2
+               -drive if=none,id=dist2,format=raw,file="$T/$name.stick"
+               -device qemu-xhci,id=xhci -device usb-storage,bus=xhci.0,drive=dist2,removable=off,bootindex=4) ;;
     esac
     local fixed=()
     [[ "$ldisk" == local ]] && fixed=(-drive if=none,id=ld,format=raw,file="$T/local.img"
@@ -229,7 +256,7 @@ boot tampered "$T/tampered.iso" cd 'install_source = local' 'RESULT:' - \
     "not:$LISTS"
 
 boot otherkey "$T/other.iso" usb '' 'RESULT:' - \
-    'a stormdist medium, refused: BOOT.sig does not verify against the 2 compiled-in release key(s)' \
+    'a stormdist medium, refused (and not a local disk): BOOT.sig does not verify against the 2 compiled-in release key(s)' \
     'not:read boot/esp.img' \
     "not:$STARTED" \
     "not:$LISTS"
@@ -238,5 +265,32 @@ boot off "$T/release.iso" cd 'install_source = off' 'RESULT:' - \
     'not:dist        : stormdist' \
     'not:read boot/esp.img' \
     "not:$LISTS"
+
+# #241: a fixed stick is never the local disk, refused, off, or second.
+NOLOCAL='RESULT: nothing to fall through to'
+FROMLOCAL='from the local disk'
+
+boot fixed-otherkey "$T/other.iso" usbfixed '' 'RESULT:' - \
+    'a stormdist medium, refused' \
+    'BOOT.sig does not verify against the 2 compiled-in release key(s)' \
+    "$NOLOCAL" \
+    "not:$FROMLOCAL" \
+    'not:read boot/esp.img' \
+    "not:$STARTED" \
+    "not:$LISTS"
+
+boot fixed-off "$T/release.iso" usbfixed 'install_source = off' 'RESULT:' - \
+    'a stormdist medium, not used (install_source = off), and not a local disk' \
+    "$NOLOCAL" \
+    "not:$FROMLOCAL" \
+    'not:read boot/esp.img' \
+    "not:$LISTS"
+
+boot two "$T/release.iso" cd+usbfixed '' "$LISTS" - \
+    'BOOT.sig and RELEASE.sig verify, RELEASE.toml matches BOOT.toml' \
+    'verifies too, not used (the first, ' \
+    'and nothing local boots: the stormdist medium' \
+    'not:not installed: the local disk boots' \
+    "$STARTED<<$LISTS"
 
 say PASS
