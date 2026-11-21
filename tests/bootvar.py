@@ -2,6 +2,11 @@
 """Add a one-shot UEFI HTTP boot from a URI to an OVMF variable store (#172).
 
     tests/bootvar.py VARS.fd URI
+    tests/bootvar.py VARS.fd --var NAME GUID ATTRIBUTES DATA
+
+The second form (#238) writes one variable: NAME under GUID with those
+attributes (0x3 is NV|BS, 0x7 NV|BS|RT) holding DATA's bytes, as a machine's
+store might already carry it.
 
 Writes Boot0099 (a short-form `Uri(URI)` device path, which EDK2's boot
 manager expands over every HTTP boot LoadFile it has) and BootNext = 0x0099
@@ -26,22 +31,26 @@ GLOBAL = uuid.UUID("8be4df61-93ca-11d2-aa0d-00e098032b8c").bytes_le
 NV_BS_RT = 0x7
 
 
-def variable(auth, name, data):
+def variable(auth, name, data, guid=GLOBAL, attrs=NV_BS_RT):
     name16 = (name + "\0").encode("utf-16-le")
     if auth:
         # StartId, State, Reserved, Attributes, MonotonicCount, TimeStamp,
         # PubKeyIndex, NameSize, DataSize, VendorGuid
-        head = struct.pack("<HBBIQ16sIII16s", 0x55AA, 0x3F, 0, NV_BS_RT, 0, b"\0" * 16, 0,
-                           len(name16), len(data), GLOBAL)
+        head = struct.pack("<HBBIQ16sIII16s", 0x55AA, 0x3F, 0, attrs, 0, b"\0" * 16, 0,
+                           len(name16), len(data), guid)
         assert len(head) == 60
     else:
-        head = struct.pack("<HBBIII16s", 0x55AA, 0x3F, 0, NV_BS_RT, len(name16), len(data), GLOBAL)
+        head = struct.pack("<HBBIII16s", 0x55AA, 0x3F, 0, attrs, len(name16), len(data), guid)
         assert len(head) == 32
     return head + name16 + data
 
 
 def main():
     path, uri = sys.argv[1], sys.argv[2]
+    one = None
+    if uri == "--var":
+        name, guid, attrs, data = sys.argv[3:7]
+        one = (name, uuid.UUID(guid).bytes_le, int(attrs, 0), data.encode())
     fd = bytearray(open(path, "rb").read())
     at = fd.find(AUTH)
     auth = at >= 0
@@ -61,6 +70,15 @@ def main():
         else:
             nsz, dsz = struct.unpack_from("<II", fd, off + 8)
         off = (off + hlen + nsz + dsz + 3) & ~3
+    if one is not None:
+        name, guid, attrs, data = one
+        new = variable(auth, name, data, guid, attrs)
+        if off + len(new) > end or any(b != 0xFF for b in fd[off:off + len(new)]):
+            sys.exit(f"bootvar: no free space at {off:#x} in the store")
+        fd[off:off + len(new)] = new
+        open(path, "wb").write(fd)
+        print(f"bootvar: {name} ({attrs:#x}) = {data!r} written at {off:#x}")
+        return
     u = uri.encode()
     # EFI_LOAD_OPTION: ACTIVE, the path's length, the description, then the
     # path: Uri() (messaging 0x03, subtype 0x18) and the end node.
