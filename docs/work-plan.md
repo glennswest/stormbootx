@@ -118,7 +118,7 @@ then.
       `local.conf`: the same), `idcut` (only `local.conf.new` there: read
       and kept); update-boots `idfail` on the UEFI side.
 
-- [ ] **#238 — review findings 72491726eb32, c231b2695f8c, d5f305f99f7a, 4f8442f65a87 in `src/api.rs` (major).**
+- [x] **#238 — review findings 72491726eb32, c231b2695f8c, d5f305f99f7a, 4f8442f65a87 in `src/api.rs` (major). Done 2026-11-21:** a2ff54d; full sc-build passed on a2ff54d (2839 s). Reproduced on wip/238-repro (4b9f09e: the four new boots on the old api.rs all fail).
       (1) A signed `hold` taken in a hold with `hold_retry =` set only made
       the hold forever: the retry still restarted the boot. Now `Next::Hold`
       in the hold turns the retry off, as `Stop::Hold` at a fixed point
