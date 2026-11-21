@@ -42,7 +42,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   rustc --edition 2021 --test src/command.rs -o t/command-test && ./t/command-test && \
   rustc --edition 2021 --test src/distmedia.rs -o t/distmedia-test && ./t/distmedia-test && \
   rustc --edition 2021 --test src/bootrec.rs -o t/bootrec-test && ./t/bootrec-test && \
-  cargo test -p nvme-tcp-initiator && \
+  cargo test -p nvme-tcp-initiator && cargo clippy -p nvme-tcp-initiator --all-targets -- -D warnings && \
   R=${CARGO_TARGET_DIR:-target}/x86_64-unknown-uefi/release && \
   tests/esp-ovmf.sh $R/espprobe.efi $R/tcp4probe.efi && \
   STORMNIC_DRIVERS="virtio mlx5 e1000e igb" scripts/build-nic-drivers.sh $PWD/t/nd && \

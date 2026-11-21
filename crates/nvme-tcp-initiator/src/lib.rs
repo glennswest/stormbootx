@@ -1326,7 +1326,7 @@ mod tests {
         let mut q = queue();
         q.sock.out.extend(bytes);
         let mut buf = vec![0u8; 4096];
-        let e = q.complete(1, None, Some(&mut buf)).err().expect("a malformed PDU must be an error");
+        let e = q.complete(1, None, Some(&mut buf)).expect_err("a malformed PDU must be an error");
         (e, q.sock.out.len())
     }
 
