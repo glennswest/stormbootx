@@ -67,7 +67,7 @@ usage() {
     cat <<'USAGE'
 
 Options:
-  --pin            pin the target: portal, port, nqn, nsid and claim = no
+  --pin            write only the portal, with no claim knobs
   --api-port N     engine API port on the portal host (default 9090)
   --probe          boot tcp4probe instead of the agent (a diagnostic stick)
                    when one differs (#186); every golden says rs
@@ -263,11 +263,9 @@ if [[ "$PIN" == "yes" ]]; then
     cat > "$WORK/stormboot.conf" <<CONF
 # stormbootx — this stick names its portal and nothing else.
 #
-# No claim: this machine attaches exactly here, on exactly this namespace,
-# wherever it is plugged in. That is what --pin is for; the ordinary stick
-# claims its image by service tag instead. `claim = no` says so: without it
-# the claim is on, and an engine's answer (or a `local` intent) would replace
-# the namespace below (#234).
+# No claim knobs: this machine attaches exactly here, on exactly this
+# namespace, wherever it is plugged in. That is what --pin is for; the ordinary
+# stick claims its image by service tag instead.
 #
 # Read from \stormboot\stormboot.conf on the media this booted from, found via
 # EFI_LOADED_IMAGE_PROTOCOL, so it is exactly the volume that was booted and
@@ -276,7 +274,6 @@ portal = $PORTAL
 port   = $PORT
 nqn    = $NQN
 nsid   = $NSID
-claim  = no
 CONF
 elif [[ -n "$NOFALLBACK" ]]; then
     cat > "$WORK/stormboot.conf" <<CONF
@@ -607,7 +604,7 @@ fi
 if [[ "$PROBE" == "yes" ]]; then
     say "boots   tcp4probe — reports whether this firmware carries a TCP/IP stack"
 elif [[ "$PIN" == "yes" ]]; then
-    say "target  nvme-tcp://$PORTAL:$PORT/$NQN?nsid=$NSID  (pinned, claim = no)"
+    say "target  nvme-tcp://$PORTAL:$PORT/$NQN?nsid=$NSID  (pinned, no claim knobs)"
 else
     say "portal  $PORTAL:$PORT  (named, no DNS)"
     say "image   claimed as boothost/default by MAC at $PORTAL:$API_PORT (by service tag on older engines)"
