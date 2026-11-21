@@ -102,7 +102,7 @@ then.
 
 ### Open, no external blocker
 
-- [ ] **#233 — review finding 85c49e1e33d3 in `src/manifest.rs` (P1, security).**
+- [x] **#233 — review finding 85c49e1e33d3 in `src/manifest.rs` (P1, security). Done 2026-11-21:** 9323036; full sc-build passed on it (2509 s). Reproduced on wip/233-repro (panicked at `manifest.rs:635`). v0.45.3.
       `dechunk` added a hex chunk size to `rd` unchecked: `ffffffffffffffed`
       wraps `rd + size + 2` to 1 on 64-bit, the guard passes and the slice
       panics, before the manifest's signature is checked (a boot stopped by
