@@ -1191,12 +1191,16 @@ fall_through_within() {
     say "[$1] fall-through $ms ms (wanted $2..$3)"
 }
 # #234 (ad40f4d4558e): a pinned medium claims nothing. The stub engine is
-# up, says `local` for this MAC and answers the claim, so a medium that asked
-# it anything would fall through or attach the engine's answer; the pinned
-# one must attach its own nsid and start the payload, the stub asked nothing.
-BOOT_PIN=1 BOOT_INTENT=local \
+# up and named (`api_port`, which a pinned medium does not write: without it
+# the old code asked 9090 and found nothing), says `local` for this MAC and
+# answers the claim, so a medium that asked it anything would fall through or
+# attach the engine's answer; the pinned one must attach its own nsid and
+# start the payload, the stub asked nothing.
+BOOT_PIN=1 BOOT_INTENT=local BOOT_CONF="api_port = $PORT" \
 boot pinned "$host_cpu" "" ok good \
     "claim       : disabled by the config file" \
+    "not:engine      : " \
+    "not:claim       : boothost/" \
     "blockio     : published on handle" \
     "blockio     : 96 MiB read in all" \
     "is there a TCP/IP stack in this firmware" \
