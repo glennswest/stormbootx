@@ -102,6 +102,16 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#233 — review finding 85c49e1e33d3 in `src/manifest.rs` (P1, security).**
+      `dechunk` added a hex chunk size to `rd` unchecked: `ffffffffffffffed`
+      wraps `rd + size + 2` to 1 on 64-bit, the guard passes and the slice
+      panics, before the manifest's signature is checked (a boot stopped by
+      an unauthenticated response). Fix: the chunk's end and its CRLF's end
+      by `checked_add`, both ranges by `get`, a chunk longer than what is
+      left refused. Test: host vectors in `src/manifest.rs` (the finding's
+      body, `usize::MAX`, a size past the input, a missing CRLF), each
+      `None`; on the old code they panic (reproduction, expect-fail).
+
 - [x] **#232 — review finding b96775eacdee in `crates/nvme-tcp-initiator` (P1, security). Done 2026-11-21:** 3c20e1d + 63faa6a; full sc-build passed on 3c20e1d (2587 s), crate tests + clippy on 63faa6a. Reproduced on wip/232-repro (a 12-byte R2T panicked at `le32`). v0.45.2.
       `recv_pdu` checked only plen, hlen >= 8, then allocated `plen - 8`
       (up to 4 GiB) and indexed fixed fields: a CapsuleResp with plen = hlen
