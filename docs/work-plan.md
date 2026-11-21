@@ -118,7 +118,7 @@ then.
       `local.conf`: the same), `idcut` (only `local.conf.new` there: read
       and kept); update-boots `idfail` on the UEFI side.
 
-- [ ] **#242 — review finding 6406ecfd9ee8 in `src/handoffguard.rs` (major).**
+- [x] **#242 — review finding 6406ecfd9ee8 in `src/handoffguard.rs` (major). Done 2026-11-21:** 7c98c72 + e9c57f9; full sc-build passed on e9c57f9 (2985 s), and no boot in it printed the attached-read line. Reproduced on wip/242-repro (e8e064f: the old `arm` read `local.conf`, `local.conf.prev` and `stormboot.conf` with the image attached).
       `handoffguard::arm` runs with the image attached and read
       `handoff_watchdog =` there (`config::conf_text`: `local.conf` and
       `stormboot.conf` off the medium), in the window #46 keeps the medium
