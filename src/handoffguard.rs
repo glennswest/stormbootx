@@ -115,6 +115,16 @@ fn framebuffer() -> Option<(u64, usize, usize, usize)> {
     None
 }
 
+/// `handoff_watchdog =`, read by `prepare`; `u64::MAX` until then.
+static WATCHDOG: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(u64::MAX);
+
+/// Read `handoff_watchdog =` with the rest of the media, before anything is
+/// attached (6406ecfd9ee8, #242): `arm` runs with the image attached, when
+/// nothing on the medium may be opened (#46).
+pub fn prepare() {
+    WATCHDOG.store(crate::config::handoff_watchdog(), Ordering::SeqCst);
+}
+
 /// As the bootloader from the attached image is started: the two events and
 /// the watchdog. Says on the console what was armed.
 pub fn arm() {
@@ -134,7 +144,12 @@ pub fn arm() {
         fb: framebuffer(),
         before: ptr::null_mut(),
         at: ptr::null_mut(),
-        watchdog: crate::config::handoff_watchdog(),
+        // As `prepare` read it; the default if it never ran. Never the
+        // medium: an image is attached.
+        watchdog: match WATCHDOG.load(Ordering::SeqCst) {
+            u64::MAX => 300,
+            s => s,
+        },
     };
     SAID_ONCE.store(false, Ordering::SeqCst);
     PAINTED.store(false, Ordering::SeqCst);

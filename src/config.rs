@@ -290,6 +290,9 @@ pub fn stated_rng() -> crate::entropy::Start {
 /// which turns it off. `off` (or 0) arms none. Default 300, the five minutes
 /// a firmware boot manager gives any boot option. Anything else unreadable
 /// is the default.
+///
+/// Read at start with the rest of the media (`handoffguard::prepare`), never
+/// at the handoff, when an image is attached (6406ecfd9ee8, #242).
 pub fn handoff_watchdog() -> u64 {
     match conf_text().and_then(|t| field(&t, "handoff_watchdog")).as_deref() {
         Some("off" | "no" | "false") => 0,
@@ -343,6 +346,12 @@ pub fn read_file(path: &str) -> Option<String> {
 /// Read a file from the boot volume, at most `cap + 1` bytes of it: a result
 /// longer than `cap` says the file is over the cap, without reading it all.
 pub fn read_bytes(path: &str, cap: usize) -> Option<Vec<u8>> {
+    // Nothing on the medium is opened with an image attached (#46). A read
+    // here then is a bug, and the console says so (#242: the watchdog's
+    // setting was read at the handoff); the tests require this line absent.
+    if crate::lastlog::sealed() {
+        uefi::println!("config      : {path} read from the boot medium with an image attached (#46)");
+    }
     let handle = boot_volume()?;
     let mut fs = open_fs(handle)?;
     let mut root = fs.open_volume().ok()?;

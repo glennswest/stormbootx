@@ -667,6 +667,9 @@ BOOT_KEY=
 # BOOT_TYPE (#235): console command lines, `|` between them, typed once the
 # console is up (BOOT_KEY=c), each after the one before has had its prompt.
 BOOT_TYPE=
+# BOOT_EJECT=1 (#242): the CD is ejected as stormbootx says `attaching`, so
+# anything that opens the medium with an image attached (#46) finds no medium.
+BOOT_EJECT=
 # BOOT_SMBIOS (#219): an SMBIOS OEM string for the payload (`tcp4probe:ebs`,
 # `tcp4probe:hang`). BOOT_BAND=1: once the boot stops, read the screen's
 # bottom rows and say whether they are the green line stormbootx paints
@@ -766,6 +769,20 @@ boot() {
         -monitor unix:"$W/$name.mon",server,nowait \
         -display none -serial file:"$log" -no-reboot &
     qemu=$! t=0
+    if [[ -n $BOOT_EJECT ]]; then
+        rm -f "$W/$name.ejected"
+        ( while kill -0 "$qemu" 2>/dev/null; do
+              if grep -q "^attaching   : " <(tr -d '\r' < "$log") 2>/dev/null; then
+                  # The monitor answers an eject it refused with text, not a status.
+                  local out
+                  out=$(python3 "$ROOT/tests/screen.py" hmp "$W/$name.mon" eject -f cd0 2>&1) && [[ -z $out ]] \
+                      && { : > "$W/$name.ejected"; say "[$name] the CD ejected at \`attaching\` (#242)"; } \
+                      || say "[$name] the CD could not be ejected: $out"
+                  break
+              fi
+              sleep 0.2
+          done ) &
+    fi
     # BOOT_KEY (#189): a person pressing that key once stormbootx has started,
     # until the console comes up or the VM ends.
     if [[ -n $BOOT_KEY ]]; then
@@ -1205,6 +1222,8 @@ boot bridge "$host_cpu" "" ok good \
 # screen's bottom must be the green line painted after the drivers' handlers.
 # `watchdog`: a payload that hangs before ExitBootServices; the UEFI watchdog
 # (handoff_watchdog = 15) resets the machine, which ends QEMU (-no-reboot).
+# Its CD is ejected at `attaching` (#242, 6406ecfd9ee8): the 15 s must come
+# from the medium as read at start, and nothing may open the medium after.
 BOOT_SMBIOS=tcp4probe:ebs BOOT_BAND=1 WAIT_FOR="tcp4probe   : past ExitBootServices" BOOT_SETTLE=1 \
 boot ebs "$host_cpu" "" ok good \
     "handoff     : watchdog 300 s until ExitBootServices; ExitBootServices marked (a console line before, a green line on the " \
@@ -1213,12 +1232,16 @@ boot ebs "$host_cpu" "" ok good \
     "tcp4probe   : past ExitBootServices" \
     "band        : green along the bottom" \
     "not:ExitBootServices refused four times"
-BOOT_SMBIOS=tcp4probe:hang BOOT_CONF="handoff_watchdog = 15" WAIT_FOR="never printed: the watchdog ends this boot" \
+BOOT_SMBIOS=tcp4probe:hang BOOT_CONF="handoff_watchdog = 15" BOOT_EJECT=1 WAIT_FOR="never printed: the watchdog ends this boot" \
 boot watchdog "$host_cpu" "" ok good \
     "handoff     : watchdog 15 s until ExitBootServices" \
+    "not:read from the boot medium with an image attached" \
     "tcp4probe   : hanging before ExitBootServices (SMBIOS OEM string tcp4probe:hang)" \
     "net-ovmf    : qemu exited by itself" \
     "not:handoff     : ExitBootServices called by the bootloader"
+if [[ -z "${NET_ONLY:-}" || "$NET_ONLY" == watchdog ]]; then
+    [[ -f "$W/watchdog.ejected" ]] || die "[watchdog] the CD was never ejected: the boot proves nothing about #242"
+fi
 
 # #88: a NIC nothing answers. The boot must say so once a second (link, DHCP
 # out and in, frames in) instead of sitting silent until the engine's 30 s

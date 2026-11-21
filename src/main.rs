@@ -1056,6 +1056,9 @@ fn main() -> Status {
     let local = Local { boot: config::local_boot(), reader: config::esp_reader() };
     // The API (#167): its port and command keys, and the hold, from the media.
     api::init();
+    // The handoff's watchdog (#219), read now: the handoff has an image
+    // attached, and opens nothing on the medium (#242).
+    handoffguard::prepare();
 
     // A stormdist release medium (#198): found and checked before the
     // network, installed from now (`install_source = local`) or when the

@@ -154,7 +154,7 @@ Its `ebs` and `watchdog` boots (#219) tell tcp4probe what to do with an SMBIOS
 OEM string (`-smbios type=11,value=tcp4probe:ebs`): call ExitBootServices
 (stormbootx's line before it, tcp4probe's own on COM1 after it, the screen's
 bottom rows green) or hang before it (`handoff_watchdog = 15` must reset the
-VM). Its `httpboot` boot (#172) has no CD: `tests/bootvar.py` writes a
+VM; its CD is ejected at `attaching` (#242), so the 15 s must be the value read at start, and `config.rs`'s `read from the boot medium with an image attached` line must not appear). Its `httpboot` boot (#172) has no CD: `tests/bootvar.py` writes a
 `Uri(http://…/httpboot.iso)` boot option and BootNext into OVMF's variable
 store, the firmware's HTTP boot downloads the ISO into a RAM disk, and
 stormbootx must say `media : a RAM disk`, decline the self-update for it,
@@ -360,7 +360,7 @@ kept for a later need; the test command sets it to keep the code honest.
 | `src/dhcp4.rs` | tcp4probe only since #56: DHCP through the firmware's `EFI_DHCP4` |
 | `src/nvme.rs` | the NVMe/TCP initiator's UEFI end: `TcpSocket` as its `Transport`, `boot::stall` (#10) |
 | `crates/nvme-tcp-initiator` | the NVMe/TCP initiator itself (#10): `no_std` + `alloc`, no dependencies, generic over a `Transport` and a `Platform`, shared with stormboot4bios; reads up to 8 in flight (#100); every PDU's header checked before its body is read (`check_header`, #232: a malformed target is an error, never a panic or a 4 GiB allocation); host tests against a fake controller (`cargo test -p nvme-tcp-initiator`) |
-| `src/handoffguard.rs` | the handoff's guard (#219): a one-shot, allocation-free `BEFORE_EXIT_BOOT_SERVICES` line on the serial consoles and the panel, a green framebuffer line after the drivers' ExitBootServices handlers, the UEFI watchdog (`handoff_watchdog =`, 300 s) until ExitBootServices; `disarm` when the bootloader returns |
+| `src/handoffguard.rs` | the handoff's guard (#219): a one-shot, allocation-free `BEFORE_EXIT_BOOT_SERVICES` line on the serial consoles and the panel, a green framebuffer line after the drivers' ExitBootServices handlers, the UEFI watchdog (`handoff_watchdog =`, 300 s, read at start by `prepare`, never at the handoff: #242) until ExitBootServices; `disarm` when the bootloader returns |
 | `src/handoff.rs` | `StormBootTag`/`StormBootHostNqn`, volatile EFI variables naming the machine to Linux's initramfs (#76, stormblock#249); `StormBootEngine` (#183); `StormBootClock` (#77); `StormBootUpdate` (#83); `StormBootInstallConfig` + chunks (#79) |
 | `src/lastlog.rs` | each start's console on the medium (#213): `\stormboot\last.log` at fixed points before the attach (sealed after it, #46), the failed trial's as `trial.log`, and the claim's `trial_log`/`last_log`/`log` within the agent's 15 KiB |
 | `src/selfupdate.rs` | the boot medium updates itself (#83): trial count and revert at start (a trial payload the launcher did not start goes back at once; a rollback that cannot finish keeps its journal, #229); fetch, Ed25519 check, the new stormbootx as `\stormboot\payload\<serial>.efi` activated by a boot record (others pruned), `*.new`/`*.prev` swap for the rest, restart after `net::up`; on a medium with no launcher the old swap (the migration); `mark_good` after the attach; `StormBootMinSerial` (NV) |

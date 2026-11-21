@@ -118,6 +118,18 @@ then.
       `local.conf`: the same), `idcut` (only `local.conf.new` there: read
       and kept); update-boots `idfail` on the UEFI side.
 
+- [ ] **#242 — review finding 6406ecfd9ee8 in `src/handoffguard.rs` (major).**
+      `handoffguard::arm` runs with the image attached and read
+      `handoff_watchdog =` there (`config::conf_text`: `local.conf` and
+      `stormboot.conf` off the medium), in the window #46 keeps the medium
+      shut. Fix: `handoffguard::prepare` reads it at start, after
+      `api::init`, and `arm` takes the stored value (300 s if never read).
+      `config::read_bytes` says `… read from the boot medium with an image
+      attached (#46)` whenever `lastlog` is sealed, so any other such read
+      shows. Test: net-ovmf `watchdog` ejects its CD at `attaching`
+      (`BOOT_EJECT`, the eject checked): `watchdog 15 s` must still be
+      armed, and the read line must not appear.
+
 - [x] **#238 — review findings 72491726eb32, c231b2695f8c, d5f305f99f7a, 4f8442f65a87 in `src/api.rs` (major). Done 2026-11-21:** a2ff54d; full sc-build passed on a2ff54d (2839 s). Reproduced on wip/238-repro (4b9f09e: the four new boots on the old api.rs all fail).
       (1) A signed `hold` taken in a hold with `hold_retry =` set only made
       the hold forever: the retry still restarted the boot. Now `Next::Hold`

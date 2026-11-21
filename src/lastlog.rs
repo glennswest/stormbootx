@@ -157,6 +157,12 @@ pub fn seal() {
     keep().sealed = true;
 }
 
+/// Whether an image is attached: nothing on the medium may be opened
+/// (`config::read_bytes` says so if it is, #242).
+pub fn sealed() -> bool {
+    keep().sealed
+}
+
 /// The attached image is gone (or none was published).
 pub fn unseal() {
     keep().sealed = false;
