@@ -3,9 +3,13 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
-### 2026-11-21
-- **fix:** #236 (89b3587e2182): an attached image's bootloader that is not stormuefi gets the firmware's console. The panel stays up under the bootloader only for a stormcos image: one whose GPT carries a stormcos pallet (`esp::has_pallets`), whose bootloader is stormuefi, which prints lines and reads no keys (#220's no-flash hand-over is unchanged there). For any other image stormbootx prints `handover : the firmware's console, for a bootloader that is not stormuefi (no stormcos pallet on the image)`, suspends the panel before `StartImage` on both paths (the firmware's FAT and stormbootx's own read), and resumes it if the bootloader returns. Before, every bootloader ran under the panel: a text menu or prompt was not shown, its keys went unanswered, and F2 was dead.
-- **test:** #236: `esp.rs`'s `pallets_are_seen_in_the_gpt`. `tests/gpt4k.py --pallet`: the stub's image carries a pallet partition, as a stormcos image does, so the existing boots keep the panel (`shipped` still checks the frame). New net-ovmf boots `plainimg` and `plainimg-bridge` attach the same image without one: the console line, the 96 MiB attach, the payload, and no frame on the screen under it.
+## [v0.45.5] — 2026-11-21
+
+### Fixed
+- #236 (89b3587e2182): an attached image's bootloader that is not stormuefi gets the firmware's console. The panel stays up under the bootloader only for a stormcos image: one whose GPT carries a stormcos pallet (`esp::has_pallets`), whose bootloader is stormuefi, which prints lines and reads no keys (#220's no-flash hand-over is unchanged there). For any other image stormbootx prints `handover : the firmware's console, for a bootloader that is not stormuefi (no stormcos pallet on the image)`, suspends the panel before `StartImage` on both paths (the firmware's FAT and stormbootx's own read), and resumes it if the bootloader returns. Before, every bootloader ran under the panel: a text menu or prompt was not shown, its keys went unanswered, and F2 was dead.
+
+### Tests
+- #236: `esp.rs`'s `pallets_are_seen_in_the_gpt`; espprobe says `pallets : …` for each disk (esp-ovmf requires `none`). `tests/gpt4k.py --pallet`: the stub's image carries a pallet partition, as a stormcos image does, so the existing boots keep the panel (`shipped` still checks the frame). New net-ovmf boots `plainimg` and `plainimg-bridge` attach the same image without one: the console line, the 96 MiB attach, the payload, and no frame on the screen under it.
 
 ## [v0.45.4] — 2026-11-21
 

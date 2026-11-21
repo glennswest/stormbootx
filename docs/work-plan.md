@@ -102,7 +102,7 @@ then.
 
 ### Open, no external blocker
 
-- [ ] **#236 — review finding 89b3587e2182 in `src/ui.rs` (P1).**
+- [x] **#236 — review finding 89b3587e2182 in `src/ui.rs` (P1). Done 2026-11-21:** dea48a6 + 56b93d6 + dcc5106; full sc-build passed on dcc5106 (2534 s). Reproduced on wip/236-repro (a no-pallet image booted under the frame). v0.45.5.
       Every attached image's bootloader ran under the panel's ConOut hook:
       a menu or prompt not shown, its keys and F2 dead. Fix: the panel stays
       only for a stormcos image (a pallet in its GPT, `esp::has_pallets`):
