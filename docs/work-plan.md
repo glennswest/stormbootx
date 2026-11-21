@@ -116,7 +116,7 @@ then.
       `Result`, keeps the records that stay, `blockio::withdraw` returns the
       error (main resets). espprobe holds it open `EXCLUSIVE` and requires
       the refusal (`tests/esp-ovmf.sh`).
-- [ ] **#229 — review findings in `src/selfupdate.rs` (P1, stormcentral#1558).**
+- [x] **#229 — review findings in `src/selfupdate.rs` (P1, stormcentral#1558). Done 2026-11-20:** all three fixed; the full sc-build passed on 9993f28 (2685 s: bootrec host suite, update-ovmf's migration, trial, `held`/`revert`, `cut` and the four `launch-*` boots, stick.sh). v0.45.0.
       f0736064aeff and a689832bcbe2 fixed in f81ae24 (sc-build passed).
       **1e8c7deb4259 (no bootable path between the two bootloader renames):
       the master's call on #229 (2026-11-20, not an owner ruling): a stable
