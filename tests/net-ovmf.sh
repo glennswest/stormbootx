@@ -668,6 +668,11 @@ BOOT_TYPE=
 # after the drivers' ExitBootServices handlers.
 BOOT_SMBIOS=
 BOOT_BAND=
+# BOOT_DEADNICS=<n> (#239): n more NICs ahead of the real one on the bus, each
+# leased by a slirp of its own whose router is 10.0.2.4: 10.0.2.2 is on-link
+# there and nothing answers its ARP, so a SYN to the engine never leaves (the
+# wrong wire: no answer, no reset; `restrict=on` would reset).
+BOOT_DEADNICS=
 boot() {
     local name=$1 cpu=$2 rng=$3 claim=$4 ntp=$5; shift 5
     # NET_ONLY=<name>: run that boot alone (a rerun of one failure).
@@ -726,6 +731,10 @@ boot() {
         nicopt=,bootindex=1 ipv4=yes
         extra+=(-device virtio-rng-pci)
     fi
+    local dead=() k
+    for ((k = 1; k <= ${BOOT_DEADNICS:-0}; k++)); do
+        dead+=(-netdev "user,id=dn$k,host=10.0.2.4" -device "virtio-net-pci,netdev=dn$k,romfile=")
+    done
     [[ $name == shipped ]] && extra+=("${LOCAL_DRIVES[@]}")
     [[ -n $BOOT_SMBIOS ]] && extra+=(-smbios "type=11,value=$BOOT_SMBIOS")
     [[ -n "$BOOT_DISK" ]] && extra+=(-device virtio-scsi-pci,id=scsi0
@@ -745,7 +754,7 @@ boot() {
         -drive if=pflash,format=raw,file="$W/$name.vars" \
         -fw_cfg name=opt/org.tianocore/IPv4Support,string=$ipv4 \
         -fw_cfg name=opt/org.tianocore/IPv6Support,string=no \
-        "${net[@]}" -device "${BOOT_NIC:-virtio-net-pci},netdev=n0$([[ -n $BOOT_NIC_ROM ]] || echo ,romfile=)$nicopt${BOOT_NICDEV:+,$BOOT_NICDEV}" \
+        "${dead[@]}" "${net[@]}" -device "${BOOT_NIC:-virtio-net-pci},netdev=n0$([[ -n $BOOT_NIC_ROM ]] || echo ,romfile=)$nicopt${BOOT_NICDEV:+,$BOOT_NICDEV}" \
         -object filter-dump,id=fd0,netdev=n0,file="$W/$name.pcap" \
         "${media[@]}" "${extra[@]}" \
         -debugcon file:"$W/$name.debug" -global isa-debugcon.iobase=0x402 \
@@ -1117,6 +1126,16 @@ boot bootport-silent "$host_cpu" "" ok good \
     "stub:GET /api/v1/health" \
     "handed down : StormBootEngine = 10.0.2.2:$PORT  (attributes 0x6)" \
     "is there a TCP/IP stack in this firmware"
+# #239 (7e4c6aff3459): four leased NICs, only the last on the engine's wire.
+# The first three take their 5 s each, the whole 15 s, and the fourth must
+# still be asked and reach the boot port, not api_port.
+BOOT_DEADNICS=3 BOOT_CONF="boot_port = $ENGINE_BOOT_PORT" STOP_AT="engine      : stormblock 19.4.0" BOOT_SETTLE=1 \
+boot bootport-fourth "$host_cpu" "" ok good \
+    "    nic 3 (" \
+    ") reached 10.0.2.2:$ENGINE_BOOT_PORT" \
+    "engine      : reached 10.0.2.2:$ENGINE_BOOT_PORT (the boot port)" \
+    "not:no boot port at" \
+    "not:(api_port)"
 # `off` asks api_port alone.
 BOOT_CONF="boot_port = off" STOP_AT="engine      : stormblock 19.4.0" BOOT_SETTLE=1 \
 boot bootport-off "$host_cpu" "" ok good \
