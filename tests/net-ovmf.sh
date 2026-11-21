@@ -646,6 +646,9 @@ BOOT_NIC_ROM=
 BOOT_HTTP=
 # BOOT_KEY (#189): a key sent to the keyboard from stormbootx's start.
 BOOT_KEY=
+# BOOT_TYPE (#235): console command lines, `|` between them, typed once the
+# console is up (BOOT_KEY=c), each after the one before has had its prompt.
+BOOT_TYPE=
 # BOOT_SMBIOS (#219): an SMBIOS OEM string for the payload (`tcp4probe:ebs`,
 # `tcp4probe:hang`). BOOT_BAND=1: once the boot stops, read the screen's
 # bottom rows and say whether they are the green line stormbootx paints
@@ -743,7 +746,23 @@ boot() {
               grep -q "NVMe/TCP boot extension" "$log" 2>/dev/null \
                   && python3 "$ROOT/tests/screen.py" key "$W/$name.mon" "$BOOT_KEY" >/dev/null 2>&1
               sleep 0.2
-          done ) &
+          done
+          if [[ -n $BOOT_TYPE ]] && grep -q "stormbootx console\." "$log" 2>/dev/null; then
+              local cmds line n
+              IFS='|' read -ra cmds <<< "$BOOT_TYPE"
+              for line in "${cmds[@]}"; do
+                  # The prompt this line answers, then the keys.
+                  n=$(grep -o '> ' "$log" | wc -l)
+                  python3 "$ROOT/tests/screen.py" type "$W/$name.mon" "$line" >/dev/null 2>&1 || break
+                  # Its answer: the next prompt, or the console gone.
+                  for _ in $(seq 1 150); do
+                      (( $(grep -o '> ' "$log" | wc -l) > n )) && break
+                      grep -q "continuing\." "$log" 2>/dev/null && break
+                      kill -0 "$qemu" 2>/dev/null || break
+                      sleep 0.2
+                  done
+              done
+          fi ) &
     fi
     # Stop once the payload has spoken, or at a fall-through.
     local stuck=
@@ -1227,6 +1246,26 @@ boot localdisk-key "$host_cpu" "" ok good \
     "console     : no wait, the local disk was asked for" \
     "stormbootx console." \
     "not:press c for the network console"
+
+# #235 (c3c3cbf2d83b): the console's `pci` only looks. It opened each root
+# bridge EXCLUSIVE, which may disconnect PciBusDxe and every driver under it
+# (the NIC the stack holds, the local disk) or, refused, skip the bridge
+# unsaid. Typed into the console: `pci` must list the virtio NIC, `connect`
+# to the stub engine must open over the live stack after it, and `boot`
+# falls through to the local disk, which must start.
+BOOT_INTENT=local BOOT_DISK="$W/localboot.img" BOOT_KEY=c WAIT_FOR="is there a TCP/IP stack in this firmware" \
+BOOT_TYPE="pci|connect 10.0.2.2 $PORT|boot" \
+boot pcicmd "$host_cpu" "" ok good \
+    "stormbootx console." \
+    "1 network controller(s) on the bus" \
+    "  OPEN — the path works and the port is listening" \
+    "continuing." \
+    "net         : 1 of 1 NIC(s) given back to the firmware (exclusive SNP closed, reconnected)" \
+    "boot        : starting \\EFI\\BOOT\\BOOTX64.EFI from the local disk" \
+    "is there a TCP/IP stack in this firmware" \
+    "not:not opened (" \
+    "not:nothing matched (try" \
+    "not:FAILED — "
 
 BOOT_NOFALLBACK=1 BOOT_DISK="$W/localboot.img" WAIT_FOR="is there a TCP/IP stack in this firmware" \
 boot localdisk-fail "$host_cpu" "" 404 good \

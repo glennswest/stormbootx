@@ -3,6 +3,7 @@
 
   screen.py dump SOCK OUT.ppm      screendump through the QEMU monitor socket
   screen.py key SOCK KEY           sendkey (f2, esc, ...)
+  screen.py type SOCK TEXT         TEXT typed key by key, then Enter (#235)
   screen.py panel PPM              the panel is drawn: the spec's frame (#220,
                                    stormblock-screen-spec), its header bar
                                    amber (or red, failed) and the lower
@@ -113,6 +114,15 @@ def main():
         sys.exit("no screendump")
     if cmd == "key":
         monitor(sys.argv[2], f"sendkey {sys.argv[3]}")
+        return 0
+    if cmd == "type":
+        # QEMU's key names for what a console command needs.
+        names = {" ": "spc", ".": "dot", "-": "minus", "/": "slash"}
+        for ch in sys.argv[3]:
+            if not (ch.isascii() and (ch.islower() or ch.isdigit())) and ch not in names:
+                sys.exit(f"type: no key for {ch!r}")
+            monitor(sys.argv[2], f"sendkey {names.get(ch, ch)}")
+        monitor(sys.argv[2], "sendkey ret")
         return 0
     if cmd == "hmp":
         text = monitor(sys.argv[2], " ".join(sys.argv[3:]))
