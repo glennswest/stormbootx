@@ -118,6 +118,7 @@ then.
       `local.conf`: the same), `idcut` (only `local.conf.new` there: read
       and kept); update-boots `idfail` on the UEFI side.
 
+- [x] **#259 — secret scan, `generic-api-key` at `CLAUDE.md:642` (P1). Done 2026-11-23:** a false positive. In the Status line's v0.33.0 entry the rule took "API" as its keyword, the comma after "port 9180" as an assignment, and "Ed25519-signed" (3.52 bits, over the rule's 3.5) as the value. Reworded to "port 9180 taking Ed25519-signed commands" rather than allowlisted; no `.gitleaks.toml`. The rule's regex and entropy, run over CLAUDE.md, CHANGELOG.md and this file, match nothing.
 - [x] **#242 — review finding 6406ecfd9ee8 in `src/handoffguard.rs` (major). Done 2026-11-21:** 7c98c72 + e9c57f9; full sc-build passed on e9c57f9 (2985 s), and no boot in it printed the attached-read line. Reproduced on wip/242-repro (e8e064f: the old `arm` read `local.conf`, `local.conf.prev` and `stormboot.conf` with the image attached).
       `handoffguard::arm` runs with the image attached and read
       `handoff_watchdog =` there (`config::conf_text`: `local.conf` and

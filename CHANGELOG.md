@@ -3,6 +3,9 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+### 2026-11-23
+- **docs:** #259: CLAUDE.md's Status line reworded where stormcentral's secret scan (gitleaks `generic-api-key`) read `Ed25519-signed` as a key. A false positive: no secret, nothing to rotate.
+
 ### 2026-11-21
 - **fix:** #242 (6406ecfd9ee8): the handoff no longer opens the boot medium. `handoff_watchdog =` is read at start with the rest of the media (`handoffguard::prepare`). Before, it was read as the attached image's bootloader was started, the window in which nothing on the medium is opened (#46). `config` now prints a line whenever the medium is read with an image attached.
 - **test:** #242: net-ovmf `watchdog`: the medium's 15 s is armed, and no medium read may be reported with the image attached.
