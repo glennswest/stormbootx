@@ -1033,6 +1033,17 @@ then.
       `wait-hardware` on an X9. **2026-11-07:** pinned (#192, v0.39.2,
       49395f0), goldens requested; `wait-hardware` server1 on the rustnic
       golden. mlx4's 1500 (stormnic-mlx4#26) is still open.
+      **2026-11-25, the master:** the hardware queue item is cancelled
+      (owner: "There should be no hardware issues"; hardware time is the
+      owner's to schedule); the issue stays open and the master re-proposes
+      it when the owner names the machine and the day. Checked 2026-11-24:
+      nothing left to change here. The rustnic pin is ixgbe 02fcc5d, which
+      carries 4b4813d's 9000; no blade has booted it yet (stormnic-ixgbe#33's
+      latest: the newest ixgbe on any SOL capture is 728b328). The proof is
+      one X9 boot (server1 recommended there, on
+      `golden-stormbootx-rustnic-3a9c7bf19e9aba2d`), shared with
+      stormnic-ixgbe#33 and #35: `mtu 9000 (DHCP option 26)` on the lease
+      line, `path MTU 9000` on the attach, the claim done.
 
 - [ ] **#162 — the log over the network (stormcast multicast + a unicast
       syslog target) once a NIC holds a lease (P1, the master, 2026-10-21).
