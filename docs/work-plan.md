@@ -2142,6 +2142,24 @@ then.
       (2026-10-28): promote `golden-stormbootx-rustnic-30f13448364db159`
       (v0.35.0) as serial 3 to server1's MAC and boot it; pass is
       `v0.29.0 -> v0.35.0 … restarting into it`, then `good:3`.
+      **2026-11-25, the master:** the hardware queue item is cancelled
+      (owner: "There should be no hardware issues"; hardware time is the
+      owner's to schedule); the issue stays open and the master re-proposes
+      it when the owner names the machine and the day. **Checked
+      2026-11-24 in stormcentral's syslog (30 days):** trials passed on
+      metal for serials 6 and 7 (forge1, 11-13/14), 14 (C2NR0Q2, forge1,
+      11-14) and 15 (C2NR0Q2 `attached`, forge1 `intent is local`, 11-15),
+      but no host other than the test VMs (`mac-525400123456`) ever logged
+      `update : v… -> v… …; restarting into it`: every serial on metal was
+      put on its medium some other way (stormbootx-stick, or a stick
+      written from a golden), not by `selfupdate.rs`'s fetch. Since v0.45.0
+      (#229) that path writes a payload and a boot record rather than the
+      `.new`/`.prev` swap, so the pass is now `… restarting into it`, then
+      `payload : \stormboot\payload\<serial>.efi, started by the launcher`
+      and `passed its trial`. Needs: a serial newer than the stick's,
+      promoted to one machine as a canary (served today: rustnic serial 15,
+      v0.43.0, canaries only), and that machine booting from its stick with
+      no Linux updater run in between. Nothing to change in this repo.
 
 - [x] **#90 — the claim names the boot agent (P2, stormcentral#286).
       Closed 2026-10-06.** Every claim body carries `"agent":{"name":
