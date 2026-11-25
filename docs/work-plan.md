@@ -356,6 +356,14 @@ then.
       own drivers first` (claim, `RESULT`, `handoff : ExitBootServices
       called …`).
 
+      **2026-11-25, the master:** the hardware queue item is cancelled
+      (owner: "There should be no hardware issues"; hardware time is the
+      owner's to schedule). Nothing is left to build or test from here:
+      every part OVMF can show passed on e3dd051. The issue stays open
+      until the owner names the machine (forge1, rustnic medium, serial 15
+      or later) and the day; the master re-proposes it then. Checked again
+      2026-11-24: no code change pending.
+
 - [x] **#213 — a failed self-update trial explains itself (P1, the master,
       2026-11-14).** C2NR0Q2's serial 8 trial left no line anywhere: no
       lease (no syslog), no console capture, and the claim said only
