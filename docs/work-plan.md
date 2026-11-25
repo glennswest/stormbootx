@@ -777,6 +777,14 @@ then.
       lost job). **Left:** the master's promotion to every medium and server7
       booting through it (`wait-hardware`). **Not run:** Aptio 4's own shell
       on the new script (`set -v`; if it refuses, the old behaviour, by design).
+      **2026-11-25, the master:** the hardware queue item is cancelled
+      (owner: "There should be no hardware issues"; hardware time is the
+      owner's to schedule); the issue stays open and the master re-proposes
+      it when the owner names the machine and the day. Checked 2026-11-24:
+      nothing left to change here; `stormcentral stormbootx status` serves
+      `stormbootx-rustnic` serial 15 (v0.43.0, which carries #145, #148 and
+      this fix) to its two canaries only (`widen off`), so widening it to
+      every medium is still the master's step before server7 can prove it.
 
 - [ ] **#172 — the Orion O6N (arm64, no BMC, PXE/TFTP broken in its
       UEFI v1.2.1, HTTP boot works): stormbootx-arm64 from a USB stick or
