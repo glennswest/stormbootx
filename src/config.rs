@@ -332,6 +332,26 @@ pub fn stated_syslog() -> Option<String> {
     field(&conf_text()?, "syslog")
 }
 
+struct InstallCfg(core::cell::UnsafeCell<Option<Option<String>>>);
+// Boot services are single-threaded.
+unsafe impl Sync for InstallCfg {}
+static INSTALL_CFG: InstallCfg = InstallCfg(core::cell::UnsafeCell::new(None));
+
+/// The media's `install-config.yaml` as text, read once (at the top of the
+/// first `run`, with the rest of the media) and kept: the fresh install's
+/// `wipe:` and `storage: drives:` (#262) are read from it after the claim,
+/// and nothing on the media is opened once an image is attached (#46).
+pub fn install_config_text() -> Option<&'static str> {
+    let slot = unsafe { &mut *INSTALL_CFG.0.get() };
+    if slot.is_none() {
+        let text = read_bytes(crate::installconf::PATH, crate::installconf::MAX)
+            .filter(|b| b.len() <= crate::installconf::MAX)
+            .and_then(|b| String::from_utf8(b).ok());
+        *slot = Some(text);
+    }
+    slot.as_ref().and_then(|t| t.as_deref())
+}
+
 /// Read a file from the boot volume as text.
 pub fn read_file(path: &str) -> Option<String> {
     // Config files here are a few hundred bytes; refuse anything that is not,

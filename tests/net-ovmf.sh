@@ -678,6 +678,9 @@ BOOT_BAND=
 # there and nothing answers its ARP, so a SYN to the engine never leaves (the
 # wrong wire: no answer, no reset; `restrict=on` would reset).
 BOOT_DEADNICS=
+# BOOT_FRESH=1 (#262): the fresh install's drives (`fresh_drives`) beside
+# the CD.
+BOOT_FRESH=
 boot() {
     local name=$1 cpu=$2 rng=$3 claim=$4 ntp=$5; shift 5
     # NET_ONLY=<name>: run that boot alone (a rerun of one failure).
@@ -741,6 +744,7 @@ boot() {
         dead+=(-netdev "user,id=dn$k,host=10.0.2.4" -device "virtio-net-pci,netdev=dn$k,romfile=")
     done
     [[ $name == shipped ]] && extra+=("${LOCAL_DRIVES[@]}")
+    [[ -n $BOOT_FRESH ]] && extra+=("${FRESH_DRIVES[@]}")
     [[ -n $BOOT_SMBIOS ]] && extra+=(-smbios "type=11,value=$BOOT_SMBIOS")
     [[ -n "$BOOT_DISK" ]] && extra+=(-device virtio-scsi-pci,id=scsi0
         -drive if=none,id=d0,format=raw,file="$BOOT_DISK" -device scsi-hd,drive=d0,bus=scsi0.0,bootindex=2)
@@ -1255,6 +1259,118 @@ boot intent "$host_cpu" "" ok good \
     "not:claim       : boothost/" \
     "local       : nothing to boot (" \
     "press c for the network console, or wait 5s to continue"
+
+# #262: the fresh install. Five drives beside the boot CD: an NVMe disk with
+# a GPT (an ESP and a Linux partition carrying an XFS-like header at its
+# start), a blank-tabled SATA disk full of a pattern, a fixed SCSI disk whose
+# ESP carries `\stormboot` (a stormbootx stick that says it is fixed), and a
+# USB stick. `fresh` must wipe the NVMe and SATA disks (both 64 MiB ends and
+# every partition's ends, read back zero), leave a sentinel between them,
+# and never touch the CD, the stormbootx stick or the USB stick; a plain
+# `install` wipes nothing; `wipe: fresh` in install-config.yaml with a
+# `storage: drives:` list wipes only the drive it names.
+fresh_drives() {
+    rm -f "$W"/fresh-*.img
+    python3 - "$W" <<'PY'
+import sys
+W = sys.argv[1]
+for name, mib in (("nvme", 256), ("sata", 160), ("usb", 64)):
+    with open(f"{W}/fresh-{name}.img", "wb") as f:
+        block = (f"STORMFRESH-{name}-".encode() * 512)[:4096]
+        for _ in range(mib * 256):
+            f.write(block)
+PY
+    sfdisk --quiet --label gpt "$W/fresh-nvme.img" <<PARTS
+start=2048, size=65536, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, name="EFI system"
+start=204800, size=307200, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, name="data"
+PARTS
+    # A filesystem header at the Linux partition's start (100 MiB), and a
+    # sentinel at 130 MiB that no range of the plan reaches.
+    printf 'XFSB' | dd of="$W/fresh-nvme.img" bs=1 seek=$((100 << 20)) conv=notrunc status=none
+    printf 'SENTINEL-262' | dd of="$W/fresh-nvme.img" bs=1 seek=$((130 << 20)) conv=notrunc status=none
+    truncate -s 64M "$W/fresh-stick.img"
+    sfdisk --quiet --label gpt "$W/fresh-stick.img" <<PARTS
+start=2048, size=65536, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B
+PARTS
+    rm -f "$W/fresh-stick-esp.img"
+    mkfs.fat -C -F 16 -n STORMBOOT "$W/fresh-stick-esp.img" 32768 >/dev/null
+    mmd -i "$W/fresh-stick-esp.img" ::/EFI ::/EFI/BOOT ::/stormboot
+    printf 'name = otherstick\n' > "$W/fresh-stick.conf"
+    mcopy -i "$W/fresh-stick-esp.img" "$W/fresh-stick.conf" ::/stormboot/stormboot.conf
+    dd if="$W/fresh-stick-esp.img" of="$W/fresh-stick.img" bs=1M seek=1 conv=notrunc status=none
+    sha256sum "$W/fresh-stick.img" "$W/fresh-usb.img" "$W/fresh-nvme.img" "$W/fresh-sata.img" > "$W/fresh.before"
+}
+FRESH_DRIVES=(-drive if=none,id=fnv,format=raw,file="$W/fresh-nvme.img"
+    -device nvme,id=fnv0,serial=FRESH001 -device nvme-ns,drive=fnv,bus=fnv0,nsid=1
+    -drive if=none,id=fsa,format=raw,file="$W/fresh-sata.img"
+    -device ide-hd,drive=fsa,bus=ide.3,serial=FRESH002
+    -drive if=none,id=fst,format=raw,file="$W/fresh-stick.img"
+    -device scsi-hd,drive=fst,bus=cdscsi.0,serial=FRESH003,removable=off
+    -device qemu-xhci,id=fxhci
+    -drive if=none,id=fus,format=raw,file="$W/fresh-usb.img"
+    -device usb-storage,bus=fxhci.0,drive=fus,serial=FRESH004,removable=off)
+# fresh_same NAME IMG...: each image as it was before the boot.
+fresh_same() {
+    local name=$1 img; shift
+    for img in "$@"; do
+        grep -F "$W/fresh-$img.img" "$W/fresh.before" | sha256sum -c --quiet - >/dev/null 2>&1 \
+            && say "[$name] fresh-$img.img untouched" || die "[$name] fresh-$img.img was written"
+    done
+}
+# fresh_zero NAME IMG OFFSET_MIB LEN_MIB: that range of the image is all zero.
+fresh_zero() {
+    python3 - "$W/fresh-$2.img" "$3" "$4" <<'PY' || die "[$1] fresh-$2.img: $3 MiB +$4 MiB is not zero"
+import sys
+f = open(sys.argv[1], "rb"); f.seek(int(sys.argv[2]) << 20)
+d = f.read(int(sys.argv[3]) << 20)
+sys.exit(0 if d and not any(d) else 1)
+PY
+    say "[$1] fresh-$2.img: $3 MiB +$4 MiB zero"
+}
+
+fresh_drives
+BOOT_INTENT=fresh BOOT_FRESH=1 BOOT_SYSLOG=off \
+boot fresh "$host_cpu" "" ok good \
+    "intent      : fresh" \
+    "wipe        : fresh install: " \
+    "FRESH001: wiped (" \
+    "FRESH002: wiped (" \
+    "FRESH003: skipped: stormbootx media" \
+    ": skipped: usb" \
+    ": skipped: boot media" \
+    "handoff     : StormBootWipe = " \
+    "drive(s) wiped; the rest skipped" \
+    "not:FAILED" \
+    "not:REFUSED" \
+    "is there a TCP/IP stack in this firmware"
+fresh_same fresh stick usb
+for z in "0 64" "192 64" "100 1" "249 1"; do fresh_zero fresh nvme $z; done
+for z in "0 64" "96 64"; do fresh_zero fresh sata $z; done
+python3 -c 'import sys; f=open(sys.argv[1],"rb"); f.seek(130<<20); sys.exit(0 if f.read(12)==b"SENTINEL-262" else 1)' \
+    "$W/fresh-nvme.img" && say "[fresh] the sentinel between the ranges is kept" \
+    || die "[fresh] the wipe wrote past its ranges (the sentinel at 130 MiB is gone)"
+
+fresh_drives
+BOOT_INTENT=install BOOT_FRESH=1 BOOT_SYSLOG=off \
+boot freshno "$host_cpu" "" ok good \
+    "intent      : install" \
+    "not:wipe        : " \
+    "not:StormBootWipe" \
+    "is there a TCP/IP stack in this firmware"
+fresh_same freshno stick usb nvme sata
+
+fresh_drives
+printf 'wipe: fresh\nstorage:\n  drives: [FRESH002]\n' > "$W/fresh-ic.yaml"
+BOOT_INTENT=install BOOT_FRESH=1 BOOT_SYSLOG=off BOOT_IC="$W/fresh-ic.yaml" \
+boot freshic "$host_cpu" "" ok good \
+    "intent      : fresh  (install, and wipe: fresh in" \
+    "FRESH002: wiped (" \
+    "FRESH001: skipped: not in storage.drives" \
+    "FRESH003: skipped: stormbootx media" \
+    "not:FAILED" \
+    "is there a TCP/IP stack in this firmware"
+fresh_same freshic stick usb nvme
+fresh_zero freshic sata 0 64
 
 # #189: the ordinary reboot: `local`, and a local disk that boots (the payload
 # as its BOOTX64.EFI). No wait: `fall-through` under 300 ms in the timing line.

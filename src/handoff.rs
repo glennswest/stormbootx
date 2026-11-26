@@ -15,6 +15,7 @@
 //! | `StormBootEngine` | `<addr>:<port>` where the engine answered: its boot port, else `api_port` (#183) |
 //! | `StormBootClock` | `synced:<NTP server address>` or `unsynced` (#77, `clock.rs`) |
 //! | `StormBootUpdate` | the medium's self-update (#83, `selfupdate.rs`): `serial:<n>`, `trial:<n>:<start>`, `good:<n>` or `failed:<n>` |
+//! | `StormBootWipe` | the fresh install's wipe (#262): one line per drive, `disk N (bus) model serial: wiped (…)` or `: skipped: <why>` |
 //! | `StormBootInstallConfig` (+ `…0`..`…<N-1>`) | the media's `install-config.yaml` (#79): `v1:<length>:<N>:<sha256>`, the bytes in `N` chunks (`installconf.rs`) |
 //!
 //! Vendor GUID `ab361f54-0166-44a4-a088-1ac22e98ab76`, attributes
@@ -145,6 +146,28 @@ pub fn set_install_config() {
     };
     let label = format!("{} ({} bytes in {n} chunk(s))", installconf::NAME, body.len());
     set(cstr16!("StormBootInstallConfig"), &label, header);
+}
+
+/// The fresh install's wipe (#262), one line per drive (`wipe.rs`), for the
+/// installer to put in its install report: `StormBootWipe`, volatile, the
+/// lines joined by newlines, cut at a line to stay under 1 KiB (EDK2's
+/// default variable size); a cut list ends `…`.
+pub fn set_wipe(lines: &[alloc::string::String]) {
+    const CAP: usize = 900;
+    let mut v = alloc::string::String::new();
+    for l in lines {
+        if v.len() + l.len() + 1 > CAP {
+            v.push_str("...\n");
+            break;
+        }
+        v.push_str(l);
+        v.push('\n');
+    }
+    let attrs = VariableAttributes::BOOTSERVICE_ACCESS | VariableAttributes::RUNTIME_ACCESS;
+    match uefi::runtime::set_variable(cstr16!("StormBootWipe"), &VENDOR, attrs, v.as_bytes()) {
+        Ok(()) => uefi::println!("handoff     : StormBootWipe = {} line(s), {} bytes", lines.len(), v.len()),
+        Err(e) => uefi::println!("handoff     : StormBootWipe not set ({:?})", e.status()),
+    }
 }
 
 fn set(var: &CStr16, label: &str, value: &str) {

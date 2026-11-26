@@ -27,6 +27,7 @@ use uefi::{guid, Guid, Identify, Status};
 use uefi_raw::protocol::device_path::DevicePathProtocol;
 
 use crate::esp;
+use crate::wipe;
 use crate::inventory::{self, Controller, Disk, DriveId, Nic, Part};
 
 const PCI_IO: Guid = guid!("4cf5b200-68b8-4ca5-9eec-b23e3f50029a");
@@ -434,6 +435,213 @@ pub fn wipe(serial: &str) -> Result<String, String> {
         inventory::size_text(n * block),
         blocks - n
     ))
+}
+
+/// How many partitions of a drive the fresh wipe reads (a GPT's usual 128).
+const WIPE_MAX_PARTS: usize = 128;
+
+/// The fresh install's wipe (#262): every fixed drive the install will take,
+/// before the installer runs. `cfg` is the media's `install-config.yaml`
+/// (for `storage: drives:`), empty when there is none. One console line per
+/// drive; the lines are returned for the hand-down. `Err` with nothing
+/// written when stormbootx cannot tell its own medium apart, and `Err` after
+/// the rest when a drive's wipe or its read-back failed. What is never wiped
+/// and what is zeroed: `wipe.rs`.
+pub fn wipe_fresh(cfg: &str) -> Result<Vec<String>, String> {
+    let all = disk_handles();
+    let volume = crate::config::boot_volume()
+        .and_then(|h| crate::blockio::device_path_of(h.as_ptr()))
+        .and_then(text)
+        .unwrap_or_else(|| String::from("no device path"));
+    if !all.iter().any(|(_, d)| d.medium) {
+        let line = format!(
+            "wipe        : REFUSED: cannot tell its own boot medium apart (no drive is the device it was loaded from, {volume}); nothing wiped"
+        );
+        uefi::println!("{line}");
+        return Err(String::from(
+            "a fresh install was asked for, and stormbootx cannot tell its own boot medium apart from the drives: nothing wiped",
+        ));
+    }
+    uefi::println!("wipe        : fresh install: {} drive(s); the boot medium is {volume}", all.len());
+    let mut lines = Vec::new();
+    let mut failed = 0usize;
+    let (mut zero, mut back) = (AlignedBuf::new(WIPE_CHUNK), AlignedBuf::new(WIPE_CHUNK));
+    for (i, (h, d)) in all.iter().enumerate() {
+        let name = format!(
+            "disk {i} ({}) {} {}",
+            d.bus.unwrap_or("?"),
+            d.id.model.as_deref().map(str::trim).unwrap_or("?"),
+            d.id.serial.as_deref().map(str::trim).unwrap_or("no-serial")
+        );
+        let Some(mut bio) = crate::blockio::open_get::<BlockIO>(*h) else {
+            let l = format!("{name}: skipped: no BlockIO");
+            uefi::println!("wipe        : {l}");
+            lines.push(l);
+            continue;
+        };
+        let m = bio.media();
+        let path = d.path.as_deref().unwrap_or("");
+        let present = m.is_media_present() && m.block_size() >= 512 && m.last_block() > 0;
+        let facts = wipe::Facts {
+            boot_media: d.medium,
+            removable: d.removable || m.is_removable_media(),
+            usb: d.bus == Some("usb") || path.contains("USB(") || path.contains("Usb"),
+            stormbootx: present && stormbootx_signed(&bio),
+            stormdist: crate::blockio::is_not_local(h.as_ptr()),
+            read_only: m.is_read_only(),
+            present,
+            serial: d.id.serial.as_deref(),
+        };
+        let l = match wipe::verdict(&facts, cfg) {
+            Err(skip) => format!("{name}: skipped: {}", skip.text()),
+            Ok(()) => match wipe_drive(&mut bio, &mut zero, &mut back) {
+                Ok(what) => format!("{name}: wiped ({what}, read back zero)"),
+                Err(e) => {
+                    failed += 1;
+                    format!("{name}: FAILED: {e}")
+                }
+            },
+        };
+        let wiped = l.contains(": wiped");
+        uefi::println!("wipe        : {l}");
+        lines.push(l);
+        drop(bio);
+        if wiped {
+            // The partitions the firmware made from the old table go with it.
+            let _ = boot::disconnect_controller(*h, None, None);
+            crate::net::connect(h.as_ptr());
+        }
+    }
+    refresh();
+    if failed > 0 {
+        return Err(format!("the fresh install's wipe failed on {failed} drive(s); the installer is not started"));
+    }
+    Ok(lines)
+}
+
+/// What the wipe writes and reads back at a time.
+const WIPE_CHUNK: usize = 4 * 1024 * 1024;
+
+/// A zeroed buffer on a page boundary (any `IoAlign` up to 4096).
+struct AlignedBuf(Vec<u8>, usize);
+
+impl AlignedBuf {
+    fn new(len: usize) -> Self {
+        let v = vec![0u8; len + 4096];
+        let off = v.as_ptr().align_offset(4096);
+        AlignedBuf(v, off)
+    }
+    fn buf(&mut self, len: usize) -> &mut [u8] {
+        &mut self.0[self.1..self.1 + len]
+    }
+}
+
+/// Zero `wipe::plan`'s ranges on one drive, flush, and read each back.
+fn wipe_drive(bio: &mut BlockIO, zero: &mut AlignedBuf, back: &mut AlignedBuf) -> Result<String, String> {
+    let m = bio.media();
+    if m.io_align() > 4096 {
+        return Err(format!("its IoAlign {} is over a page", m.io_align()));
+    }
+    let (media_id, bs) = (m.media_id(), m.block_size());
+    let blocks = m.last_block() + 1;
+    // Its partitions: the GPT's, else the MBR's four.
+    let mut parts: Vec<wipe::Range> = Vec::new();
+    {
+        let mut bd = crate::espboot::BlockDisk { bio: &*bio, media_id, block: bs as u64, bounce: Vec::new() };
+        let mut entries = vec![esp::GptEntry::EMPTY; WIPE_MAX_PARTS];
+        match esp::partitions(&mut bd, bs, &mut entries) {
+            Ok(n) => {
+                for e in &entries[..n.min(entries.len())] {
+                    parts.push(wipe::Range { first: e.partition.first_lba, end: e.partition.last_lba.saturating_add(1) });
+                }
+            }
+            Err(_) => {
+                let mut mbr = [0u8; 512];
+                if esp::Disk::read(&mut bd, 0, &mut mbr) && mbr[510..512] == [0x55, 0xAA] {
+                    for e in mbr[446..510].chunks_exact(16) {
+                        let start = u32::from_le_bytes([e[8], e[9], e[10], e[11]]) as u64;
+                        let count = u32::from_le_bytes([e[12], e[13], e[14], e[15]]) as u64;
+                        if e[4] != 0 && count != 0 {
+                            parts.push(wipe::Range { first: start, end: start + count });
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let mut ranges = vec![wipe::Range::default(); wipe::plan_capacity(parts.len())];
+    let n = wipe::plan(blocks, bs, &parts, &mut ranges);
+    let ranges = &ranges[..n];
+    let per = (WIPE_CHUNK as u64 / bs as u64).max(1);
+    for r in ranges {
+        let mut lba = r.first;
+        while lba < r.end {
+            let k = per.min(r.end - lba);
+            let z = zero.buf((k * bs as u64) as usize);
+            z.fill(0);
+            bio.write_blocks(media_id, lba, z).map_err(|e| format!("write at LBA {lba}: {:?}", e.status()))?;
+            lba += k;
+        }
+    }
+    bio.flush_blocks().map_err(|e| format!("flush: {:?}", e.status()))?;
+    for r in ranges {
+        let mut lba = r.first;
+        while lba < r.end {
+            let k = per.min(r.end - lba);
+            let b = back.buf((k * bs as u64) as usize);
+            b.fill(0xA5);
+            bio.read_blocks(media_id, lba, b).map_err(|e| format!("read-back at LBA {lba}: {:?}", e.status()))?;
+            if let Some(at) = b.iter().position(|&x| x != 0) {
+                return Err(format!("read-back at LBA {} is not zero", lba + at as u64 / bs as u64));
+            }
+            lba += k;
+        }
+    }
+    Ok(format!(
+        "{} of {} zeroed: both {} ends and {} partition(s)",
+        inventory::size_text(wipe::planned_blocks(ranges) * bs as u64),
+        inventory::size_text(blocks * bs as u64),
+        inventory::size_text(wipe::DISK_END_BYTES),
+        parts.len()
+    ))
+}
+
+/// Whether a drive carries a stormbootx signature (#262): a `\stormboot`
+/// directory on any FAT volume of it, its partitions' or the whole disk's.
+/// A medium of ours, whatever its removable bit says, is never wiped.
+fn stormbootx_signed(bio: &BlockIO) -> bool {
+    let m = bio.media();
+    let bs = m.block_size() as u64;
+    let mut bd = crate::espboot::BlockDisk { bio, media_id: m.media_id(), block: bs, bounce: Vec::new() };
+    let mut has = |first: u64, blocks: u64| -> bool {
+        let Ok(fat) = esp::Fat::mount(&mut bd, first * bs, blocks * bs) else { return false };
+        let mut fat = Box::new(fat);
+        fat.lookup(&mut bd, "\\stormboot").is_ok_and(|e| e.dir)
+    };
+    if has(0, m.last_block() + 1) {
+        return true;
+    }
+    let mut entries = vec![esp::GptEntry::EMPTY; WIPE_MAX_PARTS];
+    let mut ranges: Vec<(u64, u64)> = Vec::new();
+    {
+        let mut bd = crate::espboot::BlockDisk { bio, media_id: m.media_id(), block: bs, bounce: Vec::new() };
+        match esp::partitions(&mut bd, bs as u32, &mut entries) {
+            Ok(n) => ranges.extend(entries[..n.min(entries.len())].iter().map(|e| (e.partition.first_lba, e.partition.blocks()))),
+            Err(_) => {
+                let mut mbr = [0u8; 512];
+                if esp::Disk::read(&mut bd, 0, &mut mbr) && mbr[510..512] == [0x55, 0xAA] {
+                    for e in mbr[446..510].chunks_exact(16) {
+                        let start = u32::from_le_bytes([e[8], e[9], e[10], e[11]]) as u64;
+                        let count = u32::from_le_bytes([e[12], e[13], e[14], e[15]]) as u64;
+                        if e[4] != 0 && count != 0 {
+                            ranges.push((start, count));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    ranges.into_iter().any(|(first, blocks)| has(first, blocks))
 }
 
 /// Which bus a disk is on and what it says about itself: `EFI_DISK_INFO`

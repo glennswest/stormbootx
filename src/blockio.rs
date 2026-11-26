@@ -295,7 +295,7 @@ pub fn not_local(h: Handle) {
     }
 }
 
-fn is_not_local(h: uefi_raw::Handle) -> bool {
+pub(crate) fn is_not_local(h: uefi_raw::Handle) -> bool {
     NOT_LOCAL.0.borrow().contains(&h)
 }
 

@@ -91,6 +91,7 @@ mod sha256;
 mod smbios;
 mod sntp;
 mod universal;
+mod wipe;
 
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -220,6 +221,8 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
     // next: it lives on the media, which nothing opens after the attach.
     if first {
         handoff::set_install_config();
+        // Kept for the fresh install's wipe (#262), read after the claim.
+        let _ = config::install_config_text();
     }
 
     // 1. Who am I? No network, no configuration, no BMC.
@@ -372,6 +375,9 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
     // The name the claim was made on, as the engine knows it (#76): the
     // reply's host when it named one, else the name claimed. `None` when
     // nothing was claimed.
+    // A fresh install (#262): the drives the install takes are wiped after
+    // the claim and before the image's bootloader. Set from the intent.
+    let mut fresh = false;
     let (attach, claimed_name) = {
         // Where to attach: the config file, else the compiled floor. Nothing
         // on the network is asked for this — the portal is an appliance
@@ -570,6 +576,8 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
             };
             match told {
                 api::Claim::Intent => {}
+                // A command's install keeps the engine's fresh: both install.
+                api::Claim::Install if chosen.installs() => {}
                 api::Claim::Install => {
                     uefi::println!("intent      : install  (a command said so; the engine's is {})", chosen.name());
                     chosen = intent::Intent::Install;
@@ -583,6 +591,16 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
                     maint = true;
                 }
             }
+            // `wipe: fresh` in the media's install-config.yaml makes an
+            // install a fresh one (#262). Never the maintenance image's boot.
+            if chosen == intent::Intent::Install
+                && !maint
+                && config::install_config_text().is_some_and(|c| wipe::wipe_word(c) == wipe::Wipe::Fresh)
+            {
+                uefi::println!("intent      : fresh  (install, and wipe: fresh in {})", installconf::PATH);
+                chosen = intent::Intent::Fresh;
+            }
+            fresh = chosen.wipes() && !maint;
             let image = maint.then_some("maint");
             // With `local_when_bootable = true` only, `auto` and every doubt
             // boot the local disk when one can boot (#3). Off by default: the
@@ -602,7 +620,7 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
                     }
                 };
             ui::done(ui::Step::Intent, &format!("{}  (under {intent_key})", chosen.name()));
-            if chosen == intent::Intent::Install {
+            if chosen.installs() {
                 ui::installing();
             }
             if intent::decide(chosen, local_bootable) == intent::Action::Local {
@@ -802,6 +820,40 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
             }
         }
     };
+
+    // 3d. The fresh install's wipe (#262): after the claim gave this machine
+    //     its image and before the installer (the image's bootloader) runs.
+    //     Never the boot medium, removable or USB media, a stormbootx or
+    //     stormdist medium, or a drive `storage: drives:` leaves out; refused
+    //     outright when the boot medium cannot be told apart (`wipe.rs`).
+    if fresh {
+        if claimed_name.is_none() {
+            uefi::println!("wipe        : REFUSED: a fresh install was asked for and nothing was claimed; nothing wiped");
+            ui::fail(ui::Step::Image, "fresh install: nothing claimed, nothing wiped");
+            ui::skip(ui::Step::Handoff, "");
+            return Err(Stop::Failed(String::from(
+                "a fresh install was asked for, and no claim gave this machine an image: nothing wiped",
+            )));
+        }
+        api::phase("wiping", "the drives the fresh install takes");
+        ui::next("wiping the drives the fresh install takes");
+        let cfg = config::install_config_text().unwrap_or("");
+        let done = hardware::wipe_fresh(cfg);
+        profile::mark("wipe");
+        lastlog::save();
+        match done {
+            Ok(lines) => {
+                let wiped = lines.iter().filter(|l| l.contains(": wiped")).count();
+                uefi::println!("wipe        : {wiped} of {} drive(s) wiped; the rest skipped", lines.len());
+                handoff::set_wipe(&lines);
+            }
+            Err(e) => {
+                ui::fail(ui::Step::Image, &e);
+                ui::skip(ui::Step::Handoff, "");
+                return Err(Stop::Failed(e));
+            }
+        }
+    }
 
     netlog::flush();
 

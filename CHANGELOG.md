@@ -3,6 +3,11 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+## [v0.46.0] — 2026-11-26
+
+- **feat:** #262 (stormcentral#1823): a fresh install. The boot intent `fresh`, or `wipe: fresh` in the media's `install-config.yaml` on an install, claims as `install` does and then wipes every fixed drive the install takes before the image's bootloader (the installer) runs. On each drive: the first and last 64 MiB, and every partition's first and last 1 MiB and btrfs's 64 KiB at 64 MiB, zeroed, flushed and read back zero. Never wiped: the device stormbootx was loaded from, a removable or USB device, a drive with a `\stormboot` directory on any FAT volume or a stormdist medium, a drive `storage: drives:` does not name, a read-only drive. One console line per drive (`wipe : disk N (bus) model serial: wiped (…)` or `: skipped: boot media`), handed to the installer in `StormBootWipe`. Refused with nothing written when no drive is its own boot medium, or when nothing was claimed; a failed wipe or read-back stops the boot before the installer. A plain `install` wipes nothing. `src/wipe.rs` (core-only, host-tested) decides; `hardware::wipe_fresh` writes.
+- **test:** #262: `rustc --test src/wipe.rs`; net-ovmf `fresh` (the NVMe and SATA disks wiped in their ranges, a sentinel between them kept, a fixed stick with `\stormboot` and a USB stick untouched), `freshno` (`install`: nothing written) and `freshic` (`wipe: fresh` with `storage: drives: [FRESH002]`: only that drive).
+
 ### 2026-11-23
 - **docs:** #259: CLAUDE.md's Status line reworded where stormcentral's secret scan (gitleaks `generic-api-key`) read `Ed25519-signed` as a key. A false positive: no secret, nothing to rotate.
 

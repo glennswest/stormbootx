@@ -20,6 +20,7 @@
 //! | intent    | this binary                                              |
 //! |-----------|----------------------------------------------------------|
 //! | `install` | claims and boots the image                               |
+//! | `fresh`   | `install`, and before the installer the drives it takes are wiped (#262, `wipe.rs`) |
 //! | `local`   | falls through to the disk; no claim, no clone            |
 //! | `auto`    | claims; with `local_when_bootable`, a bootable disk first |
 //!
@@ -58,6 +59,10 @@ pub enum Intent {
     /// Take the network image. `install` is one-shot, but resetting it to
     /// `local` after the flow-over is the engine's job, not this binary's.
     Install,
+    /// `install`, from wiped drives (#262, stormcentral#1823): after the
+    /// claim and before the image's bootloader, every fixed drive the
+    /// install takes is wiped (`wipe.rs`). A plain `install` wipes nothing.
+    Fresh,
     /// Boot what is on the disk. No claim, so no clone.
     Local,
     /// Decide for itself: the local disk if it has a bootloader, else claim.
@@ -78,7 +83,7 @@ pub enum Action {
 /// for, and a machine with nothing of its own to boot claims.
 pub fn decide(intent: Intent, local_bootable: bool) -> Action {
     match intent {
-        Intent::Install => Action::Claim,
+        Intent::Install | Intent::Fresh => Action::Claim,
         Intent::Local => Action::Local,
         Intent::Auto if local_bootable => Action::Local,
         Intent::Auto => Action::Claim,
@@ -89,6 +94,7 @@ impl Intent {
     pub fn name(self) -> &'static str {
         match self {
             Intent::Install => "install",
+            Intent::Fresh => "fresh",
             Intent::Local => "local",
             Intent::Auto => "auto",
         }
@@ -100,10 +106,22 @@ impl Intent {
         matches!(self, Intent::Auto)
     }
 
+    /// Whether this boot installs: claims over whatever the disk holds.
+    pub fn installs(self) -> bool {
+        matches!(self, Intent::Install | Intent::Fresh)
+    }
+
+    /// Whether the drives are wiped before the installer (#262).
+    pub fn wipes(self) -> bool {
+        matches!(self, Intent::Fresh)
+    }
+
     fn from_word(w: &str) -> Option<Intent> {
         let w = w.trim();
         if w.eq_ignore_ascii_case("install") {
             Some(Intent::Install)
+        } else if w.eq_ignore_ascii_case("fresh") {
+            Some(Intent::Fresh)
         } else if w.eq_ignore_ascii_case("local") {
             Some(Intent::Local)
         } else if w.eq_ignore_ascii_case("auto") {
@@ -193,6 +211,23 @@ mod tests {
         assert_eq!(from_reply(200, r#"{"intent":"install"}"#), Reply::Stated(Intent::Install));
         assert_eq!(from_reply(200, r#"{"intent":"local"}"#), Reply::Stated(Intent::Local));
         assert_eq!(from_reply(200, r#"{"intent":"auto"}"#), Reply::Stated(Intent::Auto));
+        assert_eq!(from_reply(200, r#"{"intent":"fresh"}"#), Reply::Stated(Intent::Fresh));
+    }
+
+    #[test]
+    fn fresh_claims_and_wipes_and_install_never_wipes() {
+        // #262: fresh is an install from wiped drives; a plain install keeps
+        // the data.
+        assert_eq!(decide(Intent::Fresh, true), Action::Claim);
+        assert_eq!(decide(Intent::Fresh, false), Action::Claim);
+        assert!(Intent::Fresh.installs() && Intent::Fresh.wipes());
+        assert!(Intent::Install.installs() && !Intent::Install.wipes());
+        assert!(!Intent::Auto.wipes() && !Intent::Local.wipes());
+        assert!(!Intent::Fresh.asks_the_disk());
+        // Any doubt is auto, never fresh.
+        for r in [from_reply(404, ""), from_reply(200, r#"{"intent":"freshen"}"#), from_reply(500, r#"{"intent":"fresh"}"#)] {
+            assert!(!r.intent().wipes(), "{r:?}");
+        }
     }
 
     #[test]
