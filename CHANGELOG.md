@@ -3,6 +3,11 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+## [v0.46.1] — 2026-11-26
+
+- **fix:** #263: `startup.nsh` deletes its guard (`set -d stormbootx_started`) before it looks for the medium. Seen on server8 (Supermicro X9, AMI Aptio 4 EFI shell): a new stick with no boot option started stormbootx through the shell, and after a reset the shell went straight to `back at the shell` with no `starting stormbootx`. #180's `set -v stormbootx_started yes` had evidently survived the reset, so every later boot skipped every medium. A stick needs nothing beyond the served manifest files.
+- **test:** #263: `STALE_GUARD=1 tests/shell-ovmf.sh` puts `stormbootx_started = yes` as a non-volatile shell variable (both shells' GUIDs) into the store, and the EDK shell and Shell 2.x must still start stormbootx. `tests/bootvar.py --var … u16:TEXT` writes a UCS-2 value.
+
 ## [v0.46.0] — 2026-11-26
 
 - **feat:** #262 (stormcentral#1823): a fresh install. The boot intent `fresh`, or `wipe: fresh` in the media's `install-config.yaml` on an install, claims as `install` does and then wipes every fixed drive the install takes before the image's bootloader (the installer) runs. On each drive: the first and last 64 MiB, and every partition's first and last 1 MiB and btrfs's 64 KiB at 64 MiB, zeroed, flushed and read back zero. Never wiped: the device stormbootx was loaded from, a removable or USB device, a drive with a `\stormboot` directory on any FAT volume or a stormdist medium, a drive `storage: drives:` does not name, a read-only drive. One console line per drive (`wipe : disk N (bus) model serial: wiped (…)` or `: skipped: boot media`), handed to the installer in `StormBootWipe`. Refused with nothing written when no drive is its own boot medium, or when nothing was claimed; a failed wipe or read-back stops the boot before the installer. A plain `install` wipes nothing. `src/wipe.rs` (core-only, host-tested) decides; `hardware::wipe_fresh` writes.

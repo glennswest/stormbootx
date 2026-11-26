@@ -25,6 +25,7 @@
 # \EFI\BOOT\BOOTX64.EFI, the installed disk. stormbootx falls through (no
 # network) and must start that file itself rather than return to the shell.
 #
+# STALE_GUARD=1 (#263): the guard already set in the variable store.
 # SECOND_CD=1 (#180) is server7's layout: a second stormbootx medium mapped
 # after the first (its stick and a BMC's old virtual CD). The shell's disk is
 # removable here: fixed, it would be the "local disk" stormbootx starts, and
@@ -119,6 +120,16 @@ else
 fi
 
 cp "$OVMF_VARS" "$W/vars.fd"
+# STALE_GUARD=1 (#263): startup.nsh's guard left in the store by an earlier
+# run, as server8's AMI shell kept it across a reset: `stormbootx_started =
+# yes`, non-volatile, under both shells' environment GUIDs (the EDK shell's
+# 47c7b224-…, Shell 2.x's 158def5a-…). The script must still start stormbootx.
+if [[ -n "${STALE_GUARD:-}" ]]; then
+    for g in 47c7b224-c42a-11d2-8e57-00a0c969723b 158def5a-f656-419c-b027-7a3192c079d2; do
+        python3 "$(dirname "$0")/bootvar.py" "$W/vars.fd" --var stormbootx_started "$g" 0x7 u16:yes \
+            | sed 's/^/shell-ovmf: /' || die "could not write the stale guard"
+    done
+fi
 accel=tcg
 [[ -w /dev/kvm ]] && accel=kvm
 say "booting $(basename "$SHELL_EFI") ($SHELL_ARG) with $(basename "$ISO"), $LAYOUT, under OVMF ($accel, up to ${LIMIT}s)"
