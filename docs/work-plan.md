@@ -102,6 +102,8 @@ then.
 
 ### Open, no external blocker
 
+- [ ] **#262 — the fresh install's wipe (P0; the owner, 2026-11-26: "can you build your wipe into stormbootx? (And make sure it does not wipe itself)", stormcentral#1823).** d39350c + 82065cf, v0.46.0. The intent `fresh`, or `wipe: fresh` in install-config.yaml on an install, wipes every fixed drive the install takes after the claim and before the installer (`src/wipe.rs` decides, `hardware::wipe_fresh` writes and reads back). Never: the boot medium, removable or USB, a drive with `\stormboot` or a stormdist medium, one `storage: drives:` leaves out, a read-only one. Refused when no drive is the boot medium. `StormBootWipe` hands the lines to the installer. Quick sc-build (20261126 quick, NET_ONLY=fresh) passed. Left: the full sc-build, the `stormbootx-rustnic` golden. The engine (stormblock) must accept `fresh` as an intent value, and stormcentral#1823 must set it; neither is in this repo.
+
 - [x] **#237 — review finding 9ddc02f6bbad in `crates/stormbootx-stick/src/main.rs` (P1). Done 2026-11-21:** e08c60c + 5abe76f + 686f8e9; the full sc-build passed on ede07b3 (#239's, a descendant: 2644 s), with stick.sh `idfail`/`idread`/`idro`/`idcut` and update-boots `idfail` (686f8e9's own run had been lost to stormcentral#1638).
       `carry_identity` (stick and `selfupdate.rs`) logged a failed write of
       `local.conf` and went on to the trial and the swap, so the new
