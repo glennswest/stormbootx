@@ -1310,8 +1310,10 @@ FRESH_DRIVES=(-drive if=none,id=fnv,format=raw,file="$W/fresh-nvme.img"
     -drive if=none,id=fus,format=raw,file="$W/fresh-usb.img"
     -device usb-storage,bus=fxhci.0,drive=fus,serial=FRESH004,removable=off)
 # fresh_same NAME IMG...: each image as it was before the boot.
+fresh_ran() { [[ -z "${NET_ONLY:-}" || "$NET_ONLY" == "$1" ]]; }
 fresh_same() {
     local name=$1 img; shift
+    fresh_ran "$name" || return 0
     for img in "$@"; do
         grep -F "$W/fresh-$img.img" "$W/fresh.before" | sha256sum -c --quiet - >/dev/null 2>&1 \
             && say "[$name] fresh-$img.img untouched" || die "[$name] fresh-$img.img was written"
@@ -1319,6 +1321,7 @@ fresh_same() {
 }
 # fresh_zero NAME IMG OFFSET_MIB LEN_MIB: that range of the image is all zero.
 fresh_zero() {
+    fresh_ran "$1" || return 0
     python3 - "$W/fresh-$2.img" "$3" "$4" <<'PY' || die "[$1] fresh-$2.img: $3 MiB +$4 MiB is not zero"
 import sys
 f = open(sys.argv[1], "rb"); f.seek(int(sys.argv[2]) << 20)
@@ -1346,9 +1349,11 @@ boot fresh "$host_cpu" "" ok good \
 fresh_same fresh stick usb
 for z in "0 64" "192 64" "100 1" "249 1"; do fresh_zero fresh nvme $z; done
 for z in "0 64" "96 64"; do fresh_zero fresh sata $z; done
-python3 -c 'import sys; f=open(sys.argv[1],"rb"); f.seek(130<<20); sys.exit(0 if f.read(12)==b"SENTINEL-262" else 1)' \
-    "$W/fresh-nvme.img" && say "[fresh] the sentinel between the ranges is kept" \
-    || die "[fresh] the wipe wrote past its ranges (the sentinel at 130 MiB is gone)"
+if fresh_ran fresh; then
+    python3 -c 'import sys; f=open(sys.argv[1],"rb"); f.seek(130<<20); sys.exit(0 if f.read(12)==b"SENTINEL-262" else 1)' \
+        "$W/fresh-nvme.img" && say "[fresh] the sentinel between the ranges is kept" \
+        || die "[fresh] the wipe wrote past its ranges (the sentinel at 130 MiB is gone)"
+fi
 
 fresh_drives
 BOOT_INTENT=install BOOT_FRESH=1 BOOT_SYSLOG=off \
