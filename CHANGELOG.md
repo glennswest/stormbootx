@@ -3,6 +3,12 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+## [v0.46.2] — 2026-11-27
+
+- **fix:** #263 (P0): server8 (X9, AMI EFI Shell 2.31) still went from the `startup.nsh` countdown straight to `back at the shell` on the v0.46.1 stick, with no `starting stormbootx` and nothing to say why. `startup.nsh` now prints the guard as it found it, then sets it to `no` (volatile) after deleting it, so the loop reads `no` whatever the shell kept. For every mapped fsN it prints what it found (no `\stormboot\stormboot.conf`; no `\EFI\BOOT\BOOTX64.EFI`; not started, one medium only), and it prints when stormbootx returns.
+- **feat:** #263: stormbootx says why whenever it returns to what started it (`stormbootx : returning ABORTED to … : <why>`). When an EFI Shell started it (`EFI_SHELL_PARAMETERS` or the EDK shell's `ShellInterface` on its image handle), it waits 30 s first, and a key ends the wait. The boot manager is not kept waiting.
+- **test:** #263: `shell-ovmf.sh` requires `the guard is now "no"`, the 30 s line and `stormbootx on fsN: returned`, and says how the shell read a `STALE_GUARD`. Its limit is 30 s longer.
+
 ## [v0.46.1] — 2026-11-26
 
 - **fix:** #263: `startup.nsh` deletes its guard (`set -d stormbootx_started`) before it looks for the medium. Seen on server8 (Supermicro X9, AMI Aptio 4 EFI shell): a new stick with no boot option started stormbootx through the shell, and after a reset the shell went straight to `back at the shell` with no `starting stormbootx`. #180's `set -v stormbootx_started yes` had evidently survived the reset, so every later boot skipped every medium. A stick needs nothing beyond the served manifest files.

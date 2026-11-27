@@ -1094,6 +1094,7 @@ fn main() -> Status {
     // one back and starts it instead (#83).
     if let Some(status) = selfupdate::at_start() {
         netlog::end();
+        returning(status, "the self-update's start (its lines are above)");
         return status;
     }
     // From here the medium keeps this start's lines (#213): a trial that
@@ -1333,7 +1334,10 @@ fn fall_through(err: &str, local: Local, asked: bool) -> Status {
              and nothing booted from the network."
         );
         ui::next("nothing to fall through to: no local disk; returning to the firmware in 30 s");
-        ui::wait(30);
+        // An EFI Shell gets its own 30 s in `returning`, on its console.
+        if !started_by_shell() {
+            ui::wait(30);
+        }
     }
     uefi::println!("============================================================");
     // Whatever runs next (the boot manager, the EFI Shell) gets its screen,
@@ -1341,5 +1345,59 @@ fn fall_through(err: &str, local: Local, asked: bool) -> Status {
     ui::end();
     netlog::end();
     ui::end_saying("returning to what started it (nothing booted)");
+    returning(Status::ABORTED, err);
     Status::ABORTED
+}
+
+/// `EFI_SHELL_PARAMETERS_PROTOCOL` (Shell 2.x) and `EFI_SHELL_INTERFACE`
+/// (the EDK shell, Aptio 4's): an EFI Shell installs one on the image it
+/// starts, so either on ours says a shell started this image.
+const SHELL_PARAMETERS: uefi::Guid = uefi::guid!("752f3136-4e16-4fdc-a22a-e5f46812f4ca");
+const SHELL_INTERFACE: uefi::Guid = uefi::guid!("47c7b223-c42a-11d2-8e57-00a0c969723b");
+
+/// Whether an EFI Shell started this image (`startup.nsh`, or by hand).
+fn started_by_shell() -> bool {
+    let Some(bs) = snpwatch::bs() else { return false };
+    let image = uefi::boot::image_handle().as_ptr() as uefi_raw::Handle;
+    let mut guids: *mut *const uefi_raw::Guid = core::ptr::null_mut();
+    let mut count = 0usize;
+    let mut found = false;
+    unsafe {
+        if (bs.protocols_per_handle)(image, &mut guids, &mut count) == Status::SUCCESS && !guids.is_null() {
+            for i in 0..count {
+                let g = *(*guids.add(i) as *const uefi::Guid);
+                found |= g == SHELL_PARAMETERS || g == SHELL_INTERFACE;
+            }
+            let _ = (bs.free_pool)(guids as *mut u8);
+        }
+    }
+    found
+}
+
+/// Every return to what started this image says so, with why (#263). An
+/// EFI Shell clears nothing, but its script's next line and prompt follow at
+/// once and a BMC's console shows only the last screen, so before returning
+/// to a shell it waits 30 s (a key ends the wait). server8 (X9, AMI EFI Shell
+/// 2.31) sat at `Shell>` with nothing to say why. The boot manager is not
+/// kept waiting: its next option is the machine's next way to boot.
+fn returning(status: Status, why: &str) {
+    if !started_by_shell() {
+        uefi::println!("stormbootx  : returning {status:?} to the boot manager: {why}");
+        return;
+    }
+    uefi::println!("stormbootx  : returning {status:?} to the EFI Shell in 30 s (a key returns now): {why}");
+    let stdin = uefi::table::system_table_raw().map(|st| unsafe { st.as_ref().stdin }).unwrap_or(core::ptr::null_mut());
+    for left in (1..=30u32).rev() {
+        if left % 10 == 0 && left != 30 {
+            uefi::println!("stormbootx  : returning to the EFI Shell in {left} s");
+        }
+        for _ in 0..10 {
+            let mut key = uefi_raw::protocol::console::InputKey::default();
+            if !stdin.is_null() && unsafe { ((*stdin).read_key_stroke)(stdin, &mut key) } == Status::SUCCESS {
+                uefi::println!("stormbootx  : a key: returning now");
+                return;
+            }
+            uefi::boot::stall(core::time::Duration::from_millis(100));
+        }
+    }
 }

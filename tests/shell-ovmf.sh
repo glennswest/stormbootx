@@ -44,7 +44,8 @@ shift 2
 OVMF_CODE=${OVMF_CODE:-/usr/share/edk2/ovmf/OVMF_CODE.fd}
 OVMF_VARS=${OVMF_VARS:-/usr/share/edk2/ovmf/OVMF_VARS.fd}
 LAYOUT=${LAYOUT:-cd-first}
-LIMIT=${LIMIT:-60}
+# Plus 30 s (#263): stormbootx waits that long before it returns to a shell.
+LIMIT=$(( ${LIMIT:-60} + 30 ))
 OLD_SHELL_URL=https://github.com/tianocore/edk2/raw/edk2-stable201811/EdkShellBinPkg/FullShell/X64/Shell_Full.efi
 OLD_SHELL_SHA256=ea5e763a8a5f9733dbf7c33ffa16a19e078c6af635b51d8457bc377a22106a8c
 export MTOOLS_SKIP_CHECK=1
@@ -175,6 +176,17 @@ if [[ -n "${SECOND_CD:-}" ]]; then
     [[ $starts == 1 ]] || { say "it must start one medium only"; fail=1; }
     set -- "$@" "startup.nsh: back at the shell"
 fi
+# The script says what it found (#263): the guard set to no whatever the
+# store kept, and the stale one as it was found.
+set -- "$@" 'startup.nsh: the guard is now "no"'
+if [[ -n "${STALE_GUARD:-}" ]]; then
+    # Said, not required: whether this shell reads the planted variable back
+    # is the shell's; the guard reset above is what must hold.
+    say "the shell read the stale guard as: $(grep -o 'the guard was "[^"]*"' "$W/console.txt" | head -1)"
+fi
+# A stormbootx that returns to the shell says why and waits 30 s first
+# (#263); with LOCAL_EFI the fall-through starts the local disk instead.
+[[ -z "${LOCAL_EFI:-}" ]] && set -- "$@" "to the EFI Shell in 30 s (a key returns now): " "startup.nsh: stormbootx on fs"
 for want in "startup.nsh: starting stormbootx from" "$@"; do
     if grep -qF -- "$want" "$W/console.txt"; then
         say "found: $want"
