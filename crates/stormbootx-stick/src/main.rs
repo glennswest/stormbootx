@@ -54,7 +54,6 @@ use std::time::Duration;
 #[allow(dead_code)]
 #[path = "../../../src/manifest.rs"]
 mod manifest;
-#[allow(dead_code)]
 #[path = "../../../src/sha256.rs"]
 mod sha256;
 #[allow(dead_code)]

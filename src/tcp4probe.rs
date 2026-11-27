@@ -49,7 +49,6 @@ mod universal;
 #[allow(dead_code)]
 mod installconf;
 #[path = "sha256.rs"]
-#[allow(dead_code)]
 mod sha256;
 // For the test's switch in an SMBIOS OEM string (#219).
 #[path = "smbios.rs"]

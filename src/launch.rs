@@ -22,7 +22,6 @@ extern crate alloc;
 #[allow(dead_code)]
 #[path = "bootrec.rs"]
 mod bootrec;
-#[allow(dead_code)]
 #[path = "sha256.rs"]
 mod sha256;
 

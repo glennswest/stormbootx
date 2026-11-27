@@ -31,6 +31,9 @@
 //! Keep it that way. A dependency on anything else in this crate is what
 //! would take the FIPS vectors below out of reach.
 
+// Every includer uses only part of it (tcp4probe, the launcher, the stick
+// updater, bootrec's tests): this is the one allow, so no includer adds a
+// second (#204: clippy's duplicated_attributes).
 #![allow(dead_code)]
 
 use core::fmt;
