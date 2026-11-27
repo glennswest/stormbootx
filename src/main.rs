@@ -1355,23 +1355,41 @@ fn fall_through(err: &str, local: Local, asked: bool) -> Status {
 const SHELL_PARAMETERS: uefi::Guid = uefi::guid!("752f3136-4e16-4fdc-a22a-e5f46812f4ca");
 const SHELL_INTERFACE: uefi::Guid = uefi::guid!("47c7b223-c42a-11d2-8e57-00a0c969723b");
 
-/// Whether an EFI Shell started this image (`startup.nsh`, or by hand).
+/// Whether an EFI Shell started this image (`startup.nsh`, or by hand):
+/// this image, or what started it. A shell starts the medium's launcher
+/// (#229), and the launcher starts this payload, so the shell's protocol is
+/// on the launcher's handle, our `LoadedImage.ParentHandle`.
 fn started_by_shell() -> bool {
     let Some(bs) = snpwatch::bs() else { return false };
-    let image = uefi::boot::image_handle().as_ptr() as uefi_raw::Handle;
-    let mut guids: *mut *const uefi_raw::Guid = core::ptr::null_mut();
-    let mut count = 0usize;
-    let mut found = false;
-    unsafe {
-        if (bs.protocols_per_handle)(image, &mut guids, &mut count) == Status::SUCCESS && !guids.is_null() {
-            for i in 0..count {
-                let g = *(*guids.add(i) as *const uefi::Guid);
-                found |= g == SHELL_PARAMETERS || g == SHELL_INTERFACE;
-            }
-            let _ = (bs.free_pool)(guids as *mut u8);
+    let mut image = uefi::boot::image_handle().as_ptr() as uefi_raw::Handle;
+    for _ in 0..3 {
+        if image.is_null() {
+            return false;
         }
+        let mut guids: *mut *const uefi_raw::Guid = core::ptr::null_mut();
+        let mut count = 0usize;
+        let mut found = false;
+        unsafe {
+            if (bs.protocols_per_handle)(image, &mut guids, &mut count) == Status::SUCCESS && !guids.is_null() {
+                for i in 0..count {
+                    let g = *(*guids.add(i) as *const uefi::Guid);
+                    found |= g == SHELL_PARAMETERS || g == SHELL_INTERFACE;
+                }
+                let _ = (bs.free_pool)(guids as *mut u8);
+            }
+        }
+        if found {
+            return true;
+        }
+        // The next image up: whoever loaded this one.
+        let mut li: *mut core::ffi::c_void = core::ptr::null_mut();
+        let guid = uefi_raw::protocol::loaded_image::LoadedImageProtocol::GUID;
+        if unsafe { (bs.handle_protocol)(image, &guid, &mut li) } != Status::SUCCESS || li.is_null() {
+            return false;
+        }
+        image = unsafe { (*(li as *const uefi_raw::protocol::loaded_image::LoadedImageProtocol)).parent_handle };
     }
-    found
+    false
 }
 
 /// Every return to what started this image says so, with why (#263). An
