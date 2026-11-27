@@ -2192,6 +2192,8 @@ then.
 
 ### Blocked on other repos
 
+- [ ] **#214 — stormcentral still builds the retired fw medium (`stormbootx` component) as each release's boot helper.** `build-golden.sh stormbootx` refuses by design (#202). stormcentral#1880: the boot helper becomes `stormbootx-rustnic`, and the `stormbootx` and `nic-drivers` components are retired. Nothing in this repo changes. Closed 2026-11-27 as stale or fixed: #264, #249, #240 (the full builds on 7d47de1 and ffecb10 pass); #204 fixed in c3ff173 (one `allow(dead_code)` in `sha256.rs`).
+
 - [x] **#220 — the boot panel in the boot screen's look (P2, owner
       2026-11-15). Released v0.44.0 (b1ea254), closed 2026-11-17.** Built
       on stormblock#637 (stormblock v24.18.0, `crates/screen-spec`, pinned
