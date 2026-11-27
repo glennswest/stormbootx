@@ -485,7 +485,9 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
             // would reach it. The engine resolves every one through the same
             // host table, so the first that is not a 404 is the machine's: a
             // DNS name the engine does not know yet (stormblock#204) must not
-            // hide a `local` set on the host it knows by MAC.
+            // hide a `local` set on the host it knows by MAC. A claim that
+            // goes on past that name reads the intent again where it lands
+            // (#265, `says_local` below): the engine can hold two hosts.
             let mut intent_keys: Vec<String> = Vec::new();
             if stated.is_some() {
                 intent_keys.push(tag.clone());
@@ -516,10 +518,13 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
             //     Only a 404 moves on to the next name; any other answer is
             //     this machine's.
             ui::step(ui::Step::Intent, "");
+            // Every name the intent was read under, for the claim below (#265).
+            let mut asked: Vec<String> = Vec::new();
             let (intent_key, reply) = {
                 let last = intent_keys.len().saturating_sub(1);
                 let mut found = None;
                 for (i, key) in intent_keys.iter().enumerate() {
+                    asked.push(key.clone());
                     let r = registry::boot_intent(cfg.portal, engine_port, &host, key);
                     let not_found = matches!(&r, Ok((s, b)) if intent::from_reply(*s, b) == intent::Reply::NotFound);
                     if not_found && i < last {
@@ -650,6 +655,39 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
             //     resolved target rather than guessing at another identity.
             ui::step(ui::Step::Claim, "");
             let what = if maint { "  (the maintenance image)" } else { "" };
+            // A claim that moves on to a name the intent was not read under
+            // reads that record's intent first (#265). The engine can hold
+            // two hosts for one machine: C2NR0Q2's reverse-DNS name
+            // `stormblock1` answered `auto` and had no image, and the tag's
+            // record, `local`, was claimed without being asked. Only for an
+            // `auto` nobody overrode: a command's install or maint, and the
+            // engine's install, claim whatever the record says.
+            let ask_again = chosen == intent::Intent::Auto && told == api::Claim::Intent && !maint;
+            let local_under: core::cell::RefCell<Option<String>> = core::cell::RefCell::new(None);
+            let says_local = |name: &str| -> bool {
+                if !ask_again || asked.iter().any(|k| k.eq_ignore_ascii_case(name)) {
+                    return false;
+                }
+                let r = registry::boot_intent(cfg.portal, engine_port, &host, name);
+                match &r {
+                    Ok((status, body)) => match intent::from_reply(*status, body) {
+                        intent::Reply::Stated(intent::Intent::Local) => {
+                            uefi::println!(
+                                "intent      : local under {name}, the record this claim reaches \
+                                 ({intent_key} said auto): nothing claimed"
+                            );
+                            *local_under.borrow_mut() = Some(name.to_string());
+                            true
+                        }
+                        intent::Reply::Stated(i) => {
+                            uefi::println!("intent      : {} under {name}, the record this claim reaches", i.name());
+                            false
+                        }
+                        _ => false,
+                    },
+                    Err(_) => false,
+                }
+            };
             let claim_as = |name: &str, hints: bool| {
                 uefi::println!("claim       : {}/{name} at {host}{what}", registry::BOOTHOST_NS);
                 let (m, s) = if hints { (mac_colon.as_deref(), serial.as_deref()) } else { (None, None) };
@@ -671,13 +709,18 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
                 }
                 None
             };
-            let by_tag = || match claim_as(&tag, false) {
-                Ok(a) => claimed_ok(a, &tag),
-                Err((_, e)) => give_up(&e),
+            let by_tag = || {
+                if says_local(&tag) {
+                    return None;
+                }
+                match claim_as(&tag, false) {
+                    Ok(a) => claimed_ok(a, &tag),
+                    Err((_, e)) => give_up(&e),
+                }
             };
 
             // A stated tag is the answer, and the only one tried.
-            if stated.is_some() {
+            let got = if stated.is_some() {
                 by_tag()
             } else {
                 let by_name = match &dns_host {
@@ -697,48 +740,65 @@ fn run(pass: u32, ask: api::Claim) -> Result<(), Stop> {
                         Some((m, colon)) => {
                             let provisional = universal::provisional_name(m);
                             let provisional = core::str::from_utf8(&provisional).unwrap_or("mac-?");
-                            uefi::println!(
-                                "claim       : {}/default as {colon} at {host}{what}",
-                                registry::BOOTHOST_NS
-                            );
-                            match registry::claim_default(
-                                cfg.portal,
-                                engine_port,
-                                &host,
-                                colon,
-                                serial.as_deref(),
-                                image,
-                            ) {
-                                Ok(a) if maint => claimed_ok(a, provisional),
-                                Ok(a) => {
-                                    match (&a.host, a.provisional) {
-                                        (Some(h), false) => uefi::println!(
-                                            "  booting {h}'s image (this MAC is its alias)"
-                                        ),
-                                        (Some(h), true) => {
-                                            uefi::println!("  booting the default image as {h}")
+                            // A MAC that is a known host's alias claims that
+                            // host: its record's intent first (#265).
+                            if says_local(&provisional[4..]) {
+                                None
+                            } else {
+                                uefi::println!(
+                                    "claim       : {}/default as {colon} at {host}{what}",
+                                    registry::BOOTHOST_NS
+                                );
+                                match registry::claim_default(
+                                    cfg.portal,
+                                    engine_port,
+                                    &host,
+                                    colon,
+                                    serial.as_deref(),
+                                    image,
+                                ) {
+                                    Ok(a) if maint => claimed_ok(a, provisional),
+                                    Ok(a) => {
+                                        match (&a.host, a.provisional) {
+                                            (Some(h), false) => uefi::println!(
+                                                "  booting {h}'s image (this MAC is its alias)"
+                                            ),
+                                            (Some(h), true) => {
+                                                uefi::println!("  booting the default image as {h}")
+                                            }
+                                            (None, _) => uefi::println!(
+                                                "  booting the default image as {provisional}"
+                                            ),
                                         }
-                                        (None, _) => uefi::println!(
-                                            "  booting the default image as {provisional}"
-                                        ),
+                                        Some((a, provisional.to_string()))
                                     }
-                                    Some((a, provisional.to_string()))
+                                    // No default to give: a machine the engine
+                                    // already knows by its serial can still boot
+                                    // that, and with no default the engine cannot
+                                    // mint a serial host.
+                                    Err((404, e)) if serial.is_some() => {
+                                        uefi::println!("  {e}");
+                                        by_tag()
+                                    }
+                                    Err((_, e)) => give_up(&e),
                                 }
-                                // No default to give: a machine the engine
-                                // already knows by its serial can still boot
-                                // that, and with no default the engine cannot
-                                // mint a serial host.
-                                Err((404, e)) if serial.is_some() => {
-                                    uefi::println!("  {e}");
-                                    by_tag()
-                                }
-                                Err((_, e)) => give_up(&e),
                             }
                         }
                         None => by_tag(),
                     },
                 }
+            };
+            if let Some(name) = local_under.borrow_mut().take() {
+                ui::skip(ui::Step::Claim, &format!("nothing claimed: the intent under {name} is local"));
+                ui::skip(ui::Step::Image, "");
+                ui::skip(ui::Step::Handoff, "");
+                selfupdate::mark_good("the engine's intent is local");
+                handoff::set_tag(stated.as_deref().or(dns_host.as_deref()));
+                return Err(Stop::Local(format!(
+                    "boot intent for {name} is `local` ({intent_key} said auto): nothing claimed"
+                )));
             }
+            got
         } else {
             uefi::println!("claim       : disabled by the config file");
             ui::skip(ui::Step::Engine, "");

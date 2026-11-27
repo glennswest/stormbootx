@@ -13,7 +13,12 @@
 //! ```
 //!
 //! `run()` asks under the same names the claim tries, in the same order (DNS
-//! name, MAC, tag), and moves on only on a 404. The engine resets `install`
+//! name, MAC, tag), and moves on only on a 404. When the claim then moves on
+//! past the name that answered (its claim 404s) to one the intent was not
+//! read under, an `auto` is read again there before that claim, and a
+//! `local` there falls through with nothing claimed (#265: forge held
+//! `stormblock1`, `auto` and no image, and `C2NR0Q2`, `local`, for one
+//! machine). The engine resets `install`
 //! to `local` when the node's OS reports the install done
 //! (`POST …/installed`); this binary never writes the intent.
 //!

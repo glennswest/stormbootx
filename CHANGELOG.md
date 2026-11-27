@@ -3,6 +3,11 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+## [v0.46.5] — 2026-11-27
+
+- **fix:** #265 (P1): when a claim moves on to a name the intent was not read under, stormbootx reads that record's intent before the claim, and a `local` there falls through to the local disk with nothing claimed. On C2NR0Q2 (stormblock 24.2.2) the intent under the reverse-DNS name `stormblock1` answered `auto` from a host with no image, the name and default claims 404'd, and the claim went on to `boothost/C2NR0Q2` without reading that record's `local`. The installed node's first reboot therefore came from a network clone every time. The new line is `intent : local under <name>, the record this claim reaches (<first> said auto): nothing claimed`. This applies only to an `auto` that no command or install overrode.
+- **test:** #265: net-ovmf `intentsplit`. The stub's MAC record says `auto`, the SMBIOS serial's (`BOOT_SERIAL`) says `local`, and the default claim 404s. The boot must read the serial's intent, fall through and never claim under the serial.
+
 ## [v0.46.4] — 2026-11-27
 
 - **fix:** #263: `startup.nsh` also writes its guard as a stored (non-volatile) `no`, after the delete and the volatile set. On server8 the guard set at 19:12 survived a power-off and a freshly flashed stick, so AMI's EFI Shell 2.31 evidently takes neither `set -d` over it (v0.46.1) nor, perhaps, a volatile set (v0.46.2). The script's `the guard is now …` line says which form won.

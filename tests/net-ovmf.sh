@@ -198,6 +198,16 @@ class H(http.server.BaseHTTPRequestHandler):
             return
         if self.path == "/api/v1/health":
             self.reply(200, {"version": "19.4.0", "status": "ok", "pad": "x" * 120000})
+        # intent.split (#265): two hosts for one machine, as forge had for
+        # C2NR0Q2: the MAC's (a name the installed node gave itself) says
+        # `auto` and has no image, the serial's says `local`.
+        elif (self.path == "/api/v1/synonyms/boothost/525400123456/intent"
+              and os.path.exists(W + "/intent.split")):
+            self.reply(200, {"host": "stub265b", "intent": "auto",
+                             "resolved_from": "525400123456", "updated_at": 1795791487})
+        elif (self.path == "/api/v1/synonyms/boothost/STUB265TAG/intent"
+              and os.path.exists(W + "/intent.split")):
+            self.reply(200, {"host": "STUB265TAG", "intent": "local", "updated_at": 1795791487})
         # intent present (#11): the host this MAC is an alias of has that
         # intent, in stormblock's `intent_body` shape (sorted keys, read by
         # the alias); every other name is the engine's 404.
@@ -629,6 +639,10 @@ BOOT_PXE=
 WAIT_FOR=
 # BOOT_INTENT (#11) is the intent the stub engine answers for this MAC.
 BOOT_INTENT=
+# BOOT_SPLIT=1 (#265): the stub's MAC record says `auto`, the serial's
+# (BOOT_SERIAL, SMBIOS Type 1) `local`.
+BOOT_SPLIT=
+BOOT_SERIAL=
 # BOOT_SLOW=<s> (#157): the stub answers the default claim that late.
 BOOT_SLOW=
 # BOOT_DRIVERS (#108) is a directory laid on the media as \stormboot\drivers,
@@ -685,7 +699,8 @@ boot() {
     local name=$1 cpu=$2 rng=$3 claim=$4 ntp=$5; shift 5
     # NET_ONLY=<name>: run that boot alone (a rerun of one failure).
     [[ -z "${NET_ONLY:-}" || "$NET_ONLY" == "$name" ]] || return 0
-    rm -f "$W/claim.ok" "$W/claim.new" "$W/claim.slow" "$W/ntp.bad" "$W/intent"
+    rm -f "$W/claim.ok" "$W/claim.new" "$W/claim.slow" "$W/ntp.bad" "$W/intent" "$W/intent.split"
+    [[ -n $BOOT_SPLIT ]] && : > "$W/intent.split"
     [[ $claim == ok ]] && : > "$W/claim.ok"
     [[ $claim == new ]] && : > "$W/claim.new"
     [[ -n $BOOT_INTENT ]] && printf '%s\n' "$BOOT_INTENT" > "$W/intent"
@@ -746,6 +761,7 @@ boot() {
     [[ $name == shipped ]] && extra+=("${LOCAL_DRIVES[@]}")
     [[ -n $BOOT_FRESH ]] && extra+=("${FRESH_DRIVES[@]}")
     [[ -n $BOOT_SMBIOS ]] && extra+=(-smbios "type=11,value=$BOOT_SMBIOS")
+    [[ -n $BOOT_SERIAL ]] && extra+=(-smbios "type=1,serial=$BOOT_SERIAL")
     [[ -n "$BOOT_DISK" ]] && extra+=(-device virtio-scsi-pci,id=scsi0
         -drive if=none,id=d0,format=raw,file="$BOOT_DISK" -device scsi-hd,drive=d0,bus=scsi0.0,bootindex=2)
     say "[$name] booting under OVMF ($accel, cpu $cpu, rng ${rng:-as shipped}, up to ${LIMIT}s)"
@@ -1259,6 +1275,22 @@ boot intent "$host_cpu" "" ok good \
     "not:claim       : boothost/" \
     "local       : nothing to boot (" \
     "press c for the network console, or wait 5s to continue"
+
+# #265: the intent under the MAC answers `auto` from a host with no image
+# (C2NR0Q2's reverse-DNS name after its install), the default claim 404s,
+# and the claim moves on to the serial: that record says `local`, so it is
+# read before the claim, and nothing is claimed.
+BOOT_SPLIT=1 BOOT_SERIAL=STUB265TAG BOOT_SYSLOG=off \
+boot intentsplit "$host_cpu" "" 404 good \
+    "service tag : STUB265TAG" \
+    "intent      : auto" \
+    "claim       : boothost/default as 52:54:00:12:34:56" \
+    "intent      : local under STUB265TAG, the record this claim reaches (525400123456 said auto): nothing claimed" \
+    "no network boot: boot intent for STUB265TAG is \`local\` (525400123456 said auto): nothing claimed" \
+    "stub:GET /api/v1/synonyms/boothost/STUB265TAG/intent" \
+    "not-stub:/STUB265TAG/claim" \
+    "not:claim       : boothost/STUB265TAG" \
+    "not:blockio     : published on handle"
 
 # #262: the fresh install. Five drives beside the boot CD: an NVMe disk with
 # a GPT (an ESP and a Linux partition carrying an XFS-like header at its
