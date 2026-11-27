@@ -48,7 +48,7 @@ ed25519-compact = { version = "2.6", default-features = false, features = ["opt_
 # one spec for both (stormblock#637), no_std, core only. Pinned by commit,
 # like stormboot-serve; bump it deliberately, in its own commit.
 stormblock-screen-spec = { git = "https://github.com/glennswest/stormblock", rev = "b74b783e094ad04086ee1c576bc76d5f2aaf9add" }
-smoltcp = { version = "0.14", default-features = false, features = ["alloc", "medium-ethernet", "proto-ipv4", "socket-tcp", "socket-udp", "socket-dhcpv4"] }
+smoltcp = { version = "0.14", default-features = false, features = ["alloc", "medium-ethernet", "proto-ipv4", "socket-tcp", "socket-udp", "socket-dhcpv4", "auto-icmp-echo-reply"] }
 
 # The initiator is its own crate so stormboot4bios can link it (#10);
 # `cargo test -p nvme-tcp-initiator` runs its host tests. A plain `cargo build`

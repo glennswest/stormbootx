@@ -78,6 +78,7 @@ sc-build 'cargo build --release --target x86_64-unknown-uefi && mkdir -p t && \
   ARCH=arm64 A64_GOLDEN_ISO=t/arm/boot/stormbootx-arm64.iso A64_GOLDEN_DISK=t/armdisk/boot/stormbootx-arm64-disk.img \
     tests/net-ovmf.sh t/arm/bin/stormbootx.efi ${CARGO_TARGET_DIR:-target}/aarch64-unknown-uefi/release/tcp4probe.efi && \
   scripts/build-stormdist.sh $PWD/t/sd && tests/dist-ovmf.sh $R/tcp4probe.efi t/sd/stormdist && \
+  tests/ping-ovmf.sh $R/stormbootx.efi && \
   tests/nicfail-ovmf.sh $R/tcp4probe.efi && \
   tests/update-ovmf.sh $R/tcp4probe.efi'
 ```
@@ -108,6 +109,12 @@ contents; xorriso writes Rock Ridge with owner 0 (`-r`), `TZ=UTC`; the
 stormnic drivers build remapped with `/Brepro`. The second build runs with
 umask 077, another zone and (`unshare -r`) another uid. Nothing on a medium
 may come from the clock, a random number or the build user.
+
+`tests/ping-ovmf.sh STORMBOOTX.EFI` (#217) boots stormbootx on QEMU's UDP
+socket netdev with a Python peer on the other end. The peer serves DHCP
+(10.9.0.10), ARP and a RST to every SYN, and then pings the lease while
+stormbootx holds (`hold = forever`). Three of five echoes must be answered
+(smoltcp's `auto-icmp-echo-reply`). slirp never pings its guest.
 
 `tests/nicfail-ovmf.sh PAYLOAD` (#231) rebuilds stormbootx with
 `STORMBOOTX_NET_TEST_FAIL=0` (a test build: nic 0 fails after its exclusive

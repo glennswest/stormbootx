@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 <!-- New unreleased changes go here -->
+- **feat:** #217: stormbootx answers ICMP echo (smoltcp's `auto-icmp-echo-reply`), so a peer can ping a machine while stormbootx holds its lease. `tests/ping-ovmf.sh`: a Python peer on QEMU's UDP socket netdev leases 10.9.0.10 and pings it during the hold.
+- **fix:** #204: `sha256.rs`'s own `#![allow(dead_code)]` is the only one (clippy `duplicated_attributes`).
 
 ## [v0.46.3] — 2026-11-27
 
