@@ -106,7 +106,9 @@ STORMNIC_MLX4_REPO="https://github.com/glennswest/stormnic-mlx4.git"
 # an `ERROR: … LINK DOWN …` line. ConnectX-3 runs no IEEE FEC at 1G/10G/40G,
 # so the FEC is `none` and nothing is written. Its DEVICES are unchanged
 # (1003, 1007).
-STORMNIC_MLX4_REF="398a1a4f10adfa21c895db62802dc475cc73e089"
+# f801f0c (v0.3.1, #208, stormnic-mlx4#34, P0): a port's child handle is no
+# longer freed while its device path is still installed. The same IDs.
+STORMNIC_MLX4_REF="f801f0cdcede380e0ca1b175340e9773c8a5fe9e"
 STORMNIC_VIRTIO_REPO="https://github.com/glennswest/stormnic-virtio.git"
 # 1a04808 (v0.1.0, #75): virtio-net (virtio 1.x PCI, 1af4:1041 and the
 # transitional 1af4:1000), verified under OVMF and on pve (stormnic-virtio#1).
@@ -118,7 +120,10 @@ STORMNIC_VIRTIO_REPO="https://github.com/glennswest/stormnic-virtio.git"
 # line per port, `media virtual`, speed from VIRTIO_NET_F_SPEED_DUPLEX or
 # `unknown`, `FEC none`, link; the same IDs and take-over. Since #202 it takes
 # its NICs from OVMF's VirtioNetDxe unasked (our drivers only).
-STORMNIC_VIRTIO_REF="2dcafd359bff3c8af921a0c98d7025ae77ee73ef"
+# d719f47 (v0.2.2, #228, stormnic-virtio#7/#8, P0 finding b0a545cc9c24): a
+# NIC that would not reset keeps bus mastering off on Stop, on a failed
+# Start, and at ExitBootServices (cleared by a config write). The same IDs.
+STORMNIC_VIRTIO_REF="d719f47a556e9494794f87ca2fa90d2908d9e09b"
 STORMNIC_MLX5_REPO="https://github.com/glennswest/stormnic-mlx5.git"
 # 66de545 (#131, #73): the ConnectX-4/4 Lx/5/6 driver, reproducible and
 # --locked, not yet seen on a card (stormnic-mlx5#1) and so out of the
@@ -163,7 +168,11 @@ STORMNIC_E1000E_REPO="https://github.com/glennswest/stormnic-e1000e.git"
 # stormnic port contract: one line per port with media, speed, `FEC none`
 # and link; a port with no link is a `link DOWN: error: …` line. The same 67
 # IDs. Since #202 it takes its NICs from UNDI or iPXE unasked.
-STORMNIC_E1000E_REF="bd67192b722d5e5adfb621d51879d7b3d05cace4"
+# 976f0d5 (#227, stormnic-e1000e#9, P0 findings 91bea4b60989 and the
+# quiesce one): no MAC reset while bus-master activity has not drained
+# (`MasterTimeout` before CTRL.RST), and bus mastering stays off after a
+# failed quiesce. Still v0.2.0 by its version line. The same 67 IDs.
+STORMNIC_E1000E_REF="976f0d52a26f5c0757c25d2c3c5a9fe668217e04"
 STORMNIC_IGB_REPO="https://github.com/glennswest/stormnic-igb.git"
 # 80c9ea5 (v0.1.0, #69, stormnic-igb#1): SNP for 36 igb PF IDs (82575, 82576,
 # 82580, I350, I354, I210, I211). Declines a function another driver holds

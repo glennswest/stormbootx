@@ -1486,7 +1486,7 @@ if [[ -n "${VIRTIO_EFI:-}" ]]; then
         "stormnic-virtio.efi started"
         ": taken from "
         "; stormnic-virtio.efi drives it"
-        "stormnic-virtio 0.2.0: "
+        "stormnic-virtio 0.2.2: "
         ", FEC none, link UP"
         "not:nic 0: driver Virtio Network Driver"
         "nic 0: leased 10.0.2.15/24 gw 10.0.2.2"
@@ -1506,7 +1506,7 @@ if [[ -n "${VIRTIO_EFI:-}" ]]; then
     # The quiet trace stays out of the boot above; nic_verbose brings it back
     # (#80): StormnicVerbose is set before the driver loads.
     # The driver's trace lines start `stormnic-virtio: `; its one quiet line is
-    # `stormnic-virtio 0.2.0: …` (and OVMF's debug port has `…: Supported` of
+    # `stormnic-virtio 0.2.2: …` (and OVMF's debug port has `…: Supported` of
     # its own).
     grep -qE "stormnic-virtio: .*: Supported" "$W/virtio.txt" && die "[virtio] a quiet boot printed the driver's trace"
     BOOT_DRIVERS="$W/vdrv" BOOT_NIC_VERBOSE=1 \
@@ -1515,7 +1515,7 @@ if [[ -n "${VIRTIO_EFI:-}" ]]; then
         "drivers     : stormnic drivers verbose (nic_verbose in " \
         "StormnicVerbose set until reset)" \
         "; stormnic-virtio.efi drives it" \
-        "stormnic-virtio 0.2.0: "
+        "stormnic-virtio 0.2.2: "
     grep -qE "stormnic-virtio: .*: Supported" "$W/virtio-verbose.txt" \
         && say "[virtio-verbose] found the driver's trace: $(grep -E 'stormnic-virtio: .*: Supported' "$W/virtio-verbose.txt" | head -1)" \
         || die "[virtio-verbose] nic_verbose set, but the driver printed no trace"

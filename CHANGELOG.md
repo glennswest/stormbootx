@@ -3,6 +3,13 @@
 ## [Unreleased]
 <!-- New unreleased changes go here -->
 
+## [v0.46.3] — 2026-11-27
+
+- **fix:** #228: the rustnic media carry stormnic-virtio v0.2.2 (d719f47, stormnic-virtio#7/#8, P0 finding b0a545cc9c24). A NIC that would not reset keeps bus mastering off on Stop, after a failed Start, and at ExitBootServices.
+- **fix:** #227: stormnic-e1000e 976f0d5 (stormnic-e1000e#9, P0). No MAC reset while bus-master activity has not drained, and bus mastering stays off after a failed quiesce.
+- **fix:** #208: stormnic-mlx4 v0.3.1 (f801f0c, stormnic-mlx4#34, P0). A port's child handle is no longer freed while its device path is still installed.
+- The media line names them: `mlx4@f801f0c virtio@d719f47 e1000e@976f0d5`.
+
 ## [v0.46.2] — 2026-11-27
 
 - **fix:** #263 (P0): server8 (X9, AMI EFI Shell 2.31) still went from the `startup.nsh` countdown straight to `back at the shell` on the v0.46.1 stick, with no `starting stormbootx` and nothing to say why. `startup.nsh` now prints the guard as it found it, then sets it to `no` (volatile) after deleting it, so the loop reads `no` whatever the shell kept. For every mapped fsN it prints what it found (no `\stormboot\stormboot.conf`; no `\EFI\BOOT\BOOTX64.EFI`; not started, one medium only), and it prints when stormbootx returns.
