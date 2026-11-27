@@ -201,7 +201,7 @@ With `SECOND_CD=1` (#180) a second medium is mapped after the first, and
 `startup.nsh` must start only one; `SCREEN_PNG=1` prints the screen as a PNG. With `STALE_GUARD=1` (#263) the store already
 holds the script's guard `stormbootx_started = yes` as a non-volatile shell
 variable, as server8's AMI shell kept it across a reset; the script deletes
-it first and must still start stormbootx. Every run must print `the guard is now "no"`, and one where stormbootx returns must print the 30 s line (#263, v0.46.2).
+it first and must still start stormbootx. Every run must print `the guard is now no`, and `SECOND_CD`, where stormbootx returns to the shell, the 30 s line (#263, v0.46.2).
 
 `tests/stick.sh` (#151) builds `stormbootx-stick` for
 `x86_64-unknown-linux-musl` with a test key and runs it against signed

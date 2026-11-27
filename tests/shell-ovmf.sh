@@ -178,15 +178,17 @@ if [[ -n "${SECOND_CD:-}" ]]; then
 fi
 # The script says what it found (#263): the guard set to no whatever the
 # store kept, and the stale one as it was found.
-set -- "$@" 'startup.nsh: the guard is now "no"'
+# The shells drop an echo's double quotes.
+set -- "$@" 'startup.nsh: the guard is now no'
 if [[ -n "${STALE_GUARD:-}" ]]; then
     # Said, not required: whether this shell reads the planted variable back
     # is the shell's; the guard reset above is what must hold.
-    say "the shell read the stale guard as: $(grep -o 'the guard was "[^"]*"' "$W/console.txt" | head -1)"
+    say "the shell read the stale guard as: $(grep -o 'the guard was [a-z]*' "$W/console.txt" | head -1)"
 fi
 # A stormbootx that returns to the shell says why and waits 30 s first
-# (#263); with LOCAL_EFI the fall-through starts the local disk instead.
-[[ -z "${LOCAL_EFI:-}" ]] && set -- "$@" "to the EFI Shell in 30 s (a key returns now): " "startup.nsh: stormbootx on fs"
+# (#263). Only SECOND_CD's returns: elsewhere the shell's own fixed disk is
+# the local disk the fall-through starts (its BOOTX64.EFI is the shell).
+[[ -n "${SECOND_CD:-}" ]] && set -- "$@" "to the EFI Shell in 30 s (a key returns now): " "startup.nsh: stormbootx on fs"
 for want in "startup.nsh: starting stormbootx from" "$@"; do
     if grep -qF -- "$want" "$W/console.txt"; then
         say "found: $want"
