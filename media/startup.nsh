@@ -27,6 +27,10 @@
 echo startup.nsh: stormbootx's script; the guard was "%stormbootx_started%"
 set -d stormbootx_started
 set -v stormbootx_started no
+# And as the stored kind too: a shell that keeps the guard non-volatile and
+# takes neither the delete nor a volatile set over it still reads `no` from
+# here. The line after says which won.
+set stormbootx_started no
 echo startup.nsh: the guard is now "%stormbootx_started%" (it must say no)
 for %i in fs0 fs1 fs2 fs3 fs4 fs5 fs6 fs7
   if exist %i:\ then
