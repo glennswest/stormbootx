@@ -37,6 +37,24 @@ attached clone    stormuefi    pallets → select → verify → kernel + initra
 | over the network, from forge | attaches the image | boots the kernel out of it |
 | from its own drive | not involved | boots the kernel out of it |
 
+**The kernel need not be Linux** (#261). stormbootx never reads a kernel.
+It starts whatever `\EFI\BOOT\BOOTX64.EFI` the attached ESP carries, and
+`tests/net-ovmf.sh` starts one that is not Linux at all (tcp4probe, as the
+96 MiB payload). What it hands down (the `StormBoot*` volatile variables) a
+kernel may read or ignore. The panel stays up only over stormuefi. Any other
+bootloader gets the firmware's console (#236). stormuefi in turn starts a
+pallet's `kernel` member as a PE with `LoadImage`, puts the `cmdline` in
+`LoadOptions`, and serves the `initramfs` as `EFI_LOAD_FILE2` under
+`LINUX_EFI_INITRD_MEDIA_GUID`. So any kernel with a PE/COFF EFI-stub entry
+that takes its initrd the Linux EFI stub's way boots like stormcos does.
+That covers a bzImage with an EFI stub, such as StormKernel's. An image may
+also carry such a kernel as its ESP's `BOOTX64.EFI`, with no stormuefi. The
+stub's `initrd=` then reads the ESP through the firmware's FAT, or through
+`espfs.rs` when the firmware's FAT cannot read it.
+A kernel the firmware's `LoadImage` refuses (no PE header, or a bzImage
+whose only entry is the 32/64-bit `boot_params` handover) is not booted by
+either stage.
+
 Legacy-BIOS machines are served by neither. That is the planned
 **stormboot4bios**, which will link this repo's
 `crates/nvme-tcp-initiator` (#10).
