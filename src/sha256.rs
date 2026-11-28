@@ -245,10 +245,7 @@ impl fmt::Debug for Digest {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // These only ever build under `rustc --test`, which is a std build — the
-    // crate itself compiles this module out entirely. So the std prelude is
-    // available here and `extern crate alloc` is not needed.
+    use std::prelude::v1::*;
 
     fn hex(data: &[u8]) -> String {
         format!("{}", digest(data))
