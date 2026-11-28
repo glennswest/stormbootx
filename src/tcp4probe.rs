@@ -23,7 +23,7 @@
 //! appears, MNP/IP4/TCP4 do not, and a `ConnectController` pass over every
 //! handle changes nothing. Seeing that here means the emulator, not the code.
 
-#![no_main]
+#![cfg_attr(not(test), no_main)]
 #![no_std]
 
 extern crate alloc;

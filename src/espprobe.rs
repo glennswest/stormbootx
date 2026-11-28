@@ -14,7 +14,7 @@
 //! Then it prints `espprobe: PASS` if the started image came back, and powers
 //! the machine off, so a VM test ends by itself.
 
-#![no_main]
+#![cfg_attr(not(test), no_main)]
 #![no_std]
 
 extern crate alloc;

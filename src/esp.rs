@@ -959,7 +959,8 @@ impl Lfn {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::prelude::v1::*;
+    use std::string::{String, ToString};
+    use std::vec::Vec;
     use std::fs;
     use std::io::{Read, Seek, SeekFrom};
     use std::path::PathBuf;

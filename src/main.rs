@@ -47,7 +47,7 @@
 //! because every machine that reboots for any reason during it stays down. See
 //! `fall_through`.
 
-#![no_main]
+#![cfg_attr(not(test), no_main)]
 #![no_std]
 
 extern crate alloc;

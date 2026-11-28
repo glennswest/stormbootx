@@ -14,7 +14,7 @@
 //! choose, so a power loss at any step of an update leaves it in place and
 //! one of the records whole. Quiet unless it passes over something.
 
-#![no_main]
+#![cfg_attr(not(test), no_main)]
 #![no_std]
 
 extern crate alloc;

@@ -4,7 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-11-28
-- **fix:** #266, #267: host `cargo test --locked` links the UEFI panic handler only for UEFI targets and makes `std` and its prelude available to the UEFI binaries' unit tests.
+- **fix:** #266, #267: host `cargo test --locked` links UEFI-only helpers only for UEFI targets and gives the four UEFI binaries' host test harnesses `std` and an ordinary `main`.
 
 ## [v0.47.0] — 2026-11-28
 
