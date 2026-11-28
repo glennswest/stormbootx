@@ -20,6 +20,9 @@
 #   igb   -> stormnic-igb.efi     Intel 82575/82576/82580, I350/I354, I210/I211
 #                                 (#69); binds a NIC nothing else drives, and
 #                                 there is no key to take one
+#   realtek -> stormnic-realtek.efi Realtek RTL8125/RTL8126 2.5/5 GbE (#172,
+#                                 the Orion O6N); the one driver built for
+#                                 aarch64 too, and the arm64 media's only one
 #
 # No iPXE (owner on #81, 2026-10-02: "I dont want the ipxe code. Move to
 # ours."; #91). A machine whose firmware has its own NIC driver boots the
@@ -28,12 +31,15 @@
 #   scripts/build-nic-drivers.sh [OUTDIR]     (default tmp/drivers in the checkout)
 #   scripts/build-boot-agent.sh --iso --drivers tmp/drivers
 #
-# STORMNIC_DRIVERS (default "ixgbe mlx4 virtio e1000e igb mlx5") picks which are built. What ships is
+# STORMNIC_DRIVERS (default "ixgbe mlx4 virtio e1000e igb mlx5") picks which are built;
+# `realtek` is out of the default set, so no x86 medium carries it until one
+# names it. STORMNIC_TARGET (default x86_64-unknown-uefi) is the target; with
+# aarch64-unknown-uefi only `realtek` may be asked for (#172). What ships is
 # inside each rustnic medium (deploy/build-golden.sh); there is no
 # nic-drivers golden of the drivers alone (#201).
 #
 # Runs ON the build box (dev.g8.lo); needs git and cargo with the
-# x86_64-unknown-uefi target.
+# x86_64-unknown-uefi target (aarch64-unknown-uefi for STORMNIC_TARGET).
 set -euo pipefail
 
 say() { printf '==> %s\n' "$*"; }
@@ -183,10 +189,30 @@ STORMNIC_IGB_REPO="https://github.com/glennswest/stormnic-igb.git"
 # per port, `… port 0: MAC …, media copper, speed 1000 Mb/s full duplex, FEC
 # none, link UP`; no link is a `link DOWN: error: …` line. The same 36 IDs.
 STORMNIC_IGB_REF="699034193728829e3e6d6c4be29b94793e960ea8"
+STORMNIC_REALTEK_REPO="https://github.com/glennswest/stormnic-realtek.git"
+# ec56f90 (v0.2.0, tag v0.2.0 resolves to it; #172, stormnic-realtek#2/#5):
+# SNP for 10ec:8125, 8126, 3000 and 5000 (RTL8125A/B/D, RTL8126A by TXCFG
+# HWREV), for x86_64 and aarch64. Declines a function another driver holds
+# (since #202 stormbootx takes its NICs from the firmware's unasked), flow
+# control off unless `StormnicRealtekPause` is set, quiesced at
+# ExitBootServices in every SNP state and on every Start failure, Shutdown and
+# Stop; the stormnic port contract's per-port line (media, speed, FEC none or
+# LDPC for BASE-T, link; `error:` with no link). Verified against a simulated
+# chip and by its check-driver.sh for both targets; not yet on an O6N
+# (stormnic-realtek#2's last step).
+STORMNIC_REALTEK_REF="ec56f903b4e122c371d7aaf11048fbea263aa146"
+STORMNIC_TARGET="${STORMNIC_TARGET:-x86_64-unknown-uefi}"
+case $STORMNIC_TARGET in
+    x86_64-unknown-uefi) PE_MACHINE=34404 ;;  # 0x8664
+    aarch64-unknown-uefi) PE_MACHINE=43620 ;; # 0xaa64
+    *) die "STORMNIC_TARGET: x86_64-unknown-uefi or aarch64-unknown-uefi, not '$STORMNIC_TARGET'" ;;
+esac
 read -r -a STORMNIC_DRIVERS <<< "${STORMNIC_DRIVERS:-ixgbe mlx4 virtio e1000e igb mlx5}"
 for d in "${STORMNIC_DRIVERS[@]}"; do
-    [[ "$d" == ixgbe || "$d" == mlx4 || "$d" == virtio || "$d" == mlx5 || "$d" == e1000e || "$d" == igb ]] \
-        || die "STORMNIC_DRIVERS: no Rust driver '$d' (ixgbe, mlx4, virtio, mlx5, e1000e, igb)"
+    [[ "$d" == ixgbe || "$d" == mlx4 || "$d" == virtio || "$d" == mlx5 || "$d" == e1000e || "$d" == igb || "$d" == realtek ]] \
+        || die "STORMNIC_DRIVERS: no Rust driver '$d' (ixgbe, mlx4, virtio, mlx5, e1000e, igb, realtek)"
+    [[ $STORMNIC_TARGET == x86_64-unknown-uefi || $d == realtek ]] \
+        || die "STORMNIC_DRIVERS: $d is built for x86_64-unknown-uefi only; for $STORMNIC_TARGET only realtek"
 done
 wanted() { local d; for d in "${STORMNIC_DRIVERS[@]}"; do [[ "$d" == "$1" ]] && return 0; done; return 1; }
 OUTDIR="${1:-$(cd "$(dirname "$0")/.." && pwd)/tmp/drivers}"
@@ -206,6 +232,12 @@ pe_subsystem() {
     local f=$1 pe
     pe=$(od -An -tu4 -j 60 -N4 "$f" | tr -d ' ')
     od -An -tu2 -j $((pe + 4 + 20 + 68)) -N2 "$f" | tr -d ' '
+}
+# PE COFF Machine of an image: 34404 (0x8664) x86_64, 43620 (0xaa64) aarch64.
+pe_machine() {
+    local f=$1 pe
+    pe=$(od -An -tu4 -j 60 -N4 "$f" | tr -d ' ')
+    od -An -tu2 -j $((pe + 4)) -N2 "$f" | tr -d ' '
 }
 build_stormnic() {
     local name=$1 repo=$2 ref=$3 short=$4 lock sub efi
@@ -227,16 +259,17 @@ build_stormnic() {
     local flags="--remap-path-prefix=$chome=/cargo --remap-path-prefix=$WORK/$name=/$name"
     flags+=" --remap-path-prefix=$WORK/$name-target=/target -C link-arg=/Brepro -C link-arg=/DEBUG:NONE"
     ( cd "$WORK/$name" && CARGO_TARGET_DIR="$WORK/$name-target" RUSTFLAGS="$flags" \
-        cargo build -q --release $lock --target x86_64-unknown-uefi ) \
+        cargo build -q --release $lock --target "$STORMNIC_TARGET" ) \
         || die "$name did not build"
-    efi="$WORK/$name-target/x86_64-unknown-uefi/release/$name.efi"
+    efi="$WORK/$name-target/$STORMNIC_TARGET/release/$name.efi"
     [[ -f "$efi" ]] || die "no $name.efi at $efi"
     # stormbootx loads it with LoadImage/StartImage as a driver; an application
     # image would run and exit, leaving no binding behind.
     sub=$(pe_subsystem "$efi")
     [[ "$sub" == 11 ]] || die "$name.efi has PE subsystem $sub, not 11 (EFI boot-service driver)"
+    [[ "$(pe_machine "$efi")" == "$PE_MACHINE" ]] || die "$name.efi has PE machine $(pe_machine "$efi"), not $PE_MACHINE ($STORMNIC_TARGET)"
     cp "$efi" "$OUTDIR/$name.efi"
-    say "driver  $(du -h "$efi" | cut -f1)  $OUTDIR/$name.efi  (subsystem $sub)"
+    say "driver  $(du -h "$efi" | cut -f1)  $OUTDIR/$name.efi  (subsystem $sub, $STORMNIC_TARGET)"
     printf '%s %s %s%s\n' "$name" "$ref" "$(sha256sum "$efi" | cut -d' ' -f1)" "${lock:+ locked}" >> "$OUTDIR/STORMNIC-SOURCE.txt"
     case $short in
         e1000e) same_ids "$name" "$WORK/$name/src/ids.rs" 'device: 0x[0-9a-fA-F]{4}' E1000E_IDS ;;
@@ -244,6 +277,7 @@ build_stormnic() {
         igb) same_ids "$name" "$WORK/$name/src/ids.rs" 'n\(0x[0-9a-fA-F]{4}' IGB_IDS ;;
         mlx4) same_ids "$name" "$WORK/$name/src/main.rs" '^ *\(0x[0-9a-fA-F]{4}, "|\[\(0x[0-9a-fA-F]{4}, "|\), \(0x[0-9a-fA-F]{4}, "' MLX4_IDS ;;
         mlx5) same_ids "$name" "$WORK/$name/src/main.rs" '^ *\(0x[0-9a-fA-F]{4}, "' MLX5_TAKE_OVER ;;
+        realtek) same_ids "$name" "$WORK/$name/src/ids.rs" 'device: 0x[0-9a-fA-F]{4}' REALTEK_IDS ;;
     esac
 }
 # stormbootx's take-over (src/drivers.rs, #202) takes the functions its lists
@@ -254,7 +288,7 @@ same_ids() {
     local name=$1 file=$2 pat=$3 const=$4 theirs ours
     theirs=$(grep -oE "$pat" "$file" | grep -oE '0x[0-9a-fA-F]{4}' | sed 's/0x//' | tr A-F a-f | LC_ALL=C sort -u)
     ours=$(sed -n "/^const $const/,/^\];/p" "$(dirname "$0")/../src/drivers.rs" \
-        | grep -oE '0x(8086|15b3), 0x[0-9a-fA-F]{4}' | sed 's/.*0x//' | tr A-F a-f | LC_ALL=C sort -u)
+        | grep -oE '0x(8086|15b3|10ec), 0x[0-9a-fA-F]{4}' | sed 's/.*0x//' | tr A-F a-f | LC_ALL=C sort -u)
     [[ -n "$theirs" && "$theirs" == "$ours" ]] || die "$name's device ids and src/drivers.rs $const differ:
 $(diff <(printf '%s\n' "$theirs") <(printf '%s\n' "$ours") | grep '^[<>]')"
     say "  $name: $(wc -l <<< "$theirs") device IDs, the same as src/drivers.rs $const"
@@ -267,3 +301,4 @@ build_stormnic stormnic-virtio "$STORMNIC_VIRTIO_REPO" "$STORMNIC_VIRTIO_REF" vi
 build_stormnic stormnic-mlx5 "$STORMNIC_MLX5_REPO" "$STORMNIC_MLX5_REF" mlx5
 build_stormnic stormnic-e1000e "$STORMNIC_E1000E_REPO" "$STORMNIC_E1000E_REF" e1000e
 build_stormnic stormnic-igb "$STORMNIC_IGB_REPO" "$STORMNIC_IGB_REF" igb
+build_stormnic stormnic-realtek "$STORMNIC_REALTEK_REPO" "$STORMNIC_REALTEK_REF" realtek

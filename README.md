@@ -1708,15 +1708,17 @@ compiles for `aarch64-unknown-uefi`: its one cycle counter is
 bootloader path is the architecture's removable-media path, so an arm64
 medium carries `BOOTAA64.EFI`, chain-loads the attached image's
 `BOOTAA64.EFI` and takes only a self-update manifest that names one.
-`stormbootx-arm64` is the firmware-drivers medium (`media : fw arm64`): the
-stormnic drivers are x86 builds, so there is no arm64 rustnic. It is a
+`stormbootx-arm64` carries one NIC driver, stormnic-realtek built for
+aarch64 (#172, `media : rustnic arm64 realtek@<pin>`): it takes the O6N's
+RTL8125/RTL8126 from the board firmware's driver, as every stormnic driver
+takes its NICs since #202, and any other NIC stays the firmware's. It is a
 separate golden so an arm64 failure never holds up the x86 ones;
 storminstall picks it by its manifest row's `"arch": "arm64"`.
 `build-boot-agent.sh --arch arm64` lays any arm64 medium down. Every build
 checks the medium (`EFI_NAME=BOOTAA64.EFI tests/iso-layout.sh`) and boots it
 under AAVMF, EDK2's arm64 firmware on QEMU's `virt` machine
 (`ARCH=arm64 tests/net-ovmf.sh`, `tests/aavmf-boots.sh`). The golden's ISO
-and stick start and name their medium. The golden's binary claims from a stub
+and stick start, name their medium and start the aarch64 stormnic-realtek. The golden's binary claims from a stub
 engine, attaches an NVMe/TCP stub, reads 96 MiB through its BlockIO and
 starts the image's `\EFI\BOOT\BOOTAA64.EFI`. No arm64 machine has booted it
 yet: that is #172's Orion O6N.

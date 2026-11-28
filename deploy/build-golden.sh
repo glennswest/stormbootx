@@ -102,15 +102,20 @@
 #                                 BOOTX64.EFI; `update =` its own boothelper
 #   SHA256SUMS, BUILD
 #
-#   No NIC drivers: the stormnic drivers are x86 builds, so every NIC is the
-#   firmware's own (`media : fw arm64`). No tcp4probe ISO. The ISO is also
+#   \stormboot\drivers\stormnic-realtek.efi (#172), built for aarch64 from
+#   its pin in scripts/build-nic-drivers.sh, the arm64 media's one driver:
+#   it takes the O6N's RTL8125/RTL8126 from the board firmware's driver, as
+#   every stormnic driver takes its NICs since #202 (no key: the
+#   `prefer_media_drivers` it once needed is ignored). Any other NIC stays
+#   the firmware's. `media : rustnic arm64 realtek@<pin>`. No tcp4probe ISO. The ISO is also
 #   what UEFI HTTP boot serves (#172): EDK2 mounts a downloaded ISO as a RAM
 #   disk and boots its BOOTAA64.EFI, so the medium's conf comes with it.
 #
 # stormbootx-arm64-disk golden (#172, the Orion O6N): the arm64 medium on a
 # USB stick, as stormbootx-disk is the fw one's:
 #   boot/stormbootx-arm64-disk.img  GPT, 64 MiB FAT16 ESP, BOOTAA64.EFI,
-#                                   `update =` the stormbootx-arm64 boothelper
+#                                   stormnic-realtek.efi, `update =` the
+#                                   stormbootx-arm64 boothelper
 #   SHA256SUMS, BUILD Until stormcentral#604 bakes the target into the build template,
 #   the aarch64 std is added with rustup when it is missing.
 #
@@ -229,6 +234,17 @@ rustnic_drivers() {
     pin() { sed -n "s/^$1=\"\(.......\).*\"/\1/p" "$ROOT/scripts/build-nic-drivers.sh"; }
     RUSTNIC_LABEL="rustnic ixgbe@$(pin STORMNIC_IXGBE_REF) mlx4@$(pin STORMNIC_MLX4_REF) virtio@$(pin STORMNIC_VIRTIO_REF) e1000e@$(pin STORMNIC_E1000E_REF) igb@$(pin STORMNIC_IGB_REF) mlx5@$(pin STORMNIC_MLX5_REF)"
     [[ $GOLDEN != stormbootx-mlx5test ]] || RUSTNIC_LABEL+=" test"
+}
+
+# The arm64 media's NIC driver (#172): stormnic-realtek for aarch64, into
+# $WORK/media-drivers, and the medium's `media =` label in ARM64_LABEL.
+arm64_drivers() {
+    STORMNIC_TARGET=aarch64-unknown-uefi STORMNIC_DRIVERS=realtek \
+        "$ROOT/scripts/build-nic-drivers.sh" "$WORK/drivers"
+    [[ -f "$WORK/drivers/stormnic-realtek.efi" ]] || die "no stormnic-realtek.efi was built"
+    mkdir -p "$WORK/media-drivers"
+    cp "$WORK/drivers/stormnic-realtek.efi" "$WORK/drivers/STORMNIC-SOURCE.txt" "$WORK/media-drivers/"
+    ARM64_LABEL="rustnic arm64 realtek@$(sed -n 's/^STORMNIC_REALTEK_REF="\(.......\).*"/\1/p' "$ROOT/scripts/build-nic-drivers.sh")"
 }
 
 # The aarch64 std, from rustup when the toolchain lacks it (#84; the build
@@ -352,28 +368,35 @@ stormnic = $(cat "$WORK/drivers/STORMNIC-SOURCE.txt")"
 image    = boot/$GOLDEN.img (GPT, 64 MiB FAT ESP at 512-byte sectors; dd it whole onto a stick)"
     ;;
 stormbootx-arm64)
-    [[ -z "$DRIVERS" ]] || die "$GOLDEN carries no NIC drivers (the stormnic drivers are x86); no --drivers"
+    [[ -z "$DRIVERS" ]] || die "$GOLDEN builds its own driver (stormnic-realtek, aarch64); no --drivers"
     aarch64_target
+    arm64_drivers
     say "building stormbootx for aarch64-unknown-uefi"
     ( cd "$ROOT" && scripts/cargo-repro.sh build --locked --release --target aarch64-unknown-uefi --bin stormbootx --bin stormbootx-launch )
     REL="${CARGO_TARGET_DIR:-$ROOT/target}/aarch64-unknown-uefi/release"
     mkdir -p "$OUT/bin" "$OUT/boot"
     cp "$REL/stormbootx.efi" "$REL/stormbootx-launch.efi" "$OUT/bin/"
     agent=(--arch arm64 --binary "$OUT/bin/stormbootx.efi" --dns 192.168.31.252 --no-fallback
-           --syslog "$SYSLOG_TARGET" --hold "$HOLD" --media "fw arm64" --update "$(update_url stormbootx-arm64)")
+           --syslog "$SYSLOG_TARGET" --hold "$HOLD" --drivers "$WORK/media-drivers" --media "$ARM64_LABEL"
+           --update "$(update_url stormbootx-arm64)")
     "$ROOT/scripts/build-boot-agent.sh" --iso "${agent[@]}" --tree "$OUT/media" \
         --output "$OUT/boot/stormbootx-arm64.iso"
     usb_image "${agent[@]}"
     media_files
     [[ -f "$OUT/media/EFI/BOOT/BOOTAA64.EFI" && ! -e "$OUT/media/EFI/BOOT/BOOTX64.EFI" ]] \
         || die "the arm64 medium must carry BOOTAA64.EFI and no BOOTX64.EFI"
-    [[ ! -e "$OUT/media/stormboot/drivers" ]] || die "NIC drivers reached the arm64 medium"
+    [[ "$(cd "$OUT/media/stormboot/drivers" && ls *.efi)" == stormnic-realtek.efi ]] \
+        || die "the arm64 medium must carry stormnic-realtek.efi and no other driver"
+    ! grep -q '^prefer_media_drivers' "$OUT/media/stormboot/stormboot.conf" \
+        || die "the arm64 medium writes prefer_media_drivers (ignored since #202)"
     seal "arch     = arm64 (aarch64-unknown-uefi, \\EFI\\BOOT\\BOOTAA64.EFI)
-drivers  = none (the firmware's own)"
+drivers  = stormnic-realtek.efi (aarch64, built here)
+stormnic = $(cat "$WORK/drivers/STORMNIC-SOURCE.txt")"
     ;;
 stormbootx-arm64-disk)
-    [[ -z "$DRIVERS" ]] || die "$GOLDEN carries no NIC drivers; no --drivers"
+    [[ -z "$DRIVERS" ]] || die "$GOLDEN builds its own driver (stormnic-realtek, aarch64); no --drivers"
     aarch64_target
+    arm64_drivers
     say "building stormbootx for aarch64-unknown-uefi"
     ( cd "$ROOT" && scripts/cargo-repro.sh build --locked --release --target aarch64-unknown-uefi --bin stormbootx --bin stormbootx-launch )
     REL="${CARGO_TARGET_DIR:-$ROOT/target}/aarch64-unknown-uefi/release"
@@ -382,11 +405,12 @@ stormbootx-arm64-disk)
     # The arm64 medium on a writable stick: the same files as its ISO.
     "$ROOT/scripts/build-boot-agent.sh" --arch arm64 --binary "$WORK/stormbootx.efi" \
         --dns 192.168.31.252 --no-fallback --syslog "$SYSLOG_TARGET" --hold "$HOLD" --size 64 \
-        --media "fw arm64" --update "$(update_url stormbootx-arm64)" \
+        --drivers "$WORK/media-drivers" --media "$ARM64_LABEL" --update "$(update_url stormbootx-arm64)" \
         --output "$OUT/boot/$GOLDEN.img"
     only_the_image
     seal "arch     = arm64 (aarch64-unknown-uefi, \\EFI\\BOOT\\BOOTAA64.EFI)
-drivers  = none (the firmware's own)
+drivers  = stormnic-realtek.efi (aarch64, built here)
+stormnic = $(cat "$WORK/drivers/STORMNIC-SOURCE.txt")
 image    = boot/$GOLDEN.img (GPT, 64 MiB FAT ESP at 512-byte sectors; dd it whole onto a stick)"
     ;;
 stormbootx-stick)

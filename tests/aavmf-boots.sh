@@ -9,8 +9,11 @@
 # ArmVirtQemu firmware (edk2-aarch64, "AAVMF") and a virtio-net NIC with no
 # option ROM, driven by the firmware's VirtioNetDxe. Boots:
 #   a64-golden  the stormbootx-arm64 golden's ISO as built (A64_GOLDEN_ISO),
-#               on virtio-scsi: its BOOTAA64.EFI starts, says `media : fw
-#               arm64`, and stops there (its engine is not reachable here);
+#               on virtio-scsi: its BOOTAA64.EFI starts, says `media :
+#               rustnic arm64 realtek@<pin>`, starts the aarch64
+#               stormnic-realtek.efi from \stormboot\drivers, finds no Realtek
+#               NIC for it (#172) and stops there (its engine is not reachable
+#               here);
 #   a64-stick   the stormbootx-arm64-disk golden's stick (A64_GOLDEN_DISK),
 #               on qemu-xhci + usb-storage, the same;
 #   a64-claim   STORMBOOTX-AARCH64.EFI on a test ISO naming the stubs: smoltcp
@@ -118,13 +121,20 @@ a64() {
 }
 
 # The goldens as built: BOOTAA64.EFI starts and knows its medium.
+# Their one driver, stormnic-realtek for aarch64 (#172): loaded and started
+# by the firmware, and with QEMU's virtio-net the only NIC, nothing to take.
+A64_RT=$(sed -n 's/^STORMNIC_REALTEK_REF="\(.......\).*"/\1/p' "$ROOT/scripts/build-nic-drivers.sh")
+A64_GOLDEN_LINES=("stormbootx $VERSION (" "NVMe/TCP boot extension" "media       : rustnic arm64 realtek@$A64_RT"
+    "drivers     : 1 on the media in \stormboot\drivers" "stormnic-realtek.efi started"
+    "ours      : no NIC here for stormnic-realtek.efi" "drivers     : 1 of 1 started from \stormboot\drivers"
+    "not:prefer_media_drivers")
 if [[ -n "${A64_GOLDEN_ISO:-}" ]]; then
-    A64_STOP="media       : " \
-    a64 a64-golden "$A64_GOLDEN_ISO" "stormbootx $VERSION (" "NVMe/TCP boot extension" "media       : fw arm64"
+    A64_STOP="drivers     : 1 of 1 started|drivers     : 0 of 1 started" \
+    a64 a64-golden "$A64_GOLDEN_ISO" "${A64_GOLDEN_LINES[@]}"
 fi
 if [[ -n "${A64_GOLDEN_DISK:-}" ]]; then
-    A64_STOP="media       : " \
-    a64 a64-stick "$A64_GOLDEN_DISK" "stormbootx $VERSION (" "NVMe/TCP boot extension" "media       : fw arm64"
+    A64_STOP="drivers     : 1 of 1 started|drivers     : 0 of 1 started" \
+    a64 a64-stick "$A64_GOLDEN_DISK" "${A64_GOLDEN_LINES[@]}"
 fi
 
 # The whole path against the stubs.

@@ -233,10 +233,14 @@ elif [[ -z "$LAUNCHER" ]]; then
     fi
 fi
 [[ -z "$LAUNCHER" || -f "$LAUNCHER" ]] || die "no stormbootx-launch.efi at $LAUNCHER"
+if [[ -n "$DRIVERS" ]]; then
+    compgen -G "$DRIVERS/*.efi" >/dev/null || die "no *.efi in $DRIVERS (run scripts/build-nic-drivers.sh)"
+fi
 # The PE machine field (COFF header at e_lfanew + 4): 0x8664 x86_64, 0xaa64
 # arm64. A binary of the other architecture would be laid down under a name
 # this firmware never starts.
-for pe in "$BIN" ${LAUNCHER:+"$LAUNCHER"}; do
+# Each NIC driver too (#172): an x86 driver on an arm64 medium never starts.
+for pe in "$BIN" ${LAUNCHER:+"$LAUNCHER"} ${DRIVERS:+"$DRIVERS"/*.efi}; do
     PE_AT=$(od -An -tu4 -j60 -N4 "$pe" | tr -d ' ')
     MACHINE=$(od -An -tx2 -j$(( PE_AT + 4 )) -N2 "$pe" | tr -d ' ')
     case "$ARCH:$MACHINE" in
@@ -251,9 +255,6 @@ if [[ -n "$LAUNCHER" ]]; then
 else
     BOOT_FILE="$BIN"
     PAYLOAD=""
-fi
-if [[ -n "$DRIVERS" ]]; then
-    compgen -G "$DRIVERS/*.efi" >/dev/null || die "no *.efi in $DRIVERS (run scripts/build-nic-drivers.sh)"
 fi
 
 WORK="$(mktemp -d)"

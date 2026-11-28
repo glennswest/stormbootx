@@ -837,6 +837,20 @@ then.
       stormnic-realtek#2; the arm64 boot under AAVMF (stormcentral#604);
       the O6N itself. Inventory lists the RAM disk as `bus virtio` (its
       path is the NIC's): cosmetic.
+      **2026-11-28, v0.47.0 (the master: do the media work now, the O6N
+      proof a separate gate):** 4 done. stormnic-realtek pinned at
+      ec56f903b4e1 (tag v0.2.0) in `build-nic-drivers.sh`, built for
+      aarch64 (`STORMNIC_TARGET`) onto both arm64 goldens, and for x86_64
+      as `realtek` out of the default set (no x86 medium changes);
+      `REALTEK_IDS` in `drivers.rs`, so the take-over gives it the O6N's
+      NIC. No `prefer_media_drivers = realtek`: the key has been ignored
+      since #202 (every family takes its NICs unasked) and no golden
+      writes it; the arm64 build checks so. AAVMF boots both arm64 goldens
+      to `stormnic-realtek.efi started` / `no NIC here for
+      stormnic-realtek.efi`. stormnic-realtek main has fixes after v0.2.0
+      (#10, #11: Start fails on a DMA check timeout, quiesce on a failed
+      link read); a bump is the master's call. **Left:** the O6N boot
+      (DHCP, NVMe/TCP claim), stormnic-realtek#2's last step.
 
 - [x] **#166 — install from an attached release ISO, no forge, no network
       (P1, the master for the owner, 2026-10-21). Withdrawn and closed by

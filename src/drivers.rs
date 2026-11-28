@@ -81,7 +81,9 @@ struct Family {
 /// is given it back. mlx5: a ConnectX-4/5/6 under FlexBoot (#131). e1000e:
 /// an Intel 82574L or chipset GbE under Intel's UNDI or iPXE (#70). ixgbe:
 /// Intel 82599/X540/X550/X552 10G (#29). mlx4: ConnectX-3 (#34). igb: Intel
-/// 82575/82576/82580/I350/I354/I210/I211 1G (#69).
+/// 82575/82576/82580/I350/I354/I210/I211 1G (#69). realtek: RTL8125/RTL8126
+/// 2.5/5 GbE (#172, the Orion O6N), the arm64 media's driver, taken from the
+/// board firmware's own Realtek driver.
 const FAMILIES: &[Family] = &[
     Family {
         file: "stormnic-virtio.efi",
@@ -107,6 +109,17 @@ const FAMILIES: &[Family] = &[
         file: "stormnic-igb.efi",
         ids: IGB_IDS,
     },
+    Family {
+        file: "stormnic-realtek.efi",
+        ids: REALTEK_IDS,
+    },
+];
+
+/// What stormnic-realtek binds (its `src/ids.rs` at the pin): RTL8125,
+/// RTL8126 and the Killer E3000/E5000 built on them. Not the RTL8127 (v2
+/// descriptors) nor the RTL8111/8168 gigabit family.
+const REALTEK_IDS: &[(u16, u16)] = &[
+    (0x10ec, 0x8125), (0x10ec, 0x8126), (0x10ec, 0x3000), (0x10ec, 0x5000),
 ];
 
 /// What stormnic-ixgbe binds (its `src/ids.rs` at the pin).
