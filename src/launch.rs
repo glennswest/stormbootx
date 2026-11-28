@@ -15,12 +15,9 @@
 //! one of the records whole. Quiet unless it passes over something.
 
 #![cfg_attr(not(test), no_main)]
-#![no_std]
+#![cfg_attr(target_os = "uefi", no_std)]
 
 extern crate alloc;
-#[cfg(test)]
-#[macro_use]
-extern crate std;
 
 #[allow(dead_code)]
 #[path = "bootrec.rs"]

@@ -245,8 +245,6 @@ impl fmt::Debug for Digest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::string::{String, ToString};
-    use std::vec::Vec;
 
     fn hex(data: &[u8]) -> String {
         format!("{}", digest(data))

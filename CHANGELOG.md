@@ -4,7 +4,7 @@
 <!-- New unreleased changes go here -->
 
 ### 2026-11-28
-- **fix:** #266, #267: host `cargo test --locked` links UEFI-only helpers only for UEFI targets and gives the four UEFI binaries' host test harnesses `std` and an ordinary `main`.
+- **fix:** #266–#269: host `cargo test --locked` and `cargo check --locked --all-targets` use `std` for the four UEFI binaries on Linux; UEFI targets keep `no_std`, their allocator and panic handler.
 
 ## [v0.47.0] — 2026-11-28
 

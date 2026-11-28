@@ -24,12 +24,9 @@
 //! handle changes nothing. Seeing that here means the emulator, not the code.
 
 #![cfg_attr(not(test), no_main)]
-#![no_std]
+#![cfg_attr(target_os = "uefi", no_std)]
 
 extern crate alloc;
-#[cfg(test)]
-#[macro_use]
-extern crate std;
 
 // The whole socket module comes along; this binary only needs the handle
 // survey and one connect, so most of it is dead here by design. `dhcp4` comes
