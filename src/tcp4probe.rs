@@ -27,6 +27,9 @@
 #![no_std]
 
 extern crate alloc;
+#[cfg(test)]
+#[macro_use]
+extern crate std;
 
 // The whole socket module comes along; this binary only needs the handle
 // survey and one connect, so most of it is dead here by design. `dhcp4` comes

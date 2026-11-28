@@ -18,6 +18,9 @@
 #![no_std]
 
 extern crate alloc;
+#[cfg(test)]
+#[macro_use]
+extern crate std;
 
 #[allow(dead_code)]
 #[path = "bootrec.rs"]
