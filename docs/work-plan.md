@@ -803,8 +803,8 @@ then.
 
 - [ ] **#172 — the Orion O6N (arm64, no BMC, PXE/TFTP broken in its
       UEFI v1.2.1, HTTP boot works): stormbootx-arm64 from a USB stick or
-      UEFI HTTP boot, with stormnic-realtek on the arm64 media (P1, the
-      master, 2026-10-28). In progress.** Plan, this repo:
+      UEFI HTTP boot, with stormnic-realtek on the arm64 media (P0, the
+      master, 2026-10-28). Waiting for manual board proof.** Plan, this repo:
       1. `stormbootx-arm64-disk` golden: the arm64 medium on a 64 MiB GPT
          stick, as `stormbootx-disk` (built and layout-checked in sc-build).
       2. `stormbootx-stick` for aarch64-unknown-linux-musl: the markers and
@@ -851,6 +851,17 @@ then.
       (#10, #11: Start fails on a DMA check timeout, quiesce on a failed
       link read); a bump is the master's call. **Left:** the O6N boot
       (DHCP, NVMe/TCP claim), stormnic-realtek#2's last step.
+      **2026-11-28 verification:** `sc-build --wait` 536e96dfc6 passed
+      host tests at 2c1f38bf60de. Focused AAVMF round 6e0a0acc97 passed
+      at the same commit: arm64 ISO and USB disk booted, loaded the
+      aarch64 Realtek driver, and found no matching NIC on QEMU's virtio
+      network; the arm64 test agent leased, claimed, read 96 MiB through
+      NVMe/TCP and handed off to BOOTAA64.EFI. Sealed images requested
+      once: `golden-stormbootx-arm64-67bca5041379a49d` (42c4bebe07e0)
+      and `golden-stormbootx-arm64-disk-c3cfaf15dbc2d86f`
+      (684ed6c0b8e9). The USB disk image was delivered for manual writing.
+      **Still required:** O6N serial evidence of the Realtek bind, DHCP,
+      NVMe/TCP claim and payload handoff. Keep #172 open until then.
 
 - [x] **#166 — install from an attached release ISO, no forge, no network
       (P1, the master for the owner, 2026-10-21). Withdrawn and closed by

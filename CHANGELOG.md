@@ -10,7 +10,7 @@
 
 - **feat:** #172 (P0): the arm64 media (`stormbootx-arm64`'s ISO and `-usb.img`, `stormbootx-arm64-disk`) carry `\stormboot\drivers\stormnic-realtek.efi`, stormnic-realtek v0.2.0 (ec56f90, the tag v0.2.0) built for `aarch64-unknown-uefi`, for the Orion O6N's RTL8125/RTL8126. stormbootx takes 10ec:8125, 8126, 3000 and 5000 from the board firmware's driver for it, as every stormnic family is taken since #202; no `prefer_media_drivers` is written (stormbootx ignores the key since #202). The media line is `media : rustnic arm64 realtek@ec56f90`.
 - **feat:** #172: `scripts/build-nic-drivers.sh` pins stormnic-realtek and builds it as `realtek` for `x86_64-unknown-uefi` too; it is not in the default set, so no x86 medium changes. `STORMNIC_TARGET=aarch64-unknown-uefi` builds for arm64 (only `realtek`), and every driver's PE machine is checked against its target; `build-boot-agent.sh` refuses a driver of the other architecture.
-- **test:** #172: under AAVMF the arm64 golden's ISO and stick must start the aarch64 stormnic-realtek and find no Realtek NIC (QEMU has none). The O6N boot itself (DHCP, then an NVMe/TCP claim) is a separate hardware gate, stormnic-realtek#2's last step.
+- **test:** #172: AAVMF test round 6e0a0acc97 at 2c1f38bf60de passed: the arm64 golden's ISO and stick started the aarch64 stormnic-realtek and found no Realtek NIC (QEMU has none); an arm64 agent leased, claimed, read 96 MiB over NVMe/TCP and started BOOTAA64.EFI. The O6N boot itself (Realtek bind, DHCP, claim and payload handoff) remains a separate hardware gate, stormnic-realtek#2's last step.
 
 ## [v0.46.5] — 2026-11-27
 
