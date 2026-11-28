@@ -34,7 +34,7 @@ path = "src/espprobe.rs"
 # The NVMe/TCP initiator, shared with stormboot4bios (#10): src/nvme.rs is
 # its UEFI end.
 nvme-tcp-initiator = { path = "crates/nvme-tcp-initiator" }
-uefi = { version = "0.39", features = ["alloc", "global_allocator", "panic_handler", "logger"] }
+uefi = { version = "0.39", features = ["alloc"] }
 uefi-raw = "0.15"
 # stormbootx's own TCP/IP, on the NIC driver's SNP (#56): DHCP, ARP and TCP,
 # and UDP for one SNTP exchange and its DNS lookup (#77). The firmware's
@@ -49,6 +49,9 @@ ed25519-compact = { version = "2.6", default-features = false, features = ["opt_
 # like stormboot-serve; bump it deliberately, in its own commit.
 stormblock-screen-spec = { git = "https://github.com/glennswest/stormblock", rev = "b74b783e094ad04086ee1c576bc76d5f2aaf9add" }
 smoltcp = { version = "0.14", default-features = false, features = ["alloc", "medium-ethernet", "proto-ipv4", "socket-tcp", "socket-udp", "socket-dhcpv4", "auto-icmp-echo-reply"] }
+
+[target.'cfg(target_os = "uefi")'.dependencies]
+uefi = { version = "0.39", features = ["global_allocator", "panic_handler", "logger"] }
 
 # The initiator is its own crate so stormboot4bios can link it (#10);
 # `cargo test -p nvme-tcp-initiator` runs its host tests. A plain `cargo build`
